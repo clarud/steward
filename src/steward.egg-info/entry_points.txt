@@ -1,0 +1,2 @@
+[console_scripts]
+steward = steward.cli:main
