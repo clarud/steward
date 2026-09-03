@@ -37,6 +37,12 @@ def test_source_is_immutable() -> None:
         source.status = SourceStatus.MISSING  # type: ignore[misc]
 
 
+def test_source_can_be_unregistered_before_persistence() -> None:
+    source = make_source(id=None)
+
+    assert source.id is None
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -51,4 +57,3 @@ def test_source_rejects_invalid_metadata(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         make_source(**overrides)
-

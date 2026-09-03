@@ -25,7 +25,7 @@ class SourceStatus(StrEnum):
 class Source:
     """Metadata for one physical original file, not its extracted content."""
 
-    id: int
+    id: int | None
     path: Path
     content_hash: str
     source_type: SourceType
@@ -36,7 +36,7 @@ class Source:
     status: SourceStatus = SourceStatus.ACTIVE
 
     def __post_init__(self) -> None:
-        if self.id <= 0:
+        if self.id is not None and self.id <= 0:
             raise ValueError("Source id must be positive.")
         if not str(self.path) or self.path == Path("."):
             raise ValueError("Source path must not be empty.")
@@ -50,4 +50,3 @@ class Source:
             raise ValueError("Source scan timestamps must be timezone-aware.")
         if self.first_seen_at > self.last_seen_at:
             raise ValueError("Source first_seen_at must not be after last_seen_at.")
-
