@@ -47,3 +47,20 @@ def test_cli_sources_lists_registered_sources(tmp_path: Path, monkeypatch, capsy
     main(["sources"])
 
     assert capsys.readouterr().out == f"1\tactive\t{note_path.resolve()}\n"
+
+
+def test_cli_search_returns_matching_fragment(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    note_path = vault / "note.md"
+    note_path.write_text("# TLB\nA TLB caches address translations.")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    main(["scan", str(vault)])
+    capsys.readouterr()
+
+    main(["search", "translations"])
+
+    output = capsys.readouterr().out
+    assert f"{note_path.resolve()}:lines 1-2 [TLB]" in output
+    assert "A TLB caches address translations." in output

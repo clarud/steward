@@ -13,6 +13,7 @@ from steward.logging import configure_logging
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
+from steward.retrieval import LexicalSearchService
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser = subcommands.add_parser("scan", help="Register Markdown files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
     subcommands.add_parser("sources", help="List registered sources")
+    search_parser = subcommands.add_parser("search", help="Search indexed Markdown fragments")
+    search_parser.add_argument("query", help="Terms to search for")
+    search_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
     return parser
 
 
@@ -56,6 +60,24 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         for source in sources:
             print(f"{source.id}\t{source.status.value}\t{source.path}")
+        return
+
+    if arguments.command == "search":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        hits = LexicalSearchService(
+            source_repository=SourceRepository(database_path),
+            fragment_repository=SourceFragmentRepository(database_path),
+        ).search(arguments.query, limit=arguments.limit)
+        if not hits:
+            print("No matching fragments.")
+            return
+
+        for hit in hits:
+            heading = hit.fragment.heading or "Preamble"
+            snippet = " ".join(hit.fragment.text.split())
+            print(f"{hit.source.path}:{hit.fragment.location} [{heading}]")
+            print(f"  {snippet[:160]}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

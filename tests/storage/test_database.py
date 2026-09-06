@@ -2,7 +2,11 @@ import sqlite3
 from pathlib import Path
 
 from steward.storage import INITIAL_SCHEMA_VERSION, initialize_database
-from steward.storage.database import FRAGMENTS_SCHEMA_VERSION, SOURCES_SCHEMA_VERSION
+from steward.storage.database import (
+    FRAGMENTS_SCHEMA_VERSION,
+    LEXICAL_SEARCH_SCHEMA_VERSION,
+    SOURCES_SCHEMA_VERSION,
+)
 
 
 def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Path) -> None:
@@ -21,6 +25,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         INITIAL_SCHEMA_VERSION,
         SOURCES_SCHEMA_VERSION,
         FRAGMENTS_SCHEMA_VERSION,
+        LEXICAL_SEARCH_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -47,4 +52,4 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == 3
+    assert migration_count == 4

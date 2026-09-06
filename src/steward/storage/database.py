@@ -9,6 +9,7 @@ from pathlib import Path
 INITIAL_SCHEMA_VERSION = 1
 SOURCES_SCHEMA_VERSION = 2
 FRAGMENTS_SCHEMA_VERSION = 3
+LEXICAL_SEARCH_SCHEMA_VERSION = 4
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -38,6 +39,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             text TEXT NOT NULL,
             location TEXT NOT NULL,
             UNIQUE (source_id, ordinal)
+        )
+        """,
+    ),
+    (
+        LEXICAL_SEARCH_SCHEMA_VERSION,
+        """
+        CREATE VIRTUAL TABLE source_fragments_fts USING fts5(
+            fragment_id UNINDEXED,
+            source_id UNINDEXED,
+            heading,
+            text,
+            tokenize = 'unicode61'
         )
         """,
     ),

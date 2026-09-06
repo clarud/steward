@@ -73,6 +73,21 @@ class SourceRepository:
 
         return self._source_from_row(row) if row is not None else None
 
+    def get_by_id(self, source_id: int) -> Source | None:
+        """Return one registered Source by its SQLite ID, if present."""
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, path, content_hash, source_type, size_bytes, modified_at,
+                       first_seen_at, last_seen_at, status
+                FROM sources
+                WHERE id = ?
+                """,
+                (source_id,),
+            ).fetchone()
+
+        return self._source_from_row(row) if row is not None else None
+
     def update(self, source: Source) -> None:
         """Replace metadata for an already-persisted Source."""
         if source.id is None:

@@ -85,3 +85,18 @@ def test_fragment_repository_rejects_unknown_source(tmp_path: Path) -> None:
 
     with pytest.raises(UnknownSourceError, match="999"):
         SourceFragmentRepository(database_path).replace_for_source(result)
+
+
+def test_fragment_repository_searches_persisted_fragment_text(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    source_path = tmp_path / "note.md"
+    source_path.write_text("# TLB\nA TLB caches translations.", encoding="utf-8")
+    source = register_source(database_path, source_path)
+    repository = SourceFragmentRepository(database_path)
+    repository.replace_for_source(MarkdownExtractor().extract(source))
+
+    matches = repository.search("translations")
+
+    assert len(matches) == 1
+    assert matches[0].fragment.heading == "TLB"
