@@ -1,0 +1,81 @@
+cases:
+  - query: "virtual addresses operating systems"
+    expected:
+      source: "virtual-memory.md"
+      heading: "Virtual Memory"
+  - query: "page tables physical frames"
+    expected:
+      source: "virtual-memory.md"
+      heading: "Page Tables"
+  - query: "virtual pages physical frames"
+    expected:
+      source: "virtual-memory.md"
+      heading: "Page Tables"
+  - query: "TLB CPU cache"
+    expected:
+      source: "virtual-memory.md"
+      heading: "Translation Lookaside Buffer"
+  - query: "recently used address translations"
+    expected:
+      source: "virtual-memory.md"
+      heading: "Translation Lookaside Buffer"
+  - query: "other CPUs invalidate stale translations"
+    expected:
+      source: "virtual-memory.md"
+      heading: "TLB Shootdowns"
+  - query: "page tables change shootdowns"
+    expected:
+      source: "virtual-memory.md"
+      heading: "TLB Shootdowns"
+  - query: "operational metadata hashes paths"
+    expected:
+      source: "sqlite.md"
+      heading: "Operational Metadata"
+  - query: "SQLite metadata database"
+    expected:
+      source: "sqlite.md"
+      heading: "SQLite"
+  - query: "FTS5 inverted index"
+    expected:
+      source: "sqlite.md"
+      heading: "FTS5"
+  - query: "BM25 lexical ranking"
+    expected:
+      source: "sqlite.md"
+      heading: "FTS5"
+  - query: "transactions rollback changes"
+    expected:
+      source: "sqlite.md"
+      heading: "Transactions"
+  - query: "original files authoritative"
+    expected:
+      source: "steward.md"
+      heading: "Sources"
+  - query: "source metadata path hash"
+    expected:
+      source: "steward.md"
+      heading: "Sources"
+  - query: "source fragments derived data"
+    expected:
+      source: "steward.md"
+      heading: "Source Fragments"
+  - query: "fragments preserve line locations"
+    expected:
+      source: "steward.md"
+      heading: "Source Fragments"
+  - query: "provenance evidence original source"
+    expected:
+      source: "steward.md"
+      heading: "Provenance"
+  - query: "lexical retrieval exact terms"
+    expected:
+      source: "steward.md"
+      heading: "Lexical Retrieval"
+  - query: "activity events mutations"
+    expected:
+      source: "steward.md"
+      heading: "Activity"
+  - query: "activity happened when"
+    expected:
+      source: "steward.md"
+      heading: "Activity"
