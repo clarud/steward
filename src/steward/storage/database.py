@@ -10,6 +10,7 @@ INITIAL_SCHEMA_VERSION = 1
 SOURCES_SCHEMA_VERSION = 2
 FRAGMENTS_SCHEMA_VERSION = 3
 LEXICAL_SEARCH_SCHEMA_VERSION = 4
+SEMANTIC_SEARCH_SCHEMA_VERSION = 5
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -51,6 +52,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             heading,
             text,
             tokenize = 'unicode61'
+        )
+        """,
+    ),
+    (
+        SEMANTIC_SEARCH_SCHEMA_VERSION,
+        """
+        CREATE TABLE source_fragment_embeddings (
+            fragment_id INTEGER PRIMARY KEY
+                REFERENCES source_fragments(id) ON DELETE CASCADE,
+            model_name TEXT NOT NULL,
+            dimension INTEGER NOT NULL CHECK (dimension > 0),
+            vector_json TEXT NOT NULL
         )
         """,
     ),

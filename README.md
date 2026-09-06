@@ -4,7 +4,9 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 0 establishes the project foundation only. Steward does not yet read a vault, create a database, call a model, or connect to Telegram.
+Phase 4 is complete. Steward can register and structurally extract Markdown,
+then retrieve its fragments with lexical, semantic, or hybrid search. It does
+not yet answer questions with an LLM or connect to Telegram.
 
 ## Local setup
 
@@ -20,7 +22,29 @@ steward scan path\to\your\vault
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
 
+## Search a vault
+
+Lexical search needs only the scan:
+
+```powershell
+steward scan path\to\your\vault
+steward search "address translations"
+```
+
+Semantic and hybrid search use a local embedding model. Download it explicitly
+once, then build the rebuildable local vector index. Subsequent indexing and
+search run from the local model cache.
+
+```powershell
+steward download-embedding-model
+steward index path\to\your\vault
+steward semantic-search "the little cache CPUs use for address translation"
+steward hybrid-search "the little cache CPUs use for address translation"
+```
+
 ## Documentation
+
+- `docs/developer-guide.md` — implementation, data flow, limitations, and next steps
 
 - `docs/product.md` — product intent
 - `docs/architecture.md` — architectural boundaries

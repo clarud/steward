@@ -13,7 +13,13 @@ from steward.logging import configure_logging
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
-from steward.retrieval import LexicalSearchService
+from steward.retrieval import (
+    HybridRetriever,
+    LexicalSearchService,
+    SemanticSearchService,
+    SentenceTransformerEmbeddingProvider,
+    SQLiteSemanticIndex,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,10 +28,28 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
     scan_parser = subcommands.add_parser("scan", help="Register Markdown files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    index_parser = subcommands.add_parser(
+        "index", help="Scan Markdown files and build their local semantic index"
+    )
+    index_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    subcommands.add_parser(
+        "download-embedding-model",
+        help="Download Steward's local embedding model for semantic search",
+    )
     subcommands.add_parser("sources", help="List registered sources")
     search_parser = subcommands.add_parser("search", help="Search indexed Markdown fragments")
     search_parser.add_argument("query", help="Terms to search for")
     search_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    semantic_parser = subcommands.add_parser(
+        "semantic-search", help="Search Markdown fragments by meaning"
+    )
+    semantic_parser.add_argument("query", help="A natural-language question or phrase")
+    semantic_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    hybrid_parser = subcommands.add_parser(
+        "hybrid-search", help="Combine lexical and semantic Markdown search"
+    )
+    hybrid_parser.add_argument("query", help="Terms or a natural-language question")
+    hybrid_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
     return parser
 
 
@@ -50,6 +74,28 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         return
 
+    if arguments.command == "index":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        provider = SentenceTransformerEmbeddingProvider()
+        result = SourceService(
+            source_repository=SourceRepository(database_path),
+            fragment_repository=SourceFragmentRepository(database_path),
+            markdown_extractor=MarkdownExtractor(),
+            semantic_index=SQLiteSemanticIndex(database_path, provider),
+        ).scan_markdown_root(arguments.root)
+        print(
+            "Index complete: "
+            f"new={result.new} updated={result.updated} "
+            f"unchanged={result.unchanged} missing={result.missing}"
+        )
+        return
+
+    if arguments.command == "download-embedding-model":
+        SentenceTransformerEmbeddingProvider(allow_download=True)
+        print("Embedding model downloaded and ready for offline use.")
+        return
+
     if arguments.command == "sources":
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
@@ -71,6 +117,32 @@ def main(argv: Sequence[str] | None = None) -> None:
         ).search(arguments.query, limit=arguments.limit)
         if not hits:
             print("No matching fragments.")
+            return
+
+        for hit in hits:
+            heading = hit.fragment.heading or "Preamble"
+            snippet = " ".join(hit.fragment.text.split())
+            print(f"{hit.source.path}:{hit.fragment.location} [{heading}]")
+            print(f"  {snippet[:160]}")
+        return
+
+    if arguments.command in {"semantic-search", "hybrid-search"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        source_repository = SourceRepository(database_path)
+        fragment_repository = SourceFragmentRepository(database_path)
+        semantic_search = SemanticSearchService(
+            source_repository,
+            SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
+        )
+        if arguments.command == "semantic-search":
+            hits = semantic_search.search(arguments.query, limit=arguments.limit)
+        else:
+            hits = HybridRetriever(
+                LexicalSearchService(source_repository, fragment_repository), semantic_search
+            ).search(arguments.query, limit=arguments.limit)
+        if not hits:
+            print("No matching fragments. Run `steward index <vault>` first.")
             return
 
         for hit in hits:
