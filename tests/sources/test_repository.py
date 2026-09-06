@@ -6,6 +6,7 @@ import pytest
 from steward.sources import (
     Source,
     SourceAlreadyExistsError,
+    SourceNotFoundError,
     SourceRepository,
     SourceType,
 )
@@ -65,3 +66,32 @@ def test_repository_returns_none_for_an_unknown_path(tmp_path: Path) -> None:
     initialize_database(database_path)
 
     assert SourceRepository(database_path).get_by_path(Path("vault/missing.md")) is None
+
+
+def test_repository_rejects_updating_an_unregistered_source(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+
+    with pytest.raises(ValueError, match="persisted Source"):
+        SourceRepository(database_path).update(
+            make_unregistered_source(Path("vault/note.md"))
+        )
+
+
+def test_repository_rejects_updating_an_unknown_source(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    source = make_unregistered_source(Path("vault/note.md"))
+    unknown_source = Source(
+        id=999,
+        path=source.path,
+        content_hash=source.content_hash,
+        source_type=source.source_type,
+        size_bytes=source.size_bytes,
+        modified_at=source.modified_at,
+        first_seen_at=source.first_seen_at,
+        last_seen_at=source.last_seen_at,
+    )
+
+    with pytest.raises(SourceNotFoundError, match="999"):
+        SourceRepository(database_path).update(unknown_source)

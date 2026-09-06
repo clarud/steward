@@ -14,6 +14,10 @@ class SourceAlreadyExistsError(ValueError):
     """Raised when attempting to register an already-known physical path."""
 
 
+class SourceNotFoundError(ValueError):
+    """Raised when attempting to update a Source that is not registered."""
+
+
 class SourceRepository:
     """Store and retrieve Source records from an initialized Steward database."""
 
@@ -68,6 +72,51 @@ class SourceRepository:
             ).fetchone()
 
         return self._source_from_row(row) if row is not None else None
+
+    def update(self, source: Source) -> None:
+        """Replace metadata for an already-persisted Source."""
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be updated.")
+
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sources
+                SET path = ?, content_hash = ?, source_type = ?, size_bytes = ?,
+                    modified_at = ?, first_seen_at = ?, last_seen_at = ?, status = ?
+                WHERE id = ?
+                """,
+                (
+                    str(source.path),
+                    source.content_hash,
+                    source.source_type.value,
+                    source.size_bytes,
+                    source.modified_at.isoformat(),
+                    source.first_seen_at.isoformat(),
+                    source.last_seen_at.isoformat(),
+                    source.status.value,
+                    source.id,
+                ),
+            )
+
+        if cursor.rowcount != 1:
+            raise SourceNotFoundError(f"Source id {source.id} is not registered.")
+
+    def list_active(self) -> list[Source]:
+        """Return every Source whose current path was last observed as present."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, path, content_hash, source_type, size_bytes, modified_at,
+                       first_seen_at, last_seen_at, status
+                FROM sources
+                WHERE status = ?
+                ORDER BY id
+                """,
+                (SourceStatus.ACTIVE.value,),
+            ).fetchall()
+
+        return [self._source_from_row(row) for row in rows]
 
     @staticmethod
     def _source_from_row(row: tuple[object, ...]) -> Source:

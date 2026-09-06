@@ -15,7 +15,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 pytest
-steward
+steward scan path\to\your\vault
 ```
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
@@ -26,4 +26,3 @@ Copy `.env.example` to `.env` only when you need local configuration. Never comm
 - `docs/architecture.md` — architectural boundaries
 - `docs/invariants.md` — rules every feature must preserve
 - `docs/adr/` — records of foundational decisions
-
