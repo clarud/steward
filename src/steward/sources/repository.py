@@ -118,6 +118,20 @@ class SourceRepository:
 
         return [self._source_from_row(row) for row in rows]
 
+    def list_all(self) -> list[Source]:
+        """Return every registered Source, including missing files."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, path, content_hash, source_type, size_bytes, modified_at,
+                       first_seen_at, last_seen_at, status
+                FROM sources
+                ORDER BY id
+                """
+            ).fetchall()
+
+        return [self._source_from_row(row) for row in rows]
+
     @staticmethod
     def _source_from_row(row: tuple[object, ...]) -> Source:
         """Translate SQLite's primitive values back into the Source domain model."""

@@ -8,6 +8,7 @@ from pathlib import Path
 
 INITIAL_SCHEMA_VERSION = 1
 SOURCES_SCHEMA_VERSION = 2
+FRAGMENTS_SCHEMA_VERSION = 3
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -26,6 +27,20 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         )
         """,
     ),
+    (
+        FRAGMENTS_SCHEMA_VERSION,
+        """
+        CREATE TABLE source_fragments (
+            id INTEGER PRIMARY KEY,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            heading TEXT,
+            ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+            text TEXT NOT NULL,
+            location TEXT NOT NULL,
+            UNIQUE (source_id, ordinal)
+        )
+        """,
+    ),
 )
 
 
@@ -38,6 +53,7 @@ def initialize_database(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_migrations (

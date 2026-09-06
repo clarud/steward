@@ -8,8 +8,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from steward.config import Settings
+from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.logging import configure_logging
-from steward.sources import SourceRepository, scan_markdown_root
+from steward.sources import SourceRepository
+from steward.sources.service import SourceService
 from steward.storage import initialize_database
 
 
@@ -19,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
     scan_parser = subcommands.add_parser("scan", help="Register Markdown files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    subcommands.add_parser("sources", help="List registered sources")
     return parser
 
 
@@ -31,12 +34,28 @@ def main(argv: Sequence[str] | None = None) -> None:
     if arguments.command == "scan":
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
-        result = scan_markdown_root(arguments.root, SourceRepository(database_path))
+        result = SourceService(
+            source_repository=SourceRepository(database_path),
+            fragment_repository=SourceFragmentRepository(database_path),
+            markdown_extractor=MarkdownExtractor(),
+        ).scan_markdown_root(arguments.root)
         print(
             "Scan complete: "
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        return
+
+    if arguments.command == "sources":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        sources = SourceRepository(database_path).list_all()
+        if not sources:
+            print("No sources registered.")
+            return
+
+        for source in sources:
+            print(f"{source.id}\t{source.status.value}\t{source.path}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

@@ -8,6 +8,7 @@ from steward.sources import (
     SourceAlreadyExistsError,
     SourceNotFoundError,
     SourceRepository,
+    SourceStatus,
     SourceType,
 )
 from steward.storage import initialize_database
@@ -66,6 +67,30 @@ def test_repository_returns_none_for_an_unknown_path(tmp_path: Path) -> None:
     initialize_database(database_path)
 
     assert SourceRepository(database_path).get_by_path(Path("vault/missing.md")) is None
+
+
+def test_repository_lists_active_and_missing_sources(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    repository = SourceRepository(database_path)
+    active_source = repository.add(make_unregistered_source(Path("vault/active.md")))
+    missing_source = repository.add(make_unregistered_source(Path("vault/missing.md")))
+    repository.update(
+        Source(
+            id=missing_source.id,
+            path=missing_source.path,
+            content_hash=missing_source.content_hash,
+            source_type=missing_source.source_type,
+            size_bytes=missing_source.size_bytes,
+            modified_at=missing_source.modified_at,
+            first_seen_at=missing_source.first_seen_at,
+            last_seen_at=missing_source.last_seen_at,
+            status=SourceStatus.MISSING,
+        )
+    )
+
+    assert repository.list_active() == [active_source]
+    assert repository.list_all() == [active_source, repository.get_by_path(missing_source.path)]
 
 
 def test_repository_rejects_updating_an_unregistered_source(tmp_path: Path) -> None:
