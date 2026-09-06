@@ -4,9 +4,10 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 4 is complete. Steward can register and structurally extract Markdown,
-then retrieve its fragments with lexical, semantic, or hybrid search. It does
-not yet answer questions with an LLM or connect to Telegram.
+Phase 5 is complete. Steward can register and structurally extract Markdown,
+retrieve its fragments with lexical, semantic, or hybrid search, and generate
+grounded answers from explicitly retrieved evidence. It does not yet use
+LangGraph or connect to Telegram.
 
 ## Local setup
 
@@ -40,6 +41,27 @@ steward download-embedding-model
 steward index path\to\your\vault
 steward semantic-search "the little cache CPUs use for address translation"
 steward hybrid-search "the little cache CPUs use for address translation"
+```
+
+## Ask from local evidence
+
+Gemini is the default provider. Set its API key and a Gemini model available to
+your account in your PowerShell session, then ask a question. The answer request
+uses only retrieved fragments and asks the API not to store the interaction.
+
+```powershell
+$env:GEMINI_API_KEY = "your-api-key"
+$env:STEWARD_GEMINI_MODEL = "your-selected-model"
+steward ask "What do I know about address translation?"
+```
+
+OpenAI remains available by explicitly selecting its provider:
+
+```powershell
+$env:STEWARD_MODEL_PROVIDER = "openai"
+$env:OPENAI_API_KEY = "your-api-key"
+$env:STEWARD_OPENAI_MODEL = "your-selected-model"
+steward ask "What do I know about address translation?"
 ```
 
 ## Documentation

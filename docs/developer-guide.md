@@ -1,9 +1,10 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 4. Steward can register local Markdown files, extract structured
-fragments, and retrieve them using lexical, semantic, or hybrid search. It is
-not yet an LLM answering system, a LangGraph application, or a Telegram bot.
+through 5. Steward can register local Markdown files, extract structured
+fragments, retrieve them using lexical, semantic, or hybrid search, and
+generate grounded answers from retrieved fragments. It is not yet a LangGraph
+application or a Telegram bot.
 
 ## Design principles
 
@@ -39,10 +40,15 @@ src/steward/
 │   ├── models.py             SourceFragment and ExtractionResult
 │   ├── markdown.py           heading-aware Markdown extraction
 │   └── repository.py         fragment and FTS5 persistence
-└── retrieval/
+├── retrieval/
     ├── lexical.py            FTS5/BM25 retrieval service
     ├── semantic.py           embeddings and local semantic index
     └── hybrid.py             lexical/semantic rank fusion
+└── answer/
+    ├── models.py             answer, citation, and context value objects
+    ├── context.py            bounded evidence prompt construction
+    ├── gateway.py            model-provider boundary and OpenAI gateway
+    └── service.py            retrieve → context → grounded answer workflow
 ```
 
 `tests/` mirrors these areas. Unit tests use temporary databases and vaults,
@@ -327,6 +333,86 @@ A `HybridSearchHit` retains the final fused score plus the individual lexical
 and semantic scores. The fused score is a ranking value, not a probability or
 confidence statement.
 
+## Grounded answers
+
+Phase 5 turns retrieval into the first half of a RAG flow:
+
+```text
+question
+  ↓
+HybridRetriever finds source fragments
+  ↓
+ContextBuilder formats only those fragments
+  ↓
+ModelGateway generates an answer from that bounded context
+  ↓
+AnswerResult contains answer text and source citations
+```
+
+### AnswerService
+
+`AnswerService` coordinates the flow but does not read files, construct SQL,
+or call a provider-specific SDK directly. It depends on three capabilities:
+
+```text
+Retriever       → ranked HybridSearchHit values
+ContextBuilder  → an exact prompt plus citations
+ModelGateway    → generated text from supplied instructions and input
+```
+
+If retrieval returns no evidence, `AnswerService` returns the deterministic
+message `I don't have enough local information to answer that.` It does not
+call the model. This avoids spending money or producing a plausible answer
+without local support.
+
+### ContextBuilder
+
+Each selected fragment is labelled with a stable request-local key such as
+`[F1]`, followed by the source path, heading, line location, and excerpt.
+`AnswerContext.prompt` is the exact text sent to the model, while
+`AnswerContext.citations` holds the matching structured metadata.
+
+Context is capped at 12,000 characters by default. If an excerpt would exceed
+the remaining deterministic budget, it is cut and marked `[truncated]`; if a
+new excerpt cannot fit meaningfully, it is excluded. This prevents an unusually
+large Markdown section from silently consuming the whole model context window.
+
+### ModelGateway, Gemini, and OpenAI gateways
+
+`ModelGateway` is a protocol with one operation:
+
+```python
+generate(*, instructions: str, input_text: str) -> str
+```
+
+`GeminiModelGateway` is the default CLI provider. It lazily imports the
+official `google-genai` SDK and calls Gemini's Interactions API with
+`system_instruction`, `input`, and `store=False`. `OpenAIModelGateway` remains
+available as an alternative and calls the OpenAI Responses API with `store=False`.
+Provider-specific request and response details remain in these gateway classes,
+so a future local model or another provider can implement the same protocol.
+
+The grounding instruction tells the model to use only supplied excerpts, treat
+those excerpts as untrusted reference material rather than instructions, state
+when evidence is insufficient, and cite fragment keys such as `[F1]`. This
+reduces hallucination and prompt-injection risk but does not prove an answer is
+correct; the original source remains the authority.
+
+To use the default Gemini command, set these environment variables rather than
+placing a secret in tracked code:
+
+```powershell
+$env:GEMINI_API_KEY = "your-api-key"
+$env:STEWARD_GEMINI_MODEL = "your-selected-model"
+steward ask "What do I know about address translation?"
+```
+
+`GEMINI_API_KEY` and `OPENAI_API_KEY` are intentionally not part of the logged
+`Settings` dataclass. `STEWARD_MODEL_PROVIDER` defaults to `gemini`; use
+`STEWARD_MODEL_PROVIDER=openai` with `STEWARD_OPENAI_MODEL` to use the OpenAI
+gateway instead. The selected provider's model setting is optional until
+`steward ask` is used.
+
 ## Commands and data flow
 
 ```powershell
@@ -345,6 +431,7 @@ steward semantic-search "little cache CPUs use for address translation"
 
 # Combine both modes.
 steward hybrid-search "little cache CPUs use for address translation"
+steward ask "What do I know about address translation?"
 ```
 
 The full `index` flow is:
@@ -416,10 +503,19 @@ pytest
   fragment, especially for short or ambiguous queries.
 - FTS5 is token-based. It does not automatically stem every grammatical form,
   so `cache` may not match `caches` with the current tokenizer configuration.
-- Hybrid search uses the user's query in FTS5 as well as semantic search;
-  malformed FTS5 syntax can therefore reject an otherwise meaningful query.
-- There is no LLM answer generation, citations in final prose, conversation
-  memory, LangGraph workflow, access policy, or external action support yet.
+- Hybrid search falls back to semantic retrieval if a natural-language query
+  contains punctuation that FTS5 rejects. This prevents a parser error, though
+  it means no lexical candidates contribute to that particular ranking.
+- Model-generated citations use request-local keys such as `[F1]`. Steward
+  currently returns metadata for all context fragments but does not yet parse
+  and verify which exact citation keys the model used in each sentence.
+- Context is bounded by characters rather than token counts. Different models
+  tokenize text differently, so the cap is protective rather than exact.
+- Model availability, free-tier quotas, rate limits, and retention terms are
+  provider-controlled. Steward requires an explicit model name rather than
+  assuming a particular Gemini model is available to every account.
+- There is no conversation memory, LangGraph workflow, access policy, or
+  external action support yet.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.
@@ -452,10 +548,10 @@ pytest
 
 ### Product progression
 
-1. Phase 5: add `ModelGateway`, `ContextBuilder`, and `AnswerService` so only
-   retrieved fragments are sent to an LLM and answers include provenance.
-2. Phase 6: use LangGraph to orchestrate a minimal `retrieve → answer` graph
+1. Phase 6: use LangGraph to orchestrate a minimal `retrieve → answer` graph
    while keeping all domain logic in the services documented here.
+2. Add structured answer evaluation cases that inspect retrieved evidence,
+   generated citations, and unsupported-answer behavior.
 3. Add richer extractors for plain text and PDF before introducing broad
    capture channels.
 4. Add structured retrieval evaluations before relying on semantic results for

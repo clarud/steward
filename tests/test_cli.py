@@ -64,3 +64,16 @@ def test_cli_search_returns_matching_fragment(tmp_path: Path, monkeypatch, capsy
     output = capsys.readouterr().out
     assert f"{note_path.resolve()}:lines 1-2 [TLB]" in output
     assert "A TLB caches address translations." in output
+
+
+def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
+
+    main(["ask", "What do I know about TLBs?"])
+
+    assert capsys.readouterr().out == (
+        "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward ask`.\n"
+    )

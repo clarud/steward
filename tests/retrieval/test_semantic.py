@@ -91,6 +91,22 @@ def test_hybrid_retriever_rewards_a_fragment_found_by_both_methods(tmp_path: Pat
     assert hits[0].semantic_score == 1.0
 
 
+def test_hybrid_retriever_falls_back_to_semantic_for_invalid_fts_syntax(
+    tmp_path: Path,
+) -> None:
+    _, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+    hybrid = HybridRetriever(
+        LexicalSearchService(source_repository, fragment_repository),
+        SemanticSearchService(source_repository, semantic_index),
+    )
+
+    hits = hybrid.search("What is the translation cache?")
+
+    assert hits[0].source.path.name == "virtual-memory.md"
+    assert hits[0].lexical_score is None
+    assert hits[0].semantic_score == 1.0
+
+
 def test_semantic_index_replaces_vectors_when_source_fragments_are_replaced(
     tmp_path: Path,
 ) -> None:

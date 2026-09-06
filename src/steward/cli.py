@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
-from steward.config import Settings
+from steward.config import Settings, load_environment_file
+from steward.answer import (
+    AnswerService,
+    ContextBuilder,
+    GeminiModelGateway,
+    OpenAIModelGateway,
+)
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.logging import configure_logging
 from steward.sources import SourceRepository
@@ -50,11 +57,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hybrid_parser.add_argument("query", help="Terms or a natural-language question")
     hybrid_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    ask_parser = subcommands.add_parser(
+        "ask", help="Answer a question from retrieved local source fragments"
+    )
+    ask_parser.add_argument("question", help="Question to answer from local evidence")
+    ask_parser.add_argument("--limit", type=int, default=5, help="Maximum evidence fragments")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Run a Steward command."""
+    load_environment_file()
     arguments = build_parser().parse_args(argv)
     settings = Settings.from_environment()
     configure_logging(settings)
@@ -150,6 +163,55 @@ def main(argv: Sequence[str] | None = None) -> None:
             snippet = " ".join(hit.fragment.text.split())
             print(f"{hit.source.path}:{hit.fragment.location} [{heading}]")
             print(f"  {snippet[:160]}")
+        return
+
+    if arguments.command == "ask":
+        if settings.model_provider == "gemini":
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key or not settings.gemini_model:
+                print(
+                    "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using "
+                    "`steward ask`."
+                )
+                return
+            model_gateway = GeminiModelGateway(
+                api_key=api_key, model=settings.gemini_model
+            )
+        else:
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key or not settings.openai_model:
+                print(
+                    "Set OPENAI_API_KEY and STEWARD_OPENAI_MODEL before using "
+                    "`steward ask`."
+                )
+                return
+            model_gateway = OpenAIModelGateway(
+                api_key=api_key, model=settings.openai_model
+            )
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        source_repository = SourceRepository(database_path)
+        fragment_repository = SourceFragmentRepository(database_path)
+        semantic_search = SemanticSearchService(
+            source_repository,
+            SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
+        )
+        answer = AnswerService(
+            retriever=HybridRetriever(
+                LexicalSearchService(source_repository, fragment_repository), semantic_search
+            ),
+            context_builder=ContextBuilder(),
+            model_gateway=model_gateway,
+        ).ask(arguments.question, limit=arguments.limit)
+        print(answer.text)
+        if answer.citations:
+            print("\nSources:")
+            for citation in answer.citations:
+                heading = citation.heading or "Preamble"
+                print(
+                    f"[{citation.key}] {citation.source_path}:"
+                    f"{citation.location} [{heading}]"
+                )
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

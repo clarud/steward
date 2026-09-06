@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from steward.extraction import SourceFragment
+from steward.extraction import InvalidSearchQueryError, SourceFragment
 from steward.retrieval.lexical import LexicalSearchService
 from steward.retrieval.semantic import SemanticSearchService
 from steward.sources import Source
@@ -39,7 +39,12 @@ class HybridRetriever:
         if limit <= 0:
             raise ValueError("Search limit must be positive.")
         candidate_limit = limit * 3
-        lexical_hits = self._lexical_search.search(query, limit=candidate_limit)
+        try:
+            lexical_hits = self._lexical_search.search(query, limit=candidate_limit)
+        except InvalidSearchQueryError:
+            # Natural-language punctuation may be invalid FTS5 syntax. Semantic
+            # search can still retrieve useful evidence for the same question.
+            lexical_hits = ()
         semantic_hits = self._semantic_search.search(query, limit=candidate_limit)
 
         combined: dict[int, HybridSearchHit] = {}
