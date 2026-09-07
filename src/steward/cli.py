@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from steward.retrieval import (
     SQLiteSemanticIndex,
 )
 from steward.telegram import run_telegram_polling
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,7 +123,14 @@ def _build_question_graph(
         context_builder=ContextBuilder(),
         model_gateway=model_gateway,
     )
-    return build_retrieval_answer_graph(retriever, answer_service, retrieval_limit=limit)
+    checkpoint_connection = sqlite3.connect(
+        settings.data_dir / "checkpoints.db", check_same_thread=False
+    )
+    checkpointer = SqliteSaver(checkpoint_connection)
+    checkpointer.setup()
+    return build_retrieval_answer_graph(
+        retriever, answer_service, retrieval_limit=limit, checkpointer=checkpointer
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:

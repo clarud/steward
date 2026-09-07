@@ -14,7 +14,7 @@ TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local know
 class QuestionGraph(Protocol):
     """The small graph interface needed by the text-question use case."""
 
-    def invoke(self, input: dict[str, str]) -> "QuestionResult": ...
+    def invoke(self, input: dict[str, str], config: dict[str, object]) -> "QuestionResult": ...
 
 
 class QuestionResult(TypedDict):
@@ -36,7 +36,10 @@ class StewardQuestionApplication:
         if not event.text or not event.text.strip():
             return TEXT_QUESTION_REQUIRED
 
-        result = self._graph.invoke({"question": event.text})
+        result = self._graph.invoke(
+            {"question": event.text},
+            {"configurable": {"thread_id": f"{event.platform}:{event.chat_id}"}},
+        )
         return self._format_response(result)
 
     @staticmethod

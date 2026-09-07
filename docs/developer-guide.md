@@ -534,6 +534,21 @@ TELEGRAM_BOT_TOKEN=your-bot-token
 steward telegram
 ```
 
+## Conversation state and checkpoints
+
+Phase 8 gives each Telegram chat a LangGraph thread ID such as
+`telegram:100`. The application invokes the graph with that ID, and the local
+SQLite checkpointer stores a snapshot after each graph step in
+`.steward/checkpoints.db`. Restarting the process and invoking the same thread
+loads its prior state.
+
+The state keeps a bounded ten-message exchange, recent source fragment IDs,
+and placeholders for workspace, concepts, and records. It does not store full
+documents. For a small deterministic first reference resolver, a follow-up
+containing terms such as `that`, `this`, or `it` is expanded with the preceding
+user question before retrieval. This is useful but deliberately conservative:
+it is not yet general natural-language reference resolution.
+
 ## Commands and data flow
 
 ```powershell

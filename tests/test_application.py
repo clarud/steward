@@ -10,7 +10,7 @@ class FakeGraph:
     def __init__(self) -> None:
         self.inputs: list[dict[str, str]] = []
 
-    def invoke(self, input: dict[str, str]) -> dict[str, str]:
+    def invoke(self, input: dict[str, str], config=None) -> dict[str, str]:
         self.inputs.append(input)
         return {"answer": "A TLB caches address translations. [F1]"}
 
@@ -47,7 +47,7 @@ def test_question_application_does_not_invoke_graph_for_empty_text() -> None:
 
 def test_question_application_includes_source_details_for_citations() -> None:
     class CitedGraph:
-        def invoke(self, input: dict[str, str]):
+        def invoke(self, input: dict[str, str], config=None):
             return {
                 "answer": "A TLB caches translations. [F1]",
                 "citations": (
