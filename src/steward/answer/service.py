@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from collections.abc import Sequence
 
 from steward.answer.context import ContextBuilder
 from steward.answer.gateway import ModelGateway
@@ -42,6 +43,14 @@ class AnswerService:
         if not question.strip():
             raise ValueError("Question must not be empty.")
         hits = self._retriever.search(question, limit=limit)
+        return self.answer_from_hits(question, hits)
+
+    def answer_from_hits(
+        self, question: str, hits: Sequence[HybridSearchHit]
+    ) -> AnswerResult:
+        """Generate from already-retrieved evidence without searching again."""
+        if not question.strip():
+            raise ValueError("Question must not be empty.")
         if not hits:
             return AnswerResult(
                 question=question,

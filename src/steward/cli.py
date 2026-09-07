@@ -16,6 +16,7 @@ from steward.answer import (
     OpenAIModelGateway,
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
+from steward.graphs import build_retrieval_answer_graph
 from steward.logging import configure_logging
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
@@ -196,17 +197,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             source_repository,
             SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
         )
-        answer = AnswerService(
-            retriever=HybridRetriever(
-                LexicalSearchService(source_repository, fragment_repository), semantic_search
-            ),
+        retriever = HybridRetriever(
+            LexicalSearchService(source_repository, fragment_repository), semantic_search
+        )
+        answer_service = AnswerService(
+            retriever=retriever,
             context_builder=ContextBuilder(),
             model_gateway=model_gateway,
-        ).ask(arguments.question, limit=arguments.limit)
-        print(answer.text)
-        if answer.citations:
+        )
+        graph_result = build_retrieval_answer_graph(
+            retriever, answer_service, retrieval_limit=arguments.limit
+        ).invoke({"question": arguments.question})
+        print(graph_result["answer"])
+        citations = graph_result.get("citations", ())
+        if citations:
             print("\nSources:")
-            for citation in answer.citations:
+            for citation in citations:
                 heading = citation.heading or "Preamble"
                 print(
                     f"[{citation.key}] {citation.source_path}:"

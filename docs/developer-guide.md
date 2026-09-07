@@ -1,10 +1,11 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 5. Steward can register local Markdown files, extract structured
+through 6. Steward can register local Markdown files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
-generate grounded answers from retrieved fragments. It is not yet a LangGraph
-application or a Telegram bot.
+generate grounded answers from retrieved fragments. A minimal LangGraph
+workflow orchestrates those existing services. Steward is not yet a Telegram
+bot.
 
 ## Design principles
 
@@ -413,6 +414,63 @@ steward ask "What do I know about address translation?"
 gateway instead. The selected provider's model setting is optional until
 `steward ask` is used.
 
+## LangGraph orchestration
+
+Phase 6 introduces LangGraph without moving Steward's domain logic into the
+graph. `build_retrieval_answer_graph()` compiles this small workflow:
+
+```text
+START
+  ↓
+retrieve
+  ↓
+evidence found?
+  ├── yes → answer → END
+  └── no  → no_evidence → END
+```
+
+The graph's shared `RetrievalAnswerState` contains:
+
+```text
+question                the user request
+retrieved_fragment_ids  compact IDs of evidence found by retrieval
+answer                  generated or deterministic no-evidence answer
+citations               provenance for evidence sent to the model
+```
+
+It also carries `retrieved_hits` as transient in-memory working state. The
+answer node needs the small retrieved fragment objects to construct context
+without repeating the retrieval query. `retrieved_fragment_ids` remains the
+important compact representation for inspection and future persistence.
+
+The nodes are ordinary Python functions created inside the graph builder:
+
+```text
+retrieve
+  calls HybridRetriever.search(question, limit=...)
+  writes retrieved hits and fragment IDs into state
+
+has_evidence
+  conditional edge function
+  routes to answer or no_evidence based on the IDs
+
+answer
+  calls AnswerService.answer_from_hits(...)
+  writes answer text and citations into state
+
+no_evidence
+  calls the same service with no hits
+  writes the deterministic no-evidence answer
+```
+
+`AnswerService.answer_from_hits()` was extracted from `ask()` so the graph can
+perform retrieval exactly once. `ask()` still works as a non-graph convenience
+method: it retrieves, then delegates to `answer_from_hits()`.
+
+The CLI now composes and invokes this graph for `steward ask`. LangGraph owns
+only state transitions and routing; `HybridRetriever`, `ContextBuilder`, and
+the model gateways still own their existing responsibilities.
+
 ## Commands and data flow
 
 ```powershell
@@ -514,8 +572,10 @@ pytest
 - Model availability, free-tier quotas, rate limits, and retention terms are
   provider-controlled. Steward requires an explicit model name rather than
   assuming a particular Gemini model is available to every account.
-- There is no conversation memory, LangGraph workflow, access policy, or
-  external action support yet.
+- Graph state is in memory only. Restarting Steward loses it; Phase 8 adds
+  conversation state and later persistent checkpointers.
+- There is no conversation memory, access policy, or external action support
+  yet.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.
@@ -548,8 +608,8 @@ pytest
 
 ### Product progression
 
-1. Phase 6: use LangGraph to orchestrate a minimal `retrieve → answer` graph
-   while keeping all domain logic in the services documented here.
+1. Phase 7: add a Telegram adapter that normalizes transport events and calls
+   Steward's application boundary without embedding domain logic in handlers.
 2. Add structured answer evaluation cases that inspect retrieved evidence,
    generated citations, and unsupported-answer behavior.
 3. Add richer extractors for plain text and PDF before introducing broad

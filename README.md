@@ -4,10 +4,10 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 5 is complete. Steward can register and structurally extract Markdown,
-retrieve its fragments with lexical, semantic, or hybrid search, and generate
-grounded answers from explicitly retrieved evidence. It does not yet use
-LangGraph or connect to Telegram.
+Phase 6 is complete. Steward can register and structurally extract Markdown,
+retrieve its fragments, generate grounded answers from explicitly retrieved
+evidence, and orchestrate the retrieve-to-answer workflow with LangGraph. It
+does not yet connect to Telegram.
 
 ## Local setup
 
