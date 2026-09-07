@@ -40,7 +40,7 @@ from steward.organization import OrganizationApprovalService, OrganizationPropos
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
-from steward.calendar import CalendarService, authorize_google_calendar
+from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
 from steward.knowledge import KnowledgeService
 from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
@@ -128,6 +128,11 @@ def build_parser() -> argparse.ArgumentParser:
     calendar_get = subcommands.add_parser("calendar-get", help="Read one current Google Calendar event")
     calendar_get.add_argument("event_id")
     calendar_get.add_argument("--client-secrets", type=Path)
+    calendar_create = subcommands.add_parser(
+        "calendar-create-travel-event", help="Create an approved Google Calendar event from a travel record"
+    )
+    calendar_create.add_argument("record_id", type=int)
+    calendar_create.add_argument("--client-secrets", type=Path)
     return parser
 
 
@@ -409,6 +414,31 @@ def main(argv: Sequence[str] | None = None) -> None:
         else:
             event = calendar.get_event(arguments.event_id)
             print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
+        return
+
+    if arguments.command == "calendar-create-travel-event":
+        client_secrets = arguments.client_secrets
+        if client_secrets is None:
+            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+            if not configured:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before writing Calendar.")
+                return
+            client_secrets = Path(configured)
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        record = next((item for item in RecordService(database_path).list_travel_records() if item.id == arguments.record_id), None)
+        if record is None:
+            print(f"Travel record {arguments.record_id} was not found.")
+            return
+        calendar = CalendarService(
+            authorize_google_calendar(
+                client_secrets,
+                settings.data_dir / "config" / "google-calendar-token.json",
+                scopes=(GOOGLE_CALENDAR_EVENTS_SCOPE,),
+            )
+        )
+        event = CalendarWriteService(calendar, database_path, ActivityService(database_path)).create_travel_event(record)
+        print(f"Calendar event {event.id} created or already linked.")
         return
 
     if arguments.command in {"create-workspace", "workspaces", "link-source"}:

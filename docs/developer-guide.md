@@ -723,6 +723,21 @@ the tool agent, avoiding surprise browser authorization during ordinary local
 questions. Calendar tools are declared as `READ_ONLY` external tools in the
 same policy registry as local tools.
 
+## Calendar writes and idempotency
+
+Phase 24 adds the narrower `CalendarWriteService` rather than allowing callers
+to insert arbitrary Google API payloads. It accepts a persisted `TravelRecord`
+with departure and arrival times, constructs a titled event, and requests the
+Google Calendar event scope. A local `calendar_event_links` row maps
+`travel-record:ID` to Google's external event ID. A repeat request looks up
+that link and reads the existing event instead of inserting a duplicate.
+
+After an insert, `CALENDAR_EVENT_CREATED` is appended to the activity log. The
+filesystem/database transaction cannot span Google's API, so this is
+"exactly-once-ish": a completed local link is reliably idempotent, while a
+process crash after Google accepts an event but before the link is saved remains
+a recoverable operational edge case to test in Phase 32.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

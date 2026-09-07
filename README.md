@@ -16,6 +16,8 @@ Every model-callable tool now declares its risk and approval requirements;
 only read-only tools are currently exposed to the agent.
 Google Calendar can now be connected through local OAuth for current read-only
 event search and lookup.
+Travel records can be created as idempotent, audited Calendar events after
+explicitly invoking the write command.
 
 ## Local setup
 
@@ -97,6 +99,16 @@ Use Calendar reads in the tool agent only when requested explicitly:
 
 ```powershell
 steward agent --include-calendar "What is on my calendar when I arrive in Tokyo?"
+```
+
+## Create a Calendar event from a travel record
+
+This requests the broader Google Calendar event scope. Re-run authorization if
+your existing token was read-only. Repeating the command for the same record
+returns the existing linked event rather than creating a duplicate.
+
+```powershell
+steward calendar-create-travel-event 1
 ```
 
 ## Ask through Telegram

@@ -6,9 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
+import sqlite3
+
+from steward.activity import ActivityService, ActivityType
+from steward.records import TravelRecord
 
 
 GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+GOOGLE_CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 
 
 class CalendarApi(Protocol):
@@ -76,6 +81,27 @@ class CalendarService:
         ).execute()
         return self._event_from_api(item)
 
+    def create_event(
+        self, *, summary: str, start: datetime, end: datetime, description: str = ""
+    ) -> CalendarEvent:
+        """Create one explicitly approved timed event through Google's API."""
+        if not summary.strip():
+            raise ValueError("Calendar event summary must not be empty.")
+        self._validate_time(start, "start")
+        self._validate_time(end, "end")
+        if start >= end:
+            raise ValueError("Calendar event start must be before end.")
+        item = self._client.events().insert(
+            calendarId=self._calendar_id,
+            body={
+                "summary": summary.strip(),
+                "description": description,
+                "start": {"dateTime": start.isoformat()},
+                "end": {"dateTime": end.isoformat()},
+            },
+        ).execute()
+        return self._event_from_api(item)
+
     @staticmethod
     def _validate_time(value: datetime | None, name: str) -> None:
         if value is not None and value.tzinfo is None:
@@ -117,6 +143,8 @@ def authorize_google_calendar(
     credentials = None
     if token_path.is_file():
         credentials = Credentials.from_authorized_user_file(str(token_path), scopes)
+        if credentials and not credentials.has_scopes(scopes):
+            credentials = None
     if credentials and credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
     if not credentials or not credentials.valid:
@@ -125,3 +153,47 @@ def authorize_google_calendar(
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(credentials.to_json(), encoding="utf-8")
     return build("calendar", "v3", credentials=credentials)
+
+
+class CalendarWriteService:
+    """Create one Calendar event per travel record with duplicate protection."""
+
+    def __init__(self, calendar: CalendarService, database_path: Path, activity: ActivityService) -> None:
+        self._calendar = calendar
+        self._database_path = database_path
+        self._activity = activity
+
+    def create_travel_event(self, record: TravelRecord) -> CalendarEvent:
+        if record.id is None:
+            raise ValueError("Only persisted travel records can create calendar events.")
+        if record.departure_time is None or record.arrival_time is None:
+            raise ValueError("Travel records need departure and arrival times for Calendar.")
+        key = f"travel-record:{record.id}"
+        existing = self._existing(key)
+        if existing is not None:
+            return self._calendar.get_event(existing)
+        summary = f"Flight {record.flight_number}" if record.flight_number else "Flight"
+        description = "Steward travel record " + str(record.id)
+        if record.booking_reference:
+            description += f"\nBooking reference: {record.booking_reference}"
+        event = self._calendar.create_event(
+            summary=summary,
+            start=record.departure_time,
+            end=record.arrival_time,
+            description=description,
+        )
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "INSERT OR IGNORE INTO calendar_event_links (idempotency_key, travel_record_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
+                (key, record.id, event.id, datetime.now().astimezone().isoformat()),
+            )
+        self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event.id, details=key)
+        return event
+
+    def _existing(self, key: str) -> str | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT external_event_id FROM calendar_event_links WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+        return str(row[0]) if row else None

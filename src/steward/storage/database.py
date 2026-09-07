@@ -23,6 +23,7 @@ TRAVEL_RECORDS_SCHEMA_VERSION = 14
 TRAVEL_EVIDENCE_SCHEMA_VERSION = 15
 ORGANIZATION_PROPOSAL_DETAILS_SCHEMA_VERSION = 16
 ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION = 17
+CALENDAR_EVENT_LINKS_SCHEMA_VERSION = 18
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -150,6 +151,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """
         ALTER TABLE organization_proposals
         ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0
+        """,
+    ),
+    (
+        CALENDAR_EVENT_LINKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE calendar_event_links (
+            idempotency_key TEXT PRIMARY KEY,
+            travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
+            external_event_id TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
         """,
     ),
 )

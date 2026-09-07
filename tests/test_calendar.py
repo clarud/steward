@@ -2,7 +2,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from steward.calendar import CalendarService
+from steward.activity import ActivityService, ActivityType
+from steward.calendar import CalendarService, CalendarWriteService
+from steward.records import RecordService, TravelRecord
+from steward.sources import Source, SourceRepository, SourceType
+from steward.storage import initialize_database
 from steward.tools import CalendarReadToolService, build_calendar_read_tools
 
 
@@ -26,6 +30,10 @@ class FakeEvents:
     def get(self, **kwargs):
         self.get_kwargs = kwargs
         return FakeRequest({"id": kwargs["eventId"], "start": {"date": "2026-10-01"}, "end": {"date": "2026-10-02"}})
+
+    def insert(self, **kwargs):
+        self.insert_kwargs = kwargs
+        return FakeRequest({"id": "created-event", "summary": kwargs["body"]["summary"], "start": kwargs["body"]["start"], "end": kwargs["body"]["end"]})
 
 
 class FakeCalendarClient:
@@ -81,3 +89,22 @@ def test_calendar_agent_tools_are_read_only_adapters() -> None:
 
     assert '"id": "event-1"' in result
     assert [tool.name for tool in build_calendar_read_tools(service)] == ["calendar_search", "calendar_get_event"]
+
+
+def test_calendar_write_is_idempotent_and_audited(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, now, now, now))
+    record = RecordService(database).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", datetime(2026, 10, 1, 9, tzinfo=UTC), datetime(2026, 10, 1, 17, tzinfo=UTC), "ABC")
+    )
+    client = FakeCalendarClient()
+    service = CalendarWriteService(CalendarService(client), database, ActivityService(database))
+
+    first = service.create_travel_event(record)
+    second = service.create_travel_event(record)
+
+    assert first.id == "created-event"
+    assert second.id == "created-event"
+    assert client.events_api.insert_kwargs["body"]["summary"] == "Flight SQ638"
+    assert [event.event_type for event in ActivityService(database).list_recent()] == [ActivityType.CALENDAR_EVENT_CREATED]
