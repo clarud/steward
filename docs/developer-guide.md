@@ -835,6 +835,17 @@ and before the SQLite link is repaired by retrying the same command, without a
 second Calendar event. Network/OAuth failures still leave no local success
 record and should be retried only after the external condition is resolved.
 
+## Observability
+
+Phase 33 adds the `steward.trace` structured local logger. Retrieval graphs
+emit preparation, retrieval fragment IDs/counts, conditional routes, answer
+citation counts, and no-evidence paths. The custom tool graph additionally
+records model-call counts, routing decisions, and requested tool names. Trace
+events deliberately exclude raw source text, prompts, model output, API keys,
+and token values. With `STEWARD_LOG_LEVEL=INFO`, the JSON payloads remain
+visible in normal local process logs and can be searched without relying on an
+external agent-observability platform.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from steward.answer import AnswerCitation, AnswerService
 from steward.answer.service import Retriever
 from steward.retrieval import HybridSearchHit
+from steward.observability import trace
 
 
 class RetrievalAnswerState(TypedDict):
@@ -54,6 +55,7 @@ def build_retrieval_answer_graph(
             if previous and referential
             else question
         )
+        trace("graph.prepare", question_characters=len(question), resolved_reference=referential)
         return {
             "resolved_question": resolved,
             "referents": {"that": previous} if previous and referential else {},
@@ -69,10 +71,13 @@ def build_retrieval_answer_graph(
             for hit in hits
             if hit.fragment.id is not None
         ]
+        trace("graph.retrieval", result_count=len(fragment_ids), fragment_ids=fragment_ids)
         return {"retrieved_fragment_ids": fragment_ids}
 
     def has_evidence(state: RetrievalAnswerState) -> Literal["answer", "no_evidence"]:
-        return "answer" if state.get("retrieved_fragment_ids") else "no_evidence"
+        route = "answer" if state.get("retrieved_fragment_ids") else "no_evidence"
+        trace("graph.route", route=route)
+        return route
 
     def answer(state: RetrievalAnswerState) -> dict[str, object]:
         question = state.get("resolved_question", state["question"])
@@ -82,6 +87,7 @@ def build_retrieval_answer_graph(
         result = answer_service.answer_from_hits(
             question, retriever.search(question, limit=retrieval_limit)
         )
+        trace("graph.answer", citation_count=len(result.citations))
         return {
             "answer": result.text,
             "citations": result.citations,
@@ -91,6 +97,7 @@ def build_retrieval_answer_graph(
 
     def no_evidence(state: RetrievalAnswerState) -> dict[str, object]:
         result = answer_service.answer_from_hits(state["question"], ())
+        trace("graph.no_evidence")
         return {
             "answer": result.text,
             "citations": result.citations,

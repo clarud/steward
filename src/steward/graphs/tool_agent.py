@@ -12,6 +12,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from steward.tools.policy import ToolPolicy
+from steward.observability import trace
 
 
 class ToolCallingModel(Protocol):
@@ -41,15 +42,19 @@ def build_tool_agent_graph(
     bound_model = model.bind_tools(tools)
 
     def call_model(state: ToolAgentState) -> dict[str, list[BaseMessage]]:
+        trace("tool_agent.model_call", message_count=len(state["messages"]))
         return {"messages": [bound_model.invoke(state["messages"])]}
 
     def route_after_model(state: ToolAgentState) -> Literal["tools", "end"]:
         latest = state["messages"][-1]
-        return "tools" if isinstance(latest, AIMessage) and latest.tool_calls else "end"
+        route = "tools" if isinstance(latest, AIMessage) and latest.tool_calls else "end"
+        trace("tool_agent.route", route=route)
+        return route
 
     builder = StateGraph(ToolAgentState)
     builder.add_node("model", call_model)
     def enforce_policy(request, execute):
+        trace("tool_agent.tool_request", tool_name=request.tool_call["name"])
         if tool_policy is None:
             return execute(request)
         authorization = tool_policy.authorize(request.tool_call["name"])
