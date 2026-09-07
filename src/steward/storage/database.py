@@ -85,38 +85,12 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """,
     ),
     (
-        TRAVEL_EVIDENCE_SCHEMA_VERSION,
-        """CREATE TABLE travel_record_evidence (travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
-            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
-            PRIMARY KEY (travel_record_id, field_name))""",
-    ),
-    (
-        TRAVEL_RECORDS_SCHEMA_VERSION,
-        """CREATE TABLE travel_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-            flight_number TEXT, departure TEXT, arrival TEXT, departure_time TEXT, arrival_time TEXT, booking_reference TEXT)""",
-    ),
-    (
-        CLAIMS_SCHEMA_VERSION,
-        """CREATE TABLE claims (id INTEGER PRIMARY KEY, concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE, text TEXT NOT NULL, created_at TEXT NOT NULL)""",
-    ),
-    (
-        CLAIM_EVIDENCE_SCHEMA_VERSION,
-        """CREATE TABLE claim_evidence (claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE, PRIMARY KEY (claim_id, fragment_id))""",
-    ),
-    (
-        KNOWLEDGE_SCHEMA_VERSION,
-        """CREATE TABLE concepts (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)""",
-    ),
-    (
-        CONCEPT_ALIAS_SCHEMA_VERSION,
+        WORKSPACE_SOURCES_SCHEMA_VERSION,
         """
-        CREATE TABLE concept_aliases (concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
-            alias TEXT NOT NULL UNIQUE, PRIMARY KEY (concept_id, alias))""",
-    ),
-    (
-        ACTIVITY_SCHEMA_VERSION,
-        """CREATE TABLE activity_events (id INTEGER PRIMARY KEY, event_type TEXT NOT NULL,
-            object_id TEXT, details TEXT NOT NULL, occurred_at TEXT NOT NULL)""",
+        CREATE TABLE workspace_sources (workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            PRIMARY KEY (workspace_id, source_id))
+        """,
     ),
     (
         ORGANIZATION_SCHEMA_VERSION,
@@ -129,12 +103,38 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """,
     ),
     (
-        WORKSPACE_SOURCES_SCHEMA_VERSION,
+        ACTIVITY_SCHEMA_VERSION,
+        """CREATE TABLE activity_events (id INTEGER PRIMARY KEY, event_type TEXT NOT NULL,
+            object_id TEXT, details TEXT NOT NULL, occurred_at TEXT NOT NULL)""",
+    ),
+    (
+        KNOWLEDGE_SCHEMA_VERSION,
+        """CREATE TABLE concepts (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)""",
+    ),
+    (
+        CONCEPT_ALIAS_SCHEMA_VERSION,
         """
-        CREATE TABLE workspace_sources (workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-            PRIMARY KEY (workspace_id, source_id))
-        """,
+        CREATE TABLE concept_aliases (concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+            alias TEXT NOT NULL UNIQUE, PRIMARY KEY (concept_id, alias))""",
+    ),
+    (
+        CLAIMS_SCHEMA_VERSION,
+        """CREATE TABLE claims (id INTEGER PRIMARY KEY, concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE, text TEXT NOT NULL, created_at TEXT NOT NULL)""",
+    ),
+    (
+        CLAIM_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE claim_evidence (claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE, PRIMARY KEY (claim_id, fragment_id))""",
+    ),
+    (
+        TRAVEL_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE travel_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            flight_number TEXT, departure TEXT, arrival TEXT, departure_time TEXT, arrival_time TEXT, booking_reference TEXT)""",
+    ),
+    (
+        TRAVEL_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE travel_record_evidence (travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (travel_record_id, field_name))""",
     ),
 )
 

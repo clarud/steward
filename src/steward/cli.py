@@ -95,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("status", choices=("accepted", "rejected"))
     travel_parser = subcommands.add_parser("propose-travel-record", help="Interpret source fragments as a travel record")
     travel_parser.add_argument("source_id", type=int)
+    create_travel_parser = subcommands.add_parser(
+        "create-travel-record", help="Persist an evidence-backed travel record proposed from a source"
+    )
+    create_travel_parser.add_argument("source_id", type=int)
+    subcommands.add_parser("travel-records", help="List saved travel records")
     return parser
 
 
@@ -370,6 +375,25 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         record = proposal.record
         print(f"flight={record.flight_number or ''}\tdeparture={record.departure or ''}\tarrival={record.arrival or ''}\tevidence={proposal.field_evidence}")
+        return
+
+    if arguments.command == "create-travel-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        records = RecordService(database_path)
+        proposal = records.propose_travel_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = records.create_from_proposal(proposal)
+        print(f"Created travel record {record.id} from source {record.source_id}.")
+        return
+
+    if arguments.command == "travel-records":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        for record in RecordService(database_path).list_travel_records():
+            print(f"{record.id}\t{record.flight_number or ''}\t{record.departure or ''}\t{record.arrival or ''}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

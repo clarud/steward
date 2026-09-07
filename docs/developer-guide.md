@@ -1,7 +1,7 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 7. Steward can register local Markdown files, extract structured
+through 20. Steward can register local Markdown files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
 generate grounded answers from retrieved fragments. A minimal LangGraph
 workflow orchestrates those existing services. A Telegram adapter can deliver
@@ -621,10 +621,45 @@ Run it with:
 pytest
 ```
 
+## Capture, organization, knowledge, and records
+
+Phases 9–20 add the first durable personal-information loop while preserving a
+strict difference between originals and derived data.
+
+`InboxCaptureService` copies a saved Telegram message or attachment into the
+Inbox, hashes and registers it as a `Source`, chooses a type-specific extractor,
+persists `SourceFragment` rows, and appends a `SOURCE_CAPTURED` activity event.
+The original file is canonical; fragments and embeddings can be rebuilt.
+
+`IntentResolver` routes deterministic signals first: a `/save` command or an
+attachment means capture, while `/delete`, `/organize`, and `/inspect` map to
+their corresponding intents. `WorkspaceService` creates explicit workspaces
+and `WorkspaceRepository` stores the many-to-many `workspace_sources` links.
+`OrganizationService` only creates a proposal. Accepting it through the CLI
+uses `FileMutationService` to move the registered file, update its stored path,
+and write an activity event; rejection leaves the source unchanged.
+
+The first LangGraph approval graph demonstrates a durable pause with
+`interrupt()` and later resume. It records an accepted or rejected proposal.
+The CLI is currently the actual file-mutation review path; wiring that paused
+conversation into Telegram is a later transport step.
+
+The knowledge model starts deliberately small: concepts have aliases, claims
+point to supporting source fragments, and enrichment proposals classify new
+evidence as confirm, extend, refine, qualify, or contradict. These are
+evidence-backed proposals, not automatic truth changes.
+
+`RecordService` adds `TravelRecord` as the first concrete record. It proposes
+flight fields from source fragments and tracks the fragment that supports each
+extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
+`steward create-travel-record SOURCE_ID` is the explicit persistence step, and
+both the record and all of its evidence rows are inserted in one transaction.
+
 ## Known limitations
 
-- Only Markdown is supported as a source. PDFs, DOCX, HTML, plain text,
-  images, Telegram attachments, and other source types are future work.
+- Capture currently supports Markdown, plain text, and PDFs with native text.
+  DOCX, HTML, images, OCR for scanned PDFs, and large-file relay storage are
+  future work.
 - Heading-based fragments are useful but not universally optimal. Very long
   sections can create overly large fragments; very short headings can create
   too little context.
@@ -650,13 +685,16 @@ pytest
 - Model availability, free-tier quotas, rate limits, and retention terms are
   provider-controlled. Steward requires an explicit model name rather than
   assuming a particular Gemini model is available to every account.
-- Graph state is in memory only. Restarting Steward loses it; Phase 8 adds
-  conversation state and later persistent checkpointers.
-- Telegram supports only non-command text questions. It has no allowlist,
-  conversation memory, message deduplication, attachment handling, retry
-  policy, or persistent update offset beyond the library's live polling state.
-- There is no conversation memory, access policy, or external action support
-  yet.
+- Telegram conversation state uses a local SQLite LangGraph checkpointer, so a
+  restarted process can continue a chat thread. There is still no user
+  allowlist, delivery retry policy, or durable Telegram update deduplication.
+- Telegram captures use `/save` and the normal Bot API download ceiling. There
+  is no self-hosted Bot API server or cloud-drive relay for larger files.
+- Organization matching is intentionally simple and user-reviewed. It is not
+  yet LLM-assisted, nor is a paused organization approval resumed through
+  Telegram.
+- Travel extraction recognizes a small, label-oriented itinerary shape. It is
+  not a general airline-document parser and does not yet create calendar events.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.

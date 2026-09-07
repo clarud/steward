@@ -4,11 +4,12 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 8 is complete. Steward can register and structurally extract Markdown,
-retrieve its fragments, generate grounded answers from explicitly retrieved
-evidence, and orchestrate the retrieve-to-answer workflow with LangGraph. It
-can also answer isolated text questions sent to a local Telegram bot through
-long polling, retaining short-term conversation context per Telegram chat.
+Phases 0–20 are implemented as a local foundation. Steward can capture text,
+Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
+fragments; create workspaces and organization proposals; retain activity,
+concept, claim, and travel-record provenance; and answer Telegram questions
+with persistent per-chat LangGraph state. The human approval and external
+action layers are still intentionally narrow.
 
 ## Local setup
 
@@ -59,8 +60,9 @@ steward ask "What do I know about address translation?"
 ## Ask through Telegram
 
 Create a bot with BotFather, put its token in your private `.env`, and start
-the local polling process. This phase supports text questions only; it does not
-yet capture Telegram messages or attachments as durable sources.
+the local polling process. Send `/save` as a message to capture its text, or
+use `/save` as the caption on a Markdown, text, or PDF attachment. Captured
+material is preserved in the configured Inbox before extraction and indexing.
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=your-bot-token
