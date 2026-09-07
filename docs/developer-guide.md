@@ -665,6 +665,29 @@ both the record and all of its evidence rows are inserted in one transaction.
 `SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
 filesystem changes.
 
+## Read-only tool agent
+
+Phase 21 adds the first actual tool-choosing loop without using a generic
+prebuilt agent. `ReadOnlyToolService` adapts ordinary services into six
+JSON-returning tools: `search_sources`, `read_source`, `search_knowledge`,
+`search_records`, `search_workspaces`, and `search_activity`. They have no
+mutation capability.
+
+`build_tool_agent_graph()` defines the LangGraph sequence explicitly:
+
+```text
+START → model → tool calls requested?
+                    ├─ no  → END
+                    └─ yes → ToolNode → model
+```
+
+The `messages` state uses LangGraph's `add_messages` reducer, so each model
+message and `ToolMessage` is appended rather than replacing prior context.
+`GeminiToolCallingModel` translates Gemini function-call responses into
+LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
+then returns its result to the next model turn. `steward agent QUESTION` uses
+this graph with a persistent thread ID and an eight-step recursion cap.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

@@ -21,6 +21,7 @@ from steward.answer import (
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_retrieval_answer_graph
+from steward.graphs import GeminiToolCallingModel, build_tool_agent_graph
 from steward.logging import configure_logging
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
@@ -38,7 +39,10 @@ from steward.organization import OrganizationApprovalService, OrganizationPropos
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
+from steward.knowledge import KnowledgeService
+from steward.tools import ReadOnlyToolService, build_read_only_tools
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,6 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask_parser.add_argument("question", help="Question to answer from local evidence")
     ask_parser.add_argument("--limit", type=int, default=5, help="Maximum evidence fragments")
+    agent_parser = subcommands.add_parser(
+        "agent", help="Answer using Steward's read-only tool-calling loop"
+    )
+    agent_parser.add_argument("question", help="Question the agent may answer with local read-only tools")
+    agent_parser.add_argument("--thread-id", default="cli:agent", help="Persistent LangGraph thread ID")
     telegram_parser = subcommands.add_parser(
         "telegram", help="Run the local Telegram adapter with long polling"
     )
@@ -276,6 +285,52 @@ def main(argv: Sequence[str] | None = None) -> None:
                     f"[{citation.key}] {citation.source_path}:"
                     f"{citation.location} [{heading}]"
                 )
+        return
+
+    if arguments.command == "agent":
+        if settings.model_provider != "gemini":
+            print("`steward agent` currently supports the configured Gemini provider only.")
+            return
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key or not settings.gemini_model:
+            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.")
+            return
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        sources = SourceRepository(database_path)
+        fragments = SourceFragmentRepository(database_path)
+        tool_service = ReadOnlyToolService(
+            sources,
+            fragments,
+            LexicalSearchService(sources, fragments),
+            KnowledgeService(database_path),
+            RecordService(database_path),
+            WorkspaceRepository(database_path),
+            ActivityService(database_path),
+        )
+        checkpoint_connection = sqlite3.connect(
+            settings.data_dir / "checkpoints.db", check_same_thread=False
+        )
+        checkpointer = SqliteSaver(checkpoint_connection)
+        checkpointer.setup()
+        graph = build_tool_agent_graph(
+            GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model),
+            build_read_only_tools(tool_service),
+            checkpointer=checkpointer,
+        )
+        result = graph.invoke(
+            {
+                "messages": [
+                    SystemMessage(
+                        "You are Steward. Use only the supplied read-only tools when local information is needed. "
+                        "Do not claim a result that a tool did not provide."
+                    ),
+                    HumanMessage(arguments.question),
+                ]
+            },
+            {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 8},
+        )
+        print(str(result["messages"][-1].content))
         return
 
     if arguments.command == "telegram":

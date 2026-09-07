@@ -4,12 +4,14 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–20 are implemented as a local foundation. Steward can capture text,
+Phases 0–21 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
 with persistent per-chat LangGraph state. The human approval and external
-action layers are still intentionally narrow.
+action layers are still intentionally narrow. It can now also run an explicit
+Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
+workspaces, and activity.
 
 ## Local setup
 
@@ -55,6 +57,23 @@ uses only retrieved fragments and asks the API not to store the interaction.
 $env:GEMINI_API_KEY = "your-api-key"
 $env:STEWARD_GEMINI_MODEL = "your-selected-model"
 steward ask "What do I know about address translation?"
+```
+
+## Ask with read-only tools
+
+`steward agent` is Steward's first tool-calling loop. Gemini can decide whether
+to search or read local Steward data, LangGraph executes only the six supplied
+read-only tools, then Gemini receives the tool results before answering.
+
+```powershell
+steward agent "What did I save about address translation?"
+```
+
+Use `--thread-id` to continue a tool-agent conversation through the local
+LangGraph checkpoint store:
+
+```powershell
+steward agent --thread-id research:tlb "What sources discuss TLBs?"
 ```
 
 ## Ask through Telegram

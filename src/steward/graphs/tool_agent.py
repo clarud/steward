@@ -1,0 +1,52 @@
+"""The first explicit model → tool → model LangGraph loop."""
+
+from __future__ import annotations
+
+from typing import Annotated, Literal, Protocol, TypedDict
+
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.tools import BaseTool
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
+
+
+class ToolCallingModel(Protocol):
+    """The small LangChain-compatible model surface required by this graph."""
+
+    def bind_tools(self, tools: list[BaseTool]) -> "ToolCallingModel": ...
+
+    def invoke(self, messages: list[BaseMessage]) -> AIMessage: ...
+
+
+class ToolAgentState(TypedDict):
+    """Append-only conversational state for a custom ToolNode loop."""
+
+    messages: Annotated[list[BaseMessage], add_messages]
+
+
+def build_tool_agent_graph(
+    model: ToolCallingModel,
+    tools: list[BaseTool],
+    *,
+    checkpointer: object | None = None,
+):
+    """Compile a custom read-only tool loop without a prebuilt agent wrapper."""
+    if not tools:
+        raise ValueError("A tool agent requires at least one tool.")
+    bound_model = model.bind_tools(tools)
+
+    def call_model(state: ToolAgentState) -> dict[str, list[BaseMessage]]:
+        return {"messages": [bound_model.invoke(state["messages"])]}
+
+    def route_after_model(state: ToolAgentState) -> Literal["tools", "end"]:
+        latest = state["messages"][-1]
+        return "tools" if isinstance(latest, AIMessage) and latest.tool_calls else "end"
+
+    builder = StateGraph(ToolAgentState)
+    builder.add_node("model", call_model)
+    builder.add_node("tools", ToolNode(tools))
+    builder.add_edge(START, "model")
+    builder.add_conditional_edges("model", route_after_model, {"tools": "tools", "end": END})
+    builder.add_edge("tools", "model")
+    return builder.compile(checkpointer=checkpointer)

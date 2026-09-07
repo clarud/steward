@@ -79,6 +79,19 @@ def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> 
     )
 
 
+def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
+
+    main(["agent", "What do I know about TLBs?"])
+
+    assert capsys.readouterr().out == (
+        "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.\n"
+    )
+
+
 def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
     monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
