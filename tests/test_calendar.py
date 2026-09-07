@@ -25,6 +25,8 @@ class FakeEvents:
 
     def list(self, **kwargs):
         self.list_kwargs = kwargs
+        if "privateExtendedProperty" in kwargs:
+            return FakeRequest({"items": []})
         return FakeRequest({"items": [{"id": "event-1", "summary": "Flight", "start": {"dateTime": "2026-10-01T09:00:00+08:00"}, "end": {"dateTime": "2026-10-01T17:00:00+09:00"}, "htmlLink": "https://calendar.example/event-1"}]})
 
     def get(self, **kwargs):
@@ -107,4 +109,31 @@ def test_calendar_write_is_idempotent_and_audited(tmp_path) -> None:
     assert first.id == "created-event"
     assert second.id == "created-event"
     assert client.events_api.insert_kwargs["body"]["summary"] == "Flight SQ638"
+    assert client.events_api.insert_kwargs["body"]["extendedProperties"]["private"] == {
+        "steward_idempotency_key": "travel-record:1"
+    }
+    assert [event.event_type for event in ActivityService(database).list_recent()] == [ActivityType.CALENDAR_EVENT_CREATED]
+
+
+def test_calendar_write_recovers_remote_event_after_interrupted_local_link(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, now, now, now))
+    record = RecordService(database).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", datetime(2026, 10, 1, 9, tzinfo=UTC), datetime(2026, 10, 1, 17, tzinfo=UTC), "ABC")
+    )
+
+    class RecoveredEvents(FakeEvents):
+        def list(self, **kwargs):
+            self.list_kwargs = kwargs
+            if "privateExtendedProperty" in kwargs:
+                return FakeRequest({"items": [{"id": "already-created", "summary": "Flight SQ638", "start": {"dateTime": "2026-10-01T09:00:00+00:00"}, "end": {"dateTime": "2026-10-01T17:00:00+00:00"}}]})
+            return super().list(**kwargs)
+
+    client = FakeCalendarClient(); client.events_api = RecoveredEvents()
+    event = CalendarWriteService(CalendarService(client), database, ActivityService(database)).create_travel_event(record)
+
+    assert event.id == "already-created"
+    assert not hasattr(client.events_api, "insert_kwargs")
+    assert client.events_api.list_kwargs["privateExtendedProperty"] == "steward_idempotency_key=travel-record:1"
     assert [event.event_type for event in ActivityService(database).list_recent()] == [ActivityType.CALENDAR_EVENT_CREATED]

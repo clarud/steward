@@ -82,7 +82,13 @@ class CalendarService:
         return self._event_from_api(item)
 
     def create_event(
-        self, *, summary: str, start: datetime, end: datetime, description: str = ""
+        self,
+        *,
+        summary: str,
+        start: datetime,
+        end: datetime,
+        description: str = "",
+        idempotency_key: str | None = None,
     ) -> CalendarEvent:
         """Create one explicitly approved timed event through Google's API."""
         if not summary.strip():
@@ -91,16 +97,35 @@ class CalendarService:
         self._validate_time(end, "end")
         if start >= end:
             raise ValueError("Calendar event start must be before end.")
+        body: dict[str, object] = {
+            "summary": summary.strip(),
+            "description": description,
+            "start": {"dateTime": start.isoformat()},
+            "end": {"dateTime": end.isoformat()},
+        }
+        if idempotency_key:
+            body["extendedProperties"] = {
+                "private": {"steward_idempotency_key": idempotency_key}
+            }
         item = self._client.events().insert(
             calendarId=self._calendar_id,
-            body={
-                "summary": summary.strip(),
-                "description": description,
-                "start": {"dateTime": start.isoformat()},
-                "end": {"dateTime": end.isoformat()},
-            },
+            body=body,
         ).execute()
         return self._event_from_api(item)
+
+    def find_by_idempotency_key(self, key: str) -> CalendarEvent | None:
+        """Find a prior Steward-created event after an interrupted local write."""
+
+        if not key.strip():
+            raise ValueError("Calendar idempotency key must not be empty.")
+        result = self._client.events().list(
+            calendarId=self._calendar_id,
+            singleEvents=True,
+            maxResults=1,
+            privateExtendedProperty=f"steward_idempotency_key={key}",
+        ).execute()
+        items = result.get("items", [])
+        return self._event_from_api(items[0]) if items else None
 
     @staticmethod
     def _validate_time(value: datetime | None, name: str) -> None:
@@ -172,6 +197,10 @@ class CalendarWriteService:
         existing = self._existing(key)
         if existing is not None:
             return self._calendar.get_event(existing)
+        recovered = self._calendar.find_by_idempotency_key(key)
+        if recovered is not None:
+            self._link(key, record.id, recovered.id)
+            return recovered
         summary = f"Flight {record.flight_number}" if record.flight_number else "Flight"
         description = "Steward travel record " + str(record.id)
         if record.booking_reference:
@@ -181,15 +210,21 @@ class CalendarWriteService:
             start=record.departure_time,
             end=record.arrival_time,
             description=description,
+            idempotency_key=key,
         )
+        self._link(key, record.id, event.id)
+
+        return event
+
+    def _link(self, key: str, record_id: int, event_id: str) -> None:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute(
+            cursor = connection.execute(
                 "INSERT OR IGNORE INTO calendar_event_links (idempotency_key, travel_record_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
-                (key, record.id, event.id, datetime.now().astimezone().isoformat()),
+                (key, record_id, event_id, datetime.now().astimezone().isoformat()),
             )
-        self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event.id, details=key)
-        return event
+        if cursor.rowcount:
+            self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event_id, details=key)
 
     def _existing(self, key: str) -> str | None:
         with sqlite3.connect(self._database_path) as connection:

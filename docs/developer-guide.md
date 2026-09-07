@@ -813,6 +813,28 @@ generic network tool. The Phase 21 Gemini tool agent stays cloud-only for now,
 so its source tools continue to filter non-external content rather than trying
 to route individual tool calls to a different model.
 
+## Reliability engineering
+
+Phase 32 turns failure cases into explicit recovery rules rather than silent
+assumptions. Capture is idempotent by the Telegram event/source hash path;
+repeated scans and watcher notifications hash before replacing derived data;
+missing or manually moved files become `MISSING` and are repaired by the next
+scan. Bad document extraction or a model/provider failure stops that operation
+without replacing the original Source, so the original can be retried after
+fixing the parser or credentials. SQLite's short-lived locks surface as an
+operation failure; retry the command rather than retrying unboundedly inside a
+transaction. A corrupt semantic index is rebuildable: run `steward index`.
+
+Calendar is the special cross-system case. A local database transaction cannot
+atomically include Google's API. `CalendarWriteService` first checks its local
+link, then queries Google for the deterministic private extended property
+`steward_idempotency_key=travel-record:ID`; only if neither exists does it
+insert an event. It saves the local link and audit activity after either a
+recovered or newly created event. Therefore, a crash after remote acceptance
+and before the SQLite link is repaired by retrying the same command, without a
+second Calendar event. Network/OAuth failures still leave no local success
+record and should be retried only after the external condition is resolved.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

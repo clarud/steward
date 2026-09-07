@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–30 are implemented as a local foundation. Steward can capture text,
+Phases 0–32 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -24,6 +24,10 @@ without creating or moving anything automatically.
 It can propose evidence-backed connections between concepts without turning
 co-occurrence into permanent knowledge automatically.
 Manual Markdown edits can be watched and incrementally refreshed locally.
+Model privacy now routes restricted evidence to a configured local Ollama model
+or refuses it safely when none is available. Calendar creation reconciles a
+prior remote event by its Steward idempotency key after an interrupted local
+write, avoiding a duplicate event on retry.
 
 ## Local setup
 
