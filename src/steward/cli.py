@@ -36,6 +36,7 @@ from steward.telegram import run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.organization import OrganizationProposalRepository, OrganizationService
 from steward.activity import ActivityService, ActivityType
+from steward.actions import FileMutationService
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
@@ -323,6 +324,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
             print(f"Created proposal {proposal_id}: {proposal.rationale}")
         elif arguments.command == "review-proposal":
+            proposal = proposals.get(arguments.proposal_id)
+            if proposal is None:
+                print(f"Proposal {arguments.proposal_id} was not found.")
+                return
+            if arguments.status == "accepted" and proposal.suggested_path is not None:
+                source = SourceRepository(database_path).get_by_id(proposal.source_id)
+                if source is None:
+                    print(f"Source {proposal.source_id} was not found.")
+                    return
+                FileMutationService(
+                    SourceRepository(database_path), ActivityService(database_path)
+                ).move_source(source.path, proposal.suggested_path)
             proposals.set_status(arguments.proposal_id, arguments.status)
             activity_type = (
                 ActivityType.ORGANIZATION_ACCEPTED

@@ -22,7 +22,8 @@ class OrganizationService:
         matches = [w for w in workspaces if w.name.casefold() in source.path.name.casefold()]
         if matches:
             workspace = matches[0]
-            return OrganizationProposal(None, source.id or 0, workspace.id, Path("projects") / workspace.name / source.path.name,
+            vault_root = source.path.parent.parent if source.path.parent.name == "inbox" else source.path.parent
+            return OrganizationProposal(None, source.id or 0, workspace.id, vault_root / "projects" / workspace.name / source.path.name,
                 f"The source filename matches workspace '{workspace.name}'.", 1.0)
         return OrganizationProposal(None, source.id or 0, None, None, "No reliable workspace match; keep this source in Inbox.", 0.0)
 
@@ -43,3 +44,5 @@ class OrganizationProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute("SELECT id,source_id,workspace_id,suggested_path,rationale,score,status FROM organization_proposals ORDER BY id").fetchall()
         return [OrganizationProposal(int(r[0]), int(r[1]), int(r[2]) if r[2] is not None else None, Path(str(r[3])) if r[3] else None, str(r[4]), float(r[5]), str(r[6])) for r in rows]
+    def get(self, proposal_id: int) -> OrganizationProposal | None:
+        return next((proposal for proposal in self.list_all() if proposal.id == proposal_id), None)
