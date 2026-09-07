@@ -768,6 +768,16 @@ statement of where the apparent analogy may fail. Nothing is persisted as a
 relationship yet; user feedback such as useful, obvious, stretch, or wrong is
 the later learning loop.
 
+## File watching
+
+Phase 28 adds `FileWatchService` plus `steward watch ROOT`. `watchdog` supplies
+filesystem notifications, but notifications are only hints: each changed path
+is debounced and then `SourceService.refresh_markdown_path()` hashes it before
+declaring a change. New files are registered and extracted, unchanged hashes do
+nothing, changed files replace their derived fragments (and semantic vectors
+when configured), and deleted registered files become `MISSING`. This avoids
+relying on noisy filesystem events as the truth source.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

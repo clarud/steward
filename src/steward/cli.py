@@ -44,6 +44,7 @@ from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALEN
 from steward.research import GeminiGoogleSearchProvider, ResearchService
 from steward.workspace_detection import WorkspaceDetectionService
 from steward.knowledge_connector import KnowledgeConnector
+from steward.file_watching import run_file_watcher
 from steward.knowledge import KnowledgeService
 from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
@@ -58,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
     scan_parser = subcommands.add_parser("scan", help="Register Markdown files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files")
+    watch_parser.add_argument("root", type=Path)
     index_parser = subcommands.add_parser(
         "index", help="Scan Markdown files and build their local semantic index"
     )
@@ -219,6 +222,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        return
+
+    if arguments.command == "watch":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
+        print("Watching for Markdown changes. Press Ctrl+C to stop.")
+        run_file_watcher(arguments.root, service)
         return
 
     if arguments.command == "index":

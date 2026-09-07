@@ -8,6 +8,7 @@ python-dotenv>=1.0
 python-telegram-bot>=22.0
 pypdf>=5.0
 sentence-transformers>=5.0
+watchdog>=6.0
 
 [dev]
 pytest>=8.0

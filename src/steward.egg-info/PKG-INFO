@@ -14,6 +14,7 @@ Requires-Dist: python-dotenv>=1.0
 Requires-Dist: python-telegram-bot>=22.0
 Requires-Dist: pypdf>=5.0
 Requires-Dist: sentence-transformers>=5.0
+Requires-Dist: watchdog>=6.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: PyYAML>=6.0; extra == "dev"
@@ -24,7 +25,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–22 are implemented as a local foundation. Steward can capture text,
+Phases 0–27 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -34,6 +35,15 @@ Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
 workspaces, and activity.
 Every model-callable tool now declares its risk and approval requirements;
 only read-only tools are currently exposed to the agent.
+Google Calendar can now be connected through local OAuth for current read-only
+event search and lookup.
+Travel records can be created as idempotent, audited Calendar events after
+explicitly invoking the write command.
+External research is available as an explicitly invoked, non-retaining flow.
+It can also review Inbox filenames and propose possible new workspace themes
+without creating or moving anything automatically.
+It can propose evidence-backed connections between concepts without turning
+co-occurrence into permanent knowledge automatically.
 
 ## Local setup
 
@@ -96,6 +106,63 @@ LangGraph checkpoint store:
 
 ```powershell
 steward agent --thread-id research:tlb "What sources discuss TLBs?"
+```
+
+## Connect Google Calendar for reads
+
+Create a Google OAuth **desktop application** client, download its client JSON
+outside the repository, then authorize it locally. The resulting refreshable
+token is stored under `.steward/config/`, not in Git.
+
+```powershell
+steward calendar-authorize C:\private\google-oauth-client.json
+$env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
+steward calendar-search "Tokyo"
+steward calendar-get GOOGLE_EVENT_ID
+```
+
+Use Calendar reads in the tool agent only when requested explicitly:
+
+```powershell
+steward agent --include-calendar "What is on my calendar when I arrive in Tokyo?"
+```
+
+## Create a Calendar event from a travel record
+
+This requests the broader Google Calendar event scope. Re-run authorization if
+your existing token was read-only. Repeating the command for the same record
+returns the existing linked event rather than creating a duplicate.
+
+```powershell
+steward calendar-create-travel-event 1
+```
+
+## Research external sources without retaining them
+
+Use Gemini's search grounding only when local evidence is insufficient. Results
+remain ephemeral and are not copied into your vault automatically.
+
+```powershell
+steward research "How does Linux perform TLB shootdowns?"
+```
+
+## Review potential new workspaces
+
+This intentionally reviews rather than changes your structure. It clusters
+repeated meaningful filename terms among Inbox sources and prints pending
+candidates for you to evaluate.
+
+```powershell
+steward review-inbox-workspaces
+```
+
+## Review knowledge connections
+
+Connections are candidates supported by shared source fragments. Steward shows
+the evidence IDs and explicitly notes that shared evidence is not causation.
+
+```powershell
+steward connect-knowledge
 ```
 
 ## Ask through Telegram
