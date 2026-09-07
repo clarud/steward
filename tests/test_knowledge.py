@@ -25,3 +25,10 @@ def test_claim_requires_persisted_fragment_evidence(tmp_path: Path) -> None:
     service=KnowledgeService(database); concept=service.create_concept("TLB")
     claim=service.create_claim(concept.id or 0,"A TLB caches translations.",[fragment.id or 0])
     assert claim.id == 1
+
+def test_enrichment_proposal_is_derived_and_does_not_change_claim(tmp_path: Path) -> None:
+    database=tmp_path / "db.sqlite"; initialize_database(database); service=KnowledgeService(database)
+    concept=service.create_concept("TLB")
+    claim=service.create_claim(concept.id or 0,"TLB caches translations.",[1])
+    proposal=service.compare_evidence(claim,fragment_id=2,evidence_text="A TLB caches translations and speeds up lookup.")
+    assert proposal.operation.value == "confirm" and claim.text == "TLB caches translations."

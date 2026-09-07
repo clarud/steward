@@ -4,6 +4,8 @@ import sqlite3
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from enum import StrEnum
+import re
 
 @dataclass(frozen=True, slots=True)
 class Concept:
@@ -23,6 +25,20 @@ class Claim:
     concept_id: int
     text: str
     created_at: datetime
+
+class EnrichmentOperation(StrEnum):
+    CONFIRM = "confirm"
+    EXTEND = "extend"
+    REFINE = "refine"
+    QUALIFY = "qualify"
+    CONTRADICT = "contradict"
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeEnrichmentProposal:
+    claim_id: int
+    fragment_id: int
+    operation: EnrichmentOperation
+    rationale: str
 
 class KnowledgeService:
     def __init__(self, database_path: Path) -> None: self._database_path = database_path
@@ -54,3 +70,12 @@ class KnowledgeService:
             claim_id=int(cursor.lastrowid)
             connection.executemany("INSERT INTO claim_evidence (claim_id,fragment_id) VALUES (?,?)",[(claim_id,fragment_id) for fragment_id in fragment_ids])
         return replace(claim,id=claim_id)
+    def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
+        claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
+        if claim_words <= evidence_words:
+            operation=EnrichmentOperation.CONFIRM; rationale="The evidence contains the existing claim's terms."
+        elif "not" in evidence_words or "never" in evidence_words:
+            operation=EnrichmentOperation.CONTRADICT; rationale="The evidence contains an explicit negation."
+        else:
+            operation=EnrichmentOperation.EXTEND; rationale="The evidence adds related information without replacing the claim."
+        return KnowledgeEnrichmentProposal(claim.id or 0,fragment_id,operation,rationale)
