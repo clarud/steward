@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from typing import Protocol
+from urllib import request
 
 
 class ModelGateway(Protocol):
@@ -68,3 +70,35 @@ class GeminiModelGateway:
         if not text.strip():
             raise RuntimeError("The model returned no text.")
         return text.strip()
+
+
+class OllamaModelGateway:
+    """Minimal local Ollama gateway; source text stays on the local machine."""
+
+    def __init__(self, *, model: str, base_url: str = "http://127.0.0.1:11434") -> None:
+        if not model.strip():
+            raise ValueError("An Ollama model name is required.")
+        self._model = model
+        self._url = f"{base_url.rstrip('/')}/api/generate"
+
+    def generate(self, *, instructions: str, input_text: str) -> str:
+        payload = json.dumps(
+            {
+                "model": self._model,
+                "system": instructions,
+                "prompt": input_text,
+                "stream": False,
+            }
+        ).encode("utf-8")
+        http_request = request.Request(
+            self._url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        try:
+            with request.urlopen(http_request, timeout=60) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except OSError as error:
+            raise RuntimeError("Could not reach the configured local Ollama model.") from error
+        text = str(body.get("response", "")).strip()
+        if not text:
+            raise RuntimeError("The local model returned no text.")
+        return text

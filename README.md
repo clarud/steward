@@ -166,6 +166,17 @@ place source text or source-derived travel record fields in a model prompt.
 `external_redacted` is deliberately withheld until Steward has an actual,
 auditable redaction feature; a label alone cannot protect data.
 
+If you run a local Ollama model, Steward can route `local_model_only` and
+`external_redacted` source evidence to it instead of a cloud provider:
+
+```dotenv
+STEWARD_LOCAL_MODEL=llama3.2
+STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
+```
+
+Set `STEWARD_MODEL_PROVIDER=local` to make Ollama the default answer model;
+otherwise it is selected only when retrieved evidence requires local handling.
+
 ## Ask through Telegram
 
 Create a bot with BotFather, put its token in your private `.env`, and start

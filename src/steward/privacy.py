@@ -43,3 +43,8 @@ class PrivacyService:
         treating a label as if it had transformed private content.
         """
         return self.rule_for(source_id) is PrivacyRule.EXTERNAL_ALLOWED
+
+    def permits_local_model(self, source_id: int) -> bool:
+        """Whether raw source content may be processed by a local model."""
+
+        return self.rule_for(source_id) is not PrivacyRule.NO_MODEL

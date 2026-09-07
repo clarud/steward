@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
-VALID_MODEL_PROVIDERS = frozenset({"gemini", "openai"})
+VALID_MODEL_PROVIDERS = frozenset({"gemini", "local", "openai"})
 
 
 def load_environment_file() -> None:
@@ -27,6 +27,8 @@ class Settings:
     model_provider: str
     openai_model: str | None
     gemini_model: str | None
+    local_model: str | None
+    local_model_url: str
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -37,6 +39,8 @@ class Settings:
         model_provider = os.environ.get("STEWARD_MODEL_PROVIDER", "gemini").casefold()
         openai_model = os.environ.get("STEWARD_OPENAI_MODEL")
         gemini_model = os.environ.get("STEWARD_GEMINI_MODEL")
+        local_model = os.environ.get("STEWARD_LOCAL_MODEL")
+        local_model_url = os.environ.get("STEWARD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
 
         if log_level not in VALID_LOG_LEVELS:
             allowed_levels = ", ".join(sorted(VALID_LOG_LEVELS))
@@ -57,4 +61,6 @@ class Settings:
             model_provider=model_provider,
             openai_model=openai_model,
             gemini_model=gemini_model,
+            local_model=local_model,
+            local_model_url=local_model_url,
         )

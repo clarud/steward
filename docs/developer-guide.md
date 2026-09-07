@@ -800,6 +800,19 @@ they become tool results. `external_redacted` intentionally fails closed until
 there is a genuine, reviewable redaction pipeline; it is unsafe to assume that
 the rule's name transforms sensitive text.
 
+## Model routing
+
+Phase 31 adds `ModelRouter` and `OllamaModelGateway`. It selects a cloud
+gateway when every evidence source is `external_allowed`; otherwise, a source
+marked `local_model_only` or `external_redacted` requires the configured local
+Ollama gateway. A `no_model` source is removed before context construction.
+If local-only evidence is retrieved but Ollama is not configured, Steward
+returns an explicit privacy limitation instead of falling back to the cloud.
+Ollama is a deliberately narrow, local HTTP adapter (`/api/generate`), not a
+generic network tool. The Phase 21 Gemini tool agent stays cloud-only for now,
+so its source tools continue to filter non-external content rather than trying
+to route individual tool calls to a different model.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

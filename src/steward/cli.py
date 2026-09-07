@@ -17,7 +17,9 @@ from steward.answer import (
     AnswerService,
     ContextBuilder,
     GeminiModelGateway,
+    ModelRouter,
     ModelGateway,
+    OllamaModelGateway,
     OpenAIModelGateway,
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
@@ -157,6 +159,17 @@ def _model_gateway_from_settings(
 ) -> ModelGateway | None:
     """Create the configured model gateway, or print its actionable setup error."""
 
+    if settings.model_provider == "local":
+        if not settings.local_model:
+            print(
+                "Set STEWARD_LOCAL_MODEL before using "
+                f"`steward {command}` with STEWARD_MODEL_PROVIDER=local."
+            )
+            return None
+        return OllamaModelGateway(
+            model=settings.local_model, base_url=settings.local_model_url
+        )
+
     if settings.model_provider == "gemini":
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key or not settings.gemini_model:
@@ -193,11 +206,18 @@ def _build_question_graph(
     retriever = HybridRetriever(
         LexicalSearchService(source_repository, fragment_repository), semantic_search
     )
+    local_gateway = (
+        OllamaModelGateway(model=settings.local_model, base_url=settings.local_model_url)
+        if settings.local_model
+        else None
+    )
+    privacy = PrivacyService(database_path)
     answer_service = AnswerService(
         retriever=retriever,
         context_builder=ContextBuilder(),
         model_gateway=model_gateway,
-        privacy_service=PrivacyService(database_path),
+        privacy_service=privacy,
+        model_router=ModelRouter(privacy, model_gateway, local_gateway),
     )
     checkpoint_connection = sqlite3.connect(
         settings.data_dir / "checkpoints.db", check_same_thread=False

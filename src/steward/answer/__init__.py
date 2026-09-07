@@ -1,7 +1,8 @@
 """Grounded answers built from Steward's retrieved local evidence."""
 
 from steward.answer.context import ContextBuilder
-from steward.answer.gateway import GeminiModelGateway, ModelGateway, OpenAIModelGateway
+from steward.answer.gateway import GeminiModelGateway, ModelGateway, OllamaModelGateway, OpenAIModelGateway
+from steward.answer.routing import ModelLocation, ModelRouter, ModelRoutingError
 from steward.answer.models import AnswerCitation, AnswerContext, AnswerResult
 from steward.answer.service import AnswerService
 
@@ -13,5 +14,9 @@ __all__ = [
     "ContextBuilder",
     "GeminiModelGateway",
     "ModelGateway",
+    "ModelLocation",
+    "ModelRouter",
+    "ModelRoutingError",
+    "OllamaModelGateway",
     "OpenAIModelGateway",
 ]

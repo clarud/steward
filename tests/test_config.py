@@ -11,6 +11,8 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
     monkeypatch.delenv("STEWARD_OPENAI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_LOCAL_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_LOCAL_MODEL_URL", raising=False)
 
     assert Settings.from_environment() == Settings(
         data_dir=Path(".steward"),
@@ -19,6 +21,8 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         model_provider="gemini",
         openai_model=None,
         gemini_model=None,
+        local_model=None,
+        local_model_url="http://127.0.0.1:11434",
     )
 
 
@@ -34,6 +38,16 @@ def test_settings_reject_invalid_model_provider(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(ValueError, match="STEWARD_MODEL_PROVIDER"):
         Settings.from_environment()
+
+
+def test_settings_accept_local_model_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEWARD_MODEL_PROVIDER", "local")
+    monkeypatch.setenv("STEWARD_LOCAL_MODEL", "llama3.2")
+
+    settings = Settings.from_environment()
+
+    assert settings.model_provider == "local"
+    assert settings.local_model == "llama3.2"
 
 
 def test_environment_file_does_not_override_explicit_shell_values(

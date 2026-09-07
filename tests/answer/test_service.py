@@ -10,6 +10,7 @@ from steward.answer import (
     AnswerService,
     ContextBuilder,
     GeminiModelGateway,
+    ModelRouter,
     OpenAIModelGateway,
 )
 from steward.answer.service import GROUNDING_INSTRUCTIONS, NO_EVIDENCE_ANSWER
@@ -116,6 +117,44 @@ def test_answer_service_does_not_send_private_source_content_to_cloud_model(
     assert result.text == NO_EVIDENCE_ANSWER
     assert result.citations == ()
     assert gateway.input_text is None
+
+
+def test_answer_service_routes_private_evidence_to_local_model(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    hit = _hit()
+    SourceRepository(database).add(replace(hit.source, id=None))
+    privacy = PrivacyService(database)
+    privacy.set_rule(1, PrivacyRule.LOCAL_MODEL_ONLY)
+    cloud = FakeModelGateway(response="cloud")
+    local = FakeModelGateway(response="local")
+
+    result = AnswerService(
+        FakeRetriever((hit,)), ContextBuilder(), cloud, privacy,
+        ModelRouter(privacy, cloud, local),
+    ).ask("What does a TLB do?")
+
+    assert result.text == "local"
+    assert cloud.input_text is None
+    assert local.input_text is not None
+
+
+def test_answer_service_explains_when_local_model_is_required_but_unavailable(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    hit = _hit()
+    SourceRepository(database).add(replace(hit.source, id=None))
+    privacy = PrivacyService(database)
+    privacy.set_rule(1, PrivacyRule.EXTERNAL_REDACTED)
+    cloud = FakeModelGateway()
+
+    result = AnswerService(
+        FakeRetriever((hit,)), ContextBuilder(), cloud, privacy,
+        ModelRouter(privacy, cloud),
+    ).ask("What does a TLB do?")
+
+    assert "does not permit an available model" in result.text
+    assert cloud.input_text is None
 
 
 def test_context_builder_deterministically_marks_truncated_evidence() -> None:
