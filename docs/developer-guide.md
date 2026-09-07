@@ -734,9 +734,10 @@ that link and reads the existing event instead of inserting a duplicate.
 
 After an insert, `CALENDAR_EVENT_CREATED` is appended to the activity log. The
 filesystem/database transaction cannot span Google's API, so this is
-"exactly-once-ish": a completed local link is reliably idempotent, while a
-process crash after Google accepts an event but before the link is saved remains
-a recoverable operational edge case to test in Phase 32.
+"exactly-once-ish": a completed local link is reliably idempotent. Phase 32
+also closes the crash window after Google accepts an event but before the link
+is saved by reconciling the remote event with its deterministic private
+idempotency key on retry.
 
 ## Ephemeral external research
 
