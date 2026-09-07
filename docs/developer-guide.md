@@ -758,6 +758,16 @@ term produce a pending `WorkspaceProposal` with source IDs, rationale, and a
 conservative confidence score. It does not create a workspace, link sources,
 or move files; those remain deliberate user actions.
 
+## Knowledge connections
+
+Phase 27 adds `KnowledgeConnector` and `steward connect-knowledge`. It joins
+claim evidence to find pairs of different concepts whose claims cite the same
+fragment. Each proposal contains both concept names, supporting fragment IDs,
+a confidence score, an explanation of the shared evidence, and an explicit
+statement of where the apparent analogy may fail. Nothing is persisted as a
+relationship yet; user feedback such as useful, obvious, stretch, or wrong is
+the later learning loop.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

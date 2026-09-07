@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–26 are implemented as a local foundation. Steward can capture text,
+Phases 0–27 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -21,6 +21,8 @@ explicitly invoking the write command.
 External research is available as an explicitly invoked, non-retaining flow.
 It can also review Inbox filenames and propose possible new workspace themes
 without creating or moving anything automatically.
+It can propose evidence-backed connections between concepts without turning
+co-occurrence into permanent knowledge automatically.
 
 ## Local setup
 
@@ -131,6 +133,15 @@ candidates for you to evaluate.
 
 ```powershell
 steward review-inbox-workspaces
+```
+
+## Review knowledge connections
+
+Connections are candidates supported by shared source fragments. Steward shows
+the evidence IDs and explicitly notes that shared evidence is not causation.
+
+```powershell
+steward connect-knowledge
 ```
 
 ## Ask through Telegram

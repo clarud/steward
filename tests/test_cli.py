@@ -137,3 +137,11 @@ def test_cli_reviews_inbox_workspace_candidates(tmp_path: Path, monkeypatch, cap
     main(["review-inbox-workspaces"])
 
     assert "Compiler\tconfidence=0.70\tsources=1,2" in capsys.readouterr().out
+
+
+def test_cli_reports_when_no_knowledge_connections_exist(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+
+    main(["connect-knowledge"])
+
+    assert capsys.readouterr().out == "No evidence-backed knowledge connections found.\n"

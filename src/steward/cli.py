@@ -43,6 +43,7 @@ from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
 from steward.research import GeminiGoogleSearchProvider, ResearchService
 from steward.workspace_detection import WorkspaceDetectionService
+from steward.knowledge_connector import KnowledgeConnector
 from steward.knowledge import KnowledgeService
 from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
@@ -102,6 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     workspace_parser.add_argument("name")
     subcommands.add_parser("workspaces", help="List workspaces")
     subcommands.add_parser("review-inbox-workspaces", help="Propose possible new workspaces from Inbox sources")
+    subcommands.add_parser("connect-knowledge", help="Propose evidence-backed connections between concepts")
     link_parser = subcommands.add_parser("link-source", help="Relate a source to a workspace")
     link_parser.add_argument("workspace_id", type=int)
     link_parser.add_argument("source_id", type=int)
@@ -494,6 +496,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(
                 f"{proposal.proposed_name}\tconfidence={proposal.confidence:.2f}\t"
                 f"sources={','.join(str(source_id) for source_id in proposal.source_ids)}\t{proposal.rationale}"
+            )
+        return
+
+    if arguments.command == "connect-knowledge":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        proposals = KnowledgeConnector(database_path).propose()
+        if not proposals:
+            print("No evidence-backed knowledge connections found.")
+            return
+        for proposal in proposals:
+            print(
+                f"{proposal.left_concept_name} ↔ {proposal.right_concept_name}\t"
+                f"confidence={proposal.confidence:.2f}\t"
+                f"fragments={','.join(str(fragment_id) for fragment_id in proposal.supporting_fragment_ids)}\t"
+                f"{proposal.rationale}"
             )
         return
 
