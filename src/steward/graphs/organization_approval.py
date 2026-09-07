@@ -1,6 +1,6 @@
 """Resumable human approval for an organization proposal."""
 from __future__ import annotations
-from typing import NotRequired, TypedDict
+from typing import Callable, NotRequired, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from steward.organization import OrganizationProposalRepository
@@ -10,7 +10,12 @@ class OrganizationApprovalState(TypedDict):
     decision: NotRequired[str]
     status: NotRequired[str]
 
-def build_organization_approval_graph(repository: OrganizationProposalRepository, *, checkpointer: object):
+def build_organization_approval_graph(
+    repository: OrganizationProposalRepository,
+    *,
+    checkpointer: object,
+    review_proposal: Callable[[int, str], object] | None = None,
+):
     def request_approval(state: OrganizationApprovalState) -> dict[str, str]:
         decision = interrupt({"proposal_id": state["proposal_id"], "question": "Accept this organization proposal?"})
         if decision not in {"accepted", "rejected"}:
@@ -18,7 +23,10 @@ def build_organization_approval_graph(repository: OrganizationProposalRepository
         return {"decision": decision}
 
     def record_decision(state: OrganizationApprovalState) -> dict[str, str]:
-        repository.set_status(state["proposal_id"], state["decision"])
+        if review_proposal is None:
+            repository.set_status(state["proposal_id"], state["decision"])
+        else:
+            review_proposal(state["proposal_id"], state["decision"])
         return {"status": state["decision"]}
 
     builder = StateGraph(OrganizationApprovalState)

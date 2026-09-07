@@ -34,7 +34,7 @@ from steward.retrieval import (
 )
 from steward.telegram import run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
-from steward.organization import OrganizationProposalRepository, OrganizationService
+from steward.organization import OrganizationApprovalService, OrganizationProposalRepository, OrganizationService
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
@@ -332,27 +332,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
             print(f"Created proposal {proposal_id}: {proposal.rationale}")
         elif arguments.command == "review-proposal":
-            proposal = proposals.get(arguments.proposal_id)
-            if proposal is None:
-                print(f"Proposal {arguments.proposal_id} was not found.")
-                return
-            if arguments.status == "accepted" and proposal.suggested_path is not None:
-                source = SourceRepository(database_path).get_by_id(proposal.source_id)
-                if source is None:
-                    print(f"Source {proposal.source_id} was not found.")
-                    return
-                FileMutationService(
-                    SourceRepository(database_path), ActivityService(database_path)
-                ).move_source(source.path, proposal.suggested_path)
-            proposals.set_status(arguments.proposal_id, arguments.status)
-            activity_type = (
-                ActivityType.ORGANIZATION_ACCEPTED
-                if arguments.status == "accepted"
-                else ActivityType.ORGANIZATION_REJECTED
+            activity = ActivityService(database_path)
+            approval = OrganizationApprovalService(
+                proposals,
+                SourceRepository(database_path),
+                FileMutationService(SourceRepository(database_path), activity),
+                activity,
             )
-            ActivityService(database_path).record(
-                activity_type, object_id=str(arguments.proposal_id)
-            )
+            approval.review(arguments.proposal_id, arguments.status)
             print(f"Proposal {arguments.proposal_id} {arguments.status}.")
         else:
             for proposal in proposals.list_all():

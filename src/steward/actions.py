@@ -40,4 +40,16 @@ class FileMutationService:
         source = self._source_repository.get_by_path(destination.resolve()) if self._source_repository else None
         if source is not None:
             self._source_repository.update(replace(source, path=source_path.resolve()))
-        return ActionResult("undone", str(source_path), {"source_path": str(source_path), "destination": str(destination)})
+        event_id = None
+        if self._activity_service is not None:
+            event_id = self._activity_service.record(
+                ActivityType.SOURCE_MOVE_UNDONE,
+                object_id=str(source.id) if source else None,
+                details=f"{destination} -> {source_path}",
+            ).id
+        return ActionResult(
+            "undone",
+            str(source_path),
+            {"source_path": str(source_path), "destination": str(destination)},
+            event_id,
+        )

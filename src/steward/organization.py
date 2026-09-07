@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 import sqlite3
+from steward.actions import FileMutationService
+from steward.activity import ActivityService, ActivityType
 from steward.sources import Source
+from steward.sources import SourceRepository
 from steward.workspaces import Workspace
 
 @dataclass(frozen=True, slots=True)
@@ -46,3 +49,50 @@ class OrganizationProposalRepository:
         return [OrganizationProposal(int(r[0]), int(r[1]), int(r[2]) if r[2] is not None else None, Path(str(r[3])) if r[3] else None, str(r[4]), float(r[5]), str(r[6])) for r in rows]
     def get(self, proposal_id: int) -> OrganizationProposal | None:
         return next((proposal for proposal in self.list_all() if proposal.id == proposal_id), None)
+
+
+class OrganizationApprovalService:
+    """Apply one reviewed proposal through the same safe path in every adapter."""
+
+    def __init__(
+        self,
+        proposal_repository: OrganizationProposalRepository,
+        source_repository: SourceRepository,
+        file_mutation_service: FileMutationService,
+        activity_service: ActivityService,
+    ) -> None:
+        self._proposals = proposal_repository
+        self._sources = source_repository
+        self._files = file_mutation_service
+        self._activity = activity_service
+
+    def review(self, proposal_id: int, decision: str) -> OrganizationProposal:
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("Proposal decision must be accepted or rejected.")
+        proposal = self._proposals.get(proposal_id)
+        if proposal is None:
+            raise ValueError("Organization proposal was not found.")
+        if proposal.status == decision:
+            return proposal
+        if proposal.status != "pending":
+            raise ValueError(f"Proposal {proposal_id} was already {proposal.status}.")
+
+        if decision == "accepted" and proposal.suggested_path is not None:
+            source = self._sources.get_by_id(proposal.source_id)
+            if source is None:
+                raise ValueError(f"Source {proposal.source_id} was not found.")
+            # A restart may re-enter this node after a successful filesystem move
+            # but before its status was saved. The registered destination makes
+            # that recovery path a no-op instead of a second move.
+            if source.path.resolve() != proposal.suggested_path.resolve():
+                self._files.move_source(source.path, proposal.suggested_path)
+
+        self._proposals.set_status(proposal_id, decision)
+        self._activity.record(
+            ActivityType.ORGANIZATION_ACCEPTED if decision == "accepted" else ActivityType.ORGANIZATION_REJECTED,
+            object_id=str(proposal_id),
+        )
+        reviewed = self._proposals.get(proposal_id)
+        if reviewed is None:
+            raise RuntimeError("Reviewed organization proposal disappeared.")
+        return reviewed

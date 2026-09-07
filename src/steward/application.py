@@ -84,6 +84,14 @@ class StewardCaptureApplication:
             return f"Already saved: {result.source.path}"
         return f"Saved to Inbox: {result.source.path}"
 
+    def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
+        """Preserve a document already downloaded by a transport adapter."""
+
+        result = self._capture_service.capture_file(event, original_path)
+        if result.duplicate:
+            return f"Already saved: {result.source.path}"
+        return f"Saved to Inbox: {result.source.path}"
+
 
 class StewardEventApplication:
     """Route normalized events through one explicit intent decision."""
@@ -110,11 +118,3 @@ class StewardEventApplication:
         """Documents are deterministic capture signals after adapter validation."""
 
         return self._capture_application.handle_file(event, original_path)
-
-    def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
-        """Preserve an already-downloaded Telegram document."""
-
-        result = self._capture_service.capture_file(event, original_path)
-        if result.duplicate:
-            return f"Already saved: {result.source.path}"
-        return f"Saved to Inbox: {result.source.path}"

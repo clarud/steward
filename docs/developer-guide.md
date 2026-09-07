@@ -635,14 +635,18 @@ The original file is canonical; fragments and embeddings can be rebuilt.
 attachment means capture, while `/delete`, `/organize`, and `/inspect` map to
 their corresponding intents. `WorkspaceService` creates explicit workspaces
 and `WorkspaceRepository` stores the many-to-many `workspace_sources` links.
-`OrganizationService` only creates a proposal. Accepting it through the CLI
+`OrganizationService` only creates a proposal. `OrganizationApprovalService`
+is the sole approval boundary: accepting through the CLI or a resumed graph
 uses `FileMutationService` to move the registered file, update its stored path,
-and write an activity event; rejection leaves the source unchanged.
+and write an activity event; rejection leaves the source unchanged. Repeating
+an already accepted/rejected decision is a no-op, which makes retry recovery
+safe.
 
 The first LangGraph approval graph demonstrates a durable pause with
-`interrupt()` and later resume. It records an accepted or rejected proposal.
-The CLI is currently the actual file-mutation review path; wiring that paused
-conversation into Telegram is a later transport step.
+`interrupt()` and later resume. On acceptance it calls that same approval
+service, so a resumed workflow executes the move rather than merely changing a
+proposal status. Wiring the paused approval conversation into Telegram is a
+later transport step.
 
 The knowledge model starts deliberately small: concepts have aliases, claims
 point to supporting source fragments, and enrichment proposals classify new
@@ -654,6 +658,9 @@ flight fields from source fragments and tracks the fragment that supports each
 extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
 `steward create-travel-record SOURCE_ID` is the explicit persistence step, and
 both the record and all of its evidence rows are inserted in one transaction.
+`FileMutationService.undo_move()` supplies rollback data and writes its own
+`SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
+filesystem changes.
 
 ## Known limitations
 

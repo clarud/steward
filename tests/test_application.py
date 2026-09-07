@@ -91,3 +91,23 @@ def test_event_application_routes_a_question() -> None:
         make_event(text="What is a TLB?")
     )
     assert "TLB" in response
+
+
+def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:
+    class FileCapture:
+        def __init__(self) -> None:
+            self.received: tuple[IncomingEvent, Path] | None = None
+
+        def capture_file(self, event: IncomingEvent, path: Path) -> CaptureResult:
+            self.received = (event, path)
+            return CaptureResult(source=type("Source", (), {"path": Path("vault/inbox/note.pdf")})(), duplicate=False)
+
+    capture = FileCapture()
+    application = StewardEventApplication(StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture))
+    document = tmp_path / "note.pdf"
+    document.write_bytes(b"pdf")
+
+    response = application.handle_file(make_event(text=None), document)
+
+    assert response == "Saved to Inbox: vault\\inbox\\note.pdf"
+    assert capture.received == (make_event(text=None), document)

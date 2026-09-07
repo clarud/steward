@@ -21,3 +21,11 @@ def test_resolver_uses_deterministic_signals(text, intent) -> None:
 
 def test_attachment_is_a_capture_signal() -> None:
     assert IntentResolver().resolve(event(None, ("document",))).primary_intent is Intent.CAPTURE
+
+
+def test_reply_target_is_preserved_as_a_referenced_object() -> None:
+    incoming = IncomingEvent(
+        "telegram:8", "telegram", "100", "8", "7", datetime(2026, 9, 8, tzinfo=UTC), "Save this"
+    )
+
+    assert IntentResolver().resolve(incoming).referenced_objects == ("7",)

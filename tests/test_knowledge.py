@@ -1,5 +1,7 @@
 from pathlib import Path
-from steward.knowledge import KnowledgeService
+import sqlite3
+import pytest
+from steward.knowledge import Claim, EnrichmentOperation, KnowledgeService
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -28,7 +30,29 @@ def test_claim_requires_persisted_fragment_evidence(tmp_path: Path) -> None:
 
 def test_enrichment_proposal_is_derived_and_does_not_change_claim(tmp_path: Path) -> None:
     database=tmp_path / "db.sqlite"; initialize_database(database); service=KnowledgeService(database)
-    concept=service.create_concept("TLB")
-    claim=service.create_claim(concept.id or 0,"TLB caches translations.",[1])
+    claim=Claim(1, 1, "TLB caches translations.", datetime(2026, 9, 8, tzinfo=UTC))
     proposal=service.compare_evidence(claim,fragment_id=2,evidence_text="A TLB caches translations and speeds up lookup.")
     assert proposal.operation.value == "confirm" and claim.text == "TLB caches translations."
+
+
+def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        KnowledgeService(database).create_claim(99, "Unsupported claim", [42])
+
+
+@pytest.mark.parametrize(
+    ("evidence", "expected"),
+    [
+        ("TLBs do not cache translations.", EnrichmentOperation.CONTRADICT),
+        ("TLBs may cache translations depending on the architecture.", EnrichmentOperation.QUALIFY),
+        ("A revised TLB design replaces the old cache strategy.", EnrichmentOperation.REFINE),
+        ("TLBs also improve latency.", EnrichmentOperation.EXTEND),
+    ],
+)
+def test_enrichment_can_propose_each_non_confirming_operation(tmp_path: Path, evidence: str, expected: EnrichmentOperation) -> None:
+    service = KnowledgeService(tmp_path / "unused.db")
+    claim = Claim(1, 1, "TLB caches translations.", datetime(2026, 9, 8, tzinfo=UTC))
+
+    assert service.compare_evidence(claim, fragment_id=2, evidence_text=evidence).operation is expected

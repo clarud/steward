@@ -32,6 +32,7 @@ class IntentResolver:
     def resolve(self, event: IncomingEvent) -> IntentDecision:
         text = (event.text or "").strip()
         command = text.split(maxsplit=1)[0].casefold() if text else ""
+        referenced_objects = (event.reply_to_id,) if event.reply_to_id is not None else ()
         mapping = {
             "/save": Intent.CAPTURE,
             "/delete": Intent.DELETE,
@@ -39,9 +40,9 @@ class IntentResolver:
             "/inspect": Intent.INSPECT,
         }
         if command in mapping:
-            return IntentDecision(mapping[command])
+            return IntentDecision(mapping[command], referenced_objects=referenced_objects)
         if event.attachments:
-            return IntentDecision(Intent.CAPTURE)
+            return IntentDecision(Intent.CAPTURE, referenced_objects=referenced_objects)
         if text.endswith("?"):
-            return IntentDecision(Intent.ASK)
-        return IntentDecision(Intent.UNKNOWN, confidence="unresolved")
+            return IntentDecision(Intent.ASK, referenced_objects=referenced_objects)
+        return IntentDecision(Intent.UNKNOWN, referenced_objects=referenced_objects, confidence="unresolved")

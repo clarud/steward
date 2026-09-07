@@ -46,11 +46,13 @@ class KnowledgeService:
         concept = Concept(None, name.strip(), datetime.now(UTC))
         if not concept.name: raise ValueError("Concept name must not be empty.")
         with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
             cursor=connection.execute("INSERT INTO concepts (name,created_at) VALUES (?,?)",(concept.name,concept.created_at.isoformat()))
         return replace(concept,id=int(cursor.lastrowid))
     def add_alias(self, concept_id: int, alias: str) -> None:
         if not alias.strip(): raise ValueError("Alias must not be empty.")
         with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("INSERT OR IGNORE INTO concept_aliases (concept_id,alias) VALUES (?,?)",(concept_id,alias.strip()))
     def find(self, name_or_alias: str) -> Concept | None:
         with sqlite3.connect(self._database_path) as connection:
@@ -66,16 +68,21 @@ class KnowledgeService:
         claim=Claim(None, concept_id, text.strip(), datetime.now(UTC))
         if not claim.text or not fragment_ids: raise ValueError("Claims require text and evidence.")
         with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
             cursor=connection.execute("INSERT INTO claims (concept_id,text,created_at) VALUES (?,?,?)",(concept_id,claim.text,claim.created_at.isoformat()))
             claim_id=int(cursor.lastrowid)
             connection.executemany("INSERT INTO claim_evidence (claim_id,fragment_id) VALUES (?,?)",[(claim_id,fragment_id) for fragment_id in fragment_ids])
         return replace(claim,id=claim_id)
     def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
         claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
-        if claim_words <= evidence_words:
-            operation=EnrichmentOperation.CONFIRM; rationale="The evidence contains the existing claim's terms."
-        elif "not" in evidence_words or "never" in evidence_words:
+        if {"not", "never", "false", "incorrect"} & evidence_words:
             operation=EnrichmentOperation.CONTRADICT; rationale="The evidence contains an explicit negation."
+        elif {"may", "might", "sometimes", "usually", "typically", "depends"} & evidence_words:
+            operation=EnrichmentOperation.QUALIFY; rationale="The evidence limits the scope or certainty of the claim."
+        elif {"instead", "revised", "updated", "replace"} & evidence_words:
+            operation=EnrichmentOperation.REFINE; rationale="The evidence indicates a more specific or revised formulation."
+        elif claim_words <= evidence_words:
+            operation=EnrichmentOperation.CONFIRM; rationale="The evidence contains the existing claim's terms."
         else:
             operation=EnrichmentOperation.EXTEND; rationale="The evidence adds related information without replacing the claim."
         return KnowledgeEnrichmentProposal(claim.id or 0,fragment_id,operation,rationale)
