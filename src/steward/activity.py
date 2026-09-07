@@ -12,6 +12,7 @@ class ActivityType(StrEnum):
     ORGANIZATION_PROPOSED = "organization_proposed"
     ORGANIZATION_ACCEPTED = "organization_accepted"
     ORGANIZATION_REJECTED = "organization_rejected"
+    SOURCE_MOVED = "source_moved"
 
 @dataclass(frozen=True, slots=True)
 class ActivityEvent:
