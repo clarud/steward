@@ -14,6 +14,16 @@ from steward.records import RecordService
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
 from steward.workspaces import WorkspaceRepository
+from steward.tools.policy import ToolDefinition, ToolRisk
+
+
+READ_ONLY_TOOL_DEFINITIONS = [
+    ToolDefinition(name, False, ToolRisk.READ_ONLY, "not applicable: no mutation", None, False)
+    for name in (
+        "search_sources", "read_source", "search_knowledge", "search_records",
+        "search_workspaces", "search_activity",
+    )
+]
 
 
 class ReadOnlyToolService:

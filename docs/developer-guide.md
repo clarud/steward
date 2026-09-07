@@ -688,6 +688,21 @@ LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
 then returns its result to the next model turn. `steward agent QUESTION` uses
 this graph with a persistent thread ID and an eight-step recursion cap.
 
+## Tool risk policy
+
+Phase 22 makes the safety properties of each tool explicit in `ToolDefinition`:
+`side_effects`, `risk`, `idempotency`, `external_system`, and
+`requires_approval`. `ToolRisk` distinguishes `READ_ONLY`, `SAFE_WRITE`,
+`SENSITIVE_WRITE`, and `DESTRUCTIVE` operations.
+
+`ToolPolicy` is not prompt text. `build_tool_agent_graph()` supplies it to
+`ToolNode` through `wrap_tool_call`, where every requested tool is checked
+immediately before execution. A denied call becomes a `ToolMessage` explaining
+why it was not run; the Python callable is never invoked. The current six
+agent tools are all registered as read-only, so no approval state is needed
+yet. Future calendar and filesystem tools must receive a policy definition
+before they can be included in an agent graph.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

@@ -40,7 +40,8 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
 from steward.knowledge import KnowledgeService
-from steward.tools import ReadOnlyToolService, build_read_only_tools
+from steward.tools import ReadOnlyToolService, ToolPolicy, build_read_only_tools
+from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -317,6 +318,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model),
             build_read_only_tools(tool_service),
             checkpointer=checkpointer,
+            tool_policy=ToolPolicy(READ_ONLY_TOOL_DEFINITIONS),
         )
         result = graph.invoke(
             {

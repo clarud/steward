@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Protocol, TypedDict
+import json
+from typing import Annotated, Callable, Literal, Protocol, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+
+from steward.tools.policy import ToolPolicy
 
 
 class ToolCallingModel(Protocol):
@@ -30,6 +33,7 @@ def build_tool_agent_graph(
     tools: list[BaseTool],
     *,
     checkpointer: object | None = None,
+    tool_policy: ToolPolicy | None = None,
 ):
     """Compile a custom read-only tool loop without a prebuilt agent wrapper."""
     if not tools:
@@ -45,7 +49,19 @@ def build_tool_agent_graph(
 
     builder = StateGraph(ToolAgentState)
     builder.add_node("model", call_model)
-    builder.add_node("tools", ToolNode(tools))
+    def enforce_policy(request, execute):
+        if tool_policy is None:
+            return execute(request)
+        authorization = tool_policy.authorize(request.tool_call["name"])
+        if authorization.allowed:
+            return execute(request)
+        return ToolMessage(
+            content=json.dumps({"error": authorization.reason, "risk": authorization.definition.risk.value}),
+            name=request.tool_call["name"],
+            tool_call_id=request.tool_call["id"],
+        )
+
+    builder.add_node("tools", ToolNode(tools, wrap_tool_call=enforce_policy))
     builder.add_edge(START, "model")
     builder.add_conditional_edges("model", route_after_model, {"tools": "tools", "end": END})
     builder.add_edge("tools", "model")
