@@ -18,6 +18,7 @@ Google Calendar can now be connected through local OAuth for current read-only
 event search and lookup.
 Travel records can be created as idempotent, audited Calendar events after
 explicitly invoking the write command.
+External research is available as an explicitly invoked, non-retaining flow.
 
 ## Local setup
 
@@ -109,6 +110,15 @@ returns the existing linked event rather than creating a duplicate.
 
 ```powershell
 steward calendar-create-travel-event 1
+```
+
+## Research external sources without retaining them
+
+Use Gemini's search grounding only when local evidence is insufficient. Results
+remain ephemeral and are not copied into your vault automatically.
+
+```powershell
+steward research "How does Linux perform TLB shootdowns?"
 ```
 
 ## Ask through Telegram

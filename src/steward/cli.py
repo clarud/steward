@@ -41,6 +41,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
+from steward.research import GeminiGoogleSearchProvider, ResearchService
 from steward.knowledge import KnowledgeService
 from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
@@ -88,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     agent_parser.add_argument("question", help="Question the agent may answer with local read-only tools")
     agent_parser.add_argument("--thread-id", default="cli:agent", help="Persistent LangGraph thread ID")
     agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
+    research_parser = subcommands.add_parser("research", help="Research externally without retaining the sources")
+    research_parser.add_argument("question")
     telegram_parser = subcommands.add_parser(
         "telegram", help="Run the local Telegram adapter with long polling"
     )
@@ -368,6 +371,24 @@ def main(argv: Sequence[str] | None = None) -> None:
             {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 8},
         )
         print(str(result["messages"][-1].content))
+        return
+
+    if arguments.command == "research":
+        if settings.model_provider != "gemini":
+            print("`steward research` currently supports the configured Gemini provider only.")
+            return
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key or not settings.gemini_model:
+            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward research`.")
+            return
+        bundle = ResearchService(
+            GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
+        ).research(arguments.question)
+        print(bundle.answer)
+        if bundle.sources:
+            print("\nExternal sources (ephemeral):")
+            for source in bundle.sources:
+                print(f"- {source.title}: {source.url}")
         return
 
     if arguments.command == "telegram":

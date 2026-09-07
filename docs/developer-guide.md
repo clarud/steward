@@ -738,6 +738,16 @@ filesystem/database transaction cannot span Google's API, so this is
 process crash after Google accepts an event but before the link is saved remains
 a recoverable operational edge case to test in Phase 32.
 
+## Ephemeral external research
+
+Phase 25 adds `ResearchService` and `GeminiGoogleSearchProvider`. The provider
+uses Gemini's Google Search grounding only for an explicit `steward research`
+request and returns a `ResearchBundle`: question, generated answer, and unique
+web sources. Its retention status is always `ephemeral`; it does not write a
+`Source`, fragment, concept, claim, or embedding. A future explicit “keep those
+sources” workflow must route selected material through normal capture and
+provenance processing rather than bypassing the Source layer.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.
