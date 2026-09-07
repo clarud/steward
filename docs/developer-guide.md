@@ -846,6 +846,18 @@ and token values. With `STEWARD_LOG_LEVEL=INFO`, the JSON payloads remain
 visible in normal local process logs and can be searched without relying on an
 external agent-observability platform.
 
+## Evaluation framework
+
+Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
+`retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
+fixture. `product_cases.yaml` adds reviewable cases for organization (including
+acceptable Inbox alternatives), travel-record fields, expected knowledge
+integration operations, tool selection/forbidden tools, and approval safety.
+`product_evaluator.py` validates that every subsystem has cases with the fields
+needed for a future deterministic or model-backed evaluator. This avoids
+claiming model quality from one-off manual examples while keeping the expected
+behavior easy to edit and inspect in code review.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

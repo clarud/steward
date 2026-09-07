@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–33 are implemented as a local foundation. Steward can capture text,
+Phases 0–34 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -30,6 +30,9 @@ prior remote event by its Steward idempotency key after an interrupted local
 write, avoiding a duplicate event on retry.
 Structured local logs make retrieval graph routes, result IDs/counts, model
 calls, and tool requests inspectable without recording source text or prompts.
+The repository also includes versioned retrieval and product evaluation cases
+for regression checks across retrieval, organization, records, knowledge, and
+agent safety.
 
 ## Local setup
 
