@@ -12,6 +12,7 @@ class SourceType(StrEnum):
     """File types Steward currently knows how to register."""
 
     MARKDOWN = "markdown"
+    PLAIN_TEXT = "plain_text"
     PDF = "pdf"
     BINARY = "binary"
 

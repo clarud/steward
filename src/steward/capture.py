@@ -8,7 +8,7 @@ from pathlib import Path
 from shutil import copy2
 
 from steward.events import IncomingEvent
-from steward.extraction import MarkdownExtractor, SourceFragmentRepository
+from steward.extraction import ExtractionService, SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.sources.hashing import hash_file
 
@@ -33,7 +33,9 @@ class InboxCaptureService:
         self._inbox_dir = inbox_dir
         self._source_repository = source_repository
         self._fragment_repository = fragment_repository
-        self._markdown_extractor = MarkdownExtractor()
+        self._extraction_service = (
+            ExtractionService(fragment_repository) if fragment_repository is not None else None
+        )
 
     def capture_text(self, event: IncomingEvent) -> CaptureResult:
         """Preserve a text message as a human-readable Markdown original."""
@@ -72,6 +74,7 @@ class InboxCaptureService:
         suffix = original_path.suffix.casefold()
         source_type = {
             ".md": SourceType.MARKDOWN,
+            ".txt": SourceType.PLAIN_TEXT,
             ".pdf": SourceType.PDF,
         }.get(suffix, SourceType.BINARY)
         destination = self._inbox_dir / (
@@ -101,7 +104,5 @@ class InboxCaptureService:
         return CaptureResult(source=source, duplicate=False)
 
     def _extract_markdown(self, source: Source) -> None:
-        if self._fragment_repository is not None and source.source_type is SourceType.MARKDOWN:
-            self._fragment_repository.replace_for_source(
-                self._markdown_extractor.extract(source)
-            )
+        if self._extraction_service is not None:
+            self._extraction_service.extract_and_store(source)
