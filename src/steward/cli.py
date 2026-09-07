@@ -7,6 +7,7 @@ import logging
 import os
 import sqlite3
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 
 from steward.config import Settings, load_environment_file
@@ -39,9 +40,11 @@ from steward.organization import OrganizationApprovalService, OrganizationPropos
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
+from steward.calendar import CalendarService, authorize_google_calendar
 from steward.knowledge import KnowledgeService
-from steward.tools import ReadOnlyToolService, ToolPolicy, build_read_only_tools
+from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
+from steward.tools.calendar_read import CALENDAR_READ_TOOL_DEFINITIONS
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -84,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_parser.add_argument("question", help="Question the agent may answer with local read-only tools")
     agent_parser.add_argument("--thread-id", default="cli:agent", help="Persistent LangGraph thread ID")
+    agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
     telegram_parser = subcommands.add_parser(
         "telegram", help="Run the local Telegram adapter with long polling"
     )
@@ -110,6 +114,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create_travel_parser.add_argument("source_id", type=int)
     subcommands.add_parser("travel-records", help="List saved travel records")
+    calendar_authorize = subcommands.add_parser(
+        "calendar-authorize", help="Authorize local read-only Google Calendar access"
+    )
+    calendar_authorize.add_argument("client_secrets", type=Path, help="Google OAuth desktop-client JSON file")
+    calendar_authorize.add_argument("--token-file", type=Path)
+    calendar_search = subcommands.add_parser("calendar-search", help="Search current Google Calendar events")
+    calendar_search.add_argument("query", nargs="?", default="")
+    calendar_search.add_argument("--after", type=datetime.fromisoformat)
+    calendar_search.add_argument("--before", type=datetime.fromisoformat)
+    calendar_search.add_argument("--limit", type=int, default=10)
+    calendar_search.add_argument("--client-secrets", type=Path)
+    calendar_get = subcommands.add_parser("calendar-get", help="Read one current Google Calendar event")
+    calendar_get.add_argument("event_id")
+    calendar_get.add_argument("--client-secrets", type=Path)
     return parser
 
 
@@ -314,11 +332,23 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         checkpointer = SqliteSaver(checkpoint_connection)
         checkpointer.setup()
+        tools = build_read_only_tools(tool_service)
+        definitions = list(READ_ONLY_TOOL_DEFINITIONS)
+        if arguments.include_calendar:
+            client_secrets = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+            if not client_secrets:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS before using --include-calendar.")
+                return
+            calendar = CalendarService(
+                authorize_google_calendar(Path(client_secrets), settings.data_dir / "config" / "google-calendar-token.json")
+            )
+            tools.extend(build_calendar_read_tools(CalendarReadToolService(calendar)))
+            definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
         graph = build_tool_agent_graph(
             GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model),
-            build_read_only_tools(tool_service),
+            tools,
             checkpointer=checkpointer,
-            tool_policy=ToolPolicy(READ_ONLY_TOOL_DEFINITIONS),
+            tool_policy=ToolPolicy(definitions),
         )
         result = graph.invoke(
             {
@@ -354,6 +384,31 @@ def main(argv: Sequence[str] | None = None) -> None:
             StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
         )
         run_telegram_polling(token, application, application)
+        return
+
+    if arguments.command == "calendar-authorize":
+        token_path = arguments.token_file or settings.data_dir / "config" / "google-calendar-token.json"
+        authorize_google_calendar(arguments.client_secrets, token_path)
+        print(f"Google Calendar read access authorized. Token stored at {token_path}.")
+        return
+
+    if arguments.command in {"calendar-search", "calendar-get"}:
+        client_secrets = arguments.client_secrets
+        if client_secrets is None:
+            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+            if not configured:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Calendar.")
+                return
+            client_secrets = Path(configured)
+        token_path = settings.data_dir / "config" / "google-calendar-token.json"
+        calendar = CalendarService(authorize_google_calendar(client_secrets, token_path))
+        if arguments.command == "calendar-search":
+            events = calendar.search(arguments.query, time_min=arguments.after, time_max=arguments.before, limit=arguments.limit)
+            for event in events:
+                print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
+        else:
+            event = calendar.get_event(arguments.event_id)
+            print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
         return
 
     if arguments.command in {"create-workspace", "workspaces", "link-source"}:

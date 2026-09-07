@@ -703,6 +703,26 @@ agent tools are all registered as read-only, so no approval state is needed
 yet. Future calendar and filesystem tools must receive a policy definition
 before they can be included in an agent graph.
 
+## Google Calendar read boundary
+
+Phase 23 adds `CalendarService`, which calls Google Calendar directly for
+`search()` and `get_event()` rather than maintaining a stale local copy.
+`CalendarEvent` keeps Google's external ID, summary, current start/end values,
+and optional HTML link. All-day dates remain dates rather than invented
+midnight timestamps.
+
+`authorize_google_calendar()` uses an OAuth installed-app flow with the
+read-only Calendar scope. It loads and refreshes an existing local token when
+possible; otherwise it opens a local browser consent flow and writes the token
+under `.steward/config/`. The OAuth client JSON and token are private local
+credentials and must never be committed.
+
+CLI commands are `steward calendar-authorize`, `calendar-search`, and
+`calendar-get`. `--include-calendar` deliberately opts Calendar read tools into
+the tool agent, avoiding surprise browser authorization during ordinary local
+questions. Calendar tools are declared as `READ_ONLY` external tools in the
+same policy registry as local tools.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

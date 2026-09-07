@@ -103,6 +103,17 @@ def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
     )
 
 
+def test_cli_calendar_search_explains_oauth_client_setup(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.delenv("STEWARD_GOOGLE_CLIENT_SECRETS", raising=False)
+
+    main(["calendar-search", "Tokyo"])
+
+    assert capsys.readouterr().out == (
+        "Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Calendar.\n"
+    )
+
+
 def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
 

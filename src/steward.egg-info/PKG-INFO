@@ -4,6 +4,15 @@ Version: 0.1.0
 Summary: A local-first personal memory, knowledge, and action assistant.
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
+Requires-Dist: google-genai>=1.0
+Requires-Dist: google-api-python-client>=2.0
+Requires-Dist: google-auth-oauthlib>=1.0
+Requires-Dist: langgraph>=1.0
+Requires-Dist: langgraph-checkpoint-sqlite>=3.0
+Requires-Dist: openai>=2.0
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: python-telegram-bot>=22.0
+Requires-Dist: pypdf>=5.0
 Requires-Dist: sentence-transformers>=5.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
@@ -15,7 +24,16 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 0 establishes the project foundation only. Steward does not yet read a vault, create a database, call a model, or connect to Telegram.
+Phases 0–22 are implemented as a local foundation. Steward can capture text,
+Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
+fragments; create workspaces and organization proposals; retain activity,
+concept, claim, and travel-record provenance; and answer Telegram questions
+with persistent per-chat LangGraph state. The human approval and external
+action layers are still intentionally narrow. It can now also run an explicit
+Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
+workspaces, and activity.
+Every model-callable tool now declares its risk and approval requirements;
+only read-only tools are currently exposed to the agent.
 
 ## Local setup
 
@@ -31,7 +49,85 @@ steward scan path\to\your\vault
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
 
+## Search a vault
+
+Lexical search needs only the scan:
+
+```powershell
+steward scan path\to\your\vault
+steward search "address translations"
+```
+
+Semantic and hybrid search use a local embedding model. Download it explicitly
+once, then build the rebuildable local vector index. Subsequent indexing and
+search run from the local model cache.
+
+```powershell
+steward download-embedding-model
+steward index path\to\your\vault
+steward semantic-search "the little cache CPUs use for address translation"
+steward hybrid-search "the little cache CPUs use for address translation"
+```
+
+## Ask from local evidence
+
+Gemini is the default provider. Set its API key and a Gemini model available to
+your account in your PowerShell session, then ask a question. The answer request
+uses only retrieved fragments and asks the API not to store the interaction.
+
+```powershell
+$env:GEMINI_API_KEY = "your-api-key"
+$env:STEWARD_GEMINI_MODEL = "your-selected-model"
+steward ask "What do I know about address translation?"
+```
+
+## Ask with read-only tools
+
+`steward agent` is Steward's first tool-calling loop. Gemini can decide whether
+to search or read local Steward data, LangGraph executes only the six supplied
+read-only tools, then Gemini receives the tool results before answering.
+
+```powershell
+steward agent "What did I save about address translation?"
+```
+
+Use `--thread-id` to continue a tool-agent conversation through the local
+LangGraph checkpoint store:
+
+```powershell
+steward agent --thread-id research:tlb "What sources discuss TLBs?"
+```
+
+## Ask through Telegram
+
+Create a bot with BotFather, put its token in your private `.env`, and start
+the local polling process. Send `/save` as a message to capture its text, or
+use `/save` as the caption on a Markdown, text, or PDF attachment. Captured
+material is preserved in the configured Inbox before extraction and indexing.
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your-bot-token
+```
+
+```powershell
+steward telegram
+```
+
+Stop the local process with `Ctrl+C`. Long polling means this initial version
+does not need a public webhook endpoint.
+
+OpenAI remains available by explicitly selecting its provider:
+
+```powershell
+$env:STEWARD_MODEL_PROVIDER = "openai"
+$env:OPENAI_API_KEY = "your-api-key"
+$env:STEWARD_OPENAI_MODEL = "your-selected-model"
+steward ask "What do I know about address translation?"
+```
+
 ## Documentation
+
+- `docs/developer-guide.md` — implementation, data flow, limitations, and next steps
 
 - `docs/product.md` — product intent
 - `docs/architecture.md` — architectural boundaries

@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–22 are implemented as a local foundation. Steward can capture text,
+Phases 0–23 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -14,6 +14,8 @@ Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
 workspaces, and activity.
 Every model-callable tool now declares its risk and approval requirements;
 only read-only tools are currently exposed to the agent.
+Google Calendar can now be connected through local OAuth for current read-only
+event search and lookup.
 
 ## Local setup
 
@@ -76,6 +78,25 @@ LangGraph checkpoint store:
 
 ```powershell
 steward agent --thread-id research:tlb "What sources discuss TLBs?"
+```
+
+## Connect Google Calendar for reads
+
+Create a Google OAuth **desktop application** client, download its client JSON
+outside the repository, then authorize it locally. The resulting refreshable
+token is stored under `.steward/config/`, not in Git.
+
+```powershell
+steward calendar-authorize C:\private\google-oauth-client.json
+$env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
+steward calendar-search "Tokyo"
+steward calendar-get GOOGLE_EVENT_ID
+```
+
+Use Calendar reads in the tool agent only when requested explicitly:
+
+```powershell
+steward agent --include-calendar "What is on my calendar when I arrive in Tokyo?"
 ```
 
 ## Ask through Telegram
