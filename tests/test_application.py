@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from steward.answer import AnswerCitation
-from steward.application import StewardQuestionApplication, TEXT_QUESTION_REQUIRED
+from steward.application import StewardEventApplication, StewardQuestionApplication, TEXT_QUESTION_REQUIRED
 from steward.application import StewardCaptureApplication
 from steward.capture import CaptureResult
 from steward.events import IncomingEvent
@@ -81,3 +81,13 @@ def test_capture_application_requires_explicit_text() -> None:
     assert StewardCaptureApplication(FakeCaptureService()).handle(make_event(text="/save")) == (
         "Use /save followed by the text you want Steward to keep."
     )
+
+
+def test_event_application_routes_a_question() -> None:
+    graph = FakeGraph()
+    class Capture:
+        def handle(self, event): raise AssertionError("question must not capture")
+    response = StewardEventApplication(StewardQuestionApplication(graph), Capture()).handle(
+        make_event(text="What is a TLB?")
+    )
+    assert "TLB" in response

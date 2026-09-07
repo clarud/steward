@@ -8,6 +8,7 @@ from steward.answer import AnswerCitation
 from steward.capture import InboxCaptureService
 from pathlib import Path
 from steward.events import IncomingEvent
+from steward.intent import Intent, IntentResolver
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -82,6 +83,33 @@ class StewardCaptureApplication:
         if result.duplicate:
             return f"Already saved: {result.source.path}"
         return f"Saved to Inbox: {result.source.path}"
+
+
+class StewardEventApplication:
+    """Route normalized events through one explicit intent decision."""
+
+    def __init__(
+        self,
+        question_application: StewardQuestionApplication,
+        capture_application: StewardCaptureApplication,
+        intent_resolver: IntentResolver | None = None,
+    ) -> None:
+        self._question_application = question_application
+        self._capture_application = capture_application
+        self._intent_resolver = intent_resolver or IntentResolver()
+
+    def handle(self, event: IncomingEvent) -> str:
+        decision = self._intent_resolver.resolve(event)
+        if decision.primary_intent is Intent.ASK:
+            return self._question_application.handle(event)
+        if decision.primary_intent is Intent.CAPTURE:
+            return self._capture_application.handle(event)
+        return "I do not yet know how to safely handle that request."
+
+    def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
+        """Documents are deterministic capture signals after adapter validation."""
+
+        return self._capture_application.handle_file(event, original_path)
 
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
         """Preserve an already-downloaded Telegram document."""

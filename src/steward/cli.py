@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from steward.config import Settings, load_environment_file
-from steward.application import StewardCaptureApplication, StewardQuestionApplication
+from steward.application import StewardCaptureApplication, StewardEventApplication, StewardQuestionApplication
 from steward.capture import InboxCaptureService
 from steward.answer import (
     AnswerService,
@@ -267,9 +267,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             SourceRepository(settings.data_dir / "steward.db"),
             SourceFragmentRepository(settings.data_dir / "steward.db"),
         )
-        run_telegram_polling(
-            token, StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
+        application = StewardEventApplication(
+            StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
         )
+        run_telegram_polling(token, application, application)
         return
 
     logging.getLogger(__name__).info("Steward foundation started")
