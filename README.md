@@ -4,10 +4,11 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phase 6 is complete. Steward can register and structurally extract Markdown,
+Phase 7 is complete. Steward can register and structurally extract Markdown,
 retrieve its fragments, generate grounded answers from explicitly retrieved
 evidence, and orchestrate the retrieve-to-answer workflow with LangGraph. It
-does not yet connect to Telegram.
+can also answer isolated text questions sent to a local Telegram bot through
+long polling.
 
 ## Local setup
 
@@ -54,6 +55,23 @@ $env:GEMINI_API_KEY = "your-api-key"
 $env:STEWARD_GEMINI_MODEL = "your-selected-model"
 steward ask "What do I know about address translation?"
 ```
+
+## Ask through Telegram
+
+Create a bot with BotFather, put its token in your private `.env`, and start
+the local polling process. This phase supports text questions only; it does not
+yet capture Telegram messages or attachments as durable sources.
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your-bot-token
+```
+
+```powershell
+steward telegram
+```
+
+Stop the local process with `Ctrl+C`. Long polling means this initial version
+does not need a public webhook endpoint.
 
 OpenAI remains available by explicitly selecting its provider:
 

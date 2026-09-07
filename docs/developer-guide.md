@@ -1,11 +1,11 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 6. Steward can register local Markdown files, extract structured
+through 7. Steward can register local Markdown files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
 generate grounded answers from retrieved fragments. A minimal LangGraph
-workflow orchestrates those existing services. Steward is not yet a Telegram
-bot.
+workflow orchestrates those existing services. A Telegram adapter can deliver
+isolated text questions to that application flow.
 
 ## Design principles
 
@@ -471,6 +471,69 @@ The CLI now composes and invokes this graph for `steward ask`. LangGraph owns
 only state transitions and routing; `HybridRetriever`, `ContextBuilder`, and
 the model gateways still own their existing responsibilities.
 
+## Telegram adapter
+
+Phase 7 adds a transport boundary; it does not add conversation memory or
+Telegram capture. A Telegram message moves through the system as follows:
+
+```text
+Telegram Update
+  ↓
+normalize_telegram_update
+  ↓
+IncomingEvent
+  ↓
+StewardQuestionApplication.handle
+  ↓
+compiled retrieval-answer graph
+  ↓
+answer text
+  ↓
+TelegramAdapter.reply_text
+```
+
+`IncomingEvent` in `events.py` is deliberately platform-neutral. Its stable
+event ID, platform, chat ID, message ID, optional reply-to ID, timezone-aware
+timestamp, text, and attachment placeholders describe what arrived without
+leaking Telegram objects into application code. Future adapters can construct
+the same event shape.
+
+`normalize_telegram_update()` is the adapter's deterministic translation step.
+For example, Telegram update `42` from chat `100` becomes the event ID
+`telegram:42` and chat ID `"100"`. A reply retains the message ID it replied
+to, which will matter when Phase 8 adds reference resolution.
+
+`StewardQuestionApplication` is the small application use case. It knows only
+that it receives normalized text and that the graph accepts `{"question":
+text}` and returns an `answer`; it has no Telegram dependency. Empty text gets
+a deterministic instruction rather than invoking retrieval. When the graph
+returns citations, it appends the same `[F1] path:location [heading]` source
+details as the CLI so citation keys in a Telegram answer remain inspectable.
+
+The library's handler is asynchronous, while the current retrieval graph and
+model gateway are synchronous. `TelegramAdapter.handle_update()` uses
+`asyncio.to_thread(...)` to run the application call in a worker thread, then
+awaits `reply_text`. This keeps Telegram's event loop free to receive updates
+while an answer is being generated. It is a pragmatic Phase 7 bridge, not a
+claim that the retrieval services are fully async.
+
+`run_telegram_polling()` is the only place that constructs
+`ApplicationBuilder`, registers `MessageHandler(filters.TEXT &
+~filters.COMMAND, ...)`, and calls `run_polling()`. Long polling is appropriate
+for this local-first version because the bot opens an outgoing connection to
+Telegram rather than requiring a public webhook server. The process remains
+running until `Ctrl+C` stops it.
+
+Configure the private bot token and run the adapter:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=your-bot-token
+```
+
+```powershell
+steward telegram
+```
+
 ## Commands and data flow
 
 ```powershell
@@ -545,8 +608,8 @@ pytest
 
 ## Known limitations
 
-- Only Markdown is supported. PDFs, DOCX, HTML, plain text, images, Telegram
-  attachments, and other source types are future work.
+- Only Markdown is supported as a source. PDFs, DOCX, HTML, plain text,
+  images, Telegram attachments, and other source types are future work.
 - Heading-based fragments are useful but not universally optimal. Very long
   sections can create overly large fragments; very short headings can create
   too little context.
@@ -574,6 +637,9 @@ pytest
   assuming a particular Gemini model is available to every account.
 - Graph state is in memory only. Restarting Steward loses it; Phase 8 adds
   conversation state and later persistent checkpointers.
+- Telegram supports only non-command text questions. It has no allowlist,
+  conversation memory, message deduplication, attachment handling, retry
+  policy, or persistent update offset beyond the library's live polling state.
 - There is no conversation memory, access policy, or external action support
   yet.
 - The current CLI constructs services directly. As the application grows, a
@@ -608,13 +674,16 @@ pytest
 
 ### Product progression
 
-1. Phase 7: add a Telegram adapter that normalizes transport events and calls
-   Steward's application boundary without embedding domain logic in handlers.
-2. Add structured answer evaluation cases that inspect retrieved evidence,
+1. Phase 8: add conversation state, first in memory and then with a persistent
+   LangGraph checkpointer, so Telegram replies can resolve references such as
+   "that".
+2. Add Telegram capture in Phase 9, preserving messages and attachments as
+   sources instead of treating questions as durable knowledge automatically.
+3. Add structured answer evaluation cases that inspect retrieved evidence,
    generated citations, and unsupported-answer behavior.
-3. Add richer extractors for plain text and PDF before introducing broad
+4. Add richer extractors for plain text and PDF before introducing broad
    capture channels.
-4. Add structured retrieval evaluations before relying on semantic results for
+5. Add structured retrieval evaluations before relying on semantic results for
    important personal records or actions.
 
 ## Practical debugging

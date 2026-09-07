@@ -9,10 +9,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from steward.config import Settings, load_environment_file
+from steward.application import StewardQuestionApplication
 from steward.answer import (
     AnswerService,
     ContextBuilder,
     GeminiModelGateway,
+    ModelGateway,
     OpenAIModelGateway,
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
@@ -28,6 +30,7 @@ from steward.retrieval import (
     SentenceTransformerEmbeddingProvider,
     SQLiteSemanticIndex,
 )
+from steward.telegram import run_telegram_polling
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,7 +66,62 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask_parser.add_argument("question", help="Question to answer from local evidence")
     ask_parser.add_argument("--limit", type=int, default=5, help="Maximum evidence fragments")
+    telegram_parser = subcommands.add_parser(
+        "telegram", help="Run the local Telegram adapter with long polling"
+    )
+    telegram_parser.add_argument(
+        "--limit", type=int, default=5, help="Maximum evidence fragments per question"
+    )
     return parser
+
+
+def _model_gateway_from_settings(
+    settings: Settings, *, command: str
+) -> ModelGateway | None:
+    """Create the configured model gateway, or print its actionable setup error."""
+
+    if settings.model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key or not settings.gemini_model:
+            print(
+                "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using "
+                f"`steward {command}`."
+            )
+            return None
+        return GeminiModelGateway(api_key=api_key, model=settings.gemini_model)
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key or not settings.openai_model:
+        print(
+            "Set OPENAI_API_KEY and STEWARD_OPENAI_MODEL before using "
+            f"`steward {command}`."
+        )
+        return None
+    return OpenAIModelGateway(api_key=api_key, model=settings.openai_model)
+
+
+def _build_question_graph(
+    settings: Settings, model_gateway: ModelGateway, *, limit: int
+):
+    """Compose the reusable local retrieval-and-answer workflow."""
+
+    database_path = settings.data_dir / "steward.db"
+    initialize_database(database_path)
+    source_repository = SourceRepository(database_path)
+    fragment_repository = SourceFragmentRepository(database_path)
+    semantic_search = SemanticSearchService(
+        source_repository,
+        SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
+    )
+    retriever = HybridRetriever(
+        LexicalSearchService(source_repository, fragment_repository), semantic_search
+    )
+    answer_service = AnswerService(
+        retriever=retriever,
+        context_builder=ContextBuilder(),
+        model_gateway=model_gateway,
+    )
+    return build_retrieval_answer_graph(retriever, answer_service, retrieval_limit=limit)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -167,46 +225,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if arguments.command == "ask":
-        if settings.model_provider == "gemini":
-            api_key = os.environ.get("GEMINI_API_KEY")
-            if not api_key or not settings.gemini_model:
-                print(
-                    "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using "
-                    "`steward ask`."
-                )
-                return
-            model_gateway = GeminiModelGateway(
-                api_key=api_key, model=settings.gemini_model
-            )
-        else:
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key or not settings.openai_model:
-                print(
-                    "Set OPENAI_API_KEY and STEWARD_OPENAI_MODEL before using "
-                    "`steward ask`."
-                )
-                return
-            model_gateway = OpenAIModelGateway(
-                api_key=api_key, model=settings.openai_model
-            )
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        source_repository = SourceRepository(database_path)
-        fragment_repository = SourceFragmentRepository(database_path)
-        semantic_search = SemanticSearchService(
-            source_repository,
-            SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
-        )
-        retriever = HybridRetriever(
-            LexicalSearchService(source_repository, fragment_repository), semantic_search
-        )
-        answer_service = AnswerService(
-            retriever=retriever,
-            context_builder=ContextBuilder(),
-            model_gateway=model_gateway,
-        )
-        graph_result = build_retrieval_answer_graph(
-            retriever, answer_service, retrieval_limit=arguments.limit
+        model_gateway = _model_gateway_from_settings(settings, command="ask")
+        if model_gateway is None:
+            return
+        graph_result = _build_question_graph(
+            settings, model_gateway, limit=arguments.limit
         ).invoke({"question": arguments.question})
         print(graph_result["answer"])
         citations = graph_result.get("citations", ())
@@ -218,6 +241,18 @@ def main(argv: Sequence[str] | None = None) -> None:
                     f"[{citation.key}] {citation.source_path}:"
                     f"{citation.location} [{heading}]"
                 )
+        return
+
+    if arguments.command == "telegram":
+        token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        if not token:
+            print("Set TELEGRAM_BOT_TOKEN before using `steward telegram`.")
+            return
+        model_gateway = _model_gateway_from_settings(settings, command="telegram")
+        if model_gateway is None:
+            return
+        graph = _build_question_graph(settings, model_gateway, limit=arguments.limit)
+        run_telegram_polling(token, StewardQuestionApplication(graph))
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

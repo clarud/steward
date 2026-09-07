@@ -77,3 +77,14 @@ def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> 
     assert capsys.readouterr().out == (
         "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward ask`.\n"
     )
+
+
+def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
+    main(["telegram"])
+
+    assert capsys.readouterr().out == (
+        "Set TELEGRAM_BOT_TOKEN before using `steward telegram`.\n"
+    )
