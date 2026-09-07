@@ -15,6 +15,8 @@ WORKSPACES_SCHEMA_VERSION = 6
 WORKSPACE_SOURCES_SCHEMA_VERSION = 7
 ORGANIZATION_SCHEMA_VERSION = 8
 ACTIVITY_SCHEMA_VERSION = 9
+KNOWLEDGE_SCHEMA_VERSION = 10
+CONCEPT_ALIAS_SCHEMA_VERSION = 11
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -77,6 +79,16 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL, created_at TEXT NOT NULL)
         """,
+    ),
+    (
+        KNOWLEDGE_SCHEMA_VERSION,
+        """CREATE TABLE concepts (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)""",
+    ),
+    (
+        CONCEPT_ALIAS_SCHEMA_VERSION,
+        """
+        CREATE TABLE concept_aliases (concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+            alias TEXT NOT NULL UNIQUE, PRIMARY KEY (concept_id, alias))""",
     ),
     (
         ACTIVITY_SCHEMA_VERSION,
