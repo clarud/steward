@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,8 +14,10 @@ from steward.answer import (
 )
 from steward.answer.service import GROUNDING_INSTRUCTIONS, NO_EVIDENCE_ANSWER
 from steward.extraction import SourceFragment
+from steward.privacy import PrivacyRule, PrivacyService
 from steward.retrieval import HybridSearchHit
-from steward.sources import Source, SourceType
+from steward.sources import Source, SourceRepository, SourceType
+from steward.storage import initialize_database
 
 
 @dataclass
@@ -93,6 +95,26 @@ def test_answer_service_does_not_call_model_without_local_evidence() -> None:
     assert result.text == NO_EVIDENCE_ANSWER
     assert result.citations == ()
     assert result.context is None
+    assert gateway.input_text is None
+
+
+def test_answer_service_does_not_send_private_source_content_to_cloud_model(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    hit = _hit()
+    SourceRepository(database).add(replace(hit.source, id=None))
+    privacy = PrivacyService(database)
+    privacy.set_rule(1, PrivacyRule.LOCAL_MODEL_ONLY)
+    gateway = FakeModelGateway()
+
+    result = AnswerService(
+        FakeRetriever((hit,)), ContextBuilder(), gateway, privacy
+    ).ask("What does a TLB do?")
+
+    assert result.text == NO_EVIDENCE_ANSWER
+    assert result.citations == ()
     assert gateway.input_text is None
 
 

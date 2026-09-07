@@ -5,6 +5,7 @@ from pathlib import Path
 from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
 from steward.knowledge import KnowledgeService
+from steward.privacy import PrivacyRule, PrivacyService
 from steward.records import RecordService
 from steward.retrieval import LexicalSearchService
 from steward.sources import Source, SourceRepository, SourceType
@@ -64,3 +65,24 @@ def test_read_only_tools_expose_only_the_phase_21_safe_tool_set(tmp_path: Path) 
         "search_sources", "read_source", "search_knowledge", "search_records",
         "search_workspaces", "search_activity",
     ]
+
+
+def test_read_only_tools_do_not_return_private_source_text_to_cloud_agent(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "private.md", "b" * 64, SourceType.MARKDOWN, 1, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "Do not disclose this.", "lines 1"),))
+    )
+    privacy = PrivacyService(database)
+    privacy.set_rule(source.id or 0, PrivacyRule.NO_MODEL)
+    service = ReadOnlyToolService(
+        sources, fragments, LexicalSearchService(sources, fragments), KnowledgeService(database),
+        RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy,
+    )
+
+    assert json.loads(service.search_sources("disclose")) == []
+    assert "privacy rule" in json.loads(service.read_source(source.id or 0))["error"]

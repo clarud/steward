@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from steward.answer.context import ContextBuilder
 from steward.answer.gateway import ModelGateway
 from steward.answer.models import AnswerResult
+from steward.privacy import PrivacyService
 from steward.retrieval import HybridSearchHit
 
 NO_EVIDENCE_ANSWER = "I don't have enough local information to answer that."
@@ -33,10 +34,12 @@ class AnswerService:
         retriever: Retriever,
         context_builder: ContextBuilder,
         model_gateway: ModelGateway,
+        privacy_service: PrivacyService | None = None,
     ) -> None:
         self._retriever = retriever
         self._context_builder = context_builder
         self._model_gateway = model_gateway
+        self._privacy = privacy_service
 
     def ask(self, question: str, *, limit: int = 5) -> AnswerResult:
         """Answer a non-empty question only when local evidence was retrieved."""
@@ -51,7 +54,13 @@ class AnswerService:
         """Generate from already-retrieved evidence without searching again."""
         if not question.strip():
             raise ValueError("Question must not be empty.")
-        if not hits:
+        permitted_hits = tuple(
+            hit
+            for hit in hits
+            if self._privacy is None
+            or (hit.source.id is not None and self._privacy.permits_external_model(hit.source.id))
+        )
+        if not permitted_hits:
             return AnswerResult(
                 question=question,
                 text=NO_EVIDENCE_ANSWER,
@@ -59,7 +68,7 @@ class AnswerService:
                 context=None,
             )
 
-        context = self._context_builder.build(question, hits)
+        context = self._context_builder.build(question, permitted_hits)
         answer = self._model_gateway.generate(
             instructions=GROUNDING_INSTRUCTIONS,
             input_text=context.prompt,

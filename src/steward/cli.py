@@ -45,6 +45,7 @@ from steward.research import GeminiGoogleSearchProvider, ResearchService
 from steward.workspace_detection import WorkspaceDetectionService
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
+from steward.privacy import PrivacyRule, PrivacyService
 from steward.knowledge import KnowledgeService
 from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
@@ -107,6 +108,11 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("workspaces", help="List workspaces")
     subcommands.add_parser("review-inbox-workspaces", help="Propose possible new workspaces from Inbox sources")
     subcommands.add_parser("connect-knowledge", help="Propose evidence-backed connections between concepts")
+    privacy_parser = subcommands.add_parser("set-source-privacy", help="Set a source's model privacy rule")
+    privacy_parser.add_argument("source_id", type=int)
+    privacy_parser.add_argument("rule", choices=[rule.value for rule in PrivacyRule])
+    source_privacy_parser = subcommands.add_parser("source-privacy", help="Show a source's privacy rule")
+    source_privacy_parser.add_argument("source_id", type=int)
     link_parser = subcommands.add_parser("link-source", help="Relate a source to a workspace")
     link_parser.add_argument("workspace_id", type=int)
     link_parser.add_argument("source_id", type=int)
@@ -191,6 +197,7 @@ def _build_question_graph(
         retriever=retriever,
         context_builder=ContextBuilder(),
         model_gateway=model_gateway,
+        privacy_service=PrivacyService(database_path),
     )
     checkpoint_connection = sqlite3.connect(
         settings.data_dir / "checkpoints.db", check_same_thread=False
@@ -349,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             RecordService(database_path),
             WorkspaceRepository(database_path),
             ActivityService(database_path),
+            PrivacyService(database_path),
         )
         checkpoint_connection = sqlite3.connect(
             settings.data_dir / "checkpoints.db", check_same_thread=False
@@ -524,6 +532,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 f"fragments={','.join(str(fragment_id) for fragment_id in proposal.supporting_fragment_ids)}\t"
                 f"{proposal.rationale}"
             )
+        return
+
+    if arguments.command in {"set-source-privacy", "source-privacy"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        privacy = PrivacyService(database_path)
+        if arguments.command == "set-source-privacy":
+            privacy.set_rule(arguments.source_id, PrivacyRule(arguments.rule))
+            print(f"Source {arguments.source_id} privacy set to {arguments.rule}.")
+        else:
+            print(privacy.rule_for(arguments.source_id).value)
         return
 
     if arguments.command in {"propose-organization", "organization-proposals", "review-proposal"}:

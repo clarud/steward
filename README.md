@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–29 are implemented as a local foundation. Steward can capture text,
+Phases 0–30 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -153,6 +153,18 @@ any extraction work. Press `Ctrl+C` to stop the foreground watcher.
 ```powershell
 steward watch path\to\your\vault
 ```
+
+## Set source privacy before model use
+
+```powershell
+steward set-source-privacy 12 local_model_only
+steward source-privacy 12
+```
+
+The cloud-answer and cloud tool-agent paths enforce this boundary before they
+place source text or source-derived travel record fields in a model prompt.
+`external_redacted` is deliberately withheld until Steward has an actual,
+auditable redaction feature; a label alone cannot protect data.
 
 ## Ask through Telegram
 

@@ -145,3 +145,19 @@ def test_cli_reports_when_no_knowledge_connections_exist(tmp_path: Path, monkeyp
     main(["connect-knowledge"])
 
     assert capsys.readouterr().out == "No evidence-backed knowledge connections found.\n"
+
+
+def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / "data"
+    database = data_dir / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "private.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["set-source-privacy", str(source.id), "no_model"])
+    assert capsys.readouterr().out == "Source 1 privacy set to no_model.\n"
+    main(["source-privacy", str(source.id)])
+    assert capsys.readouterr().out == "no_model\n"

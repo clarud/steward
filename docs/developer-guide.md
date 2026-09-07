@@ -787,6 +787,19 @@ metadata. Google Calendar is the first real integration; web research remains
 an explicitly ephemeral provider. This keeps future Gmail, GitHub, or task
 system additions narrow rather than offering the model a generic HTTP tool.
 
+## Per-source privacy policy
+
+Phase 30 stores a `PrivacyRule` for individual sources: `external_allowed`,
+`external_redacted`, `local_model_only`, or `no_model`. `PrivacyService` uses
+SQLite foreign keys to prevent orphan policies and exposes the rule through
+`set-source-privacy` and `source-privacy`. The default preserves the existing
+local-first workflow as `external_allowed`. The cloud `AnswerService` filters
+retrieval hits before it builds model context, and the cloud tool-agent adapter
+filters source searches, source reads, and source-derived travel records before
+they become tool results. `external_redacted` intentionally fails closed until
+there is a genuine, reviewable redaction pipeline; it is unsafe to assume that
+the rule's name transforms sensitive text.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

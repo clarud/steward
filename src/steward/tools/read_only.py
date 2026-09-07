@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool, tool
 from steward.activity import ActivityService
 from steward.extraction import SourceFragmentRepository
 from steward.knowledge import KnowledgeService
+from steward.privacy import PrivacyService
 from steward.records import RecordService
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
@@ -38,6 +39,7 @@ class ReadOnlyToolService:
         record_service: RecordService,
         workspace_repository: WorkspaceRepository,
         activity_service: ActivityService,
+        privacy_service: PrivacyService | None = None,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -46,6 +48,7 @@ class ReadOnlyToolService:
         self._records = record_service
         self._workspaces = workspace_repository
         self._activity = activity_service
+        self._privacy = privacy_service
 
     def search_sources(self, query: str, limit: int = 5) -> str:
         """Find source fragments by exact terms and return their provenance."""
@@ -61,6 +64,7 @@ class ReadOnlyToolService:
                     "score": hit.score,
                 }
                 for hit in self._lexical.search(query, limit=self._limit(limit))
+                if self._permits_external_model(hit.source.id)
             ]
         )
 
@@ -69,6 +73,10 @@ class ReadOnlyToolService:
         source = self._sources.get_by_id(source_id)
         if source is None:
             return self._json({"error": f"Source {source_id} was not found."})
+        if not self._permits_external_model(source.id):
+            return self._json(
+                {"error": "This source's privacy rule prevents sending its content to an external model."}
+            )
         return self._json(
             {
                 "id": source.id,
@@ -102,6 +110,8 @@ class ReadOnlyToolService:
         needle = query.casefold().strip()
         records = []
         for record in self._records.list_travel_records():
+            if not self._permits_external_model(record.source_id):
+                continue
             values = (record.flight_number, record.departure, record.arrival, record.booking_reference)
             if any(needle in value.casefold() for value in values if value):
                 records.append(
@@ -155,6 +165,11 @@ class ReadOnlyToolService:
         if not 1 <= value <= 20:
             raise ValueError("Tool limit must be between 1 and 20.")
         return value
+
+    def _permits_external_model(self, source_id: int | None) -> bool:
+        return source_id is not None and (
+            self._privacy is None or self._privacy.permits_external_model(source_id)
+        )
 
     @staticmethod
     def _json(value: object) -> str:

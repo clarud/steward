@@ -24,6 +24,7 @@ TRAVEL_EVIDENCE_SCHEMA_VERSION = 15
 ORGANIZATION_PROPOSAL_DETAILS_SCHEMA_VERSION = 16
 ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION = 17
 CALENDAR_EVENT_LINKS_SCHEMA_VERSION = 18
+SOURCE_PRIVACY_SCHEMA_VERSION = 19
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -163,6 +164,10 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             created_at TEXT NOT NULL
         )
         """,
+    ),
+    (
+        SOURCE_PRIVACY_SCHEMA_VERSION,
+        """CREATE TABLE source_privacy_policies (source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE, rule TEXT NOT NULL)""",
     ),
 )
 
