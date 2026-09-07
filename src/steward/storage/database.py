@@ -17,6 +17,8 @@ ORGANIZATION_SCHEMA_VERSION = 8
 ACTIVITY_SCHEMA_VERSION = 9
 KNOWLEDGE_SCHEMA_VERSION = 10
 CONCEPT_ALIAS_SCHEMA_VERSION = 11
+CLAIMS_SCHEMA_VERSION = 12
+CLAIM_EVIDENCE_SCHEMA_VERSION = 13
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -79,6 +81,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL, created_at TEXT NOT NULL)
         """,
+    ),
+    (
+        CLAIMS_SCHEMA_VERSION,
+        """CREATE TABLE claims (id INTEGER PRIMARY KEY, concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE, text TEXT NOT NULL, created_at TEXT NOT NULL)""",
+    ),
+    (
+        CLAIM_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE claim_evidence (claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE, PRIMARY KEY (claim_id, fragment_id))""",
     ),
     (
         KNOWLEDGE_SCHEMA_VERSION,

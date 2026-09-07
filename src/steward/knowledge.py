@@ -17,6 +17,13 @@ class ConceptProposal:
     new_concepts: tuple[str, ...]
     supporting_fragment_ids: tuple[int, ...]
 
+@dataclass(frozen=True, slots=True)
+class Claim:
+    id: int | None
+    concept_id: int
+    text: str
+    created_at: datetime
+
 class KnowledgeService:
     def __init__(self, database_path: Path) -> None: self._database_path = database_path
     def create_concept(self, name: str) -> Concept:
@@ -39,3 +46,11 @@ class KnowledgeService:
             concept=self.find(name)
             (existing if concept else new).append(concept.id if concept else name)
         return ConceptProposal(tuple(existing), tuple(new), tuple(fragment_ids))
+    def create_claim(self, concept_id: int, text: str, fragment_ids: list[int]) -> Claim:
+        claim=Claim(None, concept_id, text.strip(), datetime.now(UTC))
+        if not claim.text or not fragment_ids: raise ValueError("Claims require text and evidence.")
+        with sqlite3.connect(self._database_path) as connection:
+            cursor=connection.execute("INSERT INTO claims (concept_id,text,created_at) VALUES (?,?,?)",(concept_id,claim.text,claim.created_at.isoformat()))
+            claim_id=int(cursor.lastrowid)
+            connection.executemany("INSERT INTO claim_evidence (claim_id,fragment_id) VALUES (?,?)",[(claim_id,fragment_id) for fragment_id in fragment_ids])
+        return replace(claim,id=claim_id)

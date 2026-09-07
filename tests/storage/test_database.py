@@ -12,6 +12,8 @@ from steward.storage.database import (
     ACTIVITY_SCHEMA_VERSION,
     KNOWLEDGE_SCHEMA_VERSION,
     CONCEPT_ALIAS_SCHEMA_VERSION,
+    CLAIMS_SCHEMA_VERSION,
+    CLAIM_EVIDENCE_SCHEMA_VERSION,
     SOURCES_SCHEMA_VERSION,
 )
 
@@ -40,6 +42,8 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             ACTIVITY_SCHEMA_VERSION,
             KNOWLEDGE_SCHEMA_VERSION,
             CONCEPT_ALIAS_SCHEMA_VERSION,
+            CLAIMS_SCHEMA_VERSION,
+            CLAIM_EVIDENCE_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -66,4 +70,4 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == 11
+    assert migration_count == 13
