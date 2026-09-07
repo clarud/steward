@@ -11,6 +11,8 @@ SOURCES_SCHEMA_VERSION = 2
 FRAGMENTS_SCHEMA_VERSION = 3
 LEXICAL_SEARCH_SCHEMA_VERSION = 4
 SEMANTIC_SEARCH_SCHEMA_VERSION = 5
+WORKSPACES_SCHEMA_VERSION = 6
+WORKSPACE_SOURCES_SCHEMA_VERSION = 7
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -65,6 +67,21 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             dimension INTEGER NOT NULL CHECK (dimension > 0),
             vector_json TEXT NOT NULL
         )
+        """,
+    ),
+    (
+        WORKSPACES_SCHEMA_VERSION,
+        """
+        CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL, created_at TEXT NOT NULL)
+        """,
+    ),
+    (
+        WORKSPACE_SOURCES_SCHEMA_VERSION,
+        """
+        CREATE TABLE workspace_sources (workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            PRIMARY KEY (workspace_id, source_id))
         """,
     ),
 )

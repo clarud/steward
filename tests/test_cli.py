@@ -88,3 +88,11 @@ def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
     assert capsys.readouterr().out == (
         "Set TELEGRAM_BOT_TOKEN before using `steward telegram`.\n"
     )
+
+
+def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+
+    main(["create-workspace", "Steward"])
+
+    assert capsys.readouterr().out == "Created workspace 1: Steward\n"

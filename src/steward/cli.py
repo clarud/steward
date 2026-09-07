@@ -33,6 +33,7 @@ from steward.retrieval import (
     SQLiteSemanticIndex,
 )
 from steward.telegram import run_telegram_polling
+from steward.workspaces import WorkspaceRepository, WorkspaceService
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
@@ -75,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     telegram_parser.add_argument(
         "--limit", type=int, default=5, help="Maximum evidence fragments per question"
     )
+    workspace_parser = subcommands.add_parser("create-workspace", help="Create an explicit workspace")
+    workspace_parser.add_argument("name")
+    subcommands.add_parser("workspaces", help="List workspaces")
+    link_parser = subcommands.add_parser("link-source", help="Relate a source to a workspace")
+    link_parser.add_argument("workspace_id", type=int)
+    link_parser.add_argument("source_id", type=int)
     return parser
 
 
@@ -271,6 +278,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
         )
         run_telegram_polling(token, application, application)
+        return
+
+    if arguments.command in {"create-workspace", "workspaces", "link-source"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        repository = WorkspaceRepository(database_path)
+        service = WorkspaceService(repository)
+        if arguments.command == "create-workspace":
+            workspace = service.create(arguments.name)
+            print(f"Created workspace {workspace.id}: {workspace.name}")
+        elif arguments.command == "link-source":
+            service.add_source(arguments.workspace_id, arguments.source_id)
+            print(f"Linked source {arguments.source_id} to workspace {arguments.workspace_id}")
+        else:
+            for workspace in repository.list_all():
+                print(f"{workspace.id}\t{workspace.status}\t{workspace.name}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")
