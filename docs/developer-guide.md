@@ -778,6 +778,15 @@ nothing, changed files replace their derived fragments (and semantic vectors
 when configured), and deleted registered files become `MISSING`. This avoids
 relying on noisy filesystem events as the truth source.
 
+## External integration boundary
+
+Phase 29 adds `IntegrationRegistry`. An external integration declares its
+adapter name, domain service, tool names, and whether it records activity.
+Registration verifies that every named tool has matching external-system risk
+metadata. Google Calendar is the first real integration; web research remains
+an explicitly ephemeral provider. This keeps future Gmail, GitHub, or task
+system additions narrow rather than offering the model a generic HTTP tool.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.
