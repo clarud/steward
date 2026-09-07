@@ -19,6 +19,8 @@ KNOWLEDGE_SCHEMA_VERSION = 10
 CONCEPT_ALIAS_SCHEMA_VERSION = 11
 CLAIMS_SCHEMA_VERSION = 12
 CLAIM_EVIDENCE_SCHEMA_VERSION = 13
+TRAVEL_RECORDS_SCHEMA_VERSION = 14
+TRAVEL_EVIDENCE_SCHEMA_VERSION = 15
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -81,6 +83,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL, created_at TEXT NOT NULL)
         """,
+    ),
+    (
+        TRAVEL_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE travel_record_evidence (travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (travel_record_id, field_name))""",
+    ),
+    (
+        TRAVEL_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE travel_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            flight_number TEXT, departure TEXT, arrival TEXT, departure_time TEXT, arrival_time TEXT, booking_reference TEXT)""",
     ),
     (
         CLAIMS_SCHEMA_VERSION,
