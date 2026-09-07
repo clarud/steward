@@ -37,6 +37,7 @@ from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.organization import OrganizationProposalRepository, OrganizationService
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
+from steward.records import RecordService
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
@@ -92,6 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser = subcommands.add_parser("review-proposal", help="Accept or reject an organization proposal")
     review_parser.add_argument("proposal_id", type=int)
     review_parser.add_argument("status", choices=("accepted", "rejected"))
+    travel_parser = subcommands.add_parser("propose-travel-record", help="Interpret source fragments as a travel record")
+    travel_parser.add_argument("source_id", type=int)
     return parser
 
 
@@ -356,6 +359,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         initialize_database(database_path)
         for event in ActivityService(database_path).list_recent():
             print(f"{event.id}\t{event.event_type.value}\t{event.object_id or ''}\t{event.details}")
+        return
+
+    if arguments.command == "propose-travel-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        proposal = RecordService(database_path).propose_travel_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = proposal.record
+        print(f"flight={record.flight_number or ''}\tdeparture={record.departure or ''}\tarrival={record.arrival or ''}\tevidence={proposal.field_evidence}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")
