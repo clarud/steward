@@ -635,7 +635,10 @@ The original file is canonical; fragments and embeddings can be rebuilt.
 attachment means capture, while `/delete`, `/organize`, and `/inspect` map to
 their corresponding intents. `WorkspaceService` creates explicit workspaces
 and `WorkspaceRepository` stores the many-to-many `workspace_sources` links.
-`OrganizationService` only creates a proposal. `OrganizationApprovalService`
+`OrganizationService` only creates a proposal. Every proposal explicitly has a
+type (`move_to_workspace` or `keep_in_inbox` in this first implementation), a
+confidence, rationale, optional workspace, and optional suggested path.
+`OrganizationApprovalService`
 is the sole approval boundary: accepting through the CLI or a resumed graph
 uses `FileMutationService` to move the registered file, update its stored path,
 and write an activity event; rejection leaves the source unchanged. Repeating

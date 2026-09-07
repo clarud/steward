@@ -343,7 +343,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Proposal {arguments.proposal_id} {arguments.status}.")
         else:
             for proposal in proposals.list_all():
-                print(f"{proposal.id}\t{proposal.status}\tsource={proposal.source_id}\t{proposal.rationale}")
+                print(
+                    f"{proposal.id}\t{proposal.status}\t{proposal.proposal_type}\t"
+                    f"confidence={proposal.confidence:.2f}\tsource={proposal.source_id}\t{proposal.rationale}"
+                )
         return
 
     if arguments.command == "activity":

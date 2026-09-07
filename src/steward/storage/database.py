@@ -21,6 +21,8 @@ CLAIMS_SCHEMA_VERSION = 12
 CLAIM_EVIDENCE_SCHEMA_VERSION = 13
 TRAVEL_RECORDS_SCHEMA_VERSION = 14
 TRAVEL_EVIDENCE_SCHEMA_VERSION = 15
+ORGANIZATION_PROPOSAL_DETAILS_SCHEMA_VERSION = 16
+ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION = 17
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -135,6 +137,20 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """CREATE TABLE travel_record_evidence (travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
             field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
             PRIMARY KEY (travel_record_id, field_name))""",
+    ),
+    (
+        ORGANIZATION_PROPOSAL_DETAILS_SCHEMA_VERSION,
+        """
+        ALTER TABLE organization_proposals
+        ADD COLUMN proposal_type TEXT NOT NULL DEFAULT 'keep_in_inbox'
+        """,
+    ),
+    (
+        ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION,
+        """
+        ALTER TABLE organization_proposals
+        ADD COLUMN confidence REAL NOT NULL DEFAULT 0.0
+        """,
     ),
 )
 
