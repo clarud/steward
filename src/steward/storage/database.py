@@ -13,6 +13,7 @@ LEXICAL_SEARCH_SCHEMA_VERSION = 4
 SEMANTIC_SEARCH_SCHEMA_VERSION = 5
 WORKSPACES_SCHEMA_VERSION = 6
 WORKSPACE_SOURCES_SCHEMA_VERSION = 7
+ORGANIZATION_SCHEMA_VERSION = 8
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -73,6 +74,16 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         WORKSPACES_SCHEMA_VERSION,
         """
         CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL, created_at TEXT NOT NULL)
+        """,
+    ),
+    (
+        ORGANIZATION_SCHEMA_VERSION,
+        """
+        CREATE TABLE organization_proposals (
+            id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
+            suggested_path TEXT, rationale TEXT NOT NULL, score REAL NOT NULL,
             status TEXT NOT NULL, created_at TEXT NOT NULL)
         """,
     ),

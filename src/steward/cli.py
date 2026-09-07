@@ -34,6 +34,7 @@ from steward.retrieval import (
 )
 from steward.telegram import run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
+from steward.organization import OrganizationProposalRepository, OrganizationService
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
@@ -82,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
     link_parser = subcommands.add_parser("link-source", help="Relate a source to a workspace")
     link_parser.add_argument("workspace_id", type=int)
     link_parser.add_argument("source_id", type=int)
+    propose_parser = subcommands.add_parser("propose-organization", help="Create a non-mutating organization proposal")
+    propose_parser.add_argument("source_id", type=int)
+    subcommands.add_parser("organization-proposals", help="List organization proposals")
+    review_parser = subcommands.add_parser("review-proposal", help="Accept or reject an organization proposal")
+    review_parser.add_argument("proposal_id", type=int)
+    review_parser.add_argument("status", choices=("accepted", "rejected"))
     return parser
 
 
@@ -294,6 +301,26 @@ def main(argv: Sequence[str] | None = None) -> None:
         else:
             for workspace in repository.list_all():
                 print(f"{workspace.id}\t{workspace.status}\t{workspace.name}")
+        return
+
+    if arguments.command in {"propose-organization", "organization-proposals", "review-proposal"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        proposals = OrganizationProposalRepository(database_path)
+        if arguments.command == "propose-organization":
+            source = SourceRepository(database_path).get_by_id(arguments.source_id)
+            if source is None:
+                print(f"Source {arguments.source_id} was not found.")
+                return
+            proposal = OrganizationService().propose(source, WorkspaceRepository(database_path).list_all())
+            proposal_id = proposals.add(proposal)
+            print(f"Created proposal {proposal_id}: {proposal.rationale}")
+        elif arguments.command == "review-proposal":
+            proposals.set_status(arguments.proposal_id, arguments.status)
+            print(f"Proposal {arguments.proposal_id} {arguments.status}.")
+        else:
+            for proposal in proposals.list_all():
+                print(f"{proposal.id}\t{proposal.status}\tsource={proposal.source_id}\t{proposal.rationale}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")
