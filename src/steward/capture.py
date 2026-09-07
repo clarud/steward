@@ -11,6 +11,7 @@ from steward.events import IncomingEvent
 from steward.extraction import ExtractionService, SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.sources.hashing import hash_file
+from steward.activity import ActivityService, ActivityType
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class InboxCaptureService:
         inbox_dir: Path,
         source_repository: SourceRepository,
         fragment_repository: SourceFragmentRepository | None = None,
+        activity_service: ActivityService | None = None,
     ) -> None:
         self._inbox_dir = inbox_dir
         self._source_repository = source_repository
@@ -36,6 +38,7 @@ class InboxCaptureService:
         self._extraction_service = (
             ExtractionService(fragment_repository) if fragment_repository is not None else None
         )
+        self._activity_service = activity_service
 
     def capture_text(self, event: IncomingEvent) -> CaptureResult:
         """Preserve a text message as a human-readable Markdown original."""
@@ -64,6 +67,7 @@ class InboxCaptureService:
             )
         )
         self._extract_markdown(source)
+        self._record(source)
         return CaptureResult(source=source, duplicate=False)
 
     def capture_file(self, event: IncomingEvent, original_path: Path) -> CaptureResult:
@@ -101,8 +105,13 @@ class InboxCaptureService:
             )
         )
         self._extract_markdown(source)
+        self._record(source)
         return CaptureResult(source=source, duplicate=False)
 
     def _extract_markdown(self, source: Source) -> None:
         if self._extraction_service is not None:
             self._extraction_service.extract_and_store(source)
+
+    def _record(self, source: Source) -> None:
+        if self._activity_service is not None:
+            self._activity_service.record(ActivityType.SOURCE_CAPTURED, object_id=str(source.id), details=str(source.path))

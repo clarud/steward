@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from steward.activity import ActivityService, ActivityType
 
 @dataclass(frozen=True, slots=True)
 class Workspace:
@@ -36,6 +37,9 @@ class WorkspaceRepository:
         return [Workspace(int(row[0]), str(row[1]), str(row[2]), datetime.fromisoformat(str(row[3]))) for row in rows]
 
 class WorkspaceService:
-    def __init__(self, repository: WorkspaceRepository) -> None: self._repository = repository
-    def create(self, name: str) -> Workspace: return self._repository.create(name)
+    def __init__(self, repository: WorkspaceRepository, activity_service: ActivityService | None = None) -> None: self._repository = repository; self._activity_service = activity_service
+    def create(self, name: str) -> Workspace:
+        workspace = self._repository.create(name)
+        if self._activity_service is not None: self._activity_service.record(ActivityType.WORKSPACE_CREATED, object_id=str(workspace.id), details=workspace.name)
+        return workspace
     def add_source(self, workspace_id: int, source_id: int) -> None: self._repository.link_source(workspace_id, source_id)

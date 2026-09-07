@@ -14,6 +14,7 @@ SEMANTIC_SEARCH_SCHEMA_VERSION = 5
 WORKSPACES_SCHEMA_VERSION = 6
 WORKSPACE_SOURCES_SCHEMA_VERSION = 7
 ORGANIZATION_SCHEMA_VERSION = 8
+ACTIVITY_SCHEMA_VERSION = 9
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -76,6 +77,11 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE TABLE workspaces (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL, created_at TEXT NOT NULL)
         """,
+    ),
+    (
+        ACTIVITY_SCHEMA_VERSION,
+        """CREATE TABLE activity_events (id INTEGER PRIMARY KEY, event_type TEXT NOT NULL,
+            object_id TEXT, details TEXT NOT NULL, occurred_at TEXT NOT NULL)""",
     ),
     (
         ORGANIZATION_SCHEMA_VERSION,

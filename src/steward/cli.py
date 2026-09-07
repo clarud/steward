@@ -35,6 +35,7 @@ from steward.retrieval import (
 from steward.telegram import run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.organization import OrganizationProposalRepository, OrganizationService
+from steward.activity import ActivityService, ActivityType
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
@@ -86,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     propose_parser = subcommands.add_parser("propose-organization", help="Create a non-mutating organization proposal")
     propose_parser.add_argument("source_id", type=int)
     subcommands.add_parser("organization-proposals", help="List organization proposals")
+    subcommands.add_parser("activity", help="List recent activity events")
     review_parser = subcommands.add_parser("review-proposal", help="Accept or reject an organization proposal")
     review_parser.add_argument("proposal_id", type=int)
     review_parser.add_argument("status", choices=("accepted", "rejected"))
@@ -280,6 +282,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             settings.inbox_dir,
             SourceRepository(settings.data_dir / "steward.db"),
             SourceFragmentRepository(settings.data_dir / "steward.db"),
+            ActivityService(settings.data_dir / "steward.db"),
         )
         application = StewardEventApplication(
             StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
@@ -291,7 +294,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
         repository = WorkspaceRepository(database_path)
-        service = WorkspaceService(repository)
+        service = WorkspaceService(repository, ActivityService(database_path))
         if arguments.command == "create-workspace":
             workspace = service.create(arguments.name)
             print(f"Created workspace {workspace.id}: {workspace.name}")
@@ -314,13 +317,32 @@ def main(argv: Sequence[str] | None = None) -> None:
                 return
             proposal = OrganizationService().propose(source, WorkspaceRepository(database_path).list_all())
             proposal_id = proposals.add(proposal)
+            ActivityService(database_path).record(
+                ActivityType.ORGANIZATION_PROPOSED,
+                object_id=str(proposal_id), details=proposal.rationale,
+            )
             print(f"Created proposal {proposal_id}: {proposal.rationale}")
         elif arguments.command == "review-proposal":
             proposals.set_status(arguments.proposal_id, arguments.status)
+            activity_type = (
+                ActivityType.ORGANIZATION_ACCEPTED
+                if arguments.status == "accepted"
+                else ActivityType.ORGANIZATION_REJECTED
+            )
+            ActivityService(database_path).record(
+                activity_type, object_id=str(arguments.proposal_id)
+            )
             print(f"Proposal {arguments.proposal_id} {arguments.status}.")
         else:
             for proposal in proposals.list_all():
                 print(f"{proposal.id}\t{proposal.status}\tsource={proposal.source_id}\t{proposal.rationale}")
+        return
+
+    if arguments.command == "activity":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        for event in ActivityService(database_path).list_recent():
+            print(f"{event.id}\t{event.event_type.value}\t{event.object_id or ''}\t{event.details}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")
