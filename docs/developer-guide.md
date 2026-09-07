@@ -748,6 +748,16 @@ web sources. Its retention status is always `ephemeral`; it does not write a
 sources” workflow must route selected material through normal capture and
 provenance processing rather than bypassing the Source layer.
 
+## Emerging workspace detection
+
+Phase 26 provides the explicit `steward review-inbox-workspaces` workflow.
+`WorkspaceDetectionService` considers only active sources physically in Inbox,
+splits meaningful filename terms, removes generic words, groups repeated terms,
+and ignores an already existing workspace name. Two or more sources sharing a
+term produce a pending `WorkspaceProposal` with source IDs, rationale, and a
+conservative confidence score. It does not create a workspace, link sources,
+or move files; those remain deliberate user actions.
+
 ## Known limitations
 
 - Capture currently supports Markdown, plain text, and PDFs with native text.

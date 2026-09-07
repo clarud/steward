@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–23 are implemented as a local foundation. Steward can capture text,
+Phases 0–26 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -19,6 +19,8 @@ event search and lookup.
 Travel records can be created as idempotent, audited Calendar events after
 explicitly invoking the write command.
 External research is available as an explicitly invoked, non-retaining flow.
+It can also review Inbox filenames and propose possible new workspace themes
+without creating or moving anything automatically.
 
 ## Local setup
 
@@ -119,6 +121,16 @@ remain ephemeral and are not copied into your vault automatically.
 
 ```powershell
 steward research "How does Linux perform TLB shootdowns?"
+```
+
+## Review potential new workspaces
+
+This intentionally reviews rather than changes your structure. It clusters
+repeated meaningful filename terms among Inbox sources and prints pending
+candidates for you to evaluate.
+
+```powershell
+steward review-inbox-workspaces
 ```
 
 ## Ask through Telegram
