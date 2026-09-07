@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
+from steward.capture import InboxCaptureService
+from pathlib import Path
 from steward.events import IncomingEvent
 
 
@@ -58,3 +60,33 @@ class StewardQuestionApplication:
                 f"{citation.location} [{heading}]"
             )
         return f"{result['answer']}\n\nSources:\n" + "\n".join(source_lines)
+
+
+class StewardCaptureApplication:
+    """Explicitly preserve text supplied with Telegram's /save command."""
+
+    def __init__(self, capture_service: InboxCaptureService) -> None:
+        self._capture_service = capture_service
+
+    def handle(self, event: IncomingEvent) -> str:
+        text = (event.text or "").partition(" ")[2].strip()
+        if not text:
+            return "Use /save followed by the text you want Steward to keep."
+        result = self._capture_service.capture_text(
+            IncomingEvent(
+                id=event.id, platform=event.platform, chat_id=event.chat_id,
+                message_id=event.message_id, reply_to_id=event.reply_to_id,
+                timestamp=event.timestamp, text=text, attachments=event.attachments,
+            )
+        )
+        if result.duplicate:
+            return f"Already saved: {result.source.path}"
+        return f"Saved to Inbox: {result.source.path}"
+
+    def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
+        """Preserve an already-downloaded Telegram document."""
+
+        result = self._capture_service.capture_file(event, original_path)
+        if result.duplicate:
+            return f"Already saved: {result.source.path}"
+        return f"Saved to Inbox: {result.source.path}"

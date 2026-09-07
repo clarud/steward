@@ -14,6 +14,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert Settings.from_environment() == Settings(
         data_dir=Path(".steward"),
+        inbox_dir=Path("vault/inbox"),
         log_level="INFO",
         model_provider="gemini",
         openai_model=None,

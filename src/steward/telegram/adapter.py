@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Protocol
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from steward.events import IncomingEvent
 
@@ -15,6 +17,15 @@ class IncomingEventHandler(Protocol):
     """Application boundary invoked after a platform update is normalized."""
 
     def handle(self, event: IncomingEvent) -> str: ...
+
+
+class IncomingFileEventHandler(IncomingEventHandler, Protocol):
+    """Application boundary for a document downloaded by this adapter."""
+
+    def handle_file(self, event: IncomingEvent, original_path: Path) -> str: ...
+
+
+MAX_CLOUD_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 
 def normalize_telegram_update(update: Update) -> IncomingEvent:
@@ -38,7 +49,7 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
         message_id=str(message.message_id),
         reply_to_id=reply_to_id,
         timestamp=message.date,
-        text=message.text,
+        text=message.text or message.caption,
     )
 
 
@@ -61,8 +72,41 @@ class TelegramAdapter:
             raise ValueError("Telegram update does not contain a message.")
         await message.reply_text(response)
 
+    async def handle_document(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Download an explicitly saved document, then delegate preservation."""
 
-def run_telegram_polling(token: str, event_handler: IncomingEventHandler) -> None:
+        del context
+        message = update.effective_message
+        if message is None or message.document is None:
+            raise ValueError("Telegram update does not contain a document.")
+        if not (message.caption or "").strip().startswith("/save"):
+            await message.reply_text("Add /save as the document caption to preserve it.")
+            return
+        if message.document.file_size and message.document.file_size > MAX_CLOUD_DOWNLOAD_BYTES:
+            await message.reply_text(
+                "I cannot download files over 20 MB through the current Telegram connection. "
+                "Place the original in vault/inbox instead."
+            )
+            return
+        if not hasattr(self._event_handler, "handle_file"):
+            raise TypeError("Document handling requires a file capture application.")
+        event = normalize_telegram_update(update)
+        suffix = Path(message.document.file_name or "attachment.bin").suffix or ".bin"
+        with TemporaryDirectory() as temporary_dir:
+            download_path = Path(temporary_dir) / f"download{suffix}"
+            telegram_file = await message.document.get_file()
+            await telegram_file.download_to_drive(download_path)
+            response = await asyncio.to_thread(
+                self._event_handler.handle_file, event, download_path
+            )
+        await message.reply_text(response)
+
+
+def run_telegram_polling(
+    token: str, event_handler: IncomingEventHandler, capture_handler: IncomingEventHandler
+) -> None:
     """Start the local Telegram process until the user stops it."""
 
     if not token.strip():
@@ -73,4 +117,7 @@ def run_telegram_polling(token: str, event_handler: IncomingEventHandler) -> Non
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
     )
+    capture_adapter = TelegramAdapter(capture_handler)
+    application.add_handler(CommandHandler("save", capture_adapter.handle_update))
+    application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
     application.run_polling()

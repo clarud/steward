@@ -14,6 +14,8 @@ class FakeMessage:
         self.reply_to_message = reply_to_message
         self.date = datetime(2026, 9, 7, tzinfo=UTC)
         self.text = text
+        self.caption = None
+        self.document = None
         self.replies: list[str] = []
 
     async def reply_text(self, text: str) -> None:
@@ -65,4 +67,14 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
-        run_telegram_polling("   ", FakeEventHandler())
+        run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())
+
+
+def test_document_over_cloud_limit_is_not_downloaded() -> None:
+    message = FakeMessage()
+    message.caption = "/save"
+    message.document = type("Document", (), {"file_size": 21 * 1024 * 1024})()
+
+    asyncio.run(TelegramAdapter(FakeEventHandler()).handle_document(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert "over 20 MB" in message.replies[0]

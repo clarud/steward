@@ -22,6 +22,7 @@ class Settings:
     """Configuration shared by Steward's application boundary."""
 
     data_dir: Path
+    inbox_dir: Path
     log_level: str
     model_provider: str
     openai_model: str | None
@@ -31,6 +32,7 @@ class Settings:
     def from_environment(cls) -> "Settings":
         """Load and validate settings without creating or modifying any paths."""
         data_dir = Path(os.environ.get("STEWARD_DATA_DIR", ".steward"))
+        inbox_dir = Path(os.environ.get("STEWARD_INBOX_DIR", "vault/inbox"))
         log_level = os.environ.get("STEWARD_LOG_LEVEL", "INFO").upper()
         model_provider = os.environ.get("STEWARD_MODEL_PROVIDER", "gemini").casefold()
         openai_model = os.environ.get("STEWARD_OPENAI_MODEL")
@@ -50,6 +52,7 @@ class Settings:
 
         return cls(
             data_dir=data_dir,
+            inbox_dir=inbox_dir,
             log_level=log_level,
             model_provider=model_provider,
             openai_model=openai_model,

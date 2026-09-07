@@ -3,6 +3,8 @@ from pathlib import Path
 
 from steward.answer import AnswerCitation
 from steward.application import StewardQuestionApplication, TEXT_QUESTION_REQUIRED
+from steward.application import StewardCaptureApplication
+from steward.capture import CaptureResult
 from steward.events import IncomingEvent
 
 
@@ -68,4 +70,14 @@ def test_question_application_includes_source_details_for_citations() -> None:
     assert response == (
         "A TLB caches translations. [F1]\n\n"
         f"Sources:\n[F1] {Path('vault/virtual-memory.md')}:lines 4-6 [TLB]"
+    )
+
+
+def test_capture_application_requires_explicit_text() -> None:
+    class FakeCaptureService:
+        def capture_text(self, event):
+            raise AssertionError("empty capture must not be persisted")
+
+    assert StewardCaptureApplication(FakeCaptureService()).handle(make_event(text="/save")) == (
+        "Use /save followed by the text you want Steward to keep."
     )
