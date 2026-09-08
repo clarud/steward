@@ -170,6 +170,16 @@ candidates for you to evaluate.
 steward review-inbox-workspaces
 ```
 
+## Ask for an organization proposal using source content
+
+This remains a proposal: the configured model can choose only an existing
+workspace, while Steward validates the JSON response and derives any target
+path itself. You still review the proposal before a file moves.
+
+```powershell
+steward propose-organization SOURCE_ID --model-assisted
+```
+
 ## Review knowledge connections
 
 Connections are candidates supported by shared source fragments. Steward shows

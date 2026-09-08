@@ -695,6 +695,17 @@ and write an activity event; rejection leaves the source unchanged. Repeating
 an already accepted/rejected decision is a no-op, which makes retry recovery
 safe.
 
+`ModelAssistedOrganizationService` is an optional second proposer for the
+explicit `steward propose-organization SOURCE_ID --model-assisted` command. It
+sends only the source filename/type, bounded extracted excerpts, and the IDs
+and names of existing workspaces to the configured model. The model must return
+JSON naming one of those IDs or `null`; deterministic validation rejects an
+unknown ID, a malformed response, an invalid confidence, or provider failure.
+It can neither create a workspace nor select a file path: code derives the
+destination from the validated workspace, and the normal approval flow remains
+required before a move. If the model is unavailable or uncertain, the source
+stays in Inbox through the existing conservative fallback.
+
 The first LangGraph approval graph demonstrates a durable pause with
 `interrupt()` and later resume. On acceptance it calls that same approval
 service, so a resumed workflow executes the move rather than merely changing a

@@ -52,6 +52,7 @@ from steward.organization import (
     OrganizationProposalRepository,
     OrganizationService,
 )
+from steward.organization_ai import ModelAssistedOrganizationService
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -207,6 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
     link_parser.add_argument("source_id", type=int)
     propose_parser = subcommands.add_parser("propose-organization", help="Create a non-mutating organization proposal")
     propose_parser.add_argument("source_id", type=int)
+    propose_parser.add_argument(
+        "--model-assisted",
+        action="store_true",
+        help="Use the configured model to select only among existing workspaces",
+    )
     subcommands.add_parser("organization-proposals", help="List organization proposals")
     subcommands.add_parser("activity", help="List recent activity events")
     review_parser = subcommands.add_parser("review-proposal", help="Accept or reject an organization proposal")
@@ -791,7 +797,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             if source is None:
                 print(f"Source {arguments.source_id} was not found.")
                 return
-            proposal = OrganizationService().propose(source, WorkspaceRepository(database_path).list_all())
+            workspaces = WorkspaceRepository(database_path).list_all()
+            if arguments.model_assisted:
+                model = _model_gateway_from_settings(settings, command="propose-organization")
+                if model is None:
+                    return
+                fragments = SourceFragmentRepository(database_path).list_for_source(source.id or 0)
+                proposal = ModelAssistedOrganizationService(model).propose(
+                    source, workspaces, [fragment.text for fragment in fragments]
+                )
+            else:
+                proposal = OrganizationService().propose(source, workspaces)
             proposal_id = proposals.add(proposal)
             ActivityService(database_path).record(
                 ActivityType.ORGANIZATION_PROPOSED,
