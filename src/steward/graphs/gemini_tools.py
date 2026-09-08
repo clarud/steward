@@ -98,7 +98,6 @@ class GeminiToolCallingModel:
                             types.Part.from_function_response(
                                 name=message.name or "tool",
                                 response={"result": str(message.content)},
-                                id=message.tool_call_id,
                             )
                         ],
                     )
@@ -107,7 +106,7 @@ class GeminiToolCallingModel:
                 parts = [types.Part(text=str(message.content))] if message.content else []
                 parts.extend(
                     types.Part.from_function_call(
-                        name=call["name"], args=call["args"], id=call["id"]
+                        name=call["name"], args=call["args"]
                     )
                     for call in message.tool_calls
                 )

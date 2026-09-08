@@ -80,6 +80,23 @@ def test_gemini_tool_adapter_converts_function_calls_to_ai_tool_calls() -> None:
     assert result.tool_calls == [{"name": "search_sources", "args": {"query": "TLB"}, "id": "gemini-call-1", "type": "tool_call"}]
 
 
+def test_gemini_tool_adapter_replays_langgraph_tool_messages_with_sdk_supported_fields() -> None:
+    from google.genai import types
+
+    contents = GeminiToolCallingModel._contents(
+        [
+            AIMessage("", tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}]),
+            ToolMessage("[]", name="search_sources", tool_call_id="call-1"),
+        ],
+        types,
+    )
+
+    assert contents[0].parts[0].function_call.name == "search_sources"
+    assert dict(contents[0].parts[0].function_call.args) == {"query": "TLB"}
+    assert contents[1].parts[0].function_response.name == "search_sources"
+    assert dict(contents[1].parts[0].function_response.response) == {"result": "[]"}
+
+
 def test_tool_policy_blocks_an_unapproved_write_inside_tool_node() -> None:
     calls = []
 
