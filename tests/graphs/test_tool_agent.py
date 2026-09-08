@@ -53,6 +53,43 @@ def test_tool_agent_requires_at_least_one_tool() -> None:
         raise AssertionError("An empty tool list must fail.")
 
 
+def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        return query
+
+    class LoopingModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, _messages):
+            return AIMessage(
+                "",
+                tool_calls=[{"name": "search_sources", "args": {"query": "again"}, "id": "loop"}],
+            )
+
+    result = build_tool_agent_graph(LoopingModel(), [search_sources], max_tool_calls=2).invoke(
+        {"messages": [HumanMessage("Search forever")]}
+    )
+
+    assert "tool-call limit" in result["messages"][-1].content
+
+
+def test_tool_agent_rejects_non_positive_tool_budget() -> None:
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        return query
+
+    try:
+        build_tool_agent_graph(ToolCallingFakeModel(), [search_sources], max_tool_calls=0)
+    except ValueError as error:
+        assert "max_tool_calls" in str(error)
+    else:
+        raise AssertionError("A non-positive tool budget must fail.")
+
+
 def test_gemini_tool_adapter_converts_function_calls_to_ai_tool_calls() -> None:
     class FunctionCall:
         name = "search_sources"

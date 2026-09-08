@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Callable, Literal, Protocol, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -35,13 +35,34 @@ def build_tool_agent_graph(
     *,
     checkpointer: object | None = None,
     tool_policy: ToolPolicy | None = None,
+    max_tool_calls: int = 4,
 ):
     """Compile a custom read-only tool loop without a prebuilt agent wrapper."""
     if not tools:
         raise ValueError("A tool agent requires at least one tool.")
+    if max_tool_calls <= 0:
+        raise ValueError("max_tool_calls must be positive.")
     bound_model = model.bind_tools(tools)
 
     def call_model(state: ToolAgentState) -> dict[str, list[BaseMessage]]:
+        last_request_index = max(
+            (index for index, message in enumerate(state["messages"]) if isinstance(message, HumanMessage)),
+            default=0,
+        )
+        tool_results = sum(
+            isinstance(message, ToolMessage)
+            for message in state["messages"][last_request_index + 1 :]
+        )
+        if tool_results >= max_tool_calls:
+            trace("tool_agent.tool_budget_exhausted", max_tool_calls=max_tool_calls)
+            return {
+                "messages": [
+                    AIMessage(
+                        "I reached Steward's tool-call limit before completing this request. "
+                        "Please narrow the question or start a new request."
+                    )
+                ]
+            }
         trace("tool_agent.model_call", message_count=len(state["messages"]))
         return {"messages": [bound_model.invoke(state["messages"])]}
 

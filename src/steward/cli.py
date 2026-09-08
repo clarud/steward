@@ -419,7 +419,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     HumanMessage(arguments.question),
                 ]
             },
-            {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 8},
+            {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 16},
         )
         print(str(result["messages"][-1].content))
         return
