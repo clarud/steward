@@ -59,6 +59,7 @@ from steward.action_proposals import ActionProposalRepository, ActionProposalSer
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
 from steward.drive import GoogleDriveService, authorize_google_drive
+from steward.gmail import GmailService, authorize_gmail
 from steward.research import (
     GeminiGoogleSearchProvider,
     ResearchProviderError,
@@ -278,6 +279,13 @@ def build_parser() -> argparse.ArgumentParser:
     drive_search.add_argument("query", nargs="?", default="")
     drive_search.add_argument("--limit", type=int, default=10)
     drive_search.add_argument("--client-secrets", type=Path)
+    gmail_authorize = subcommands.add_parser("gmail-authorize", help="Authorize local read-only Gmail access")
+    gmail_authorize.add_argument("client_secrets", type=Path, help="Google OAuth desktop-client JSON file")
+    gmail_authorize.add_argument("--token-file", type=Path)
+    gmail_search = subcommands.add_parser("gmail-search", help="Search current Gmail message metadata")
+    gmail_search.add_argument("query", nargs="?", default="")
+    gmail_search.add_argument("--limit", type=int, default=10)
+    gmail_search.add_argument("--client-secrets", type=Path)
     return parser
 
 
@@ -717,6 +725,25 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         for item in drive.search(arguments.query, limit=arguments.limit):
             print(f"{item.id}\t{item.mime_type}\t{item.name}\t{item.web_view_link or ''}")
+        return
+
+    if arguments.command == "gmail-authorize":
+        token_path = arguments.token_file or settings.data_dir / "config" / "gmail-token.json"
+        authorize_gmail(arguments.client_secrets, token_path)
+        print(f"Gmail read access authorized. Token stored at {token_path}.")
+        return
+
+    if arguments.command == "gmail-search":
+        client_secrets = arguments.client_secrets
+        if client_secrets is None:
+            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+            if not configured:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Gmail.")
+                return
+            client_secrets = Path(configured)
+        gmail = GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json"))
+        for item in gmail.search(arguments.query, limit=arguments.limit):
+            print(f"{item.id}\t{item.received_at or ''}\t{item.sender or ''}\t{item.subject}\t{item.snippet}")
         return
 
     if arguments.command in {"calendar-search", "calendar-get"}:

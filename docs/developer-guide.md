@@ -601,6 +601,16 @@ link, and available size. Drive is authoritative for that state. The service
 does not download file bytes, create local sources, or expose an agent write
 tool; an explicit, provenance-aware retention workflow can be added later.
 
+### Gmail metadata
+
+`GmailService` uses its own `gmail.readonly` OAuth token. `steward
+gmail-search QUERY` passes the user's Gmail query syntax directly to Gmail,
+lists matching IDs, and requests each result with `format="metadata"` and only
+the `Subject`, `From`, and `Date` headers. It returns those headers and Gmail's
+snippet; it never requests bodies, attachments, mail sending, labels, or
+deletions. Gmail remains authoritative, and importing a selected message into
+the local Source layer is intentionally a separate future approval workflow.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv

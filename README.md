@@ -146,6 +146,16 @@ $env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
 steward drive-search "itinerary"
 ```
 
+## Search Gmail metadata
+
+Gmail uses a separate read-only authorization. Search results contain message
+metadata and snippets only; Steward neither sends mail nor imports bodies.
+
+```powershell
+steward gmail-authorize C:\private\google-oauth-client.json
+steward gmail-search "from:airline newer_than:1y"
+```
+
 Use Calendar reads in the tool agent only when requested explicitly:
 
 ```powershell
