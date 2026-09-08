@@ -53,6 +53,7 @@ from steward.organization import (
 )
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
+from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
 from steward.research import GeminiGoogleSearchProvider, ResearchProviderError, ResearchService
@@ -61,7 +62,16 @@ from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.knowledge import KnowledgeService
-from steward.tools import CalendarReadToolService, ReadOnlyToolService, ToolPolicy, build_calendar_read_tools, build_read_only_tools
+from steward.tools import (
+    ACTION_PROPOSAL_TOOL_DEFINITIONS,
+    ActionProposalToolService,
+    CalendarReadToolService,
+    ReadOnlyToolService,
+    ToolPolicy,
+    build_action_proposal_tools,
+    build_calendar_read_tools,
+    build_read_only_tools,
+)
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
 from steward.tools.calendar_read import CALENDAR_READ_TOOL_DEFINITIONS
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -133,9 +143,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persistent LangGraph conversation thread ID",
     )
     agent_parser = subcommands.add_parser(
-        "agent", help="Answer using Steward's read-only tool-calling loop"
+        "agent", help="Answer using Steward tools and create reviewable action proposals"
     )
-    agent_parser.add_argument("question", help="Question the agent may answer with local read-only tools")
+    agent_parser.add_argument("question", help="Question or safe action request for the agent")
     agent_parser.add_argument("--thread-id", default="cli:agent", help="Persistent LangGraph thread ID")
     agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
     research_parser = subcommands.add_parser("research", help="Research externally without retaining the sources")
@@ -166,6 +176,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser = subcommands.add_parser("review-proposal", help="Accept or reject an organization proposal")
     review_parser.add_argument("proposal_id", type=int)
     review_parser.add_argument("status", choices=("accepted", "rejected"))
+    subcommands.add_parser("action-proposals", help="List pending and reviewed agent action proposals")
+    action_review_parser = subcommands.add_parser(
+        "review-action-proposal", help="Accept or reject an agent action proposal"
+    )
+    action_review_parser.add_argument("proposal_id", type=int)
+    action_review_parser.add_argument("status", choices=("accepted", "rejected"))
     travel_parser = subcommands.add_parser("propose-travel-record", help="Interpret source fragments as a travel record")
     travel_parser.add_argument("source_id", type=int)
     create_travel_parser = subcommands.add_parser(
@@ -450,6 +466,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         checkpointer.setup()
         tools = build_read_only_tools(tool_service)
         definitions = list(READ_ONLY_TOOL_DEFINITIONS)
+        action_proposals = ActionProposalService(
+            ActionProposalRepository(database_path),
+            WorkspaceRepository(database_path),
+            ActivityService(database_path),
+        )
+        tools.extend(build_action_proposal_tools(ActionProposalToolService(action_proposals)))
+        definitions.extend(ACTION_PROPOSAL_TOOL_DEFINITIONS)
         calendar_only = arguments.include_calendar and _is_calendar_question(arguments.question)
         if arguments.include_calendar:
             client_secrets = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
@@ -483,7 +506,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                             if calendar_only
                             else "You are Steward. Use only the supplied read-only tools when information is needed. "
                             "When a tool result is sufficient, answer immediately. Never repeat a tool call with "
-                            "the same arguments, and do not claim a result that a tool did not provide."
+                            "the same arguments, and do not claim a result that a tool did not provide. "
+                            "If the user explicitly asks to create a workspace, use propose_create_workspace. "
+                            "It creates only a pending proposal: say that explicit approval is still required."
                         )
                     ),
                     HumanMessage(arguments.question),
@@ -629,6 +654,32 @@ def main(argv: Sequence[str] | None = None) -> None:
         else:
             for workspace in repository.list_all():
                 print(f"{workspace.id}\t{workspace.status}\t{workspace.name}")
+        return
+
+    if arguments.command in {"action-proposals", "review-action-proposal"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        repository = ActionProposalRepository(database_path)
+        service = ActionProposalService(
+            repository,
+            WorkspaceRepository(database_path),
+            ActivityService(database_path),
+        )
+        if arguments.command == "review-action-proposal":
+            proposal, workspace = service.review(arguments.proposal_id, arguments.status)
+            if workspace is None:
+                print(f"Action proposal {proposal.id} {proposal.status}.")
+            else:
+                print(
+                    f"Action proposal {proposal.id} accepted: "
+                    f"workspace {workspace.id} {workspace.name} is available."
+                )
+        else:
+            for proposal in repository.list_all():
+                print(
+                    f"{proposal.id}\t{proposal.status}\t{proposal.action_type}\t"
+                    f"{proposal.payload}"
+                )
         return
 
     if arguments.command == "review-inbox-workspaces":

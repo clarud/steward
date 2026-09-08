@@ -706,6 +706,19 @@ returns a batch larger than the remaining `max_tool_calls` budget, Steward ends
 the request before `ToolNode` executes any call in that batch. This matters for
 local models, which can occasionally emit many duplicate requests at once.
 
+### Proposal-only agent writes
+
+The first agent write capability is deliberately indirect:
+`propose_create_workspace(name)`. It is a `SAFE_WRITE` because it persists a
+reviewable `ActionProposal`, but it never creates the workspace. The tool result
+includes the exact `steward review-action-proposal ID accepted` command needed
+to authorize execution. `ActionProposalService.review()` then creates the
+workspace through `WorkspaceService`, records audit events, and marks the
+proposal accepted. Repeating an unreviewed proposal for the same normalized
+name reuses it; repeating an accepted review returns the existing workspace.
+This is the generic safety seam future agent actions will use instead of giving
+the model direct access to a side-effecting service.
+
 ## Tool risk policy
 
 Phase 22 makes the safety properties of each tool explicit in `ToolDefinition`:

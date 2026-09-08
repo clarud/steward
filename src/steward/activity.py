@@ -14,6 +14,9 @@ class ActivityType(StrEnum):
     ORGANIZATION_REJECTED = "organization_rejected"
     SOURCE_MOVED = "source_moved"
     SOURCE_MOVE_UNDONE = "source_move_undone"
+    ACTION_PROPOSED = "action_proposed"
+    ACTION_ACCEPTED = "action_accepted"
+    ACTION_REJECTED = "action_rejected"
     CALENDAR_EVENT_CREATED = "calendar_event_created"
 
 @dataclass(frozen=True, slots=True)

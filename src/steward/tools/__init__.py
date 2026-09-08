@@ -3,6 +3,11 @@
 from steward.tools.read_only import ReadOnlyToolService, build_read_only_tools
 from steward.tools.policy import ToolAuthorization, ToolDefinition, ToolPolicy, ToolRisk
 from steward.tools.calendar_read import CalendarReadToolService, build_calendar_read_tools
+from steward.tools.write_proposals import (
+    ACTION_PROPOSAL_TOOL_DEFINITIONS,
+    ActionProposalToolService,
+    build_action_proposal_tools,
+)
 
 __all__ = [
     "ReadOnlyToolService",
@@ -13,4 +18,7 @@ __all__ = [
     "ToolRisk",
     "CalendarReadToolService",
     "build_calendar_read_tools",
+    "ACTION_PROPOSAL_TOOL_DEFINITIONS",
+    "ActionProposalToolService",
+    "build_action_proposal_tools",
 ]

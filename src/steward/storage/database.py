@@ -26,6 +26,7 @@ ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION = 17
 CALENDAR_EVENT_LINKS_SCHEMA_VERSION = 18
 SOURCE_PRIVACY_SCHEMA_VERSION = 19
 ORGANIZATION_APPROVAL_THREADS_SCHEMA_VERSION = 20
+ACTION_PROPOSALS_SCHEMA_VERSION = 21
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -181,6 +182,19 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
             created_at TEXT NOT NULL,
             PRIMARY KEY (platform, chat_id)
+        )
+        """,
+    ),
+    (
+        ACTION_PROPOSALS_SCHEMA_VERSION,
+        """
+        CREATE TABLE action_proposals (
+            id INTEGER PRIMARY KEY,
+            action_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT
         )
         """,
     ),

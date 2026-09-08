@@ -84,8 +84,17 @@ steward ask "What do I know about address translation?"
 
 `steward agent` is Steward's first tool-calling loop. Gemini or a configured
 local Ollama model can decide whether to search or read local Steward data.
-LangGraph executes only the supplied read-only tools, then returns their results
-to the same model before it answers.
+LangGraph executes supplied read-only tools plus narrowly defined proposal-only
+tools, then returns their results to the same model before it answers.
+
+For an explicit workspace-creation request, the agent may use its one
+proposal-only write tool. That creates a pending proposal, never the workspace
+itself. Inspect or decide it explicitly:
+
+```powershell
+steward action-proposals
+steward review-action-proposal 1 accepted
+```
 
 ```powershell
 steward agent "What did I save about address translation?"
