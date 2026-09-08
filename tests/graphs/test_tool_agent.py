@@ -1,5 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
+from langgraph.checkpoint.sqlite import SqliteSaver
+import sqlite3
 
 from steward.graphs import GeminiToolCallingModel, build_tool_agent_graph
 from steward.tools import ToolDefinition, ToolPolicy, ToolRisk
@@ -129,6 +131,35 @@ def test_gemini_tool_adapter_preserves_thought_signature_from_response_part() ->
     result = GeminiToolCallingModel(api_key="test", model="gemini-test", client=Client()).invoke([HumanMessage("Find my calendar")])
 
     assert result.additional_kwargs["gemini_thought_signatures"] == {"thought-call": b"opaque-signature"}
+
+
+def test_tool_graph_checkpointer_serializes_thought_signature_bytes() -> None:
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        return query
+
+    class SignatureModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, messages):
+            if any(isinstance(message, ToolMessage) for message in messages):
+                return AIMessage("Done")
+            return AIMessage(
+                "",
+                tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}],
+                additional_kwargs={"gemini_thought_signatures": {"call-1": b"opaque"}},
+            )
+
+    connection = sqlite3.connect(":memory:", check_same_thread=False)
+    checkpointer = SqliteSaver(connection); checkpointer.setup()
+    result = build_tool_agent_graph(SignatureModel(), [search_sources], checkpointer=checkpointer).invoke(
+        {"messages": [HumanMessage("Find TLB")]},
+        {"configurable": {"thread_id": "signature-test"}},
+    )
+
+    assert result["messages"][-1].content == "Done"
 
 
 def test_tool_policy_blocks_an_unapproved_write_inside_tool_node() -> None:
