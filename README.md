@@ -57,6 +57,9 @@ steward scan path\to\your\vault
 steward search "address translations"
 ```
 
+Markdown, text, CSV, PDF, DOCX, HTML, and supported image files can be scanned.
+CSV is preserved and searched through the plain-text extraction path.
+
 For a larger vault, narrow lexical results to one project or course subtree:
 
 ```powershell

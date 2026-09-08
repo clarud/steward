@@ -37,11 +37,13 @@ def test_discover_markdown_files_rejects_file_root(tmp_path: Path) -> None:
 def test_discover_source_files_includes_every_currently_supported_type(tmp_path: Path) -> None:
     markdown = tmp_path / "alpha.md"; markdown.write_text("# Alpha")
     text = tmp_path / "beta.txt"; text.write_text("Beta")
+    csv = tmp_path / "transactions.csv"; csv.write_text("date,amount\n2026-09-09,10")
     pdf = tmp_path / "nested" / "gamma.PDF"; pdf.parent.mkdir(); pdf.write_bytes(b"%PDF")
     image = tmp_path / "receipt.png"; image.write_bytes(b"image")
 
     assert discover_source_files(tmp_path) == [
-        markdown.resolve(), text.resolve(), pdf.resolve(), image.resolve()
+        markdown.resolve(), text.resolve(), pdf.resolve(), image.resolve(), csv.resolve()
     ]
     assert source_type_for_path(pdf) is SourceType.PDF
     assert source_type_for_path(image) is SourceType.IMAGE
+    assert source_type_for_path(csv) is SourceType.PLAIN_TEXT

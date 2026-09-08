@@ -10,6 +10,7 @@ from steward.sources.models import SourceType
 SUPPORTED_SOURCE_TYPES = {
     ".md": SourceType.MARKDOWN,
     ".txt": SourceType.PLAIN_TEXT,
+    ".csv": SourceType.PLAIN_TEXT,
     ".pdf": SourceType.PDF,
     ".docx": SourceType.DOCX,
     ".html": SourceType.HTML,
