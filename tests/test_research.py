@@ -1,6 +1,6 @@
 import pytest
 
-from steward.research import GeminiGoogleSearchProvider, ResearchBundle, ResearchService, ResearchSource
+from steward.research import GeminiGoogleSearchProvider, ResearchBundle, ResearchProviderError, ResearchService, ResearchSource
 
 
 class FakeProvider:
@@ -56,3 +56,15 @@ def test_gemini_provider_collects_grounded_web_sources() -> None:
 
     assert bundle.answer.startswith("TLB")
     assert bundle.sources == (ResearchSource("TLB article", "https://example.com/tlb"),)
+
+
+def test_gemini_provider_translates_external_failure() -> None:
+    class Models:
+        def generate_content(self, **_kwargs):
+            raise OSError("offline")
+
+    class Client:
+        models = Models()
+
+    with pytest.raises(ResearchProviderError, match="temporarily unavailable"):
+        GeminiGoogleSearchProvider(api_key="key", model="gemini-test", client=Client()).research("TLB")

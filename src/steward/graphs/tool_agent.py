@@ -13,6 +13,7 @@ from langgraph.prebuilt import ToolNode
 
 from steward.tools.policy import ToolPolicy
 from steward.observability import trace
+from steward.answer.gateway import ModelGatewayError
 
 
 class ToolCallingModel(Protocol):
@@ -64,7 +65,17 @@ def build_tool_agent_graph(
                 ]
             }
         trace("tool_agent.model_call", message_count=len(state["messages"]))
-        return {"messages": [bound_model.invoke(state["messages"])]}
+        try:
+            response = bound_model.invoke(state["messages"])
+        except ModelGatewayError:
+            return {
+                "messages": [
+                    AIMessage(
+                        "The configured model is temporarily unavailable. Please retry later or use a local model."
+                    )
+                ]
+            }
+        return {"messages": [response]}
 
     def route_after_model(state: ToolAgentState) -> Literal["tools", "end"]:
         latest = state["messages"][-1]

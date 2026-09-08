@@ -4,6 +4,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
 
 from steward.graphs import GeminiToolCallingModel, build_tool_agent_graph
+from steward.answer.gateway import ModelGatewayError
 from steward.tools import ToolDefinition, ToolPolicy, ToolRisk
 
 
@@ -88,6 +89,26 @@ def test_tool_agent_rejects_non_positive_tool_budget() -> None:
         assert "max_tool_calls" in str(error)
     else:
         raise AssertionError("A non-positive tool budget must fail.")
+
+
+def test_tool_agent_returns_a_final_message_when_provider_is_unavailable() -> None:
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        return query
+
+    class UnavailableModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, _messages):
+            raise ModelGatewayError("quota")
+
+    result = build_tool_agent_graph(UnavailableModel(), [search_sources]).invoke(
+        {"messages": [HumanMessage("Find notes")]}
+    )
+
+    assert "temporarily unavailable" in result["messages"][-1].content
 
 
 def test_gemini_tool_adapter_converts_function_calls_to_ai_tool_calls() -> None:

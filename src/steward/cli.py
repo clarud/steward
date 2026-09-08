@@ -45,7 +45,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
-from steward.research import GeminiGoogleSearchProvider, ResearchService
+from steward.research import GeminiGoogleSearchProvider, ResearchProviderError, ResearchService
 from steward.workspace_detection import WorkspaceDetectionService
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
@@ -471,9 +471,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not api_key or not settings.gemini_model:
             print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward research`.")
             return
-        bundle = ResearchService(
-            GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
-        ).research(arguments.question)
+        try:
+            bundle = ResearchService(
+                GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
+            ).research(arguments.question)
+        except ResearchProviderError as error:
+            print(f"External research is temporarily unavailable: {error}")
+            return
         print(bundle.answer)
         if bundle.sources:
             print("\nExternal sources (ephemeral):")

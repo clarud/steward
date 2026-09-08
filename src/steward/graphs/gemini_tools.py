@@ -6,6 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from steward.answer.gateway import ModelGatewayError
 
 
 class GeminiToolCallingModel:
@@ -50,11 +51,14 @@ class GeminiToolCallingModel:
             system_instruction="\n".join(system_parts) or None,
             automatic_function_calling={"disable": True},
         )
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=self._contents(messages, types),
-            config=config,
-        )
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=self._contents(messages, types),
+                config=config,
+            )
+        except Exception as error:
+            raise ModelGatewayError("The Gemini tool-agent request could not be completed.") from error
         calls = self._function_calls(response)
         response_text = self._response_text(response)
         if calls:
