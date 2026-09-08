@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
@@ -11,7 +12,7 @@ from steward.retrieval import (
     SemanticSearchService,
     SQLiteSemanticIndex,
 )
-from steward.sources import SourceRepository
+from steward.sources import SourceRepository, SourceStatus
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 
@@ -131,3 +132,17 @@ def test_semantic_index_replaces_vectors_when_source_fragments_are_replaced(
             (source.id,),
         ).fetchone()[0]
     assert source_embedding_count == 1
+
+
+def test_semantic_search_excludes_fragments_of_missing_originals(tmp_path: Path) -> None:
+    _, source_repository, _, semantic_index = _build_indexed_vault(tmp_path)
+    virtual_memory = next(
+        source for source in source_repository.list_active() if source.path.name == "virtual-memory.md"
+    )
+    source_repository.update(replace(virtual_memory, status=SourceStatus.MISSING))
+
+    hits = SemanticSearchService(source_repository, semantic_index).search(
+        "the little cache for address translation"
+    )
+
+    assert all(hit.source.id != virtual_memory.id for hit in hits)

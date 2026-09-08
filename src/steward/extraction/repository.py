@@ -124,7 +124,9 @@ class SourceFragmentRepository:
                     FROM source_fragments_fts
                     JOIN source_fragments AS sf
                       ON sf.id = source_fragments_fts.fragment_id
+                    JOIN sources AS s ON s.id = sf.source_id
                     WHERE source_fragments_fts MATCH ?
+                      AND s.status = 'active'
                     ORDER BY score
                     LIMIT ?
                     """,

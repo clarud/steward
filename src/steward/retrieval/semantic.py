@@ -164,7 +164,9 @@ class SQLiteSemanticIndex:
                        sf.location, sfe.vector_json
                 FROM source_fragment_embeddings AS sfe
                 JOIN source_fragments AS sf ON sf.id = sfe.fragment_id
+                JOIN sources AS s ON s.id = sf.source_id
                 WHERE sfe.model_name = ? AND sfe.dimension = ?
+                  AND s.status = 'active'
                 """,
                 (self._embedding_provider.model_name, len(query_vector)),
             ).fetchall()
