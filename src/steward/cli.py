@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import sqlite3
+from tempfile import TemporaryDirectory
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from steward.application import (
     StewardQuestionApplication,
 )
 from steward.capture import InboxCaptureService
+from steward.events import IncomingEvent
 from steward.answer import (
     AnswerService,
     ContextBuilder,
@@ -284,6 +286,9 @@ def build_parser() -> argparse.ArgumentParser:
     drive_search.add_argument("query", nargs="?", default="")
     drive_search.add_argument("--limit", type=int, default=10)
     drive_search.add_argument("--client-secrets", type=Path)
+    drive_import = subcommands.add_parser("drive-import", help="Explicitly import one selected Drive original into Inbox")
+    drive_import.add_argument("file_id")
+    drive_import.add_argument("--client-secrets", type=Path)
     gmail_authorize = subcommands.add_parser("gmail-authorize", help="Authorize local read-only Gmail access")
     gmail_authorize.add_argument("client_secrets", type=Path, help="Google OAuth desktop-client JSON file")
     gmail_authorize.add_argument("--token-file", type=Path)
@@ -741,6 +746,41 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         for item in drive.search(arguments.query, limit=arguments.limit):
             print(f"{item.id}\t{item.mime_type}\t{item.name}\t{item.web_view_link or ''}")
+        return
+
+    if arguments.command == "drive-import":
+        client_secrets = arguments.client_secrets
+        if client_secrets is None:
+            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+            if not configured:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before importing from Drive.")
+                return
+            client_secrets = Path(configured)
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        drive = GoogleDriveService(
+            authorize_google_drive(client_secrets, settings.data_dir / "config" / "google-drive-token.json")
+        )
+        remote = drive.get_file(arguments.file_id)
+        with TemporaryDirectory() as temporary_dir:
+            downloaded = Path(temporary_dir) / remote.name
+            drive.download_to(remote.id, downloaded)
+            capture = InboxCaptureService(
+                settings.inbox_dir,
+                SourceRepository(database_path),
+                SourceFragmentRepository(database_path),
+                ActivityService(database_path),
+            )
+            result = capture.capture_file(
+                IncomingEvent(
+                    id=f"drive:{remote.id}", platform="drive", chat_id="import",
+                    message_id=remote.id, reply_to_id=None, timestamp=datetime.now().astimezone(),
+                    text=None, attachments=(remote.name,),
+                ),
+                downloaded,
+            )
+        status = "Already imported" if result.duplicate else "Imported"
+        print(f"{status} Drive file to Inbox: {result.source.path}")
         return
 
     if arguments.command == "gmail-authorize":
