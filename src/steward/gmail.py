@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from base64 import urlsafe_b64decode
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -63,6 +64,18 @@ class GmailService:
             str(identifier), str(thread_id), headers.get("subject") or "(no subject)",
             headers.get("from") or None, headers.get("date") or None, str(item.get("snippet") or ""),
         )
+
+    def download_raw(self, message_id: str) -> bytes:
+        """Return one explicitly selected RFC 822 original message."""
+        if not message_id.strip():
+            raise ValueError("Gmail message ID must not be empty.")
+        item = self._client.users().messages().get(
+            userId=self._user_id, id=message_id, format="raw"
+        ).execute()
+        raw = item.get("raw")
+        if not isinstance(raw, str) or not raw:
+            raise ValueError("Gmail message does not contain raw content.")
+        return urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
 
 
 def authorize_gmail(client_secrets_path: Path, token_path: Path) -> GmailApi:

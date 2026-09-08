@@ -1,4 +1,5 @@
 import pytest
+from base64 import urlsafe_b64encode
 
 from steward.gmail import GmailService
 
@@ -44,3 +45,13 @@ def test_gmail_search_reads_only_message_metadata() -> None:
 def test_gmail_search_validates_limit() -> None:
     with pytest.raises(ValueError, match="between"):
         GmailService(Client()).search(limit=101)
+
+
+def test_gmail_download_raw_decodes_an_explicit_message() -> None:
+    client = Client()
+    raw = b"Subject: Flight\n\nChanged"
+    original_get = client.messages_api.get
+    client.messages_api.get = lambda **kwargs: Request({"raw": urlsafe_b64encode(raw).decode().rstrip("=")})
+
+    assert GmailService(client).download_raw("mail-1") == raw
+    client.messages_api.get = original_get

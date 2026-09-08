@@ -296,6 +296,9 @@ def build_parser() -> argparse.ArgumentParser:
     gmail_search.add_argument("query", nargs="?", default="")
     gmail_search.add_argument("--limit", type=int, default=10)
     gmail_search.add_argument("--client-secrets", type=Path)
+    gmail_import = subcommands.add_parser("gmail-import", help="Explicitly import one selected Gmail message into Inbox")
+    gmail_import.add_argument("message_id")
+    gmail_import.add_argument("--client-secrets", type=Path)
     return parser
 
 
@@ -800,6 +803,25 @@ def main(argv: Sequence[str] | None = None) -> None:
         gmail = GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json"))
         for item in gmail.search(arguments.query, limit=arguments.limit):
             print(f"{item.id}\t{item.received_at or ''}\t{item.sender or ''}\t{item.subject}\t{item.snippet}")
+        return
+
+    if arguments.command == "gmail-import":
+        client_secrets = arguments.client_secrets or (
+            Path(os.environ["STEWARD_GOOGLE_CLIENT_SECRETS"])
+            if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") else None
+        )
+        if client_secrets is None:
+            print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before importing from Gmail.")
+            return
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        gmail = GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json"))
+        with TemporaryDirectory() as temporary_dir:
+            downloaded = Path(temporary_dir) / f"gmail-{arguments.message_id}.eml"
+            downloaded.write_bytes(gmail.download_raw(arguments.message_id))
+            result = InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path)).capture_file(
+                IncomingEvent(f"gmail:{arguments.message_id}", "gmail", "import", arguments.message_id, None, datetime.now().astimezone(), None, (downloaded.name,)), downloaded
+            )
+        print(("Already imported" if result.duplicate else "Imported") + f" Gmail message to Inbox: {result.source.path}")
         return
 
     if arguments.command in {"calendar-search", "calendar-get"}:
