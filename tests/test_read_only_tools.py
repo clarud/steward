@@ -86,3 +86,23 @@ def test_read_only_tools_do_not_return_private_source_text_to_cloud_agent(tmp_pa
 
     assert json.loads(service.search_sources("disclose")) == []
     assert "privacy rule" in json.loads(service.read_source(source.id or 0))["error"]
+
+
+def test_read_only_tools_recover_when_an_agent_searches_a_markdown_filename(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "COURSE_DETAILS.md", "a" * 64, SourceType.MARKDOWN, 1, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "Course details for CS3210.", "lines 1"),))
+    )
+    service = ReadOnlyToolService(
+        sources, fragments, LexicalSearchService(sources, fragments), KnowledgeService(database),
+        RecordService(database), WorkspaceRepository(database), ActivityService(database),
+    )
+
+    results = json.loads(service.search_sources("COURSE_DETAILS.md"))
+
+    assert results[0]["source_id"] == source.id

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
@@ -13,6 +14,7 @@ from steward.knowledge import KnowledgeService
 from steward.privacy import PrivacyService
 from steward.records import RecordService
 from steward.retrieval import LexicalSearchService
+from steward.extraction import InvalidSearchQueryError
 from steward.sources import SourceRepository
 from steward.workspaces import WorkspaceRepository
 from steward.tools.policy import ToolDefinition, ToolRisk
@@ -52,6 +54,19 @@ class ReadOnlyToolService:
 
     def search_sources(self, query: str, limit: int = 5) -> str:
         """Find source fragments by exact terms and return their provenance."""
+        try:
+            hits = self._lexical.search(query, limit=self._limit(limit))
+        except InvalidSearchQueryError:
+            hits = ()
+        filename_stem = Path(query).stem if Path(query).suffix.casefold() in {".md", ".txt", ".pdf"} else query
+        normalized = re.sub(r"[^\w]+", " ", filename_stem.replace("_", " ")).strip()
+        if not hits and normalized and normalized != query:
+            # Models often pass filenames such as COURSE_DETAILS.md. FTS5 parses
+            # punctuation as query syntax (or returns no match), so retry the
+            # meaningful filename words.
+            hits = self._lexical.search(normalized, limit=self._limit(limit))
+        elif not hits and not normalized:
+            return self._json({"error": "Provide at least one searchable source term."})
         return self._json(
             [
                 {
@@ -63,7 +78,7 @@ class ReadOnlyToolService:
                     "text": hit.fragment.text,
                     "score": hit.score,
                 }
-                for hit in self._lexical.search(query, limit=self._limit(limit))
+                for hit in hits
                 if self._permits_external_model(hit.source.id)
             ]
         )
