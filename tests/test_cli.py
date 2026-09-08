@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import UTC, datetime
 
-from steward.cli import main
+from steward.cli import build_parser, main
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -79,6 +79,29 @@ def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> 
     assert capsys.readouterr().out == (
         "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward ask`.\n"
     )
+
+
+def test_cli_ask_supplies_default_checkpointer_thread(monkeypatch, capsys) -> None:
+    class FakeGraph:
+        def __init__(self) -> None:
+            self.input = None
+            self.config = None
+
+        def invoke(self, input, config):
+            self.input = input
+            self.config = config
+            return {"answer": "Grounded answer.", "citations": ()}
+
+    graph = FakeGraph()
+    monkeypatch.setattr("steward.cli._model_gateway_from_settings", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("steward.cli._build_question_graph", lambda *_args, **_kwargs: graph)
+
+    main(["ask", "What is MM1?"])
+
+    assert graph.input == {"question": "What is MM1?"}
+    assert graph.config == {"configurable": {"thread_id": "cli:ask"}}
+    assert capsys.readouterr().out == "Grounded answer.\n"
+    assert build_parser().parse_args(["ask", "Question", "--thread-id", "review"]).thread_id == "review"
 
 
 def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -> None:

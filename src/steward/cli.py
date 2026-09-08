@@ -91,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask_parser.add_argument("question", help="Question to answer from local evidence")
     ask_parser.add_argument("--limit", type=int, default=5, help="Maximum evidence fragments")
+    ask_parser.add_argument(
+        "--thread-id",
+        default="cli:ask",
+        help="Persistent LangGraph conversation thread ID",
+    )
     agent_parser = subcommands.add_parser(
         "agent", help="Answer using Steward's read-only tool-calling loop"
     )
@@ -343,7 +348,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         graph_result = _build_question_graph(
             settings, model_gateway, limit=arguments.limit
-        ).invoke({"question": arguments.question})
+        ).invoke(
+            {"question": arguments.question},
+            {"configurable": {"thread_id": arguments.thread_id}},
+        )
         print(graph_result["answer"])
         citations = graph_result.get("citations", ())
         if citations:
