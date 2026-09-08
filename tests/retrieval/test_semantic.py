@@ -12,7 +12,7 @@ from steward.retrieval import (
     SemanticSearchService,
     SQLiteSemanticIndex,
 )
-from steward.sources import SourceRepository, SourceStatus
+from steward.sources import SourceRepository, SourceStatus, SourceType
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 
@@ -143,6 +143,21 @@ def test_semantic_search_excludes_fragments_of_missing_originals(tmp_path: Path)
 
     hits = SemanticSearchService(source_repository, semantic_index).search(
         "the little cache for address translation"
+    )
+
+    assert all(hit.source.id != virtual_memory.id for hit in hits)
+
+
+def test_semantic_search_can_filter_by_source_type(tmp_path: Path) -> None:
+    _, source_repository, _, semantic_index = _build_indexed_vault(tmp_path)
+    virtual_memory = next(
+        source for source in source_repository.list_active() if source.path.name == "virtual-memory.md"
+    )
+    source_repository.update(replace(virtual_memory, source_type=SourceType.PLAIN_TEXT))
+
+    hits = SemanticSearchService(source_repository, semantic_index).search(
+        "the little cache for address translation",
+        source_types={SourceType.MARKDOWN},
     )
 
     assert all(hit.source.id != virtual_memory.id for hit in hits)

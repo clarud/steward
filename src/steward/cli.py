@@ -33,7 +33,7 @@ from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph, build_retrieval_answer_graph
 from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
 from steward.logging import configure_logging
-from steward.sources import SourceRepository
+from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 from steward.retrieval import (
@@ -102,11 +102,43 @@ def _configure_console_encoding() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
 
 
+def _add_source_type_filter(parser: argparse.ArgumentParser) -> None:
+    """Add a repeatable source-type filter to a retrieval command."""
+
+    parser.add_argument(
+        "--source-type",
+        dest="source_types",
+        action="append",
+        choices=sorted(
+            source_type.value
+            for source_type in SourceType
+            if source_type is not SourceType.BINARY
+        ),
+        help="Restrict results to one source type; repeat to include several types",
+    )
+
+
+def _requested_source_types(arguments: argparse.Namespace) -> tuple[SourceType, ...]:
+    return tuple(SourceType(value) for value in (arguments.source_types or ()))
+
+
+def _print_search_hit(hit: object) -> None:
+    """Render provenance and a compact, optionally FTS-highlighted excerpt."""
+
+    source = hit.source  # type: ignore[attr-defined]
+    fragment = hit.fragment  # type: ignore[attr-defined]
+    heading = fragment.heading or "Preamble"
+    highlighted_text = getattr(hit, "highlighted_text", None)
+    snippet = " ".join((highlighted_text or fragment.text).split())
+    print(f"{source.path}:{fragment.location} [{heading}]")
+    print(f"  {snippet[:160]}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the command-line interface for currently available features."""
     parser = argparse.ArgumentParser(prog="steward")
     subcommands = parser.add_subparsers(dest="command")
-    scan_parser = subcommands.add_parser("scan", help="Register Markdown, text, and PDF files under a root")
+    scan_parser = subcommands.add_parser("scan", help="Register supported source files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing supported source files")
     watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files")
     watch_parser.add_argument("root", type=Path)
@@ -119,19 +151,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Download Steward's local embedding model for semantic search",
     )
     subcommands.add_parser("sources", help="List registered sources")
-    search_parser = subcommands.add_parser("search", help="Search indexed Markdown fragments")
+    search_parser = subcommands.add_parser("search", help="Search indexed source fragments")
     search_parser.add_argument("query", help="Terms to search for")
     search_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    _add_source_type_filter(search_parser)
     semantic_parser = subcommands.add_parser(
         "semantic-search", help="Search Markdown fragments by meaning"
     )
     semantic_parser.add_argument("query", help="A natural-language question or phrase")
     semantic_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    _add_source_type_filter(semantic_parser)
     hybrid_parser = subcommands.add_parser(
         "hybrid-search", help="Combine lexical and semantic Markdown search"
     )
     hybrid_parser.add_argument("query", help="Terms or a natural-language question")
     hybrid_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
+    _add_source_type_filter(hybrid_parser)
     ask_parser = subcommands.add_parser(
         "ask", help="Answer a question from retrieved local source fragments"
     )
@@ -381,16 +416,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         hits = LexicalSearchService(
             source_repository=SourceRepository(database_path),
             fragment_repository=SourceFragmentRepository(database_path),
-        ).search(arguments.query, limit=arguments.limit)
+        ).search(
+            arguments.query,
+            limit=arguments.limit,
+            source_types=_requested_source_types(arguments),
+        )
         if not hits:
             print("No matching fragments.")
             return
 
         for hit in hits:
-            heading = hit.fragment.heading or "Preamble"
-            snippet = " ".join(hit.fragment.text.split())
-            print(f"{hit.source.path}:{hit.fragment.location} [{heading}]")
-            print(f"  {snippet[:160]}")
+            _print_search_hit(hit)
         return
 
     if arguments.command in {"semantic-search", "hybrid-search"}:
@@ -403,20 +439,25 @@ def main(argv: Sequence[str] | None = None) -> None:
             SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
         )
         if arguments.command == "semantic-search":
-            hits = semantic_search.search(arguments.query, limit=arguments.limit)
+            hits = semantic_search.search(
+                arguments.query,
+                limit=arguments.limit,
+                source_types=_requested_source_types(arguments),
+            )
         else:
             hits = HybridRetriever(
                 LexicalSearchService(source_repository, fragment_repository), semantic_search
-            ).search(arguments.query, limit=arguments.limit)
+            ).search(
+                arguments.query,
+                limit=arguments.limit,
+                source_types=_requested_source_types(arguments),
+            )
         if not hits:
             print("No matching fragments. Run `steward index <vault>` first.")
             return
 
         for hit in hits:
-            heading = hit.fragment.heading or "Preamble"
-            snippet = " ".join(hit.fragment.text.split())
-            print(f"{hit.source.path}:{hit.fragment.location} [{heading}]")
-            print(f"  {snippet[:160]}")
+            _print_search_hit(hit)
         return
 
     if arguments.command == "ask":

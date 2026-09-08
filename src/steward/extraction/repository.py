@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from steward.extraction.models import ExtractionResult, SourceFragment
+from steward.sources.models import SourceStatus, SourceType
 
 
 class UnknownSourceError(ValueError):
@@ -23,6 +25,7 @@ class FragmentSearchResult:
 
     fragment: SourceFragment
     score: float
+    highlighted_text: str | None = None
 
 
 class SourceFragmentRepository:
@@ -108,29 +111,44 @@ class SourceFragmentRepository:
             for row in rows
         )
 
-    def search(self, query: str, *, limit: int = 5) -> tuple[FragmentSearchResult, ...]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        source_types: Collection[SourceType] | None = None,
+    ) -> tuple[FragmentSearchResult, ...]:
         """Return fragments ranked by FTS5 BM25 lexical relevance."""
         if not query.strip():
             raise ValueError("Search query must not be empty.")
         if limit <= 0:
             raise ValueError("Search limit must be positive.")
 
+        selected_source_types = tuple(sorted({source_type.value for source_type in source_types or ()}))
+        source_type_filter = (
+            f" AND s.source_type IN ({', '.join('?' for _ in selected_source_types)})"
+            if selected_source_types
+            else ""
+        )
+        parameters = (query, SourceStatus.ACTIVE.value, *selected_source_types, limit)
         try:
             with sqlite3.connect(self._database_path) as connection:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT sf.id, sf.source_id, sf.heading, sf.ordinal, sf.text,
-                           sf.location, bm25(source_fragments_fts) AS score
+                           sf.location, bm25(source_fragments_fts) AS score,
+                           highlight(source_fragments_fts, 3, '[', ']') AS highlighted_text
                     FROM source_fragments_fts
                     JOIN source_fragments AS sf
                       ON sf.id = source_fragments_fts.fragment_id
                     JOIN sources AS s ON s.id = sf.source_id
                     WHERE source_fragments_fts MATCH ?
-                      AND s.status = 'active'
+                      AND s.status = ?
+                      {source_type_filter}
                     ORDER BY score
                     LIMIT ?
                     """,
-                    (query, limit),
+                    parameters,
                 ).fetchall()
         except sqlite3.OperationalError as error:
             raise InvalidSearchQueryError(f"Invalid FTS5 search query: {query!r}") from error
@@ -146,6 +164,7 @@ class SourceFragmentRepository:
                     location=str(row[5]),
                 ),
                 score=float(row[6]),
+                highlighted_text=str(row[7]) if row[7] is not None else None,
             )
             for row in rows
         )

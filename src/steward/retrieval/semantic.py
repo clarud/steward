@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from steward.extraction import SourceFragment
 from steward.sources import Source, SourceRepository
+from steward.sources.models import SourceStatus, SourceType
 
 
 class EmbeddingProvider(Protocol):
@@ -76,7 +77,13 @@ class SemanticIndex(Protocol):
     ) -> tuple[SourceFragment, ...]:
         """Replace the indexed vectors for one source's current fragments."""
 
-    def search(self, query: str, *, limit: int = 5) -> tuple[SemanticFragmentHit, ...]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        source_types: Collection[SourceType] | None = None,
+    ) -> tuple[SemanticFragmentHit, ...]:
         """Return the fragments most semantically similar to a query."""
 
 
@@ -147,7 +154,13 @@ class SQLiteSemanticIndex:
             )
         return fragments
 
-    def search(self, query: str, *, limit: int = 5) -> tuple[SemanticFragmentHit, ...]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        source_types: Collection[SourceType] | None = None,
+    ) -> tuple[SemanticFragmentHit, ...]:
         """Score every vector for this model with cosine similarity."""
         if not query.strip():
             raise ValueError("Search query must not be empty.")
@@ -157,18 +170,30 @@ class SQLiteSemanticIndex:
         query_vector = self._embedding_provider.embed_query(query)
         if not query_vector:
             raise RuntimeError("Embedding provider returned an empty query vector.")
+        selected_source_types = tuple(sorted({source_type.value for source_type in source_types or ()}))
+        source_type_filter = (
+            f" AND s.source_type IN ({', '.join('?' for _ in selected_source_types)})"
+            if selected_source_types
+            else ""
+        )
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT sf.id, sf.source_id, sf.heading, sf.ordinal, sf.text,
                        sf.location, sfe.vector_json
                 FROM source_fragment_embeddings AS sfe
                 JOIN source_fragments AS sf ON sf.id = sfe.fragment_id
                 JOIN sources AS s ON s.id = sf.source_id
                 WHERE sfe.model_name = ? AND sfe.dimension = ?
-                  AND s.status = 'active'
+                  AND s.status = ?
+                  {source_type_filter}
                 """,
-                (self._embedding_provider.model_name, len(query_vector)),
+                (
+                    self._embedding_provider.model_name,
+                    len(query_vector),
+                    SourceStatus.ACTIVE.value,
+                    *selected_source_types,
+                ),
             ).fetchall()
 
         hits = [
@@ -204,9 +229,17 @@ class SemanticSearchService:
         self._source_repository = source_repository
         self._semantic_index = semantic_index
 
-    def search(self, query: str, *, limit: int = 5) -> tuple[SemanticSearchHit, ...]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        source_types: Collection[SourceType] | None = None,
+    ) -> tuple[SemanticSearchHit, ...]:
         hits: list[SemanticSearchHit] = []
-        for result in self._semantic_index.search(query, limit=limit):
+        for result in self._semantic_index.search(
+            query, limit=limit, source_types=source_types
+        ):
             source = self._source_repository.get_by_id(result.fragment.source_id)
             if source is None:
                 raise RuntimeError(

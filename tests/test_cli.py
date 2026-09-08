@@ -73,7 +73,24 @@ def test_cli_search_returns_matching_fragment(tmp_path: Path, monkeypatch, capsy
 
     output = capsys.readouterr().out
     assert f"{note_path.resolve()}:lines 1-2 [TLB]" in output
-    assert "A TLB caches address translations." in output
+    assert "A TLB caches address [translations]." in output
+
+
+def test_cli_search_filters_results_by_source_type(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    markdown = vault / "note.md"; markdown.write_text("# TLB\nAddress translations", encoding="utf-8")
+    plain_text = vault / "note.txt"; plain_text.write_text("Address translations", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    main(["scan", str(vault)])
+    capsys.readouterr()
+
+    main(["search", "translations", "--source-type", "plain_text"])
+
+    output = capsys.readouterr().out
+    assert str(plain_text.resolve()) in output
+    assert str(markdown.resolve()) not in output
 
 
 def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
