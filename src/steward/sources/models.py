@@ -14,6 +14,7 @@ class SourceType(StrEnum):
     MARKDOWN = "markdown"
     PLAIN_TEXT = "plain_text"
     PDF = "pdf"
+    DOCX = "docx"
     BINARY = "binary"
 
 

@@ -81,6 +81,7 @@ class InboxCaptureService:
             ".md": SourceType.MARKDOWN,
             ".txt": SourceType.PLAIN_TEXT,
             ".pdf": SourceType.PDF,
+            ".docx": SourceType.DOCX,
         }.get(suffix, SourceType.BINARY)
         original_name = event.attachments[0] if event.attachments else original_path.name
         safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original_name).stem).strip(".-")

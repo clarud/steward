@@ -115,3 +115,14 @@ def test_general_scan_registers_markdown_and_plain_text(tmp_path: Path) -> None:
     assert result == ScanResult(new=2, updated=0, unchanged=0, missing=0)
     assert repository.get_by_path(markdown.resolve()).source_type is SourceType.MARKDOWN
     assert repository.get_by_path(text.resolve()).source_type is SourceType.PLAIN_TEXT
+
+
+def test_general_scan_registers_docx_files(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    document = vault / "notes.docx"; document.write_bytes(b"PK\x03\x04")
+    repository = make_repository(tmp_path)
+
+    result = scan_source_root(vault, repository, scanned_at=datetime(2026, 9, 6, 1, 0, tzinfo=UTC))
+
+    assert result.new == 1
+    assert repository.get_by_path(document.resolve()).source_type is SourceType.DOCX

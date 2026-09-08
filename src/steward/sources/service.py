@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from steward.extraction import ExtractionService, MarkdownExtractor, SourceFragmentRepository
+from steward.extraction import (
+    ExtractionResult,
+    ExtractionService,
+    DocumentExtractionError,
+    MarkdownExtractor,
+    SourceFragmentRepository,
+)
 from steward.sources.models import SourceType
 from steward.sources.models import Source, SourceStatus
 from steward.sources.hashing import hash_file
@@ -16,6 +23,9 @@ from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source
 
 if TYPE_CHECKING:
     from steward.retrieval.semantic import SemanticIndex
+
+
+logger = logging.getLogger(__name__)
 
 
 class SourceService:
@@ -59,15 +69,25 @@ class SourceService:
         for source in self._source_repository.list_active():
             if not source.path.is_relative_to(resolved_root):
                 continue
-            if source.source_type is SourceType.MARKDOWN:
+            try:
+                if source.source_type is SourceType.MARKDOWN:
+                    fragments = self._fragment_repository.replace_for_source(
+                        self._markdown_extractor.extract(source)
+                    )
+                elif source.source_type in {SourceType.PLAIN_TEXT, SourceType.PDF, SourceType.DOCX}:
+                    self._document_extraction.extract_and_store(source)
+                    fragments = self._fragment_repository.list_for_source(source.id or 0)
+                else:
+                    continue
+            except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
+                # The original remains registered.  Derived text is removed so a
+                # changed-but-unreadable file cannot remain searchable as its old content.
+                logger.warning("Could not extract %s: %s", source.path, error)
+                if source.id is None:
+                    raise RuntimeError("Active sources must have an ID.") from error
                 fragments = self._fragment_repository.replace_for_source(
-                    self._markdown_extractor.extract(source)
+                    ExtractionResult(source_id=source.id, fragments=())
                 )
-            elif source.source_type in {SourceType.PLAIN_TEXT, SourceType.PDF}:
-                self._document_extraction.extract_and_store(source)
-                fragments = self._fragment_repository.list_for_source(source.id or 0)
-            else:
-                continue
             if self._semantic_index is not None:
                 self._semantic_index.replace_for_source(fragments)
         return result

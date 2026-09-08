@@ -13,6 +13,7 @@ Requires-Dist: openai>=2.0
 Requires-Dist: python-dotenv>=1.0
 Requires-Dist: python-telegram-bot>=22.0
 Requires-Dist: pypdf>=5.0
+Requires-Dist: python-docx>=1.0
 Requires-Dist: sentence-transformers>=5.0
 Requires-Dist: watchdog>=6.0
 Provides-Extra: dev
@@ -25,7 +26,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–27 are implemented as a local foundation. Steward can capture text,
+Phases 0–34 are implemented as a local foundation. Steward can capture text,
 Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -44,6 +45,16 @@ It can also review Inbox filenames and propose possible new workspace themes
 without creating or moving anything automatically.
 It can propose evidence-backed connections between concepts without turning
 co-occurrence into permanent knowledge automatically.
+Manual Markdown edits can be watched and incrementally refreshed locally.
+Model privacy now routes restricted evidence to a configured local Ollama model
+or refuses it safely when none is available. Calendar creation reconciles a
+prior remote event by its Steward idempotency key after an interrupted local
+write, avoiding a duplicate event on retry.
+Structured local logs make retrieval graph routes, result IDs/counts, model
+calls, and tool requests inspectable without recording source text or prompts.
+The repository also includes versioned retrieval and product evaluation cases
+for regression checks across retrieval, organization, records, knowledge, and
+agent safety.
 
 ## Local setup
 
@@ -93,13 +104,38 @@ steward ask "What do I know about address translation?"
 
 ## Ask with read-only tools
 
-`steward agent` is Steward's first tool-calling loop. Gemini can decide whether
-to search or read local Steward data, LangGraph executes only the six supplied
-read-only tools, then Gemini receives the tool results before answering.
+`steward agent` is Steward's first tool-calling loop. Gemini or a configured
+local Ollama model can decide whether to search or read local Steward data.
+LangGraph executes supplied read-only tools plus narrowly defined proposal-only
+tools, then returns their results to the same model before it answers.
+
+For an explicit workspace-creation request, the agent may use its one
+proposal-only write tool. That creates a pending proposal, never the workspace
+itself. Inspect or decide it explicitly:
+
+```powershell
+steward action-proposals
+steward review-action-proposal 1 accepted
+```
 
 ```powershell
 steward agent "What did I save about address translation?"
 ```
+
+For Ollama, install and run Ollama, pull a model that supports tool calling,
+then set the following private `.env` values before starting a new terminal:
+
+```text
+STEWARD_MODEL_PROVIDER=local
+STEWARD_LOCAL_MODEL=qwen3
+# Optional when Ollama uses its default local endpoint:
+STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
+```
+
+Tool support is a model capability, not a guarantee of reliable planning. A
+small local model may answer directly, repeat a lookup, or emit invalid
+tool-like text; Steward executes only valid calls to its allowlisted tools and
+enforces its tool-call budget regardless of provider.
 
 Use `--thread-id` to continue a tool-agent conversation through the local
 LangGraph checkpoint store:
@@ -165,12 +201,48 @@ the evidence IDs and explicitly notes that shared evidence is not causation.
 steward connect-knowledge
 ```
 
+## Watch a vault for Markdown edits
+
+Filesystem events are debounced, then Steward re-hashes the file before doing
+any extraction work. Press `Ctrl+C` to stop the foreground watcher.
+
+```powershell
+steward watch path\to\your\vault
+```
+
+## Set source privacy before model use
+
+```powershell
+steward set-source-privacy 12 local_model_only
+steward source-privacy 12
+```
+
+The cloud-answer and cloud tool-agent paths enforce this boundary before they
+place source text or source-derived travel record fields in a model prompt.
+`external_redacted` is deliberately withheld until Steward has an actual,
+auditable redaction feature; a label alone cannot protect data.
+
+If you run a local Ollama model, Steward can route `local_model_only` and
+`external_redacted` source evidence to it instead of a cloud provider:
+
+```dotenv
+STEWARD_LOCAL_MODEL=llama3.2
+STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
+```
+
+Set `STEWARD_MODEL_PROVIDER=local` to make Ollama the default answer model;
+otherwise it is selected only when retrieved evidence requires local handling.
+
 ## Ask through Telegram
 
 Create a bot with BotFather, put its token in your private `.env`, and start
 the local polling process. Send `/save` as a message to capture its text, or
 use `/save` as the caption on a Markdown, text, or PDF attachment. Captured
 material is preserved in the configured Inbox before extraction and indexing.
+If an uploaded filename strongly matches an existing workspace, Steward sends an
+organization proposal and waits for an explicit `accept` or `reject` reply
+before moving the original file. Uncertain captures remain in Inbox without
+blocking the chat.
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=your-bot-token

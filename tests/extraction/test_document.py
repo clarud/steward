@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from steward.extraction import PdfExtractor, PlainTextExtractor
+from steward.extraction import DocxExtractor, PdfExtractor, PlainTextExtractor
 from steward.sources import Source, SourceType
 
 
@@ -34,4 +34,32 @@ def test_pdf_extractor_keeps_page_provenance(tmp_path: Path, monkeypatch) -> Non
 
     assert [(fragment.text, fragment.location) for fragment in result.fragments] == [
         ("first", "page 1"), ("third", "page 3")
+    ]
+
+
+def test_docx_extractor_retains_paragraph_and_heading_provenance(tmp_path: Path) -> None:
+    from docx import Document
+
+    path = tmp_path / "notes.docx"
+    document = Document()
+    document.add_heading("Address translation", level=1)
+    document.add_paragraph("A TLB caches translations.")
+    document.add_paragraph("Page tables map virtual memory.")
+    document.save(path)
+    source = Source(
+        1,
+        path,
+        "a" * 64,
+        SourceType.DOCX,
+        path.stat().st_size,
+        datetime(2026, 9, 8, tzinfo=UTC),
+        datetime(2026, 9, 8, tzinfo=UTC),
+        datetime(2026, 9, 8, tzinfo=UTC),
+    )
+
+    result = DocxExtractor().extract(source)
+
+    assert [(fragment.heading, fragment.text, fragment.location) for fragment in result.fragments] == [
+        ("Address translation", "A TLB caches translations.", "paragraph 2"),
+        ("Address translation", "Page tables map virtual memory.", "paragraph 3"),
     ]

@@ -5,7 +5,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 ## Current status
 
 Phases 0–34 are implemented as a local foundation. Steward can capture text,
-Markdown, plain text, and native-text PDFs into an Inbox; extract and retrieve
+Markdown, plain text, DOCX, and native-text PDFs into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
 with persistent per-chat LangGraph state. The human approval and external
@@ -215,7 +215,7 @@ otherwise it is selected only when retrieved evidence requires local handling.
 
 Create a bot with BotFather, put its token in your private `.env`, and start
 the local polling process. Send `/save` as a message to capture its text, or
-use `/save` as the caption on a Markdown, text, or PDF attachment. Captured
+use `/save` as the caption on a Markdown, text, DOCX, or PDF attachment. Captured
 material is preserved in the configured Inbox before extraction and indexing.
 If an uploaded filename strongly matches an existing workspace, Steward sends an
 organization proposal and waits for an explicit `accept` or `reject` reply
