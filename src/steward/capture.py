@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 import re
 from shutil import copy2
 
 from steward.events import IncomingEvent
-from steward.extraction import ExtractionService, SourceFragmentRepository
-from steward.sources import Source, SourceRepository, SourceType
+from steward.extraction import DocumentExtractionError, ExtractionService, SourceFragmentRepository
+from steward.sources import Source, SourceRepository, SourceType, source_type_for_path
 from steward.sources.hashing import hash_file
 from steward.activity import ActivityService, ActivityType
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +71,7 @@ class InboxCaptureService:
                 last_seen_at=captured_at,
             )
         )
-        self._extract_markdown(source)
+        self._extract_derived_content(source)
         self._record(source)
         return CaptureResult(source=source, duplicate=False)
 
@@ -77,14 +81,7 @@ class InboxCaptureService:
         if not original_path.is_file():
             raise FileNotFoundError(original_path)
         suffix = original_path.suffix.casefold()
-        source_type = {
-            ".md": SourceType.MARKDOWN,
-            ".txt": SourceType.PLAIN_TEXT,
-            ".pdf": SourceType.PDF,
-            ".docx": SourceType.DOCX,
-            ".html": SourceType.HTML,
-            ".htm": SourceType.HTML,
-        }.get(suffix, SourceType.BINARY)
+        source_type = source_type_for_path(original_path) or SourceType.BINARY
         original_name = event.attachments[0] if event.attachments else original_path.name
         safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original_name).stem).strip(".-")
         destination = self._inbox_dir / (
@@ -110,13 +107,16 @@ class InboxCaptureService:
                 last_seen_at=captured_at,
             )
         )
-        self._extract_markdown(source)
+        self._extract_derived_content(source)
         self._record(source)
         return CaptureResult(source=source, duplicate=False)
 
-    def _extract_markdown(self, source: Source) -> None:
+    def _extract_derived_content(self, source: Source) -> None:
         if self._extraction_service is not None:
-            self._extraction_service.extract_and_store(source)
+            try:
+                self._extraction_service.extract_and_store(source)
+            except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
+                logger.warning("Captured %s but could not extract text: %s", source.path, error)
 
     def _record(self, source: Source) -> None:
         if self._activity_service is not None:

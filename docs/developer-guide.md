@@ -1,7 +1,7 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 20. Steward can register local Markdown, plain-text, DOCX, HTML, and native-text PDF files, extract structured
+through 20. Steward can register local Markdown, plain-text, DOCX, HTML, images with optional local OCR, and native-text PDF files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
 generate grounded answers from retrieved fragments. A minimal LangGraph
 workflow orchestrates those existing services. A Telegram adapter can deliver
@@ -892,8 +892,9 @@ behavior easy to edit and inspect in code review.
 
 ## Known limitations
 
-- Capture currently supports Markdown, plain text, DOCX, HTML, and PDFs with native text.
-  Images, OCR for scanned PDFs, and large-file relay storage are
+- Capture currently supports Markdown, plain text, DOCX, HTML, images, and PDFs with native text.
+  Image OCR uses a separately installed local `tesseract` executable; unavailable OCR never prevents
+  preservation of the original. OCR for scanned PDFs and large-file relay storage are
   future work.
 - Heading-based fragments are useful but not universally optimal. Very long
   sections can create overly large fragments; very short headings can create

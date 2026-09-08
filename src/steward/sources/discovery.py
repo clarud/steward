@@ -14,6 +14,13 @@ SUPPORTED_SOURCE_TYPES = {
     ".docx": SourceType.DOCX,
     ".html": SourceType.HTML,
     ".htm": SourceType.HTML,
+    ".png": SourceType.IMAGE,
+    ".jpg": SourceType.IMAGE,
+    ".jpeg": SourceType.IMAGE,
+    ".tif": SourceType.IMAGE,
+    ".tiff": SourceType.IMAGE,
+    ".bmp": SourceType.IMAGE,
+    ".webp": SourceType.IMAGE,
 }
 
 

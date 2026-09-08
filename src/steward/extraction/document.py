@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from subprocess import CalledProcessError, TimeoutExpired, run
 from typing import Protocol
 from zipfile import BadZipFile
 
@@ -174,6 +175,33 @@ class HtmlExtractor:
         return ExtractionResult(source.id, fragments)
 
 
+class ImageOcrExtractor:
+    """Use the optional local Tesseract executable to extract image text."""
+
+    def __init__(self, command: str = "tesseract") -> None:
+        self._command = command
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.IMAGE:
+            raise ValueError("ImageOcrExtractor requires an image Source.")
+        try:
+            completed = run(
+                [self._command, str(source.path), "stdout"],
+                capture_output=True,
+                check=True,
+                encoding="utf-8",
+                text=True,
+                timeout=30,
+            )
+        except (OSError, CalledProcessError, TimeoutExpired) as error:
+            raise DocumentExtractionError(f"Could not OCR image {source.path}.") from error
+        text = completed.stdout.strip()
+        fragments = () if not text else (SourceFragment(None, source.id, None, 0, text, "image OCR"),)
+        return ExtractionResult(source.id, fragments)
+
+
 class ExtractionService:
     """Choose an extractor by Source type and persist only derived fragments."""
 
@@ -185,6 +213,7 @@ class ExtractionService:
             SourceType.PDF: PdfExtractor(),
             SourceType.DOCX: DocxExtractor(),
             SourceType.HTML: HtmlExtractor(),
+            SourceType.IMAGE: ImageOcrExtractor(),
         }
 
     def extract_and_store(self, source: Source) -> ExtractionResult | None:

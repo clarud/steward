@@ -7,6 +7,7 @@ from steward.extraction.document import (
     DocumentExtractor,
     ExtractionService,
     HtmlExtractor,
+    ImageOcrExtractor,
     PdfExtractor,
     PlainTextExtractor,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "DocumentExtractor",
     "ExtractionService",
     "HtmlExtractor",
+    "ImageOcrExtractor",
     "PdfExtractor",
     "DocxExtractor",
     "PlainTextExtractor",

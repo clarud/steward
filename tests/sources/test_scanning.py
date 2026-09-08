@@ -137,3 +137,14 @@ def test_general_scan_registers_html_files(tmp_path: Path) -> None:
 
     assert result.new == 1
     assert repository.get_by_path(document.resolve()).source_type is SourceType.HTML
+
+
+def test_general_scan_registers_image_files(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    image = vault / "receipt.png"; image.write_bytes(b"png")
+    repository = make_repository(tmp_path)
+
+    result = scan_source_root(vault, repository, scanned_at=datetime(2026, 9, 6, 1, 0, tzinfo=UTC))
+
+    assert result.new == 1
+    assert repository.get_by_path(image.resolve()).source_type is SourceType.IMAGE

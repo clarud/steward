@@ -1,4 +1,4 @@
-"""Telegram long-polling adapter for text-only Steward questions."""
+"""Telegram long-polling adapter for questions and explicit file capture."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class IncomingEventHandler(Protocol):
 
 
 class IncomingFileEventHandler(IncomingEventHandler, Protocol):
-    """Application boundary for a document downloaded by this adapter."""
+    """Application boundary for an attachment downloaded by this adapter."""
 
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str: ...
 
@@ -50,9 +50,7 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
         reply_to_id=reply_to_id,
         timestamp=message.date,
         text=message.text or message.caption,
-        attachments=(message.document.file_name,)
-        if message.document is not None and message.document.file_name
-        else (),
+        attachments=_attachment_names(message),
     )
 
 
@@ -80,31 +78,73 @@ class TelegramAdapter:
     ) -> None:
         """Download an explicitly saved document, then delegate preservation."""
 
-        del context
         message = update.effective_message
         if message is None or message.document is None:
             raise ValueError("Telegram update does not contain a document.")
+        await self._handle_attachment(
+            update,
+            context,
+            message.document,
+            getattr(message.document, "file_name", None) or "attachment.bin",
+        )
+
+    async def handle_photo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Download an explicitly saved Telegram photo, then delegate preservation."""
+
+        message = update.effective_message
+        if message is None or not message.photo:
+            raise ValueError("Telegram update does not contain a photo.")
+        await self._handle_attachment(
+            update,
+            context,
+            message.photo[-1],
+            f"telegram-photo-{message.message_id}.jpg",
+        )
+
+    async def _handle_attachment(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, attachment: object, filename: str
+    ) -> None:
+        """Download one explicitly saved attachment and send the application's response."""
+
+        del context
+        message = update.effective_message
+        if message is None:
+            raise ValueError("Telegram update does not contain a message.")
         if not (message.caption or "").strip().startswith("/save"):
-            await message.reply_text("Add /save as the document caption to preserve it.")
+            await message.reply_text("Add /save as the attachment caption to preserve it.")
             return
-        if message.document.file_size and message.document.file_size > MAX_CLOUD_DOWNLOAD_BYTES:
+        file_size = getattr(attachment, "file_size", None)
+        if file_size and file_size > MAX_CLOUD_DOWNLOAD_BYTES:
             await message.reply_text(
                 "I cannot download files over 20 MB through the current Telegram connection. "
                 "Place the original in vault/inbox instead."
             )
             return
         if not hasattr(self._event_handler, "handle_file"):
-            raise TypeError("Document handling requires a file capture application.")
+            raise TypeError("Attachment handling requires a file capture application.")
         event = normalize_telegram_update(update)
-        suffix = Path(message.document.file_name or "attachment.bin").suffix or ".bin"
+        suffix = Path(filename).suffix or ".bin"
         with TemporaryDirectory() as temporary_dir:
             download_path = Path(temporary_dir) / f"download{suffix}"
-            telegram_file = await message.document.get_file()
+            telegram_file = await attachment.get_file()  # type: ignore[attr-defined]
             await telegram_file.download_to_drive(download_path)
             response = await asyncio.to_thread(
                 self._event_handler.handle_file, event, download_path
             )
         await message.reply_text(response)
+
+
+def _attachment_names(message: object) -> tuple[str, ...]:
+    """Give captured uploads a stable, safe original-name hint."""
+
+    document = getattr(message, "document", None)
+    if document is not None and getattr(document, "file_name", None):
+        return (str(document.file_name),)
+    if getattr(message, "photo", None):
+        return (f"telegram-photo-{message.message_id}.jpg",)
+    return ()
 
 
 def run_telegram_polling(
@@ -123,4 +163,5 @@ def run_telegram_polling(
     capture_adapter = TelegramAdapter(capture_handler)
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
+    application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))
     application.run_polling()

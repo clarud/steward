@@ -86,6 +86,22 @@ def test_capture_file_extracts_html_into_inbox_fragments(tmp_path: Path) -> None
     ]
 
 
+def test_capture_image_keeps_original_when_optional_ocr_is_unavailable(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    original = tmp_path / "receipt.png"
+    original.write_bytes(b"png")
+    event = IncomingEvent("telegram:46", "telegram", "100", "11", None, datetime(2026, 9, 8, tzinfo=UTC), None)
+    fragments = SourceFragmentRepository(database_path)
+    service = InboxCaptureService(tmp_path / "inbox", SourceRepository(database_path), fragments)
+
+    result = service.capture_file(event, original)
+
+    assert result.source.source_type.value == "image"
+    assert result.source.path.read_bytes() == b"png"
+    assert fragments.list_for_source(result.source.id or 0) == ()
+
+
 def test_capture_file_retains_a_safe_version_of_the_original_name(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

@@ -16,6 +16,7 @@ class FakeMessage:
         self.text = text
         self.caption = None
         self.document = None
+        self.photo = ()
         self.replies: list[str] = []
 
     async def reply_text(self, text: str) -> None:
@@ -76,5 +77,25 @@ def test_document_over_cloud_limit_is_not_downloaded() -> None:
     message.document = type("Document", (), {"file_size": 21 * 1024 * 1024})()
 
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_document(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert "over 20 MB" in message.replies[0]
+
+
+def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> None:
+    message = FakeMessage()
+    message.caption = "/save"
+    message.photo = (object(),)
+
+    event = normalize_telegram_update(FakeUpdate(message))  # type: ignore[arg-type]
+
+    assert event.attachments == ("telegram-photo-7.jpg",)
+
+
+def test_photo_over_cloud_limit_is_not_downloaded() -> None:
+    message = FakeMessage()
+    message.caption = "/save"
+    message.photo = (type("Photo", (), {"file_size": 21 * 1024 * 1024})(),)
+
+    asyncio.run(TelegramAdapter(FakeEventHandler()).handle_photo(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]

@@ -16,6 +16,7 @@ class SourceType(StrEnum):
     PDF = "pdf"
     DOCX = "docx"
     HTML = "html"
+    IMAGE = "image"
     BINARY = "binary"
 
 

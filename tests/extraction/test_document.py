@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from steward.extraction import DocxExtractor, HtmlExtractor, PdfExtractor, PlainTextExtractor
+from subprocess import CompletedProcess
+
+from steward.extraction import DocxExtractor, HtmlExtractor, ImageOcrExtractor, PdfExtractor, PlainTextExtractor
 from steward.sources import Source, SourceType
 
 
@@ -80,4 +82,25 @@ def test_html_extractor_ignores_scripts_and_uses_nearest_heading(tmp_path: Path)
     assert [(fragment.heading, fragment.text, fragment.location) for fragment in result.fragments] == [
         ("Virtual memory", "Address translation maps virtual pages.", "section 1"),
         ("TLB", "Caches translations.", "section 2"),
+    ]
+
+
+def test_image_ocr_extractor_uses_local_tesseract_and_keeps_image_provenance(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "receipt.png"
+    path.write_bytes(b"png")
+    source = Source(1, path, "a" * 64, SourceType.IMAGE, path.stat().st_size,
+                    datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 8, tzinfo=UTC))
+    captured: dict[str, object] = {}
+
+    def fake_run(arguments, **kwargs):
+        captured["arguments"] = arguments
+        return CompletedProcess(arguments, 0, stdout="Booking reference: ABC123\n", stderr="")
+
+    monkeypatch.setattr("steward.extraction.document.run", fake_run)
+
+    result = ImageOcrExtractor().extract(source)
+
+    assert captured["arguments"] == ["tesseract", str(path), "stdout"]
+    assert [(fragment.text, fragment.location) for fragment in result.fragments] == [
+        ("Booking reference: ABC123", "image OCR")
     ]

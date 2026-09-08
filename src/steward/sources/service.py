@@ -79,6 +79,7 @@ class SourceService:
                     SourceType.PDF,
                     SourceType.DOCX,
                     SourceType.HTML,
+                    SourceType.IMAGE,
                 }:
                     self._document_extraction.extract_and_store(source)
                     fragments = self._fragment_repository.list_for_source(source.id or 0)
