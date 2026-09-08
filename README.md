@@ -135,6 +135,17 @@ steward calendar-search "Tokyo"
 steward calendar-get GOOGLE_EVENT_ID
 ```
 
+## Search Google Drive metadata
+
+Authorize the separate, read-only Drive metadata scope once. This searches
+current Drive file metadata and links; it does not download or retain content.
+
+```powershell
+steward drive-authorize C:\private\google-oauth-client.json
+$env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
+steward drive-search "itinerary"
+```
+
 Use Calendar reads in the tool agent only when requested explicitly:
 
 ```powershell

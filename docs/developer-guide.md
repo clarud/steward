@@ -590,6 +590,17 @@ stable synthetic event ID; retaining an identical bundle again returns the
 existing source instead of creating another note. Original webpage download and
 archiving remain separate future work.
 
+### Google Drive metadata
+
+`GoogleDriveService` is a separate read-only external boundary. Its OAuth flow
+uses only `drive.metadata.readonly`, stored in a dedicated
+`google-drive-token.json`, rather than reusing broader Calendar credentials.
+`steward drive-search QUERY` queries Google Drive for non-trashed filenames and
+returns current metadata: Drive ID, name, MIME type, modification time, web
+link, and available size. Drive is authoritative for that state. The service
+does not download file bytes, create local sources, or expose an agent write
+tool; an explicit, provenance-aware retention workflow can be added later.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv
