@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from steward.extraction import MarkdownExtractor, SourceFragmentRepository
+from steward.extraction import ExtractionService, MarkdownExtractor, SourceFragmentRepository
 from steward.sources.models import SourceType
 from steward.sources.models import Source, SourceStatus
 from steward.sources.hashing import hash_file
 from steward.sources.repository import SourceRepository
-from steward.sources.scanning import ScanResult, scan_markdown_root
+from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
 
 if TYPE_CHECKING:
     from steward.retrieval.semantic import SemanticIndex
@@ -31,6 +31,7 @@ class SourceService:
         self._source_repository = source_repository
         self._fragment_repository = fragment_repository
         self._markdown_extractor = markdown_extractor
+        self._document_extraction = ExtractionService(fragment_repository)
         self._semantic_index = semantic_index
 
     def scan_markdown_root(self, root: Path) -> ScanResult:
@@ -48,6 +49,27 @@ class SourceService:
                 if self._semantic_index is not None:
                     self._semantic_index.replace_for_source(fragments)
 
+        return result
+
+    def scan_source_root(self, root: Path) -> ScanResult:
+        """Synchronize and extract every source type currently supported in a vault."""
+
+        result = scan_source_root(root, self._source_repository)
+        resolved_root = root.resolve()
+        for source in self._source_repository.list_active():
+            if not source.path.is_relative_to(resolved_root):
+                continue
+            if source.source_type is SourceType.MARKDOWN:
+                fragments = self._fragment_repository.replace_for_source(
+                    self._markdown_extractor.extract(source)
+                )
+            elif source.source_type in {SourceType.PLAIN_TEXT, SourceType.PDF}:
+                self._document_extraction.extract_and_store(source)
+                fragments = self._fragment_repository.list_for_source(source.id or 0)
+            else:
+                continue
+            if self._semantic_index is not None:
+                self._semantic_index.replace_for_source(fragments)
         return result
 
     def refresh_markdown_path(self, path: Path) -> str:

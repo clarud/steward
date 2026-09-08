@@ -4,19 +4,38 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from steward.sources.models import SourceType
 
-def discover_markdown_files(root: Path) -> list[Path]:
-    """Return Markdown files beneath root as sorted, absolute paths."""
+
+SUPPORTED_SOURCE_TYPES = {
+    ".md": SourceType.MARKDOWN,
+    ".txt": SourceType.PLAIN_TEXT,
+    ".pdf": SourceType.PDF,
+}
+
+
+def source_type_for_path(path: Path) -> SourceType | None:
+    """Return the supported type inferred from one filename suffix."""
+
+    return SUPPORTED_SOURCE_TYPES.get(path.suffix.casefold())
+
+
+def discover_source_files(root: Path) -> list[Path]:
+    """Return every currently folder-scannable source beneath ``root``."""
+
     if not root.exists():
         raise FileNotFoundError(f"Source root does not exist: {root}")
     if not root.is_dir():
         raise NotADirectoryError(f"Source root is not a directory: {root}")
-
     resolved_root = root.resolve()
-    markdown_paths = (
+    paths = (
         path.resolve()
         for path in resolved_root.rglob("*")
-        if path.is_file() and path.suffix.casefold() == ".md"
+        if path.is_file() and source_type_for_path(path) is not None
     )
-    return sorted(markdown_paths, key=lambda path: path.as_posix().casefold())
+    return sorted(paths, key=lambda path: path.as_posix().casefold())
 
+
+def discover_markdown_files(root: Path) -> list[Path]:
+    """Return Markdown files beneath root as sorted, absolute paths."""
+    return [path for path in discover_source_files(root) if path.suffix.casefold() == ".md"]

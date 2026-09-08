@@ -106,14 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
     """Create the command-line interface for currently available features."""
     parser = argparse.ArgumentParser(prog="steward")
     subcommands = parser.add_subparsers(dest="command")
-    scan_parser = subcommands.add_parser("scan", help="Register Markdown files under a root")
-    scan_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    scan_parser = subcommands.add_parser("scan", help="Register Markdown, text, and PDF files under a root")
+    scan_parser.add_argument("root", type=Path, help="Directory containing supported source files")
     watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files")
     watch_parser.add_argument("root", type=Path)
     index_parser = subcommands.add_parser(
-        "index", help="Scan Markdown files and build their local semantic index"
+        "index", help="Scan supported source files and build their local semantic index"
     )
-    index_parser.add_argument("root", type=Path, help="Directory containing Markdown files")
+    index_parser.add_argument("root", type=Path, help="Directory containing supported source files")
     subcommands.add_parser(
         "download-embedding-model",
         help="Download Steward's local embedding model for semantic search",
@@ -325,7 +325,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             source_repository=SourceRepository(database_path),
             fragment_repository=SourceFragmentRepository(database_path),
             markdown_extractor=MarkdownExtractor(),
-        ).scan_markdown_root(arguments.root)
+        ).scan_source_root(arguments.root)
         print(
             "Scan complete: "
             f"new={result.new} updated={result.updated} "
@@ -350,7 +350,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             fragment_repository=SourceFragmentRepository(database_path),
             markdown_extractor=MarkdownExtractor(),
             semantic_index=SQLiteSemanticIndex(database_path, provider),
-        ).scan_markdown_root(arguments.root)
+        ).scan_source_root(arguments.root)
         print(
             "Index complete: "
             f"new={result.new} updated={result.updated} "

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from steward.sources import ScanResult, SourceRepository, SourceStatus, scan_markdown_root
+from steward.sources import ScanResult, SourceRepository, SourceStatus, SourceType, scan_markdown_root, scan_source_root
 from steward.storage import initialize_database
 
 
@@ -102,3 +102,16 @@ def test_scan_preserves_duplicate_content_at_two_paths(tmp_path: Path) -> None:
     )
 
     assert result.new == 2
+
+
+def test_general_scan_registers_markdown_and_plain_text(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    markdown = vault / "note.md"; markdown.write_text("# Note")
+    text = vault / "todo.txt"; text.write_text("Study")
+    repository = make_repository(tmp_path)
+
+    result = scan_source_root(vault, repository, scanned_at=datetime(2026, 9, 6, 1, 0, tzinfo=UTC))
+
+    assert result == ScanResult(new=2, updated=0, unchanged=0, missing=0)
+    assert repository.get_by_path(markdown.resolve()).source_type is SourceType.MARKDOWN
+    assert repository.get_by_path(text.resolve()).source_type is SourceType.PLAIN_TEXT

@@ -1,7 +1,7 @@
 # Steward Developer Guide
 
 This guide describes the implementation currently in the repository: Phases 0
-through 20. Steward can register local Markdown files, extract structured
+through 20. Steward can register local Markdown, plain-text, and native-text PDF files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
 generate grounded answers from retrieved fragments. A minimal LangGraph
 workflow orchestrates those existing services. A Telegram adapter can deliver
