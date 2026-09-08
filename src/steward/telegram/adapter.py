@@ -57,8 +57,11 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
 class TelegramAdapter:
     """Translate Telegram updates, delegate work, and send the returned text."""
 
-    def __init__(self, event_handler: IncomingEventHandler) -> None:
+    def __init__(
+        self, event_handler: IncomingEventHandler, *, allowed_chat_ids: frozenset[str] = frozenset()
+    ) -> None:
         self._event_handler = event_handler
+        self._allowed_chat_ids = allowed_chat_ids
 
     async def handle_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -67,10 +70,13 @@ class TelegramAdapter:
 
         del context
         event = normalize_telegram_update(update)
-        response = await asyncio.to_thread(self._event_handler.handle, event)
         message = update.effective_message
         if message is None:
             raise ValueError("Telegram update does not contain a message.")
+        if not self._is_allowed(event):
+            await message.reply_text("This Steward bot is not authorized for this chat.")
+            return
+        response = await asyncio.to_thread(self._event_handler.handle, event)
         await message.reply_text(response)
 
     async def handle_document(
@@ -112,6 +118,10 @@ class TelegramAdapter:
         message = update.effective_message
         if message is None:
             raise ValueError("Telegram update does not contain a message.")
+        event = normalize_telegram_update(update)
+        if not self._is_allowed(event):
+            await message.reply_text("This Steward bot is not authorized for this chat.")
+            return
         if not (message.caption or "").strip().startswith("/save"):
             await message.reply_text("Add /save as the attachment caption to preserve it.")
             return
@@ -124,7 +134,6 @@ class TelegramAdapter:
             return
         if not hasattr(self._event_handler, "handle_file"):
             raise TypeError("Attachment handling requires a file capture application.")
-        event = normalize_telegram_update(update)
         suffix = Path(filename).suffix or ".bin"
         with TemporaryDirectory() as temporary_dir:
             download_path = Path(temporary_dir) / f"download{suffix}"
@@ -134,6 +143,9 @@ class TelegramAdapter:
                 self._event_handler.handle_file, event, download_path
             )
         await message.reply_text(response)
+
+    def _is_allowed(self, event: IncomingEvent) -> bool:
+        return not self._allowed_chat_ids or event.chat_id in self._allowed_chat_ids
 
 
 def _attachment_names(message: object) -> tuple[str, ...]:
@@ -148,7 +160,11 @@ def _attachment_names(message: object) -> tuple[str, ...]:
 
 
 def run_telegram_polling(
-    token: str, event_handler: IncomingEventHandler, capture_handler: IncomingEventHandler
+    token: str,
+    event_handler: IncomingEventHandler,
+    capture_handler: IncomingEventHandler,
+    *,
+    allowed_chat_ids: frozenset[str] = frozenset(),
 ) -> None:
     """Start the local Telegram process until the user stops it."""
 
@@ -156,11 +172,11 @@ def run_telegram_polling(
         raise ValueError("Telegram bot token must not be empty.")
 
     application = ApplicationBuilder().token(token).build()
-    adapter = TelegramAdapter(event_handler)
+    adapter = TelegramAdapter(event_handler, allowed_chat_ids=allowed_chat_ids)
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
     )
-    capture_adapter = TelegramAdapter(capture_handler)
+    capture_adapter = TelegramAdapter(capture_handler, allowed_chat_ids=allowed_chat_ids)
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))

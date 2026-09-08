@@ -13,6 +13,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL_URL", raising=False)
+    monkeypatch.delenv("STEWARD_TELEGRAM_ALLOWED_CHAT_IDS", raising=False)
 
     assert Settings.from_environment() == Settings(
         data_dir=Path(".steward"),
@@ -23,6 +24,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         gemini_model=None,
         local_model=None,
         local_model_url="http://127.0.0.1:11434",
+        telegram_allowed_chat_ids=frozenset(),
     )
 
 
@@ -48,6 +50,14 @@ def test_settings_accept_local_model_provider(monkeypatch: pytest.MonkeyPatch) -
 
     assert settings.model_provider == "local"
     assert settings.local_model == "llama3.2"
+
+
+def test_settings_parse_a_telegram_chat_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEWARD_TELEGRAM_ALLOWED_CHAT_IDS", "100, -200, 100")
+
+    settings = Settings.from_environment()
+
+    assert settings.telegram_allowed_chat_ids == frozenset({"100", "-200"})
 
 
 def test_environment_file_does_not_override_explicit_shell_values(

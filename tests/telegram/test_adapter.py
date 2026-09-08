@@ -66,6 +66,20 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
     assert message.replies == ["A TLB caches address translations. [F1]"]
 
 
+def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
+    message = FakeMessage()
+    handler = FakeEventHandler()
+
+    asyncio.run(
+        TelegramAdapter(handler, allowed_chat_ids=frozenset({"999"})).handle_update(
+            FakeUpdate(message), None
+        )
+    )  # type: ignore[arg-type]
+
+    assert handler.events == []
+    assert message.replies == ["This Steward bot is not authorized for this chat."]
+
+
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())

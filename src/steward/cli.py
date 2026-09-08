@@ -628,7 +628,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             StewardCaptureApplication(capture_service),
             organization_approval_application=organization_approval,
         )
-        run_telegram_polling(token, application, application)
+        run_telegram_polling(
+            token,
+            application,
+            application,
+            allowed_chat_ids=settings.telegram_allowed_chat_ids,
+        )
         return
 
     if arguments.command == "calendar-authorize":

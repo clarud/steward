@@ -29,6 +29,7 @@ class Settings:
     gemini_model: str | None
     local_model: str | None
     local_model_url: str
+    telegram_allowed_chat_ids: frozenset[str] = frozenset()
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -41,6 +42,11 @@ class Settings:
         gemini_model = os.environ.get("STEWARD_GEMINI_MODEL")
         local_model = os.environ.get("STEWARD_LOCAL_MODEL")
         local_model_url = os.environ.get("STEWARD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
+        telegram_allowed_chat_ids = frozenset(
+            value.strip()
+            for value in os.environ.get("STEWARD_TELEGRAM_ALLOWED_CHAT_IDS", "").split(",")
+            if value.strip()
+        )
 
         if log_level not in VALID_LOG_LEVELS:
             allowed_levels = ", ".join(sorted(VALID_LOG_LEVELS))
@@ -63,4 +69,5 @@ class Settings:
             gemini_model=gemini_model,
             local_model=local_model,
             local_model_url=local_model_url,
+            telegram_allowed_chat_ids=telegram_allowed_chat_ids,
         )
