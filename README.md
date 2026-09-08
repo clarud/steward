@@ -208,6 +208,10 @@ Create a bot with BotFather, put its token in your private `.env`, and start
 the local polling process. Send `/save` as a message to capture its text, or
 use `/save` as the caption on a Markdown, text, or PDF attachment. Captured
 material is preserved in the configured Inbox before extraction and indexing.
+If an uploaded filename strongly matches an existing workspace, Steward sends an
+organization proposal and waits for an explicit `accept` or `reject` reply
+before moving the original file. Uncertain captures remain in Inbox without
+blocking the chat.
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=your-bot-token

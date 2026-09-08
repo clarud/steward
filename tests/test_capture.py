@@ -67,3 +67,24 @@ def test_capture_file_preserves_a_pdf_original_without_extraction(tmp_path: Path
 
     assert result.source.source_type.value == "pdf"
     assert result.source.path.read_bytes() == b"%PDF-example"
+
+
+def test_capture_file_retains_a_safe_version_of_the_original_name(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    original = tmp_path / "original.md"
+    original.write_text("# Note", encoding="utf-8")
+    event = IncomingEvent(
+        "telegram:44",
+        "telegram",
+        "100",
+        "9",
+        None,
+        datetime(2026, 9, 8, tzinfo=UTC),
+        None,
+        attachments=("Steward notes!.md",),
+    )
+
+    result = InboxCaptureService(tmp_path / "inbox", SourceRepository(database_path)).capture_file(event, original)
+
+    assert result.source.path.name == "telegram-100-9-Steward-notes.md"

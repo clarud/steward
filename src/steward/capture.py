@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 from shutil import copy2
 
 from steward.events import IncomingEvent
@@ -81,8 +82,10 @@ class InboxCaptureService:
             ".txt": SourceType.PLAIN_TEXT,
             ".pdf": SourceType.PDF,
         }.get(suffix, SourceType.BINARY)
+        original_name = event.attachments[0] if event.attachments else original_path.name
+        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original_name).stem).strip(".-")
         destination = self._inbox_dir / (
-            f"{event.platform}-{event.chat_id}-{event.message_id}{suffix}"
+            f"{event.platform}-{event.chat_id}-{event.message_id}-{safe_stem or 'attachment'}{suffix}"
         )
         existing = self._source_repository.get_by_path(destination.resolve())
         if existing is not None:

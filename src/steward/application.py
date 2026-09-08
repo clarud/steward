@@ -5,10 +5,17 @@ from __future__ import annotations
 from typing import NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
-from steward.capture import InboxCaptureService
+from steward.capture import CaptureResult, InboxCaptureService
 from pathlib import Path
 from steward.events import IncomingEvent
 from steward.intent import Intent, IntentResolver
+from steward.organization import (
+    OrganizationApprovalThreadRepository,
+    OrganizationProposalRepository,
+    OrganizationService,
+)
+from steward.workspaces import WorkspaceRepository
+from steward.activity import ActivityService, ActivityType
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -70,16 +77,27 @@ class StewardCaptureApplication:
         self._capture_service = capture_service
 
     def handle(self, event: IncomingEvent) -> str:
+        try:
+            return self.format_result(self.capture(event))
+        except ValueError as error:
+            return str(error)
+
+    def capture(self, event: IncomingEvent) -> CaptureResult:
+        """Persist text and expose its result to an optional follow-on workflow."""
+
         text = (event.text or "").partition(" ")[2].strip()
         if not text:
-            return "Use /save followed by the text you want Steward to keep."
-        result = self._capture_service.capture_text(
+            raise ValueError("Use /save followed by the text you want Steward to keep.")
+        return self._capture_service.capture_text(
             IncomingEvent(
                 id=event.id, platform=event.platform, chat_id=event.chat_id,
                 message_id=event.message_id, reply_to_id=event.reply_to_id,
                 timestamp=event.timestamp, text=text, attachments=event.attachments,
             )
         )
+
+    @staticmethod
+    def format_result(result: CaptureResult) -> str:
         if result.duplicate:
             return f"Already saved: {result.source.path}"
         return f"Saved to Inbox: {result.source.path}"
@@ -87,10 +105,100 @@ class StewardCaptureApplication:
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
         """Preserve a document already downloaded by a transport adapter."""
 
-        result = self._capture_service.capture_file(event, original_path)
+        return self.format_result(self.capture_file(event, original_path))
+
+    def capture_file(self, event: IncomingEvent, original_path: Path) -> CaptureResult:
+        """Persist a downloaded document and expose its result to follow-on workflows."""
+
+        return self._capture_service.capture_file(event, original_path)
+
+
+class OrganizationApprovalGraph(Protocol):
+    """The small resumable graph surface required by the approval application."""
+
+    def invoke(self, input: object, config: dict[str, object]) -> dict[str, object]: ...
+
+
+class StewardOrganizationApprovalApplication:
+    """Bridge capture and explicit Telegram organization decisions safely."""
+
+    def __init__(
+        self,
+        proposal_repository: OrganizationProposalRepository,
+        workspace_repository: WorkspaceRepository,
+        thread_repository: OrganizationApprovalThreadRepository,
+        activity_service: ActivityService,
+        approval_graph: OrganizationApprovalGraph,
+    ) -> None:
+        self._proposals = proposal_repository
+        self._workspaces = workspace_repository
+        self._threads = thread_repository
+        self._activity = activity_service
+        self._graph = approval_graph
+
+    def begin(self, event: IncomingEvent, result: CaptureResult) -> str | None:
+        """Persist a proposal and pause its graph before any file mutation."""
+
         if result.duplicate:
-            return f"Already saved: {result.source.path}"
-        return f"Saved to Inbox: {result.source.path}"
+            return None
+        pending = self._threads.get_pending(event.platform, event.chat_id)
+        if pending is not None:
+            return (
+                f"Saved to Inbox, but proposal {pending.proposal_id} is still awaiting your decision. "
+                "Reply `accept` or `reject` first."
+            )
+        proposal = OrganizationService().propose(
+            result.source, self._workspaces.list_all()
+        )
+        if proposal.suggested_path is None:
+            return "No confident organization match was found, so the source remains in Inbox."
+        proposal_id = self._proposals.add(proposal)
+        self._activity.record(
+            ActivityType.ORGANIZATION_PROPOSED,
+            object_id=str(proposal_id),
+            details=proposal.rationale,
+        )
+        thread_id = f"approval:{event.platform}:{event.chat_id}:{proposal_id}"
+        self._threads.start(event.platform, event.chat_id, proposal_id, thread_id)
+        paused = self._graph.invoke(
+            {"proposal_id": proposal_id},
+            {"configurable": {"thread_id": thread_id}},
+        )
+        if "__interrupt__" not in paused:
+            raise RuntimeError("Organization approval graph did not pause for a decision.")
+        destination = str(proposal.suggested_path) if proposal.suggested_path else "Inbox"
+        return (
+            f"Organization proposal {proposal_id}: {proposal.rationale}\n"
+            f"Suggested destination: {destination}\n\n"
+            "Reply `accept` or `reject`."
+        )
+
+    def handle_decision(self, event: IncomingEvent) -> str | None:
+        """Resume exactly this chat's paused graph for an explicit decision."""
+
+        pending = self._threads.get_pending(event.platform, event.chat_id)
+        if pending is None:
+            return None
+        response = (event.text or "").strip().casefold()
+        if response in {"accept", "accepted"}:
+            decision = "accepted"
+        elif response in {"reject", "rejected"}:
+            decision = "rejected"
+        else:
+            return (
+                f"Proposal {pending.proposal_id} is awaiting your decision. "
+                "Reply exactly `accept` or `reject`."
+            )
+        from langgraph.types import Command
+
+        completed = self._graph.invoke(
+            Command(resume=decision),
+            {"configurable": {"thread_id": pending.thread_id}},
+        )
+        if completed.get("status") != decision:
+            raise RuntimeError("Organization approval did not reach a final status.")
+        self._threads.finish(event.platform, event.chat_id, decision)
+        return f"Proposal {pending.proposal_id} {decision}."
 
 
 class StewardEventApplication:
@@ -101,20 +209,41 @@ class StewardEventApplication:
         question_application: StewardQuestionApplication,
         capture_application: StewardCaptureApplication,
         intent_resolver: IntentResolver | None = None,
+        organization_approval_application: StewardOrganizationApprovalApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
         self._intent_resolver = intent_resolver or IntentResolver()
+        self._organization_approval_application = organization_approval_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._organization_approval_application is not None:
+            decision_response = self._organization_approval_application.handle_decision(event)
+            if decision_response is not None:
+                return decision_response
         decision = self._intent_resolver.resolve(event)
         if decision.primary_intent is Intent.ASK:
             return self._question_application.handle(event)
         if decision.primary_intent is Intent.CAPTURE:
-            return self._capture_application.handle(event)
+            try:
+                result = self._capture_application.capture(event)
+            except ValueError as error:
+                return str(error)
+            return self._capture_with_optional_proposal(event, result)
         return "I do not yet know how to safely handle that request."
 
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
         """Documents are deterministic capture signals after adapter validation."""
 
-        return self._capture_application.handle_file(event, original_path)
+        return self._capture_with_optional_proposal(
+            event, self._capture_application.capture_file(event, original_path)
+        )
+
+    def _capture_with_optional_proposal(
+        self, event: IncomingEvent, result: CaptureResult
+    ) -> str:
+        saved = self._capture_application.format_result(result)
+        if self._organization_approval_application is None:
+            return saved
+        proposal = self._organization_approval_application.begin(event, result)
+        return f"{saved}\n\n{proposal}" if proposal is not None else saved

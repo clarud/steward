@@ -25,6 +25,7 @@ ORGANIZATION_PROPOSAL_DETAILS_SCHEMA_VERSION = 16
 ORGANIZATION_PROPOSAL_CONFIDENCE_SCHEMA_VERSION = 17
 CALENDAR_EVENT_LINKS_SCHEMA_VERSION = 18
 SOURCE_PRIVACY_SCHEMA_VERSION = 19
+ORGANIZATION_APPROVAL_THREADS_SCHEMA_VERSION = 20
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -168,6 +169,20 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
         SOURCE_PRIVACY_SCHEMA_VERSION,
         """CREATE TABLE source_privacy_policies (source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE, rule TEXT NOT NULL)""",
+    ),
+    (
+        ORGANIZATION_APPROVAL_THREADS_SCHEMA_VERSION,
+        """
+        CREATE TABLE organization_approval_threads (
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            proposal_id INTEGER NOT NULL UNIQUE REFERENCES organization_proposals(id) ON DELETE CASCADE,
+            thread_id TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (platform, chat_id)
+        )
+        """,
     ),
 )
 

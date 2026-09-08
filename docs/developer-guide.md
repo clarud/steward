@@ -910,9 +910,10 @@ behavior easy to edit and inspect in code review.
   allowlist, delivery retry policy, or durable Telegram update deduplication.
 - Telegram captures use `/save` and the normal Bot API download ceiling. There
   is no self-hosted Bot API server or cloud-drive relay for larger files.
-- Organization matching is intentionally simple and user-reviewed. It is not
-  yet LLM-assisted, nor is a paused organization approval resumed through
-  Telegram.
+- Organization matching is intentionally simple and filename-based; it is not
+  yet LLM-assisted. Telegram resumes strong move proposals after an explicit
+  `accept` or `reject` reply, but it has no richer natural-language approval
+  understanding yet.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
   not a general airline-document parser and does not yet create calendar events.
 - The current CLI constructs services directly. As the application grows, a

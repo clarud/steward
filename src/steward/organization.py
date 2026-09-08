@@ -21,6 +21,17 @@ class OrganizationProposal:
     confidence: float
     status: str = "pending"
 
+
+@dataclass(frozen=True, slots=True)
+class PendingOrganizationApproval:
+    """The one proposal currently awaiting a decision in a transport chat."""
+
+    platform: str
+    chat_id: str
+    proposal_id: int
+    thread_id: str
+    status: str
+
 class OrganizationService:
     def propose(self, source: Source, workspaces: list[Workspace]) -> OrganizationProposal:
         matches = [w for w in workspaces if w.name.casefold() in source.path.name.casefold()]
@@ -61,6 +72,56 @@ class OrganizationProposalRepository:
                                      Path(str(r[4])) if r[4] else None, str(r[5]), float(r[6]), str(r[7])) for r in rows]
     def get(self, proposal_id: int) -> OrganizationProposal | None:
         return next((proposal for proposal in self.list_all() if proposal.id == proposal_id), None)
+
+
+class OrganizationApprovalThreadRepository:
+    """Persist the chat-to-interrupted-graph mapping across process restarts."""
+
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+
+    def get_pending(self, platform: str, chat_id: str) -> PendingOrganizationApproval | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT platform, chat_id, proposal_id, thread_id, status "
+                "FROM organization_approval_threads "
+                "WHERE platform = ? AND chat_id = ? AND status = 'pending'",
+                (platform, chat_id),
+            ).fetchone()
+        return self._from_row(row) if row is not None else None
+
+    def start(self, platform: str, chat_id: str, proposal_id: int, thread_id: str) -> None:
+        if self.get_pending(platform, chat_id) is not None:
+            raise ValueError("This chat already has an organization proposal awaiting review.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "INSERT INTO organization_approval_threads "
+                "(platform, chat_id, proposal_id, thread_id, status, created_at) "
+                "VALUES (?, ?, ?, ?, 'pending', ?)",
+                (platform, chat_id, proposal_id, thread_id, datetime.now(UTC).isoformat()),
+            )
+
+    def finish(self, platform: str, chat_id: str, status: str) -> None:
+        if status not in {"accepted", "rejected"}:
+            raise ValueError("Organization approval status must be accepted or rejected.")
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                "UPDATE organization_approval_threads SET status = ? "
+                "WHERE platform = ? AND chat_id = ? AND status = 'pending'",
+                (status, platform, chat_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("No pending organization approval was found for this chat.")
+
+    @staticmethod
+    def _from_row(row: tuple[object, ...]) -> PendingOrganizationApproval:
+        return PendingOrganizationApproval(
+            platform=str(row[0]),
+            chat_id=str(row[1]),
+            proposal_id=int(row[2]),
+            thread_id=str(row[3]),
+            status=str(row[4]),
+        )
 
 
 class OrganizationApprovalService:

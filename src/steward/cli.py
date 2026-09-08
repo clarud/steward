@@ -13,7 +13,12 @@ from datetime import datetime
 from pathlib import Path
 
 from steward.config import Settings, load_environment_file
-from steward.application import StewardCaptureApplication, StewardEventApplication, StewardQuestionApplication
+from steward.application import (
+    StewardCaptureApplication,
+    StewardEventApplication,
+    StewardOrganizationApprovalApplication,
+    StewardQuestionApplication,
+)
 from steward.capture import InboxCaptureService
 from steward.answer import (
     AnswerService,
@@ -25,7 +30,7 @@ from steward.answer import (
     OpenAIModelGateway,
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
-from steward.graphs import build_retrieval_answer_graph
+from steward.graphs import build_organization_approval_graph, build_retrieval_answer_graph
 from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
 from steward.logging import configure_logging
 from steward.sources import SourceRepository
@@ -40,7 +45,12 @@ from steward.retrieval import (
 )
 from steward.telegram import run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
-from steward.organization import OrganizationApprovalService, OrganizationProposalRepository, OrganizationService
+from steward.organization import (
+    OrganizationApprovalService,
+    OrganizationApprovalThreadRepository,
+    OrganizationProposalRepository,
+    OrganizationService,
+)
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.records import RecordService
@@ -515,14 +525,42 @@ def main(argv: Sequence[str] | None = None) -> None:
         if model_gateway is None:
             return
         graph = _build_question_graph(settings, model_gateway, limit=arguments.limit)
+        database_path = settings.data_dir / "steward.db"
+        sources = SourceRepository(database_path)
+        activity = ActivityService(database_path)
         capture_service = InboxCaptureService(
             settings.inbox_dir,
-            SourceRepository(settings.data_dir / "steward.db"),
-            SourceFragmentRepository(settings.data_dir / "steward.db"),
-            ActivityService(settings.data_dir / "steward.db"),
+            sources,
+            SourceFragmentRepository(database_path),
+            activity,
+        )
+        proposals = OrganizationProposalRepository(database_path)
+        approval = OrganizationApprovalService(
+            proposals,
+            sources,
+            FileMutationService(sources, activity),
+            activity,
+        )
+        approval_connection = sqlite3.connect(
+            settings.data_dir / "checkpoints.db", check_same_thread=False
+        )
+        approval_checkpointer = SqliteSaver(approval_connection)
+        approval_checkpointer.setup()
+        organization_approval = StewardOrganizationApprovalApplication(
+            proposals,
+            WorkspaceRepository(database_path),
+            OrganizationApprovalThreadRepository(database_path),
+            activity,
+            build_organization_approval_graph(
+                proposals,
+                checkpointer=approval_checkpointer,
+                review_proposal=approval.review,
+            ),
         )
         application = StewardEventApplication(
-            StewardQuestionApplication(graph), StewardCaptureApplication(capture_service)
+            StewardQuestionApplication(graph),
+            StewardCaptureApplication(capture_service),
+            organization_approval_application=organization_approval,
         )
         run_telegram_polling(token, application, application)
         return

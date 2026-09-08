@@ -50,6 +50,9 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
         reply_to_id=reply_to_id,
         timestamp=message.date,
         text=message.text or message.caption,
+        attachments=(message.document.file_name,)
+        if message.document is not None and message.document.file_name
+        else (),
     )
 
 
