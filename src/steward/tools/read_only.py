@@ -58,7 +58,7 @@ class ReadOnlyToolService:
             hits = self._lexical.search(query, limit=self._limit(limit))
         except InvalidSearchQueryError:
             hits = ()
-        filename_stem = Path(query).stem if Path(query).suffix.casefold() in {".md", ".txt", ".csv", ".pdf"} else query
+        filename_stem = Path(query).stem if Path(query).suffix.casefold() in {".md", ".txt", ".csv", ".eml", ".pdf"} else query
         normalized = re.sub(r"[^\w]+", " ", filename_stem.replace("_", " ")).strip()
         if not hits and normalized and normalized != query:
             # Models often pass filenames such as COURSE_DETAILS.md. FTS5 parses

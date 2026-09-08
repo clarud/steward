@@ -11,6 +11,7 @@ SUPPORTED_SOURCE_TYPES = {
     ".md": SourceType.MARKDOWN,
     ".txt": SourceType.PLAIN_TEXT,
     ".csv": SourceType.PLAIN_TEXT,
+    ".eml": SourceType.PLAIN_TEXT,
     ".pdf": SourceType.PDF,
     ".docx": SourceType.DOCX,
     ".html": SourceType.HTML,
