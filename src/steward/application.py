@@ -16,6 +16,7 @@ from steward.organization import (
 )
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
+from steward.action_proposals import ActionProposalRepository, ActionProposalService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -201,6 +202,55 @@ class StewardOrganizationApprovalApplication:
         return f"Proposal {pending.proposal_id} {decision}."
 
 
+class StewardActionProposalApplication:
+    """Review durable agent action proposals from an authorized transport chat.
+
+    A proposal is persisted before this application sees it, so the user can
+    review it after a restart without replaying any model reasoning. The narrow
+    command grammar keeps approval deterministic: conversational model output
+    cannot become a write operation.
+    """
+
+    def __init__(
+        self, repository: ActionProposalRepository, service: ActionProposalService
+    ) -> None:
+        self._repository = repository
+        self._service = service
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        text = (event.text or "").strip()
+        if text == "/action_proposals":
+            pending = [proposal for proposal in self._repository.list_all() if proposal.status == "pending"]
+            if not pending:
+                return "There are no pending action proposals."
+            lines = ["Pending action proposals:"]
+            for proposal in pending:
+                lines.append(
+                    f"{proposal.id}: {proposal.action_type} {proposal.payload}\n"
+                    f"Reply /approve_action {proposal.id} or /reject_action {proposal.id}."
+                )
+            return "\n\n".join(lines)
+
+        command, separator, argument = text.partition(" ")
+        command = command.partition("@")[0]
+        if command not in {"/approve_action", "/reject_action"}:
+            return None
+        if not separator or not argument.strip().isdigit():
+            return f"Use {command} followed by a numeric proposal ID."
+        proposal_id = int(argument.strip())
+        decision = "accepted" if command == "/approve_action" else "rejected"
+        try:
+            proposal, workspace = self._service.review(proposal_id, decision)
+        except ValueError as error:
+            return str(error)
+        if workspace is not None:
+            return (
+                f"Action proposal {proposal.id} accepted. "
+                f"Workspace {workspace.id}: {workspace.name} is available."
+            )
+        return f"Action proposal {proposal.id} {proposal.status}."
+
+
 class StewardEventApplication:
     """Route normalized events through one explicit intent decision."""
 
@@ -210,13 +260,19 @@ class StewardEventApplication:
         capture_application: StewardCaptureApplication,
         intent_resolver: IntentResolver | None = None,
         organization_approval_application: StewardOrganizationApprovalApplication | None = None,
+        action_proposal_application: StewardActionProposalApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
         self._intent_resolver = intent_resolver or IntentResolver()
         self._organization_approval_application = organization_approval_application
+        self._action_proposal_application = action_proposal_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._action_proposal_application is not None:
+            action_response = self._action_proposal_application.handle_command(event)
+            if action_response is not None:
+                return action_response
         if self._organization_approval_application is not None:
             decision_response = self._organization_approval_application.handle_decision(event)
             if decision_response is not None:

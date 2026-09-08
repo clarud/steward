@@ -14,6 +14,7 @@ from pathlib import Path
 
 from steward.config import Settings, load_environment_file
 from steward.application import (
+    StewardActionProposalApplication,
     StewardCaptureApplication,
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
@@ -627,6 +628,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             StewardQuestionApplication(graph),
             StewardCaptureApplication(capture_service),
             organization_approval_application=organization_approval,
+            action_proposal_application=StewardActionProposalApplication(
+                ActionProposalRepository(database_path),
+                ActionProposalService(
+                    ActionProposalRepository(database_path),
+                    WorkspaceRepository(database_path),
+                    activity,
+                ),
+            ),
         )
         run_telegram_polling(
             token,

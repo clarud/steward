@@ -235,6 +235,20 @@ does not need a public webhook endpoint. Steward records successfully replied
 Telegram update IDs in its local SQLite database, so a redelivered update is
 not handled twice; a failed delivery is left eligible for retry.
 
+An allowlisted Telegram chat can review pending workspace proposals created by
+`steward agent`:
+
+```text
+/action_proposals
+/approve_action 1
+/reject_action 1
+```
+
+These commands are intentionally exact and explicit. An approved proposal is
+executed by normal deterministic services, not by the model. Treat every chat
+in `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` as an administrator while this first
+single-user approval model is in place.
+
 OpenAI remains available by explicitly selecting its provider:
 
 ```powershell

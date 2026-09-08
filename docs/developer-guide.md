@@ -552,6 +552,27 @@ future action services must therefore remain idempotent. A true external
 exactly-once guarantee would require an outbound-message idempotency facility
 that the Telegram Bot API does not provide.
 
+### Reviewable agent writes from Telegram
+
+The initial tool agent may only create an `ActionProposal` for workspace
+creation; its tool returns a pending proposal ID and does not create the
+workspace. `ActionProposalRepository` makes the proposal durable, so reviewing
+it is resumable without restoring model state. The Telegram application handles
+only these exact commands:
+
+```text
+/action_proposals
+/approve_action ID
+/reject_action ID
+```
+
+`StewardActionProposalApplication` validates the numeric ID and calls
+`ActionProposalService.review()`. That service performs idempotent workspace
+creation, changes the proposal status, and writes activity events. The model
+has no route to that method. This is a deliberately narrow first
+human-in-the-loop interface: all configured allowlisted chats are trusted
+administrators, and proposals are not yet owned by an individual Telegram user.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv

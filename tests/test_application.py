@@ -2,8 +2,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from steward.answer import AnswerCitation
-from steward.application import StewardEventApplication, StewardQuestionApplication, TEXT_QUESTION_REQUIRED
-from steward.application import StewardCaptureApplication, StewardOrganizationApprovalApplication
+from steward.application import (
+    StewardActionProposalApplication,
+    StewardCaptureApplication,
+    StewardEventApplication,
+    StewardOrganizationApprovalApplication,
+    StewardQuestionApplication,
+    TEXT_QUESTION_REQUIRED,
+)
+from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.organization import (
@@ -245,3 +252,41 @@ def test_uncertain_capture_remains_in_inbox_without_creating_a_pending_approval(
     assert response == "No confident organization match was found, so the source remains in Inbox."
     assert proposals.list_all() == []
     assert threads.get_pending("telegram", "100") is None
+
+
+def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    activity = ActivityService(database_path)
+    repository = ActionProposalRepository(database_path)
+    service = ActionProposalService(repository, WorkspaceRepository(database_path), activity)
+    proposal, _ = service.propose_workspace_creation("Compiler Project")
+    assert proposal is not None and proposal.id is not None
+    app = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=StewardActionProposalApplication(repository, service),
+    )
+
+    listed = app.handle(make_event(text="/action_proposals"))
+    accepted = app.handle(make_event(text=f"/approve_action {proposal.id}"))
+
+    assert f"{proposal.id}: create_workspace" in listed
+    assert accepted == (
+        f"Action proposal {proposal.id} accepted. Workspace 1: Compiler Project is available."
+    )
+    assert WorkspaceRepository(database_path).list_all()[0].name == "Compiler Project"
+
+
+def test_telegram_action_review_requires_an_explicit_numeric_command(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    repository = ActionProposalRepository(database_path)
+    service = ActionProposalService(
+        repository, WorkspaceRepository(database_path), ActivityService(database_path)
+    )
+    app = StewardActionProposalApplication(repository, service)
+
+    assert app.handle_command(make_event(text="/approve_action@steward_bot please")) == (
+        "Use /approve_action followed by a numeric proposal ID."
+    )
