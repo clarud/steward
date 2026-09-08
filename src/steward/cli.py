@@ -67,6 +67,7 @@ from steward.research import (
     ResearchService,
 )
 from steward.workspace_detection import WorkspaceDetectionService
+from steward.web_ui import run_local_ui
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
 from steward.privacy import PrivacyRule, PrivacyService
@@ -204,6 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
     telegram_parser.add_argument(
         "--limit", type=int, default=5, help="Maximum evidence fragments per question"
     )
+    ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
+    ui_parser.add_argument("--host", default="127.0.0.1")
+    ui_parser.add_argument("--port", type=int, default=8765)
     workspace_parser = subcommands.add_parser("create-workspace", help="Create an explicit workspace")
     workspace_parser.add_argument("name")
     subcommands.add_parser("workspaces", help="List workspaces")
@@ -697,6 +701,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             application,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             delivery_repository=TelegramUpdateDeliveryRepository(database_path),
+        )
+        return
+
+    if arguments.command == "ui":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        run_local_ui(
+            LexicalSearchService(SourceRepository(database_path), SourceFragmentRepository(database_path)),
+            host=arguments.host,
+            port=arguments.port,
         )
         return
 

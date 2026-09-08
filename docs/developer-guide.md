@@ -611,6 +611,16 @@ snippet; it never requests bodies, attachments, mail sending, labels, or
 deletions. Gmail remains authoritative, and importing a selected message into
 the local Source layer is intentionally a separate future approval workflow.
 
+### Local search UI
+
+`steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by
+default. The implementation rejects non-loopback hosts, uses the existing
+`LexicalSearchService`, escapes all query/source content before HTML rendering,
+and exposes only a search form plus source-path and fragment-location results.
+It intentionally contains no write controls, model calls, OAuth credentials, or
+external integrations. This gives Steward a locally inspectable UI surface
+without silently expanding its trust boundary.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv

@@ -68,6 +68,18 @@ steward semantic-search "the little cache CPUs use for address translation"
 steward hybrid-search "the little cache CPUs use for address translation"
 ```
 
+## Use the local search UI
+
+Run a localhost-only browser interface over the same lexical index used by
+`steward search`. It displays source paths and fragment locations, and does not
+send source text to a model or external service.
+
+```powershell
+steward ui
+```
+
+Then open `http://127.0.0.1:8765`. Stop it with `Ctrl+C`.
+
 ## Ask from local evidence
 
 Gemini is the default provider. Set its API key and a Gemini model available to
