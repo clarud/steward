@@ -21,7 +21,7 @@ def render_search_page(query: str, hits: tuple[object, ...] = (), error: str | N
             "<article><h2>" + escape(source.path.name) + "</h2>"
             + "<p class='meta'>" + escape(str(source.path)) + " · "
             + escape(fragment.location) + " · " + escape(fragment.heading or "Preamble") + "</p>"
-            + "<pre>" + escape(excerpt) + "</pre></article>"
+            + "<pre>" + _highlight_excerpt(excerpt) + "</pre></article>"
         )
     result_html = "".join(rows) or ("<p>No matching local fragments.</p>" if query else "")
     error_html = f"<p class='error'>{escape(error)}</p>" if error else ""
@@ -34,6 +34,11 @@ h1{{margin-bottom:.25rem}}.meta{{color:#5d6978;font-size:.9rem}}pre{{white-space
 </style></head><body><h1>Steward</h1><p>Local lexical search. No source text leaves this machine.</p>
 <form method='get'><input name='q' value='{escape(query, quote=True)}' autofocus placeholder='Search your local sources'> <button>Search</button></form>
 {error_html}<section>{result_html}</section></body></html>"""
+
+
+def _highlight_excerpt(text: str) -> str:
+    """Escape source text first, then render only FTS5's own marker characters."""
+    return escape(text).replace("[", "<mark>").replace("]", "</mark>")
 
 
 def run_local_ui(service: LexicalSearchService, *, host: str = "127.0.0.1", port: int = 8765) -> None:
