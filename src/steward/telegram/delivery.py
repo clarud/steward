@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -18,17 +18,28 @@ class TelegramUpdateDeliveryRepository:
     user's message.
     """
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(self, database_path: Path, *, lease_seconds: int = 900) -> None:
+        if lease_seconds <= 0:
+            raise ValueError("Telegram delivery lease must be positive.")
         self._database_path = database_path
+        self._lease = timedelta(seconds=lease_seconds)
 
-    def claim(self, update_id: str) -> bool:
-        """Atomically claim an unseen update, returning false for duplicates."""
+    def claim(self, update_id: str, *, now: datetime | None = None) -> bool:
+        """Atomically claim an unseen or expired-processing update."""
 
+        claimed_at = now or datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO telegram_update_deliveries "
                 "(update_id, status, claimed_at) VALUES (?, 'processing', ?)",
-                (update_id, datetime.now(UTC).isoformat()),
+                (update_id, claimed_at.isoformat()),
+            )
+            if cursor.rowcount == 1:
+                return True
+            cursor = connection.execute(
+                "UPDATE telegram_update_deliveries SET claimed_at = ? "
+                "WHERE update_id = ? AND status = 'processing' AND claimed_at <= ?",
+                (claimed_at.isoformat(), update_id, (claimed_at - self._lease).isoformat()),
             )
         return cursor.rowcount == 1
 
