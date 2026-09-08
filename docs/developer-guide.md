@@ -373,6 +373,13 @@ Each selected fragment is labelled with a stable request-local key such as
 `AnswerContext.prompt` is the exact text sent to the model, while
 `AnswerContext.citations` holds the matching structured metadata.
 
+After generation, `CitationVerification` extracts inline request-local keys
+such as `[F1]` and compares them with that exact context. For a generated
+answer, `AnswerResult.citations` therefore exposes only valid citations the
+model actually used. An answer with
+no inline citation, or one containing an unknown key such as `[F99]`, carries a
+visible verification warning rather than being silently presented as grounded.
+
 Context is capped at 12,000 characters by default. If an excerpt would exceed
 the remaining deterministic budget, it is cut and marked `[truncated]`; if a
 new excerpt cannot fit meaningfully, it is excluded. This prevents an unusually
@@ -913,9 +920,9 @@ behavior easy to edit and inspect in code review.
 - Hybrid search falls back to semantic retrieval if a natural-language query
   contains punctuation that FTS5 rejects. This prevents a parser error, though
   it means no lexical candidates contribute to that particular ranking.
-- Model-generated citations use request-local keys such as `[F1]`. Steward
-  currently returns metadata for all context fragments but does not yet parse
-  and verify which exact citation keys the model used in each sentence.
+- Citation verification proves only that each inline key refers to a fragment
+  supplied in the current request. It cannot prove that every factual sentence
+  is supported by the cited fragment; semantic entailment remains future work.
 - Context is bounded by characters rather than token counts. Different models
   tokenize text differently, so the cap is protective rather than exact.
 - Model availability, free-tier quotas, rate limits, and retention terms are

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from steward.answer.citations import CitationVerification
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,3 +37,4 @@ class AnswerResult:
     text: str
     citations: tuple[AnswerCitation, ...]
     context: AnswerContext | None
+    citation_verification: CitationVerification | None = None

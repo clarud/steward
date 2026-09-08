@@ -142,16 +142,57 @@ def test_answer_service_routes_private_evidence_to_local_model(tmp_path: Path) -
     privacy = PrivacyService(database)
     privacy.set_rule(1, PrivacyRule.LOCAL_MODEL_ONLY)
     cloud = FakeModelGateway(response="cloud")
-    local = FakeModelGateway(response="local")
+    local = FakeModelGateway(response="local [F1]")
 
     result = AnswerService(
         FakeRetriever((hit,)), ContextBuilder(), cloud, privacy,
         ModelRouter(privacy, cloud, local),
     ).ask("What does a TLB do?")
 
-    assert result.text == "local"
+    assert result.text == "local [F1]"
     assert cloud.input_text is None
     assert local.input_text is not None
+
+
+def test_answer_service_reports_uncited_model_text_as_unverified() -> None:
+    result = AnswerService(
+        FakeRetriever((_hit(),)), ContextBuilder(), FakeModelGateway(response="A TLB is a cache.")
+    ).ask("What does a TLB do?")
+
+    assert result.citations == ()
+    assert result.citation_verification is not None
+    assert result.citation_verification.cited_keys == ()
+    assert result.citation_verification.is_verified is False
+    assert "[Verification: This response did not cite" in result.text
+
+
+def test_answer_service_rejects_unknown_inline_citation_keys() -> None:
+    result = AnswerService(
+        FakeRetriever((_hit(),)), ContextBuilder(), FakeModelGateway(response="A TLB caches translations. [F9]")
+    ).ask("What does a TLB do?")
+
+    assert result.citations == ()
+    assert result.citation_verification is not None
+    assert result.citation_verification.invalid_keys == ("F9",)
+    assert "unknown evidence keys: F9" in result.text
+
+
+def test_answer_service_exposes_only_the_context_citations_used_by_the_model() -> None:
+    hit = _hit()
+    second = HybridSearchHit(
+        hit.source,
+        SourceFragment(5, 1, "Page tables", 1, "Page tables map addresses.", "lines 13-14"),
+        0.02,
+        None,
+        0.7,
+    )
+    result = AnswerService(
+        FakeRetriever((hit, second)), ContextBuilder(), FakeModelGateway(response="A TLB caches translations. [F1]")
+    ).ask("What does a TLB do?")
+
+    assert [citation.key for citation in result.citations] == ["F1"]
+    assert result.citation_verification is not None
+    assert result.citation_verification.is_verified is True
 
 
 def test_answer_service_explains_when_local_model_is_required_but_unavailable(tmp_path: Path) -> None:
