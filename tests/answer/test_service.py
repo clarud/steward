@@ -13,7 +13,8 @@ from steward.answer import (
     ModelRouter,
     OpenAIModelGateway,
 )
-from steward.answer.service import GROUNDING_INSTRUCTIONS, NO_EVIDENCE_ANSWER
+from steward.answer.service import GROUNDING_INSTRUCTIONS, MODEL_UNAVAILABLE_ANSWER, NO_EVIDENCE_ANSWER
+from steward.answer.gateway import ModelGatewayError
 from steward.extraction import SourceFragment
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.retrieval import HybridSearchHit
@@ -97,6 +98,20 @@ def test_answer_service_does_not_call_model_without_local_evidence() -> None:
     assert result.citations == ()
     assert result.context is None
     assert gateway.input_text is None
+
+
+def test_answer_service_returns_retrieval_context_when_the_model_is_unavailable() -> None:
+    class FailingGateway:
+        def generate(self, *, instructions: str, input_text: str) -> str:
+            raise ModelGatewayError("rate limited")
+
+    result = AnswerService(FakeRetriever((_hit(),)), ContextBuilder(), FailingGateway()).ask(
+        "What does a TLB do?"
+    )
+
+    assert result.text == MODEL_UNAVAILABLE_ANSWER
+    assert result.context is not None
+    assert result.citations[0].fragment_id == 4
 
 
 def test_answer_service_does_not_send_private_source_content_to_cloud_model(

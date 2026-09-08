@@ -14,6 +14,10 @@ class ModelGateway(Protocol):
         """Return the model's completed text."""
 
 
+class ModelGatewayError(RuntimeError):
+    """A configured model provider could not complete a generation request."""
+
+
 class OpenAIModelGateway:
     """OpenAI Responses API gateway, isolated from Steward's domain services."""
 
@@ -31,15 +35,18 @@ class OpenAIModelGateway:
 
     def generate(self, *, instructions: str, input_text: str) -> str:
         """Generate one non-persisted response from supplied local evidence."""
-        response = self._client.responses.create(
-            model=self._model,
-            instructions=instructions,
-            input=input_text,
-            store=False,
-        )
+        try:
+            response = self._client.responses.create(
+                model=self._model,
+                instructions=instructions,
+                input=input_text,
+                store=False,
+            )
+        except Exception as error:
+            raise ModelGatewayError("The OpenAI model request could not be completed.") from error
         text = response.output_text.strip()
         if not text:
-            raise RuntimeError("The model returned no text.")
+            raise ModelGatewayError("The model returned no text.")
         return text
 
 
@@ -60,15 +67,20 @@ class GeminiModelGateway:
 
     def generate(self, *, instructions: str, input_text: str) -> str:
         """Generate one non-persisted interaction from supplied local evidence."""
-        interaction = self._client.interactions.create(
-            model=self._model,
-            system_instruction=instructions,
-            input=input_text,
-            store=False,
-        )
+        try:
+            interaction = self._client.interactions.create(
+                model=self._model,
+                system_instruction=instructions,
+                input=input_text,
+                store=False,
+            )
+        except Exception as error:
+            raise ModelGatewayError(
+                "The Gemini model request could not be completed."
+            ) from error
         text = interaction.output_text or ""
         if not text.strip():
-            raise RuntimeError("The model returned no text.")
+            raise ModelGatewayError("The model returned no text.")
         return text.strip()
 
 
@@ -97,8 +109,8 @@ class OllamaModelGateway:
             with request.urlopen(http_request, timeout=60) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except OSError as error:
-            raise RuntimeError("Could not reach the configured local Ollama model.") from error
+            raise ModelGatewayError("Could not reach the configured local Ollama model.") from error
         text = str(body.get("response", "")).strip()
         if not text:
-            raise RuntimeError("The local model returned no text.")
+            raise ModelGatewayError("The local model returned no text.")
         return text
