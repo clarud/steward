@@ -501,7 +501,8 @@ the same event shape.
 `normalize_telegram_update()` is the adapter's deterministic translation step.
 For example, Telegram update `42` from chat `100` becomes the event ID
 `telegram:42` and chat ID `"100"`. A reply retains the message ID it replied
-to, which will matter when Phase 8 adds reference resolution.
+to, which contributes a deterministic reference signal for richer future
+resolution.
 
 `StewardQuestionApplication` is the small application use case. It knows only
 that it receives normalized text and that the graph accepts `{"question":
@@ -542,12 +543,13 @@ SQLite checkpointer stores a snapshot after each graph step in
 `.steward/checkpoints.db`. Restarting the process and invoking the same thread
 loads its prior state.
 
-The state keeps a bounded ten-message exchange, recent source fragment IDs,
-and placeholders for workspace, concepts, and records. It does not store full
-documents. For a small deterministic first reference resolver, a follow-up
-containing terms such as `that`, `this`, or `it` is expanded with the preceding
-user question before retrieval. This is useful but deliberately conservative:
-it is not yet general natural-language reference resolution.
+The state keeps a bounded ten-message exchange, recent **source** IDs and
+filenames, and placeholders for workspace, concepts, and records. It does not
+store full documents. For a small deterministic first reference resolver, a
+follow-up containing terms such as `that`, `this`, or `it` is expanded with the
+preceding user question and recently retrieved filenames before retrieval. This
+is useful but deliberately conservative: it is not yet general natural-language
+reference resolution.
 
 ## Commands and data flow
 
@@ -948,16 +950,11 @@ behavior easy to edit and inspect in code review.
 
 ### Product progression
 
-1. Phase 8: add conversation state, first in memory and then with a persistent
-   LangGraph checkpointer, so Telegram replies can resolve references such as
-   "that".
-2. Add Telegram capture in Phase 9, preserving messages and attachments as
-   sources instead of treating questions as durable knowledge automatically.
-3. Add structured answer evaluation cases that inspect retrieved evidence,
+1. Add structured answer evaluation cases that inspect retrieved evidence,
    generated citations, and unsupported-answer behavior.
-4. Add richer extractors for plain text and PDF before introducing broad
+2. Add richer extractors for plain text and PDF before introducing broad
    capture channels.
-5. Add structured retrieval evaluations before relying on semantic results for
+3. Add structured retrieval evaluations before relying on semantic results for
    important personal records or actions.
 
 ## Practical debugging

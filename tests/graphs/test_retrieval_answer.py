@@ -72,6 +72,8 @@ def test_graph_retrieves_then_answers_and_records_fragment_ids() -> None:
     result = graph.invoke({"question": "What does a TLB do?"})
 
     assert result["retrieved_fragment_ids"] == [4]
+    assert result["recent_source_ids"] == [1]
+    assert result["recent_source_labels"] == ["virtual-memory.md"]
     assert result["answer"] == "A TLB caches translations. [F1]"
     assert result["citations"][0].fragment_id == 4
     assert "retrieved_hits" not in result
@@ -106,6 +108,7 @@ def test_checkpointed_thread_resolves_a_follow_up_after_graph_recreation() -> No
 
     assert retriever.queries[-1] == (
         "Previous question: What are page tables?\n"
+        "Previously retrieved sources: virtual-memory.md\n"
         "Current question: How does that relate to TLBs?"
     )
 
@@ -135,3 +138,4 @@ def test_sqlite_checkpointer_restores_a_thread_after_connection_restart(tmp_path
     restarted_graph.invoke({"question": "How does that relate to TLBs?"}, config)
 
     assert "Previous question: What are page tables?" in retriever.queries[-1]
+    assert "Previously retrieved sources: virtual-memory.md" in retriever.queries[-1]
