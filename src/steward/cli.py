@@ -58,7 +58,12 @@ from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
-from steward.research import GeminiGoogleSearchProvider, ResearchProviderError, ResearchService
+from steward.research import (
+    GeminiGoogleSearchProvider,
+    ResearchProviderError,
+    ResearchRetentionService,
+    ResearchService,
+)
 from steward.workspace_detection import WorkspaceDetectionService
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
@@ -187,6 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
     agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
     research_parser = subcommands.add_parser("research", help="Research externally without retaining the sources")
     research_parser.add_argument("question")
+    retain_research_parser = subcommands.add_parser(
+        "research-retain", help="Research externally and explicitly retain a provenance-labeled Inbox note"
+    )
+    retain_research_parser.add_argument("question")
     telegram_parser = subcommands.add_parser(
         "telegram", help="Run the local Telegram adapter with long polling"
     )
@@ -567,13 +576,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(str(result["messages"][-1].content))
         return
 
-    if arguments.command == "research":
+    if arguments.command in {"research", "research-retain"}:
         if settings.model_provider != "gemini":
-            print("`steward research` currently supports the configured Gemini provider only.")
+            print(f"`steward {arguments.command}` currently supports the configured Gemini provider only.")
             return
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key or not settings.gemini_model:
-            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward research`.")
+            print(f"Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward {arguments.command}`.")
             return
         try:
             bundle = ResearchService(
@@ -587,6 +596,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             print("\nExternal sources (ephemeral):")
             for source in bundle.sources:
                 print(f"- {source.title}: {source.url}")
+        if arguments.command == "research-retain":
+            database_path = settings.data_dir / "steward.db"
+            initialize_database(database_path)
+            capture = InboxCaptureService(
+                settings.inbox_dir,
+                SourceRepository(database_path),
+                SourceFragmentRepository(database_path),
+                ActivityService(database_path),
+            )
+            result = ResearchRetentionService(capture).retain(bundle)
+            state = "Already retained" if result.duplicate else "Retained"
+            print(f"\n{state} research note: {result.source.path}")
         return
 
     if arguments.command == "telegram":

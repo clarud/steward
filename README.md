@@ -160,6 +160,15 @@ remain ephemeral and are not copied into your vault automatically.
 steward research "How does Linux perform TLB shootdowns?"
 ```
 
+To deliberately retain the resulting answer and its external URLs in your
+Inbox as a labeled Markdown research note, use:
+
+```powershell
+steward research-retain "How does Linux perform TLB shootdowns?"
+```
+
+This preserves a research note, not copies of the cited webpages.
+
 ## Review potential new workspaces
 
 This intentionally reviews rather than changes your structure. It clusters

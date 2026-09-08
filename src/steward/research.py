@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Protocol
+
+from steward.capture import CaptureResult, InboxCaptureService
+from steward.events import IncomingEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +43,48 @@ class ResearchService:
         if not query.strip():
             raise ValueError("Research query must not be empty.")
         return self._provider.research(query.strip())
+
+
+class ResearchRetentionService:
+    """Persist a user-selected research bundle as a labeled local note.
+
+    The note preserves the provider answer and its URLs, but it never claims to
+    be a downloaded copy of the cited webpages. Fetching and archiving original
+    remote pages is a separate future capability.
+    """
+
+    def __init__(self, capture_service: InboxCaptureService) -> None:
+        self._capture_service = capture_service
+
+    def retain(self, bundle: ResearchBundle) -> CaptureResult:
+        text = self._render(bundle)
+        fingerprint = sha256(text.encode("utf-8")).hexdigest()[:24]
+        now = datetime.now(UTC)
+        return self._capture_service.capture_text(
+            IncomingEvent(
+                id=f"research:{fingerprint}",
+                platform="research",
+                chat_id="retained",
+                message_id=fingerprint,
+                reply_to_id=None,
+                timestamp=now,
+                text=text,
+            )
+        )
+
+    @staticmethod
+    def _render(bundle: ResearchBundle) -> str:
+        source_lines = [f"- [{source.title}]({source.url})" for source in bundle.sources]
+        sources = "\n".join(source_lines) if source_lines else "- No web sources were returned by the provider."
+        return (
+            f"# Retained research: {bundle.query}\n\n"
+            "> This is a user-retained model-generated research note, not a downloaded copy of the external pages. "
+            "The URLs below record its external provenance.\n\n"
+            "## Answer\n\n"
+            f"{bundle.answer}\n\n"
+            "## External sources\n\n"
+            f"{sources}\n"
+        )
 
 
 class GeminiGoogleSearchProvider:

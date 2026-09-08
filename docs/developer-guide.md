@@ -573,6 +573,23 @@ has no route to that method. This is a deliberately narrow first
 human-in-the-loop interface: all configured allowlisted chats are trusted
 administrators, and proposals are not yet owned by an individual Telegram user.
 
+### Retained external research
+
+`ResearchService` is provider-independent through its `ResearchProvider`
+protocol. The initial Gemini Google Search adapter produces an **ephemeral**
+`ResearchBundle`: a query, model answer, and returned URLs. The normal
+`steward research QUESTION` command prints it but creates no local source.
+
+`steward research-retain QUESTION` is the explicit lifecycle transition. It
+runs the same provider, then `ResearchRetentionService` renders a Markdown note
+with an unambiguous warning that the answer is model-generated and the URLs are
+provenance, not archived page contents. It uses `InboxCaptureService`, so the
+note becomes a normal local `Source`, is fragmented and indexed, and records a
+capture activity event. A SHA-256 fingerprint of the rendered note supplies a
+stable synthetic event ID; retaining an identical bundle again returns the
+existing source instead of creating another note. Original webpage download and
+archiving remain separate future work.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv
