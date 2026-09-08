@@ -590,26 +590,37 @@ stable synthetic event ID; retaining an identical bundle again returns the
 existing source instead of creating another note. Original webpage download and
 archiving remain separate future work.
 
-### Google Drive metadata
+### Google Drive search and explicit Inbox import
 
 `GoogleDriveService` is a separate read-only external boundary. Its OAuth flow
-uses only `drive.metadata.readonly`, stored in a dedicated
-`google-drive-token.json`, rather than reusing broader Calendar credentials.
+uses `drive.readonly`, stored in a dedicated `google-drive-token.json`, rather
+than reusing broader Calendar credentials. A token created for the older,
+metadata-only scope must be reauthorized once.
 `steward drive-search QUERY` queries Google Drive for non-trashed filenames and
 returns current metadata: Drive ID, name, MIME type, modification time, web
-link, and available size. Drive is authoritative for that state. The service
-does not download file bytes, create local sources, or expose an agent write
-tool; an explicit, provenance-aware retention workflow can be added later.
+link, and available size. Drive is authoritative for that state.
 
-### Gmail metadata
+`DriveInboxImportService` is the explicit retention path behind `steward
+drive-import FILE_ID` and Telegram's `/drive_import FILE_ID` command. It looks
+up exactly that ID, streams its original bytes to a temporary local file, then
+calls `InboxCaptureService.capture_file()` with a synthetic `drive:FILE_ID`
+event. The normal capture service preserves the original, hashes it, extracts
+derived fragments once, and records activity. The stable event identity makes a
+repeat import idempotent. There is no background sync and no model-selected
+Drive download. Telegram's oversized-upload reply merely guides the user to
+this explicit route; its adapter never handles OAuth or Drive bytes.
+
+### Gmail search and explicit Inbox import
 
 `GmailService` uses its own `gmail.readonly` OAuth token. `steward
 gmail-search QUERY` passes the user's Gmail query syntax directly to Gmail,
 lists matching IDs, and requests each result with `format="metadata"` and only
 the `Subject`, `From`, and `Date` headers. It returns those headers and Gmail's
 snippet; it never requests bodies, attachments, mail sending, labels, or
-deletions. Gmail remains authoritative, and importing a selected message into
-the local Source layer is intentionally a separate future approval workflow.
+deletions. Gmail remains authoritative. `steward gmail-import MESSAGE_ID`
+explicitly requests that message's raw RFC 822 data, stores it as a canonical
+`.eml` original through `InboxCaptureService`, and never sends or automatically
+imports mail.
 
 ### Local search UI
 

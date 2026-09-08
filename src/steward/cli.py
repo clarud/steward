@@ -8,7 +8,6 @@ import os
 import re
 import sys
 import sqlite3
-from tempfile import TemporaryDirectory
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +16,7 @@ from steward.config import Settings, load_environment_file
 from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
+    StewardDriveImportApplication,
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
@@ -60,7 +60,7 @@ from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
-from steward.drive import GoogleDriveService, authorize_google_drive
+from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
 from steward.gmail import GmailService, authorize_gmail
 from steward.research import (
     GeminiGoogleSearchProvider,
@@ -279,7 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     calendar_create.add_argument("record_id", type=int)
     calendar_create.add_argument("--client-secrets", type=Path)
-    drive_authorize = subcommands.add_parser("drive-authorize", help="Authorize local read-only Google Drive metadata access")
+    drive_authorize = subcommands.add_parser("drive-authorize", help="Authorize local read-only Google Drive access")
     drive_authorize.add_argument("client_secrets", type=Path, help="Google OAuth desktop-client JSON file")
     drive_authorize.add_argument("--token-file", type=Path)
     drive_search = subcommands.add_parser("drive-search", help="Search current Google Drive file metadata")
@@ -360,6 +360,35 @@ def _tool_calling_model_from_settings(settings: Settings):
 
     print("`steward agent` currently supports the configured Gemini or local Ollama provider only.")
     return None
+
+
+class _ConfiguredDriveInboxImporter:
+    """Authorize Drive lazily so starting Telegram never opens a browser."""
+
+    def __init__(self, settings: Settings, capture_service: InboxCaptureService) -> None:
+        self._settings = settings
+        self._capture_service = capture_service
+
+    def import_file(self, file_id: str):
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before importing from Drive.")
+        drive = GoogleDriveService(
+            authorize_google_drive(
+                Path(configured), self._settings.data_dir / "config" / "google-drive-token.json"
+            )
+        )
+        return DriveInboxImportService(drive, self._capture_service).import_file(file_id)
+
+
+def _drive_inbox_importer(
+    settings: Settings, capture_service: InboxCaptureService
+) -> _ConfiguredDriveInboxImporter | None:
+    """Expose Drive relay only when this local process has an OAuth client configured."""
+
+    if not os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS"):
+        return None
+    return _ConfiguredDriveInboxImporter(settings, capture_service)
 
 
 def _build_question_graph(
@@ -704,6 +733,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                     activity,
                 ),
             ),
+            drive_import_application=StewardDriveImportApplication(
+                _drive_inbox_importer(settings, capture_service)
+            ),
         )
         run_telegram_polling(
             token,
@@ -733,7 +765,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if arguments.command == "drive-authorize":
         token_path = arguments.token_file or settings.data_dir / "config" / "google-drive-token.json"
         authorize_google_drive(arguments.client_secrets, token_path)
-        print(f"Google Drive metadata access authorized. Token stored at {token_path}.")
+        print(f"Google Drive read access authorized. Token stored at {token_path}.")
         return
 
     if arguments.command == "drive-search":
@@ -761,27 +793,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             client_secrets = Path(configured)
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
-        drive = GoogleDriveService(
-            authorize_google_drive(client_secrets, settings.data_dir / "config" / "google-drive-token.json")
-        )
-        remote = drive.get_file(arguments.file_id)
-        with TemporaryDirectory() as temporary_dir:
-            downloaded = Path(temporary_dir) / remote.name
-            drive.download_to(remote.id, downloaded)
-            capture = InboxCaptureService(
+        result = DriveInboxImportService(
+            GoogleDriveService(
+                authorize_google_drive(client_secrets, settings.data_dir / "config" / "google-drive-token.json")
+            ),
+            InboxCaptureService(
                 settings.inbox_dir,
                 SourceRepository(database_path),
                 SourceFragmentRepository(database_path),
                 ActivityService(database_path),
-            )
-            result = capture.capture_file(
-                IncomingEvent(
-                    id=f"drive:{remote.id}", platform="drive", chat_id="import",
-                    message_id=remote.id, reply_to_id=None, timestamp=datetime.now().astimezone(),
-                    text=None, attachments=(remote.name,),
-                ),
-                downloaded,
-            )
+            ),
+        ).import_file(arguments.file_id)
         status = "Already imported" if result.duplicate else "Imported"
         print(f"{status} Drive file to Inbox: {result.source.path}")
         return

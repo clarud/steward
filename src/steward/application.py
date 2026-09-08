@@ -114,6 +114,39 @@ class StewardCaptureApplication:
         return self._capture_service.capture_file(event, original_path)
 
 
+class DriveInboxImporter(Protocol):
+    """Narrow boundary used by a transport command to import an explicit Drive ID."""
+
+    def import_file(self, file_id: str) -> CaptureResult: ...
+
+
+class StewardDriveImportApplication:
+    """Turn a precise Telegram command into an explicit, local Drive import."""
+
+    def __init__(self, importer: DriveInboxImporter | None) -> None:
+        self._importer = importer
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command != "/drive_import":
+            return None
+        file_id = argument.strip()
+        if not separator or not file_id or any(character.isspace() for character in file_id):
+            return "Use /drive_import followed by one Google Drive file ID."
+        if self._importer is None:
+            return (
+                "Drive import is not configured on this Steward process. "
+                "Set STEWARD_GOOGLE_CLIENT_SECRETS, authorize Drive, then try again."
+            )
+        try:
+            result = self._importer.import_file(file_id)
+        except (OSError, ValueError) as error:
+            return f"Drive import failed: {error}"
+        status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
+        return f"{status}: {result.source.path}"
+
+
 class OrganizationApprovalGraph(Protocol):
     """The small resumable graph surface required by the approval application."""
 
@@ -261,14 +294,20 @@ class StewardEventApplication:
         intent_resolver: IntentResolver | None = None,
         organization_approval_application: StewardOrganizationApprovalApplication | None = None,
         action_proposal_application: StewardActionProposalApplication | None = None,
+        drive_import_application: StewardDriveImportApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
         self._intent_resolver = intent_resolver or IntentResolver()
         self._organization_approval_application = organization_approval_application
         self._action_proposal_application = action_proposal_application
+        self._drive_import_application = drive_import_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._drive_import_application is not None:
+            drive_response = self._drive_import_application.handle_command(event)
+            if drive_response is not None:
+                return drive_response
         if self._action_proposal_application is not None:
             action_response = self._action_proposal_application.handle_command(event)
             if action_response is not None:

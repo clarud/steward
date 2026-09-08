@@ -1,6 +1,7 @@
 import pytest
 
-from steward.drive import GoogleDriveService
+from steward.capture import CaptureResult
+from steward.drive import DriveFile, DriveInboxImportService, GoogleDriveService
 
 
 class FakeRequest:
@@ -47,3 +48,33 @@ def test_drive_search_escapes_query_and_validates_limit() -> None:
     assert "Claire\\'s \\\\ notes" in client.files_api.kwargs["q"]
     with pytest.raises(ValueError, match="between"):
         service.search(limit=0)
+
+
+def test_explicit_drive_import_downloads_then_captures_with_a_stable_event(tmp_path) -> None:
+    class ImportDrive:
+        def get_file(self, file_id: str) -> DriveFile:
+            assert file_id == "drive-42"
+            return DriveFile("drive-42", "Flight plan.pdf", "application/pdf", None, None, 3)
+
+        def download_to(self, file_id: str, destination) -> None:
+            assert file_id == "drive-42"
+            destination.write_bytes(b"PDF")
+
+    class Capture:
+        def __init__(self) -> None:
+            self.event = None
+            self.contents = None
+
+        def capture_file(self, event, path):
+            self.event = event
+            self.contents = path.read_bytes()
+            return CaptureResult(type("Source", (), {"path": tmp_path / "inbox" / "drive-import-drive-42-Flight-plan.pdf"})(), False)
+
+    capture = Capture()
+    result = DriveInboxImportService(ImportDrive(), capture).import_file("drive-42")
+
+    assert result.duplicate is False
+    assert capture.contents == b"PDF"
+    assert capture.event.id == "drive:drive-42"
+    assert capture.event.platform == "drive"
+    assert capture.event.attachments == ("Flight plan.pdf",)

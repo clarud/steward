@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Protocol
+
+from steward.capture import CaptureResult, InboxCaptureService
+from steward.events import IncomingEvent
 
 
 GOOGLE_DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
@@ -25,7 +30,7 @@ class DriveFile:
 
 
 class GoogleDriveService:
-    """Search current Drive metadata; Google Drive remains authoritative."""
+    """Read explicitly selected Drive files; Google Drive remains authoritative."""
 
     def __init__(self, client: DriveApi) -> None:
         self._client = client
@@ -76,6 +81,41 @@ class GoogleDriveService:
             str(item["webViewLink"]) if item.get("webViewLink") else None,
             int(str(size)) if size is not None else None,
         )
+
+
+class DriveInboxImportService:
+    """Copy one user-selected Drive original into Inbox before local extraction.
+
+    The Google Drive ID is the import event's stable identity.  Repeating an
+    import therefore reaches the same Inbox destination and is idempotent via
+    ``InboxCaptureService``; it never creates an automatic background mirror.
+    """
+
+    def __init__(
+        self, drive_service: GoogleDriveService, capture_service: InboxCaptureService
+    ) -> None:
+        self._drive = drive_service
+        self._capture = capture_service
+
+    def import_file(self, file_id: str) -> CaptureResult:
+        remote = self._drive.get_file(file_id)
+        suffix = Path(remote.name).suffix
+        with TemporaryDirectory() as temporary_dir:
+            downloaded = Path(temporary_dir) / f"drive-download{suffix}"
+            self._drive.download_to(remote.id, downloaded)
+            return self._capture.capture_file(
+                IncomingEvent(
+                    id=f"drive:{remote.id}",
+                    platform="drive",
+                    chat_id="import",
+                    message_id=remote.id,
+                    reply_to_id=None,
+                    timestamp=datetime.now().astimezone(),
+                    text=None,
+                    attachments=(remote.name,),
+                ),
+                downloaded,
+            )
 
 
 def authorize_google_drive(client_secrets_path: Path, token_path: Path) -> DriveApi:

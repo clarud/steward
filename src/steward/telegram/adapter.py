@@ -142,7 +142,8 @@ class TelegramAdapter:
         if file_size and file_size > MAX_CLOUD_DOWNLOAD_BYTES:
             await message.reply_text(
                 "I cannot download files over 20 MB through the current Telegram connection. "
-                "Place the original in vault/inbox instead."
+                "Place the original in vault/inbox, or upload it to Google Drive and send "
+                "/drive_import DRIVE_FILE_ID."
             )
             return
         if not hasattr(self._event_handler, "handle_file"):
@@ -215,6 +216,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("action_proposals", adapter.handle_update))
     application.add_handler(CommandHandler("approve_action", adapter.handle_update))
     application.add_handler(CommandHandler("reject_action", adapter.handle_update))
+    application.add_handler(CommandHandler("drive_import", adapter.handle_update))
     capture_adapter = TelegramAdapter(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,

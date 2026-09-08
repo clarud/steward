@@ -156,25 +156,36 @@ steward calendar-search "Tokyo"
 steward calendar-get GOOGLE_EVENT_ID
 ```
 
-## Search Google Drive metadata
+## Search or explicitly import Google Drive files
 
-Authorize the separate, read-only Drive metadata scope once. This searches
-current Drive file metadata and links; it does not download or retain content.
+Authorize the separate, read-only Drive scope once. Search returns current file
+metadata and links. `drive-import` downloads only the file ID you explicitly
+select, preserves that original in Inbox, and then performs normal local
+extraction and indexing. It is not a background Drive sync.
 
 ```powershell
 steward drive-authorize C:\private\google-oauth-client.json
 $env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
 steward drive-search "itinerary"
+steward drive-import DRIVE_FILE_ID
 ```
+
+For a Telegram upload larger than the connection's download limit, place the
+original in Drive and send the allowlisted bot `/drive_import DRIVE_FILE_ID`.
+The bot uses the same explicit import workflow. If the Drive token needs a new
+scope, the command opens the local OAuth browser flow at that time.
 
 ## Search Gmail metadata
 
 Gmail uses a separate read-only authorization. Search results contain message
-metadata and snippets only; Steward neither sends mail nor imports bodies.
+metadata and snippets. `gmail-import` explicitly preserves the selected
+message's original raw `.eml` data in Inbox; Steward neither sends mail nor
+imports messages automatically.
 
 ```powershell
 steward gmail-authorize C:\private\google-oauth-client.json
 steward gmail-search "from:airline newer_than:1y"
+steward gmail-import GMAIL_MESSAGE_ID
 ```
 
 Use Calendar reads in the tool agent only when requested explicitly:

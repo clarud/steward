@@ -144,6 +144,7 @@ def test_document_over_cloud_limit_is_not_downloaded() -> None:
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_document(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]
+    assert "/drive_import DRIVE_FILE_ID" in message.replies[0]
 
 
 def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> None:

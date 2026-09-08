@@ -5,6 +5,7 @@ from steward.answer import AnswerCitation
 from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
+    StewardDriveImportApplication,
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
@@ -289,4 +290,44 @@ def test_telegram_action_review_requires_an_explicit_numeric_command(tmp_path: P
 
     assert app.handle_command(make_event(text="/approve_action@steward_bot please")) == (
         "Use /approve_action followed by a numeric proposal ID."
+    )
+
+
+def test_telegram_can_explicitly_import_one_drive_file() -> None:
+    class Importer:
+        def __init__(self) -> None:
+            self.file_ids: list[str] = []
+
+        def import_file(self, file_id: str) -> CaptureResult:
+            self.file_ids.append(file_id)
+            return CaptureResult(
+                type("Source", (), {"path": Path("vault/inbox/drive-import-file-42-note.pdf")})(),
+                False,
+            )
+
+    importer = Importer()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        drive_import_application=StewardDriveImportApplication(importer),
+    )
+
+    response = application.handle(make_event(text="/drive_import file-42"))
+
+    assert importer.file_ids == ["file-42"]
+    assert response == "Imported Drive file to Inbox: vault\\inbox\\drive-import-file-42-note.pdf"
+
+
+def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
+    application = StewardDriveImportApplication(None)
+
+    assert application.handle_command(make_event(text="/drive_import")) == (
+        "Use /drive_import followed by one Google Drive file ID."
+    )
+    assert application.handle_command(make_event(text="/drive_import first second")) == (
+        "Use /drive_import followed by one Google Drive file ID."
+    )
+    assert application.handle_command(make_event(text="/drive_import file-42")) == (
+        "Drive import is not configured on this Steward process. "
+        "Set STEWARD_GOOGLE_CLIENT_SECRETS, authorize Drive, then try again."
     )
