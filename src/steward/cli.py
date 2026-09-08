@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
@@ -54,6 +55,20 @@ from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
 from steward.tools.calendar_read import CALENDAR_READ_TOOL_DEFINITIONS
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
+
+
+def _is_calendar_question(question: str) -> bool:
+    """Recognize unambiguous schedule questions before asking a model to plan."""
+
+    normalized = question.casefold()
+    if re.search(r"\b(calendar queues?|queueing|operating systems?)\b", normalized):
+        return False
+    return bool(
+        re.search(
+            r"\b(calendar|schedule[ds]?|upcoming|coming up|today|tomorrow|this week)\b",
+            normalized,
+        )
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -393,6 +408,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         checkpointer.setup()
         tools = build_read_only_tools(tool_service)
         definitions = list(READ_ONLY_TOOL_DEFINITIONS)
+        calendar_only = arguments.include_calendar and _is_calendar_question(arguments.question)
         if arguments.include_calendar:
             client_secrets = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
             if not client_secrets:
@@ -401,8 +417,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             calendar = CalendarService(
                 authorize_google_calendar(Path(client_secrets), settings.data_dir / "config" / "google-calendar-token.json")
             )
-            tools.extend(build_calendar_read_tools(CalendarReadToolService(calendar)))
-            definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
+            calendar_tools = build_calendar_read_tools(CalendarReadToolService(calendar))
+            if calendar_only:
+                tools = calendar_tools
+                definitions = list(CALENDAR_READ_TOOL_DEFINITIONS)
+            else:
+                tools.extend(calendar_tools)
+                definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
         graph = build_tool_agent_graph(
             GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model),
             tools,
@@ -413,8 +434,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             {
                 "messages": [
                     SystemMessage(
-                        "You are Steward. Use only the supplied read-only tools when local information is needed. "
-                        "Do not claim a result that a tool did not provide."
+                        (
+                            "You are Steward. Use the supplied read-only tools when information is needed. "
+                            "This is a calendar scheduling question: call calendar_search once, then answer from "
+                            "its result; do not request another tool. Do not claim a result that a tool did not provide."
+                            if calendar_only
+                            else "You are Steward. Use only the supplied read-only tools when information is needed. "
+                            "Do not claim a result that a tool did not provide."
+                        )
                     ),
                     HumanMessage(arguments.question),
                 ]

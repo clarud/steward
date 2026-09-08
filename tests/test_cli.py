@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import UTC, datetime
 
-from steward.cli import build_parser, main
+from steward.cli import _is_calendar_question, build_parser, main
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -184,3 +184,10 @@ def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) 
     assert capsys.readouterr().out == "Source 1 privacy set to no_model.\n"
     main(["source-privacy", str(source.id)])
     assert capsys.readouterr().out == "no_model\n"
+
+
+def test_calendar_question_routing_only_matches_unambiguous_schedule_requests() -> None:
+    assert _is_calendar_question("What do I have coming up this week?") is True
+    assert _is_calendar_question("Do I have anything scheduled tomorrow?") is True
+    assert _is_calendar_question("Explain calendar queues in operating systems") is False
+    assert _is_calendar_question("What is a queueing model?") is False
