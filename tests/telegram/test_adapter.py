@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 import pytest
 
 from steward.events import IncomingEvent
-from steward.telegram import TelegramAdapter, normalize_telegram_update, run_telegram_polling
+from steward.storage import initialize_database
+from steward.telegram import (
+    TelegramAdapter,
+    TelegramUpdateDeliveryRepository,
+    normalize_telegram_update,
+    run_telegram_polling,
+)
 
 
 class FakeMessage:
@@ -38,6 +44,18 @@ class FakeEventHandler:
         return "A TLB caches address translations. [F1]"
 
 
+class FailingThenWorkingHandler(FakeEventHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self._attempts = 0
+
+    def handle(self, event: IncomingEvent) -> str:
+        self._attempts += 1
+        if self._attempts == 1:
+            raise RuntimeError("temporary application failure")
+        return super().handle(event)
+
+
 def test_normalize_telegram_update_preserves_reply_relationship() -> None:
     original = FakeMessage()
     update = FakeUpdate(FakeMessage(reply_to_message=original))
@@ -64,6 +82,39 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
     assert handler.events[0].id == "telegram:42"
     assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    handler = FakeEventHandler()
+    adapter = TelegramAdapter(
+        handler, delivery_repository=TelegramUpdateDeliveryRepository(database_path)
+    )
+
+    asyncio.run(adapter.handle_update(FakeUpdate(FakeMessage()), None))  # type: ignore[arg-type]
+    duplicate_message = FakeMessage()
+    asyncio.run(adapter.handle_update(FakeUpdate(duplicate_message), None))  # type: ignore[arg-type]
+
+    assert len(handler.events) == 1
+    assert duplicate_message.replies == []
+
+
+def test_adapter_releases_a_failed_update_for_a_retry(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    handler = FailingThenWorkingHandler()
+    adapter = TelegramAdapter(
+        handler, delivery_repository=TelegramUpdateDeliveryRepository(database_path)
+    )
+
+    with pytest.raises(RuntimeError, match="temporary application failure"):
+        asyncio.run(adapter.handle_update(FakeUpdate(FakeMessage()), None))  # type: ignore[arg-type]
+    retried_message = FakeMessage()
+    asyncio.run(adapter.handle_update(FakeUpdate(retried_message), None))  # type: ignore[arg-type]
+
+    assert len(handler.events) == 1
+    assert retried_message.replies == ["A TLB caches address translations. [F1]"]
 
 
 def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:

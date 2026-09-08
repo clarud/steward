@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from steward.events import IncomingEvent
+from steward.telegram.delivery import TelegramUpdateDeliveryRepository
 
 
 class IncomingEventHandler(Protocol):
@@ -58,10 +59,15 @@ class TelegramAdapter:
     """Translate Telegram updates, delegate work, and send the returned text."""
 
     def __init__(
-        self, event_handler: IncomingEventHandler, *, allowed_chat_ids: frozenset[str] = frozenset()
+        self,
+        event_handler: IncomingEventHandler,
+        *,
+        allowed_chat_ids: frozenset[str] = frozenset(),
+        delivery_repository: TelegramUpdateDeliveryRepository | None = None,
     ) -> None:
         self._event_handler = event_handler
         self._allowed_chat_ids = allowed_chat_ids
+        self._deliveries = delivery_repository
 
     async def handle_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -76,8 +82,15 @@ class TelegramAdapter:
         if not self._is_allowed(event):
             await message.reply_text("This Steward bot is not authorized for this chat.")
             return
-        response = await asyncio.to_thread(self._event_handler.handle, event)
-        await message.reply_text(response)
+        if not self._claim(event):
+            return
+        try:
+            response = await asyncio.to_thread(self._event_handler.handle, event)
+            await message.reply_text(response)
+        except BaseException:
+            self._release(event)
+            raise
+        self._mark_delivered(event)
 
     async def handle_document(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -134,18 +147,36 @@ class TelegramAdapter:
             return
         if not hasattr(self._event_handler, "handle_file"):
             raise TypeError("Attachment handling requires a file capture application.")
+        if not self._claim(event):
+            return
         suffix = Path(filename).suffix or ".bin"
-        with TemporaryDirectory() as temporary_dir:
-            download_path = Path(temporary_dir) / f"download{suffix}"
-            telegram_file = await attachment.get_file()  # type: ignore[attr-defined]
-            await telegram_file.download_to_drive(download_path)
-            response = await asyncio.to_thread(
-                self._event_handler.handle_file, event, download_path
-            )
-        await message.reply_text(response)
+        try:
+            with TemporaryDirectory() as temporary_dir:
+                download_path = Path(temporary_dir) / f"download{suffix}"
+                telegram_file = await attachment.get_file()  # type: ignore[attr-defined]
+                await telegram_file.download_to_drive(download_path)
+                response = await asyncio.to_thread(
+                    self._event_handler.handle_file, event, download_path
+                )
+            await message.reply_text(response)
+        except BaseException:
+            self._release(event)
+            raise
+        self._mark_delivered(event)
 
     def _is_allowed(self, event: IncomingEvent) -> bool:
         return not self._allowed_chat_ids or event.chat_id in self._allowed_chat_ids
+
+    def _claim(self, event: IncomingEvent) -> bool:
+        return self._deliveries is None or self._deliveries.claim(event.id)
+
+    def _mark_delivered(self, event: IncomingEvent) -> None:
+        if self._deliveries is not None:
+            self._deliveries.mark_delivered(event.id)
+
+    def _release(self, event: IncomingEvent) -> None:
+        if self._deliveries is not None:
+            self._deliveries.release(event.id)
 
 
 def _attachment_names(message: object) -> tuple[str, ...]:
@@ -165,6 +196,7 @@ def run_telegram_polling(
     capture_handler: IncomingEventHandler,
     *,
     allowed_chat_ids: frozenset[str] = frozenset(),
+    delivery_repository: TelegramUpdateDeliveryRepository | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
 
@@ -172,11 +204,19 @@ def run_telegram_polling(
         raise ValueError("Telegram bot token must not be empty.")
 
     application = ApplicationBuilder().token(token).build()
-    adapter = TelegramAdapter(event_handler, allowed_chat_ids=allowed_chat_ids)
+    adapter = TelegramAdapter(
+        event_handler,
+        allowed_chat_ids=allowed_chat_ids,
+        delivery_repository=delivery_repository,
+    )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
     )
-    capture_adapter = TelegramAdapter(capture_handler, allowed_chat_ids=allowed_chat_ids)
+    capture_adapter = TelegramAdapter(
+        capture_handler,
+        allowed_chat_ids=allowed_chat_ids,
+        delivery_repository=delivery_repository,
+    )
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))

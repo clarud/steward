@@ -532,6 +532,26 @@ for this local-first version because the bot opens an outgoing connection to
 Telegram rather than requiring a public webhook server. The process remains
 running until `Ctrl+C` stops it.
 
+### Durable update delivery
+
+Before the adapter calls an application handler, it uses
+`TelegramUpdateDeliveryRepository` to insert the normalized event ID (for
+example, `telegram:42`) into SQLite as `processing`. SQLite's primary-key
+constraint makes that claim atomic: a concurrent or later delivery of the same
+update cannot enter the application again. After `reply_text()` succeeds, the
+row becomes `delivered`; delivered duplicates are ignored without producing a
+second answer.
+
+If downloading, application work, or the Telegram reply raises an error, the
+adapter deletes only its `processing` claim and re-raises the error. Telegram
+or a later polling cycle can then retry the update. This gives Steward a
+deliberate **at-least-once** boundary: it does not lose a message merely
+because the reply failed, but a process crash after domain work and before the
+delivery record can repeat that work. Capture, reviewed organization moves, and
+future action services must therefore remain idempotent. A true external
+exactly-once guarantee would require an outbound-message idempotency facility
+that the Telegram Bot API does not provide.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv
@@ -929,8 +949,9 @@ behavior easy to edit and inspect in code review.
   provider-controlled. Steward requires an explicit model name rather than
   assuming a particular Gemini model is available to every account.
 - Telegram conversation state uses a local SQLite LangGraph checkpointer, so a
-  restarted process can continue a chat thread. There is still no user
-  allowlist, delivery retry policy, or durable Telegram update deduplication.
+  restarted process can continue a chat thread. The adapter also has a local
+  allowlist and durable successful-update deduplication. It does not yet have a
+  dead-letter queue, backoff policy, or a user-visible delivery status view.
 - Telegram captures use `/save` and the normal Bot API download ceiling. There
   is no self-hosted Bot API server or cloud-drive relay for larger files.
 - Organization matching is intentionally simple and filename-based; it is not

@@ -43,7 +43,7 @@ from steward.retrieval import (
     SentenceTransformerEmbeddingProvider,
     SQLiteSemanticIndex,
 )
-from steward.telegram import run_telegram_polling
+from steward.telegram import TelegramUpdateDeliveryRepository, run_telegram_polling
 from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.organization import (
     OrganizationApprovalService,
@@ -633,6 +633,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             application,
             application,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
+            delivery_repository=TelegramUpdateDeliveryRepository(database_path),
         )
         return
 

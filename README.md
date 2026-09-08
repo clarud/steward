@@ -231,7 +231,9 @@ steward telegram
 ```
 
 Stop the local process with `Ctrl+C`. Long polling means this initial version
-does not need a public webhook endpoint.
+does not need a public webhook endpoint. Steward records successfully replied
+Telegram update IDs in its local SQLite database, so a redelivered update is
+not handled twice; a failed delivery is left eligible for retry.
 
 OpenAI remains available by explicitly selecting its provider:
 
