@@ -85,7 +85,11 @@ def test_gemini_tool_adapter_replays_langgraph_tool_messages_with_sdk_supported_
 
     contents = GeminiToolCallingModel._contents(
         [
-            AIMessage("", tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}]),
+            AIMessage(
+                "",
+                tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}],
+                additional_kwargs={"gemini_thought_signatures": {"call-1": b"opaque"}},
+            ),
             ToolMessage("[]", name="search_sources", tool_call_id="call-1"),
         ],
         types,
@@ -93,8 +97,38 @@ def test_gemini_tool_adapter_replays_langgraph_tool_messages_with_sdk_supported_
 
     assert contents[0].parts[0].function_call.name == "search_sources"
     assert dict(contents[0].parts[0].function_call.args) == {"query": "TLB"}
+    assert contents[0].parts[0].function_call.id == "call-1"
+    assert contents[0].parts[0].thought_signature == b"opaque"
     assert contents[1].parts[0].function_response.name == "search_sources"
     assert dict(contents[1].parts[0].function_response.response) == {"result": "[]"}
+    assert contents[1].parts[0].function_response.id == "call-1"
+
+
+def test_gemini_tool_adapter_preserves_thought_signature_from_response_part() -> None:
+    class FunctionCall:
+        name = "search_records"
+        args = {"query": "calendar"}
+        id = "thought-call"
+
+    class Part:
+        function_call = FunctionCall()
+        thought_signature = b"opaque-signature"
+
+    class Response:
+        text = ""
+        function_calls = []
+        candidates = [type("Candidate", (), {"content": type("Content", (), {"parts": [Part()]})()})()]
+
+    class Models:
+        def generate_content(self, **_kwargs):
+            return Response()
+
+    class Client:
+        models = Models()
+
+    result = GeminiToolCallingModel(api_key="test", model="gemini-test", client=Client()).invoke([HumanMessage("Find my calendar")])
+
+    assert result.additional_kwargs["gemini_thought_signatures"] == {"thought-call": b"opaque-signature"}
 
 
 def test_tool_policy_blocks_an_unapproved_write_inside_tool_node() -> None:

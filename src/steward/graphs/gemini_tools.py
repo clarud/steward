@@ -57,16 +57,24 @@ class GeminiToolCallingModel:
         )
         calls = self._function_calls(response)
         if calls:
+            tool_calls = [
+                {
+                    "name": str(call.name),
+                    "args": dict(call.args or {}),
+                    "id": str(call.id or f"gemini-{index}"),
+                }
+                for index, (call, _signature) in enumerate(calls)
+            ]
             return AIMessage(
                 content=getattr(response, "text", "") or "",
-                tool_calls=[
-                    {
-                        "name": str(call.name),
-                        "args": dict(call.args or {}),
-                        "id": str(call.id or f"gemini-{index}"),
+                tool_calls=tool_calls,
+                additional_kwargs={
+                    "gemini_thought_signatures": {
+                        tool_call["id"]: signature
+                        for tool_call, (_call, signature) in zip(tool_calls, calls, strict=True)
+                        if signature is not None
                     }
-                    for index, call in enumerate(calls)
-                ],
+                },
             )
         text = getattr(response, "text", "") or ""
         if not text.strip():
@@ -95,18 +103,25 @@ class GeminiToolCallingModel:
                     types.Content(
                         role="user",
                         parts=[
-                            types.Part.from_function_response(
-                                name=message.name or "tool",
-                                response={"result": str(message.content)},
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=message.name or "tool",
+                                    response={"result": str(message.content)},
+                                    id=message.tool_call_id,
+                                )
                             )
                         ],
                     )
                 )
             elif isinstance(message, AIMessage):
                 parts = [types.Part(text=str(message.content))] if message.content else []
+                signatures = message.additional_kwargs.get("gemini_thought_signatures", {})
                 parts.extend(
-                    types.Part.from_function_call(
-                        name=call["name"], args=call["args"]
+                    types.Part(
+                        function_call=types.FunctionCall(
+                            name=call["name"], args=call["args"], id=call["id"]
+                        ),
+                        thought_signature=signatures.get(call["id"]),
                     )
                     for call in message.tool_calls
                 )
@@ -114,12 +129,16 @@ class GeminiToolCallingModel:
         return contents
 
     @staticmethod
-    def _function_calls(response: object) -> list[Any]:
-        direct = getattr(response, "function_calls", None)
-        if direct:
-            return list(direct)
+    def _function_calls(response: object) -> list[tuple[Any, bytes | None]]:
         candidates = getattr(response, "candidates", None) or []
-        if not candidates:
-            return []
-        parts = getattr(getattr(candidates[0], "content", None), "parts", None) or []
-        return [part.function_call for part in parts if getattr(part, "function_call", None) is not None]
+        if candidates:
+            parts = getattr(getattr(candidates[0], "content", None), "parts", None) or []
+            calls = [
+                (part.function_call, getattr(part, "thought_signature", None))
+                for part in parts
+                if getattr(part, "function_call", None) is not None
+            ]
+            if calls:
+                return calls
+        direct = getattr(response, "function_calls", None) or []
+        return [(call, getattr(call, "thought_signature", None)) for call in direct]
