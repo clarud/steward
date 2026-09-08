@@ -133,6 +133,29 @@ def test_gemini_tool_adapter_preserves_thought_signature_from_response_part() ->
     assert result.additional_kwargs["gemini_thought_signatures"] == {"thought-call": b"opaque-signature"}
 
 
+def test_gemini_tool_adapter_reads_candidate_text_and_handles_empty_completion() -> None:
+    class Part:
+        text = "Answer from a candidate part."
+
+    class Response:
+        text = ""
+        function_calls = []
+        candidates = [type("Candidate", (), {"content": type("Content", (), {"parts": [Part()]})()})()]
+
+    class Models:
+        def generate_content(self, **_kwargs):
+            return Response()
+
+    class Client:
+        models = Models()
+
+    adapter = GeminiToolCallingModel(api_key="test", model="gemini-test", client=Client())
+    assert adapter.invoke([HumanMessage("Question")]).content == "Answer from a candidate part."
+
+    Response.candidates = []
+    assert "did not return a final answer" in adapter.invoke([HumanMessage("Question")]).content
+
+
 def test_tool_graph_checkpointer_serializes_thought_signature_bytes() -> None:
     @tool
     def search_sources(query: str) -> str:

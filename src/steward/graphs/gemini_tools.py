@@ -56,6 +56,7 @@ class GeminiToolCallingModel:
             config=config,
         )
         calls = self._function_calls(response)
+        response_text = self._response_text(response)
         if calls:
             tool_calls = [
                 {
@@ -66,7 +67,7 @@ class GeminiToolCallingModel:
                 for index, (call, _signature) in enumerate(calls)
             ]
             return AIMessage(
-                content=getattr(response, "text", "") or "",
+                content=response_text,
                 tool_calls=tool_calls,
                 additional_kwargs={
                     "gemini_thought_signatures": {
@@ -76,9 +77,13 @@ class GeminiToolCallingModel:
                     }
                 },
             )
-        text = getattr(response, "text", "") or ""
+        text = response_text
         if not text.strip():
-            raise RuntimeError("Gemini returned neither text nor a tool call.")
+            # A tool call may have succeeded even when a thinking model exposes
+            # no final text part. Finish safely instead of crashing the graph.
+            return AIMessage(
+                "I completed the available lookup, but Gemini did not return a final answer. Please try again."
+            )
         return AIMessage(content=text)
 
     @staticmethod
@@ -142,3 +147,15 @@ class GeminiToolCallingModel:
                 return calls
         direct = getattr(response, "function_calls", None) or []
         return [(call, getattr(call, "thought_signature", None)) for call in direct]
+
+    @staticmethod
+    def _response_text(response: object) -> str:
+        """Read text parts directly; SDK ``response.text`` omits mixed parts."""
+
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            parts = getattr(getattr(candidates[0], "content", None), "parts", None) or []
+            text = "".join(str(part.text) for part in parts if getattr(part, "text", None))
+            if text.strip():
+                return text
+        return str(getattr(response, "text", "") or "")
