@@ -69,6 +69,23 @@ def test_capture_file_preserves_a_pdf_original_without_extraction(tmp_path: Path
     assert result.source.path.read_bytes() == b"%PDF-example"
 
 
+def test_capture_file_extracts_html_into_inbox_fragments(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    original = tmp_path / "notes.html"
+    original.write_text("<h1>TLB</h1><p>Caches translations.</p>", encoding="utf-8")
+    event = IncomingEvent("telegram:45", "telegram", "100", "10", None, datetime(2026, 9, 8, tzinfo=UTC), None)
+    fragments = SourceFragmentRepository(database_path)
+    service = InboxCaptureService(tmp_path / "inbox", SourceRepository(database_path), fragments)
+
+    result = service.capture_file(event, original)
+
+    assert result.source.source_type.value == "html"
+    assert [(fragment.heading, fragment.text) for fragment in fragments.list_for_source(result.source.id or 0)] == [
+        ("TLB", "Caches translations.")
+    ]
+
+
 def test_capture_file_retains_a_safe_version_of_the_original_name(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

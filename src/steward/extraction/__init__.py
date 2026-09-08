@@ -6,6 +6,7 @@ from steward.extraction.document import (
     DocumentExtractionError,
     DocumentExtractor,
     ExtractionService,
+    HtmlExtractor,
     PdfExtractor,
     PlainTextExtractor,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "DocumentExtractionError",
     "DocumentExtractor",
     "ExtractionService",
+    "HtmlExtractor",
     "PdfExtractor",
     "DocxExtractor",
     "PlainTextExtractor",

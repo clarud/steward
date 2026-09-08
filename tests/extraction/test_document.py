@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
-from steward.extraction import DocxExtractor, PdfExtractor, PlainTextExtractor
+from steward.extraction import DocxExtractor, HtmlExtractor, PdfExtractor, PlainTextExtractor
 from steward.sources import Source, SourceType
 
 
@@ -62,4 +62,22 @@ def test_docx_extractor_retains_paragraph_and_heading_provenance(tmp_path: Path)
     assert [(fragment.heading, fragment.text, fragment.location) for fragment in result.fragments] == [
         ("Address translation", "A TLB caches translations.", "paragraph 2"),
         ("Address translation", "Page tables map virtual memory.", "paragraph 3"),
+    ]
+
+
+def test_html_extractor_ignores_scripts_and_uses_nearest_heading(tmp_path: Path) -> None:
+    path = tmp_path / "notes.html"
+    path.write_text(
+        "<h1>Virtual memory</h1><p>Address translation maps virtual pages.</p>"
+        "<script>ignore_this()</script><h2>TLB</h2><p>Caches translations.</p>",
+        encoding="utf-8",
+    )
+    source = Source(1, path, "a" * 64, SourceType.HTML, path.stat().st_size,
+                    datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 8, tzinfo=UTC))
+
+    result = HtmlExtractor().extract(source)
+
+    assert [(fragment.heading, fragment.text, fragment.location) for fragment in result.fragments] == [
+        ("Virtual memory", "Address translation maps virtual pages.", "section 1"),
+        ("TLB", "Caches translations.", "section 2"),
     ]

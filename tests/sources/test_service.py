@@ -87,3 +87,21 @@ def test_source_service_keeps_scanning_when_a_document_cannot_be_extracted(tmp_p
     assert fragments.list_for_source(broken.id or 0) == ()
     assert readable is not None
     assert [fragment.text for fragment in fragments.list_for_source(readable.id or 0)] == ["Still indexed"]
+
+
+def test_source_service_scans_and_extracts_html_files(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "vault"; vault.mkdir()
+    source_path = vault / "notes.html"; source_path.write_text("<h1>TLB</h1><p>Caches translations.</p>", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+    service = SourceService(sources, fragments, MarkdownExtractor())
+
+    result = service.scan_source_root(vault)
+    source = sources.get_by_path(source_path.resolve())
+
+    assert result.new == 1
+    assert source is not None
+    assert [(fragment.heading, fragment.text) for fragment in fragments.list_for_source(source.id or 0)] == [
+        ("TLB", "Caches translations.")
+    ]

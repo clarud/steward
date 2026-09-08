@@ -74,7 +74,12 @@ class SourceService:
                     fragments = self._fragment_repository.replace_for_source(
                         self._markdown_extractor.extract(source)
                     )
-                elif source.source_type in {SourceType.PLAIN_TEXT, SourceType.PDF, SourceType.DOCX}:
+                elif source.source_type in {
+                    SourceType.PLAIN_TEXT,
+                    SourceType.PDF,
+                    SourceType.DOCX,
+                    SourceType.HTML,
+                }:
                     self._document_extraction.extract_and_store(source)
                     fragments = self._fragment_repository.list_for_source(source.id or 0)
                 else:

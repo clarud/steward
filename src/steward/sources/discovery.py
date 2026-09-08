@@ -12,6 +12,8 @@ SUPPORTED_SOURCE_TYPES = {
     ".txt": SourceType.PLAIN_TEXT,
     ".pdf": SourceType.PDF,
     ".docx": SourceType.DOCX,
+    ".html": SourceType.HTML,
+    ".htm": SourceType.HTML,
 }
 
 

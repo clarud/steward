@@ -126,3 +126,14 @@ def test_general_scan_registers_docx_files(tmp_path: Path) -> None:
 
     assert result.new == 1
     assert repository.get_by_path(document.resolve()).source_type is SourceType.DOCX
+
+
+def test_general_scan_registers_html_files(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    document = vault / "notes.html"; document.write_text("<p>Notes</p>", encoding="utf-8")
+    repository = make_repository(tmp_path)
+
+    result = scan_source_root(vault, repository, scanned_at=datetime(2026, 9, 6, 1, 0, tzinfo=UTC))
+
+    assert result.new == 1
+    assert repository.get_by_path(document.resolve()).source_type is SourceType.HTML

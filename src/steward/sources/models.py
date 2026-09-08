@@ -15,6 +15,7 @@ class SourceType(StrEnum):
     PLAIN_TEXT = "plain_text"
     PDF = "pdf"
     DOCX = "docx"
+    HTML = "html"
     BINARY = "binary"
 
 
