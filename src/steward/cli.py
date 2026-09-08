@@ -26,7 +26,7 @@ from steward.answer import (
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_retrieval_answer_graph
-from steward.graphs import GeminiToolCallingModel, build_tool_agent_graph
+from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
 from steward.logging import configure_logging
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
@@ -221,6 +221,30 @@ def _model_gateway_from_settings(
     return OpenAIModelGateway(api_key=api_key, model=settings.openai_model)
 
 
+def _tool_calling_model_from_settings(settings: Settings):
+    """Build the provider adapter needed specifically by the agent tool loop."""
+
+    if settings.model_provider == "local":
+        if not settings.local_model:
+            print(
+                "Set STEWARD_LOCAL_MODEL before using `steward agent` "
+                "with STEWARD_MODEL_PROVIDER=local."
+            )
+            return None
+        return OllamaToolCallingModel(
+            model=settings.local_model, base_url=settings.local_model_url
+        )
+    if settings.model_provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key or not settings.gemini_model:
+            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.")
+            return None
+        return GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model)
+
+    print("`steward agent` currently supports the configured Gemini or local Ollama provider only.")
+    return None
+
+
 def _build_question_graph(
     settings: Settings, model_gateway: ModelGateway, *, limit: int
 ):
@@ -392,12 +416,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if arguments.command == "agent":
-        if settings.model_provider != "gemini":
-            print("`steward agent` currently supports the configured Gemini provider only.")
-            return
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key or not settings.gemini_model:
-            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.")
+        tool_calling_model = _tool_calling_model_from_settings(settings)
+        if tool_calling_model is None:
             return
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
@@ -437,7 +457,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 tools.extend(calendar_tools)
                 definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
         graph = build_tool_agent_graph(
-            GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model),
+            tool_calling_model,
             tools,
             checkpointer=checkpointer,
             tool_policy=ToolPolicy(definitions),
@@ -452,7 +472,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                             "its result; do not request another tool. Do not claim a result that a tool did not provide."
                             if calendar_only
                             else "You are Steward. Use only the supplied read-only tools when information is needed. "
-                            "Do not claim a result that a tool did not provide."
+                            "When a tool result is sufficient, answer immediately. Never repeat a tool call with "
+                            "the same arguments, and do not claim a result that a tool did not provide."
                         )
                     ),
                     HumanMessage(arguments.question),

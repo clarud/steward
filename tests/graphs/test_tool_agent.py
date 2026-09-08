@@ -3,7 +3,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
 
-from steward.graphs import GeminiToolCallingModel, build_tool_agent_graph
+from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
 from steward.answer.gateway import ModelGatewayError
 from steward.tools import ToolDefinition, ToolPolicy, ToolRisk
 
@@ -77,6 +77,36 @@ def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
     assert "tool-call limit" in result["messages"][-1].content
 
 
+def test_tool_agent_does_not_execute_an_oversized_single_tool_call_batch() -> None:
+    calls = []
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        calls.append(query)
+        return query
+
+    class BulkToolModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, _messages):
+            return AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "search_sources", "args": {"query": str(index)}, "id": f"bulk-{index}"}
+                    for index in range(5)
+                ],
+            )
+
+    result = build_tool_agent_graph(BulkToolModel(), [search_sources], max_tool_calls=4).invoke(
+        {"messages": [HumanMessage("Search everything")]}
+    )
+
+    assert calls == []
+    assert "tool-call limit" in result["messages"][-1].content
+
+
 def test_tool_agent_rejects_non_positive_tool_budget() -> None:
     @tool
     def search_sources(query: str) -> str:
@@ -138,6 +168,66 @@ def test_gemini_tool_adapter_converts_function_calls_to_ai_tool_calls() -> None:
     result = adapter.invoke([HumanMessage("Find TLB notes")])
 
     assert result.tool_calls == [{"name": "search_sources", "args": {"query": "TLB"}, "id": "gemini-call-1", "type": "tool_call"}]
+
+
+def test_ollama_tool_adapter_sends_schemas_and_converts_tool_calls() -> None:
+    captured = {}
+
+    class Response:
+        def read(self):
+            return b'{"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "search_sources", "arguments": {"query": "TLB"}}}]}}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def opener(http_request, *, timeout):
+        captured["url"] = http_request.full_url
+        captured["payload"] = http_request.data
+        captured["timeout"] = timeout
+        return Response()
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources by query."""
+        return query
+
+    adapter = OllamaToolCallingModel(model="qwen3", opener=opener).bind_tools([search_sources])
+    result = adapter.invoke([HumanMessage("Find TLB notes")])
+
+    payload = __import__("json").loads(captured["payload"])
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured["timeout"] == 180
+    assert payload["tools"][0]["function"]["name"] == "search_sources"
+    assert payload["messages"] == [{"role": "user", "content": "Find TLB notes"}]
+    assert result.tool_calls[0]["name"] == "search_sources"
+    assert result.tool_calls[0]["args"] == {"query": "TLB"}
+    assert result.tool_calls[0]["id"].startswith("ollama-")
+
+
+def test_ollama_tool_adapter_replays_tool_calls_and_results() -> None:
+    messages = OllamaToolCallingModel._messages(
+        [
+            AIMessage("", tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}]),
+            ToolMessage("result", name="search_sources", tool_call_id="call-1"),
+        ]
+    )
+
+    assert messages == [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "function": {"index": 0, "name": "search_sources", "arguments": {"query": "TLB"}},
+                }
+            ],
+        },
+        {"role": "tool", "tool_name": "search_sources", "content": "result"},
+    ]
 
 
 def test_gemini_tool_adapter_replays_langgraph_tool_messages_with_sdk_supported_fields() -> None:

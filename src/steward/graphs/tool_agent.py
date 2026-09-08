@@ -75,6 +75,24 @@ def build_tool_agent_graph(
                     )
                 ]
             }
+        remaining_calls = max_tool_calls - tool_results
+        if len(response.tool_calls) > remaining_calls:
+            # Providers can emit many calls in one assistant response.  The
+            # pre-node guard above only sees prior ToolMessages, so enforce the
+            # total here before ToolNode receives any of this batch.
+            trace(
+                "tool_agent.tool_budget_exhausted",
+                max_tool_calls=max_tool_calls,
+                requested_tool_calls=len(response.tool_calls),
+            )
+            return {
+                "messages": [
+                    AIMessage(
+                        "I reached Steward's tool-call limit before completing this request. "
+                        "Please narrow the question or start a new request."
+                    )
+                ]
+            }
         return {"messages": [response]}
 
     def route_after_model(state: ToolAgentState) -> Literal["tools", "end"]:

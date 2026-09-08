@@ -1,7 +1,15 @@
 from pathlib import Path
 from datetime import UTC, datetime
 
-from steward.cli import _configure_console_encoding, _is_calendar_question, build_parser, main
+from steward.cli import (
+    _configure_console_encoding,
+    _is_calendar_question,
+    _tool_calling_model_from_settings,
+    build_parser,
+    main,
+)
+from steward.config import Settings
+from steward.graphs import OllamaToolCallingModel
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -115,6 +123,23 @@ def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -
     assert capsys.readouterr().out == (
         "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.\n"
     )
+
+
+def test_cli_selects_the_local_ollama_tool_adapter() -> None:
+    adapter = _tool_calling_model_from_settings(
+        Settings(
+            data_dir=Path(".steward"),
+            inbox_dir=Path("vault/inbox"),
+            log_level="INFO",
+            model_provider="local",
+            openai_model=None,
+            gemini_model=None,
+            local_model="qwen3",
+            local_model_url="http://127.0.0.1:11434",
+        )
+    )
+
+    assert isinstance(adapter, OllamaToolCallingModel)
 
 
 def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:

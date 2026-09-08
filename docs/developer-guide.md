@@ -688,6 +688,22 @@ LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
 then returns its result to the next model turn. `steward agent QUESTION` uses
 this graph with a persistent thread ID and an eight-step recursion cap.
 
+`OllamaToolCallingModel` provides the same narrow graph-facing interface for a
+local model. It sends the conversation and the allowlisted JSON tool schemas to
+Ollama's `/api/chat` endpoint. Ollama returns requested function names and
+arguments; the adapter creates internal call IDs because the Ollama response
+does not supply them, and `ToolNode` uses those IDs only to pair local results
+with the request. On the next turn the adapter replays the assistant tool call
+and each result in Ollama's `role=tool`, `tool_name`, `content` format. It never
+executes a tool itself. Its local HTTP timeout is 180 seconds because CPU
+inference can be much slower after tool results expand the transcript. Set `STEWARD_MODEL_PROVIDER=local` and
+`STEWARD_LOCAL_MODEL` to select it for `steward agent`.
+
+The graph counts individual tool calls, not only model turns. If a provider
+returns a batch larger than the remaining `max_tool_calls` budget, Steward ends
+the request before `ToolNode` executes any call in that batch. This matters for
+local models, which can occasionally emit many duplicate requests at once.
+
 ## Tool risk policy
 
 Phase 22 makes the safety properties of each tool explicit in `ToolDefinition`:
@@ -809,10 +825,10 @@ marked `local_model_only` or `external_redacted` requires the configured local
 Ollama gateway. A `no_model` source is removed before context construction.
 If local-only evidence is retrieved but Ollama is not configured, Steward
 returns an explicit privacy limitation instead of falling back to the cloud.
-Ollama is a deliberately narrow, local HTTP adapter (`/api/generate`), not a
-generic network tool. The Phase 21 Gemini tool agent stays cloud-only for now,
-so its source tools continue to filter non-external content rather than trying
-to route individual tool calls to a different model.
+Ollama is a deliberately narrow local HTTP adapter: `/api/generate` is used for
+ordinary grounded answers and `/api/chat` is used for the explicit tool loop.
+The local tool agent receives only the same allowlisted schemas as Gemini and
+still relies on `ToolNode` and the policy registry to execute a request.
 
 ## Reliability engineering
 

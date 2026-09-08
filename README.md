@@ -82,13 +82,29 @@ steward ask "What do I know about address translation?"
 
 ## Ask with read-only tools
 
-`steward agent` is Steward's first tool-calling loop. Gemini can decide whether
-to search or read local Steward data, LangGraph executes only the six supplied
-read-only tools, then Gemini receives the tool results before answering.
+`steward agent` is Steward's first tool-calling loop. Gemini or a configured
+local Ollama model can decide whether to search or read local Steward data.
+LangGraph executes only the supplied read-only tools, then returns their results
+to the same model before it answers.
 
 ```powershell
 steward agent "What did I save about address translation?"
 ```
+
+For Ollama, install and run Ollama, pull a model that supports tool calling,
+then set the following private `.env` values before starting a new terminal:
+
+```text
+STEWARD_MODEL_PROVIDER=local
+STEWARD_LOCAL_MODEL=qwen3
+# Optional when Ollama uses its default local endpoint:
+STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
+```
+
+Tool support is a model capability, not a guarantee of reliable planning. A
+small local model may answer directly, repeat a lookup, or emit invalid
+tool-like text; Steward executes only valid calls to its allowlisted tools and
+enforces its tool-call budget regardless of provider.
 
 Use `--thread-id` to continue a tool-agent conversation through the local
 LangGraph checkpoint store:
