@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
-GOOGLE_DRIVE_METADATA_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.metadata.readonly"
+GOOGLE_DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 
 
 class DriveApi(Protocol):
@@ -45,6 +45,23 @@ class GoogleDriveService:
         ).execute()
         return tuple(self._from_api(item) for item in result.get("files", []))
 
+    def get_file(self, file_id: str) -> DriveFile:
+        if not file_id.strip():
+            raise ValueError("Drive file ID must not be empty.")
+        return self._from_api(self._client.files().get(
+            fileId=file_id, fields="id,name,mimeType,modifiedTime,webViewLink,size"
+        ).execute())
+
+    def download_to(self, file_id: str, destination: Path) -> None:
+        """Stream one explicitly selected original from Drive to local storage."""
+        from googleapiclient.http import MediaIoBaseDownload
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("wb") as output:
+            downloader = MediaIoBaseDownload(output, self._client.files().get_media(fileId=file_id))
+            complete = False
+            while not complete:
+                _, complete = downloader.next_chunk()
+
     @staticmethod
     def _from_api(item: dict[str, object]) -> DriveFile:
         identifier = item.get("id")
@@ -73,15 +90,15 @@ def authorize_google_drive(client_secrets_path: Path, token_path: Path) -> Drive
     credentials = None
     if token_path.is_file():
         credentials = Credentials.from_authorized_user_file(
-            str(token_path), (GOOGLE_DRIVE_METADATA_READONLY_SCOPE,)
+            str(token_path), (GOOGLE_DRIVE_READONLY_SCOPE,)
         )
-        if credentials and not credentials.has_scopes((GOOGLE_DRIVE_METADATA_READONLY_SCOPE,)):
+        if credentials and not credentials.has_scopes((GOOGLE_DRIVE_READONLY_SCOPE,)):
             credentials = None
     if credentials and credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
     if not credentials or not credentials.valid:
         flow = InstalledAppFlow.from_client_secrets_file(
-            str(client_secrets_path), (GOOGLE_DRIVE_METADATA_READONLY_SCOPE,)
+            str(client_secrets_path), (GOOGLE_DRIVE_READONLY_SCOPE,)
         )
         credentials = flow.run_local_server(port=0)
     token_path.parent.mkdir(parents=True, exist_ok=True)
