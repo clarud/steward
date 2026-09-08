@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import UTC, datetime
 
-from steward.cli import _is_calendar_question, build_parser, main
+from steward.cli import _configure_console_encoding, _is_calendar_question, build_parser, main
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -191,3 +191,19 @@ def test_calendar_question_routing_only_matches_unambiguous_schedule_requests() 
     assert _is_calendar_question("Do I have anything scheduled tomorrow?") is True
     assert _is_calendar_question("Explain calendar queues in operating systems") is False
     assert _is_calendar_question("What is a queueing model?") is False
+
+
+def test_cli_configures_a_non_utf8_console_for_utf8(monkeypatch) -> None:
+    class Console:
+        def __init__(self) -> None:
+            self.encoding = None
+
+        def reconfigure(self, *, encoding: str) -> None:
+            self.encoding = encoding
+
+    console = Console()
+    monkeypatch.setattr("steward.cli.sys.stdout", console)
+
+    _configure_console_encoding()
+
+    assert console.encoding == "utf-8"

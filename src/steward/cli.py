@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import re
+import sys
 import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
@@ -69,6 +70,16 @@ def _is_calendar_question(question: str) -> bool:
             normalized,
         )
     )
+
+
+def _configure_console_encoding() -> None:
+    """Allow source text such as λ to print in legacy Windows terminals."""
+
+    if (
+        hasattr(sys.stdout, "reconfigure")
+        and (sys.stdout.encoding or "").casefold().replace("-", "") != "utf8"
+    ):
+        sys.stdout.reconfigure(encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -251,6 +262,7 @@ def _build_question_graph(
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Run a Steward command."""
+    _configure_console_encoding()
     load_environment_file()
     arguments = build_parser().parse_args(argv)
     settings = Settings.from_environment()
