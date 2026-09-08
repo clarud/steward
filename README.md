@@ -151,6 +151,16 @@ returns the existing linked event rather than creating a duplicate.
 steward calendar-create-travel-event 1
 ```
 
+## Add and inspect source-backed travel references
+
+Keep additional booking identifiers or links traceable to an extracted source
+fragment. The reference is not accepted unless that fragment exists locally.
+
+```powershell
+steward add-travel-record-reference 1 booking_portal "https://example.com/booking/ABC" 12
+steward travel-record-references 1
+```
+
 ## Research external sources without retaining them
 
 Use Gemini's search grounding only when local evidence is insufficient. Results

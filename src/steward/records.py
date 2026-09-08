@@ -22,6 +22,17 @@ class TravelRecordProposal:
     record: TravelRecord
     field_evidence: dict[str, int]
 
+
+@dataclass(frozen=True, slots=True)
+class TravelRecordReference:
+    """An additional concrete identifier supported by a source fragment."""
+
+    id: int | None
+    travel_record_id: int
+    reference_type: str
+    value: str
+    fragment_id: int
+
 class RecordService:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -84,6 +95,51 @@ class RecordService:
                 "INSERT OR REPLACE INTO travel_record_evidence (travel_record_id, field_name, fragment_id) VALUES (?, ?, ?)",
                 (record_id, field_name, fragment_id),
             )
+
+    def add_reference(
+        self, record_id: int, reference_type: str, value: str, fragment_id: int
+    ) -> TravelRecordReference:
+        """Attach a typed, source-backed identifier to a persisted travel record."""
+
+        normalized_type = "_".join(reference_type.casefold().split())
+        normalized_value = value.strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", normalized_type):
+            raise ValueError("Reference type must use lowercase letters, numbers, or underscores.")
+        if not normalized_value:
+            raise ValueError("Reference value must not be empty.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO travel_record_references "
+                "(travel_record_id, reference_type, value, fragment_id) VALUES (?, ?, ?, ?)",
+                (record_id, normalized_type, normalized_value, fragment_id),
+            )
+            if cursor.rowcount == 1:
+                if cursor.lastrowid is None:
+                    raise RuntimeError("SQLite did not assign a travel record reference ID.")
+                reference_id = int(cursor.lastrowid)
+            else:
+                row = connection.execute(
+                    "SELECT id, fragment_id FROM travel_record_references "
+                    "WHERE travel_record_id = ? AND reference_type = ? AND value = ?",
+                    (record_id, normalized_type, normalized_value),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("Travel record reference was not persisted.")
+                return TravelRecordReference(int(row[0]), record_id, normalized_type, normalized_value, int(row[1]))
+        return TravelRecordReference(reference_id, record_id, normalized_type, normalized_value, fragment_id)
+
+    def list_references(self, record_id: int) -> tuple[TravelRecordReference, ...]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT id, travel_record_id, reference_type, value, fragment_id "
+                "FROM travel_record_references WHERE travel_record_id = ? ORDER BY id",
+                (record_id,),
+            ).fetchall()
+        return tuple(
+            TravelRecordReference(int(row[0]), int(row[1]), str(row[2]), str(row[3]), int(row[4]))
+            for row in rows
+        )
 
     def list_travel_records(self) -> list[TravelRecord]:
         with sqlite3.connect(self._database_path) as connection:

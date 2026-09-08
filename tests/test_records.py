@@ -43,3 +43,36 @@ def test_empty_travel_proposal_cannot_create_an_empty_record(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="evidenced"):
         RecordService(database).create_from_proposal(proposal)
+
+
+def test_travel_record_references_are_source_backed_and_idempotent(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    time = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, time, time, time)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (
+            SourceFragment(None, source.id or 0, None, 0, "Booking portal: https://example.com/ABC", "page 1"),
+        ))
+    )[0]
+    service = RecordService(database)
+    record = service.create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", time, None, "ABC")
+    )
+
+    first = service.add_reference(record.id or 0, "Booking Portal", "https://example.com/ABC", fragment.id or 0)
+    repeated = service.add_reference(record.id or 0, "booking_portal", " https://example.com/ABC ", fragment.id or 0)
+
+    assert first.id == repeated.id
+    assert service.list_references(record.id or 0) == (first,)
+
+
+def test_travel_record_reference_rejects_unproven_or_malformed_values(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    service = RecordService(database)
+
+    with pytest.raises(ValueError, match="Reference type"):
+        service.add_reference(1, "Booking URL!", "https://example.com", 1)
+    with pytest.raises(ValueError, match="Reference value"):
+        service.add_reference(1, "booking_url", " ", 1)

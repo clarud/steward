@@ -240,6 +240,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create_travel_parser.add_argument("source_id", type=int)
     subcommands.add_parser("travel-records", help="List saved travel records")
+    travel_references = subcommands.add_parser(
+        "travel-record-references", help="List source-backed references for a travel record"
+    )
+    travel_references.add_argument("record_id", type=int)
+    add_travel_reference = subcommands.add_parser(
+        "add-travel-record-reference", help="Add a source-backed reference to a travel record"
+    )
+    add_travel_reference.add_argument("record_id", type=int)
+    add_travel_reference.add_argument("reference_type")
+    add_travel_reference.add_argument("value")
+    add_travel_reference.add_argument("fragment_id", type=int)
     calendar_authorize = subcommands.add_parser(
         "calendar-authorize", help="Authorize local read-only Google Calendar access"
     )
@@ -888,6 +899,20 @@ def main(argv: Sequence[str] | None = None) -> None:
         initialize_database(database_path)
         for record in RecordService(database_path).list_travel_records():
             print(f"{record.id}\t{record.flight_number or ''}\t{record.departure or ''}\t{record.arrival or ''}")
+        return
+
+    if arguments.command in {"travel-record-references", "add-travel-record-reference"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        records = RecordService(database_path)
+        if arguments.command == "add-travel-record-reference":
+            reference = records.add_reference(
+                arguments.record_id, arguments.reference_type, arguments.value, arguments.fragment_id
+            )
+            print(f"Added reference {reference.id}: {reference.reference_type}={reference.value}")
+        else:
+            for reference in records.list_references(arguments.record_id):
+                print(f"{reference.id}\t{reference.reference_type}\t{reference.value}\tfragment={reference.fragment_id}")
         return
 
     logging.getLogger(__name__).info("Steward foundation started")

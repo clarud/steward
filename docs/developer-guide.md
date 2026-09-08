@@ -739,6 +739,13 @@ flight fields from source fragments and tracks the fragment that supports each
 extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
 `steward create-travel-record SOURCE_ID` is the explicit persistence step, and
 both the record and all of its evidence rows are inserted in one transaction.
+`TravelRecordReference` extends that small record without widening its core
+schema for every possible identifier. A reference has a normalized type, value,
+and required supporting `SourceFragment` ID. The database enforces that both
+the travel record and fragment exist; `add_reference()` is idempotent for the
+same record/type/value and returns the existing reference on a retry. The CLI
+exposes `add-travel-record-reference RECORD_ID TYPE VALUE FRAGMENT_ID` and
+`travel-record-references RECORD_ID` for explicit inspection.
 `FileMutationService.undo_move()` supplies rollback data and writes its own
 `SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
 filesystem changes.

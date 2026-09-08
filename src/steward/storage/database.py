@@ -28,6 +28,7 @@ SOURCE_PRIVACY_SCHEMA_VERSION = 19
 ORGANIZATION_APPROVAL_THREADS_SCHEMA_VERSION = 20
 ACTION_PROPOSALS_SCHEMA_VERSION = 21
 TELEGRAM_UPDATE_DELIVERIES_SCHEMA_VERSION = 22
+TRAVEL_RECORD_REFERENCES_SCHEMA_VERSION = 23
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -207,6 +208,19 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             status TEXT NOT NULL CHECK (status IN ('processing', 'delivered')),
             claimed_at TEXT NOT NULL,
             delivered_at TEXT
+        )
+        """,
+    ),
+    (
+        TRAVEL_RECORD_REFERENCES_SCHEMA_VERSION,
+        """
+        CREATE TABLE travel_record_references (
+            id INTEGER PRIMARY KEY,
+            travel_record_id INTEGER NOT NULL REFERENCES travel_records(id) ON DELETE CASCADE,
+            reference_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            UNIQUE (travel_record_id, reference_type, value)
         )
         """,
     ),
