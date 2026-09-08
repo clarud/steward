@@ -57,6 +57,12 @@ steward scan path\to\your\vault
 steward search "address translations"
 ```
 
+For a larger vault, narrow lexical results to one project or course subtree:
+
+```powershell
+steward search "address translations" --path-prefix C:\vault\courses\cs3210
+```
+
 Semantic and hybrid search use a local embedding model. Download it explicitly
 once, then build the rebuildable local vector index. Subsequent indexing and
 search run from the local model cache.

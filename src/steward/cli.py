@@ -165,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("query", help="Terms to search for")
     search_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
     _add_source_type_filter(search_parser)
+    search_parser.add_argument("--path-prefix", type=Path, help="Restrict matches to a source-path subtree")
     semantic_parser = subcommands.add_parser(
         "semantic-search", help="Search Markdown fragments by meaning"
     )
@@ -467,6 +468,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             arguments.query,
             limit=arguments.limit,
             source_types=_requested_source_types(arguments),
+            path_prefix=arguments.path_prefix,
         )
         if not hits:
             print("No matching fragments.")

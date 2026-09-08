@@ -117,6 +117,7 @@ class SourceFragmentRepository:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[FragmentSearchResult, ...]:
         """Return fragments ranked by FTS5 BM25 lexical relevance."""
         if not query.strip():
@@ -130,7 +131,12 @@ class SourceFragmentRepository:
             if selected_source_types
             else ""
         )
-        parameters = (query, SourceStatus.ACTIVE.value, *selected_source_types, limit)
+        normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
+        path_filter = " AND s.path LIKE ?" if normalized_prefix is not None else ""
+        parameters = (
+            query, SourceStatus.ACTIVE.value, *selected_source_types,
+            *( (normalized_prefix + "%",) if normalized_prefix is not None else () ), limit,
+        )
         try:
             with sqlite3.connect(self._database_path) as connection:
                 rows = connection.execute(
@@ -145,6 +151,7 @@ class SourceFragmentRepository:
                     WHERE source_fragments_fts MATCH ?
                       AND s.status = ?
                       {source_type_filter}
+                      {path_filter}
                     ORDER BY score
                     LIMIT ?
                     """,

@@ -83,3 +83,20 @@ def test_lexical_search_can_filter_by_source_type(tmp_path: Path) -> None:
     )
 
     assert [hit.source.id for hit in hits] == [plain_text.id]
+
+
+def test_lexical_search_can_filter_to_a_path_subtree(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    timestamp = datetime(2026, 9, 7, 1, 0, tzinfo=UTC)
+    sources = SourceRepository(database_path)
+    course = tmp_path / "vault" / "courses" / "os" / "tlb.md"; course.parent.mkdir(parents=True); course.write_text("TLB")
+    other = tmp_path / "vault" / "projects" / "tlb.md"; other.parent.mkdir(parents=True); other.write_text("TLB")
+    course_source = sources.add(Source(None, course, "a" * 64, SourceType.MARKDOWN, 3, timestamp, timestamp, timestamp))
+    other_source = sources.add(Source(None, other, "b" * 64, SourceType.MARKDOWN, 3, timestamp, timestamp, timestamp))
+    fragments = SourceFragmentRepository(database_path)
+    for source in (course_source, other_source):
+        fragments.replace_for_source(ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "TLB cache", "line 1"),)))
+
+    hits = LexicalSearchService(sources, fragments).search("TLB", path_prefix=course.parent)
+
+    assert [hit.source.id for hit in hits] == [course_source.id]

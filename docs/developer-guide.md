@@ -621,6 +621,14 @@ It intentionally contains no write controls, model calls, OAuth credentials, or
 external integrations. This gives Steward a locally inspectable UI surface
 without silently expanding its trust boundary.
 
+### Retrieval path filtering
+
+Lexical search accepts `--path-prefix PATH`. The value is resolved locally and
+becomes a parameterized SQLite `sources.path LIKE PATH%` filter alongside the
+active-source and optional source-type filters, before FTS5-ranked results are
+returned. This is useful for a large vault with project/course subtrees and
+does not change the global index or canonical source locations.
+
 Configure the private bot token and run the adapter:
 
 ```dotenv

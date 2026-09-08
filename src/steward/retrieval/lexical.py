@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from pathlib import Path
 
 from steward.extraction import SourceFragment, SourceFragmentRepository
 from steward.sources import Source, SourceRepository
@@ -37,11 +38,12 @@ class LexicalSearchService:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[LexicalSearchHit, ...]:
         """Search fragment text and attach each hit's original Source."""
         hits: list[LexicalSearchHit] = []
         for result in self._fragment_repository.search(
-            query, limit=limit, source_types=source_types
+            query, limit=limit, source_types=source_types, path_prefix=path_prefix
         ):
             source = self._source_repository.get_by_id(result.fragment.source_id)
             if source is None:
