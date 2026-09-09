@@ -484,6 +484,7 @@ steward ask "What do I know about address translation?"
 
 - `docs/developer-guide.md` — implementation, data flow, limitations, and next steps
 - `docs/telegram-primary-interface-plan.md` — plan for making Telegram the complete primary interface
+- `docs/telegram-manual-test-checklist.md` — non-sensitive end-to-end Telegram validation checklist
 
 - `docs/product.md` — product intent
 - `docs/architecture.md` — architectural boundaries
