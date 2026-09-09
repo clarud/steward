@@ -1010,6 +1010,11 @@ they become tool results. `external_redacted` intentionally fails closed until
 there is a genuine, reviewable redaction pipeline; it is unsafe to assume that
 the rule's name transforms sensitive text.
 
+The same boundary is enforced before model-assisted organization and
+model-assisted knowledge enrichment: cloud providers receive only
+`external_allowed` source excerpts, local providers may receive any source
+except `no_model`, and denied material produces a deterministic local response.
+
 ## Model routing
 
 Phase 31 adds `ModelRouter` and `OllamaModelGateway`. It selects a cloud

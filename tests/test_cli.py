@@ -297,6 +297,28 @@ def test_cli_reports_when_no_knowledge_connections_exist(tmp_path: Path, monkeyp
     assert capsys.readouterr().out == "No evidence-backed knowledge connections found.\n"
 
 
+def test_cli_blocks_model_assisted_organization_for_private_cloud_source(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "private.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    from steward.privacy import PrivacyService, PrivacyRule
+    PrivacyService(database).set_rule(source.id or 0, PrivacyRule.LOCAL_MODEL_ONLY)
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("STEWARD_MODEL_PROVIDER", "gemini")
+    monkeypatch.setattr(
+        "steward.cli._model_gateway_from_settings",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not call model")),
+    )
+
+    main(["propose-organization", str(source.id), "--model-assisted"])
+
+    assert capsys.readouterr().out == "This source's privacy policy does not permit the configured model.\n"
+
+
 def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) -> None:
     data_dir = tmp_path / "data"
     database = data_dir / "steward.db"

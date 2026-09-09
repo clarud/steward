@@ -1308,6 +1308,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                 return
             workspaces = WorkspaceRepository(database_path).list_all()
             if arguments.model_assisted:
+                privacy = PrivacyService(database_path)
+                permitted = (
+                    privacy.permits_local_model(source.id or 0)
+                    if settings.model_provider == "local"
+                    else privacy.permits_external_model(source.id or 0)
+                )
+                if not permitted:
+                    print("This source's privacy policy does not permit the configured model.")
+                    return
                 model = _model_gateway_from_settings(settings, command="propose-organization")
                 if model is None:
                     return
