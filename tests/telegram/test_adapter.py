@@ -302,6 +302,44 @@ def test_document_over_cloud_limit_is_not_downloaded() -> None:
     assert "/drive_import DRIVE_FILE_ID" in message.replies[0]
 
 
+def test_adapter_ignores_a_delivered_duplicate_document_update(tmp_path) -> None:
+    class Download:
+        async def download_to_drive(self, path: Path) -> None:
+            path.write_text("# OpenMP", encoding="utf-8")
+
+    class Document:
+        file_size = 32
+        file_name = "notes.md"
+
+        async def get_file(self) -> Download:
+            return Download()
+
+    class FileHandler(FakeEventHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.files: list[tuple[IncomingEvent, str]] = []
+
+        def handle_file(self, event: IncomingEvent, path: Path) -> str:
+            self.files.append((event, path.read_text(encoding="utf-8")))
+            return "Staged document"
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    handler = FileHandler()
+    adapter = TelegramAdapter(handler, delivery_repository=TelegramUpdateDeliveryRepository(database))
+    first_message = FakeMessage(); first_message.document = Document()
+    duplicate_message = FakeMessage(); duplicate_message.document = Document()
+
+    asyncio.run(adapter.handle_document(FakeUpdate(first_message), None))  # type: ignore[arg-type]
+    asyncio.run(adapter.handle_document(FakeUpdate(duplicate_message), None))  # type: ignore[arg-type]
+
+    assert len(handler.files) == 1
+    assert handler.files[0][0].id == "telegram:42"
+    assert handler.files[0][1] == "# OpenMP"
+    assert first_message.replies == ["Staged document"]
+    assert duplicate_message.replies == []
+
+
 def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> None:
     message = FakeMessage()
     message.caption = "/save"
