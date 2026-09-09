@@ -39,3 +39,20 @@ def test_watcher_marks_deleted_registered_source_missing(tmp_path: Path) -> None
     note.unlink()
     watcher.notify(note, observed_at=2.0)
     assert watcher.flush(now=3.0) == {note.resolve(): "missing"}
+
+
+def test_watcher_ignores_operational_and_configured_exclusions(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root = tmp_path / "vault"; root.mkdir()
+    generated = root / "generated"; generated.mkdir()
+    operational = root / ".steward"; operational.mkdir()
+    generated_note = generated / "output.md"; generated_note.write_text("# Output", encoding="utf-8")
+    internal_note = operational / "internal.md"; internal_note.write_text("# Internal", encoding="utf-8")
+    repository = SourceRepository(database)
+    watcher = FileWatchService(root, SourceService(repository, SourceFragmentRepository(database), MarkdownExtractor()), exclusions=(Path("generated"),))
+
+    watcher.notify(generated_note, observed_at=0.0)
+    watcher.notify(internal_note, observed_at=0.0)
+
+    assert watcher.flush(now=1.0) == {}
+    assert repository.list_all() == []

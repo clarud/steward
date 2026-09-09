@@ -205,6 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("root", type=Path, help="Directory containing supported source files")
     watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files")
     watch_parser.add_argument("root", type=Path)
+    watch_root_parser = subcommands.add_parser("watch-root", help="Watch one locally authorized source root")
+    watch_root_parser.add_argument("name", help="Authorized source-root name")
     index_parser = subcommands.add_parser(
         "index", help="Scan supported source files and build their local semantic index"
     )
@@ -757,6 +759,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
         print("Watching for Markdown changes. Press Ctrl+C to stop.")
         run_file_watcher(arguments.root, service)
+        return
+
+    if arguments.command == "watch-root":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        root = SourceRootRepository(database_path).get_by_name(arguments.name)
+        if root is None:
+            print(f"No locally authorized source root named {arguments.name!r}.")
+            return
+        if not root.enabled:
+            print(f"Source root {root.name!r} is disabled.")
+            return
+        if not root.path.is_dir():
+            print(f"Source root {root.name!r} is unavailable: {root.path}")
+            return
+        service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
+        print(f"Watching source root {root.name}. Press Ctrl+C to stop.")
+        run_file_watcher(root.path, service, exclusions=root.exclusions)
         return
 
     if arguments.command == "index":
