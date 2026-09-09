@@ -1101,6 +1101,39 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
 
 
+def test_context_revised_organization_proposal_survives_a_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; checkpoints = tmp_path / "checkpoints.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "unrelated.md"; source_path.write_text("note", encoding="utf-8")
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "f" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    workspaces = WorkspaceRepository(database); workspaces.create("CS3210")
+    proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
+    approval = OrganizationApprovalService(proposals, sources, FileMutationService(sources, activity), activity)
+    first_connection = sqlite3.connect(checkpoints, check_same_thread=False)
+    first = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(proposals, checkpointer=SqliteSaver(first_connection), review_proposal=approval.review),
+        source_repository=sources,
+    )
+
+    first.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+    revised = first.handle_decision(make_event(text="/organization_context 1 CS3210"))
+    assert isinstance(revised, PresentedReply)
+    first_connection.close()
+    restarted_connection = sqlite3.connect(checkpoints, check_same_thread=False)
+    restarted = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(proposals, checkpointer=SqliteSaver(restarted_connection), review_proposal=approval.review),
+        source_repository=sources,
+    )
+
+    assert restarted.handle_decision(make_event(text="/organization_accept 2")) == "Proposal 2 accepted."
+    restarted_connection.close()
+    assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
+
+
 def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
