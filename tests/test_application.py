@@ -727,6 +727,18 @@ def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:
     assert detail == "event-1: 2026-10-01 → 2026-10-02 — Flight"
 
 
+def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None:
+    def unavailable() -> CalendarService:
+        raise OSError("C:/private/google-calendar-token.json is unreadable")
+
+    response = StewardCalendarApplication(unavailable).handle_command(
+        make_event(text="/calendar_search Tokyo")
+    )
+
+    assert response == "Calendar is temporarily unavailable. Verify local authorization, then try again."
+    assert "C:/private" not in response
+
+
 def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database)

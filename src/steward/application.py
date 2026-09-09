@@ -1142,8 +1142,8 @@ class StewardCalendarApplication:
                 event_result = calendar.get_event(argument.strip())
                 return self._format_event(event_result.id, event_result.start, event_result.end, event_result.summary)
             events = calendar.search(argument.strip(), limit=10)
-        except Exception as error:
-            return f"Calendar is temporarily unavailable: {error}"
+        except Exception:
+            return "Calendar is temporarily unavailable. Verify local authorization, then try again."
         if not events:
             return "No current Calendar events matched."
         return "Calendar events (current Google Calendar state):\n" + "\n".join(

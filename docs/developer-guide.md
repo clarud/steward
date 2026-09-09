@@ -688,6 +688,9 @@ does not echo provider exception strings, because those can include local token
 paths or other machine diagnostics. The reply tells the owner to verify local
 authorization and retry; detailed diagnosis stays in the local runtime.
 
+Telegram applies the same rule to Calendar reads: a provider/OAuth failure
+returns a retry-oriented, secret-free status rather than the raw exception.
+
 Raw `.eml` sources use `EmailExtractor` rather than the generic plain-text
 extractor. Python's standard-library MIME parser selects readable `text/plain`
 or `text/html` parts, skips declared attachments, records the email subject and

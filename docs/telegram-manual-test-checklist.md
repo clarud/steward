@@ -91,6 +91,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Complete Google OAuth locally in a browser, never in Telegram.
 - Use `/calendar_search` and `/calendar_get EVENT_ID`; compare results with
   Google Calendar directly.
+- With a deliberately unavailable test Calendar authorization, verify a
+  Calendar read returns a retry-oriented message without a local token path or
+  provider diagnostic.
 - Use `/drive_search QUERY` or `/gmail_search QUERY`; import exactly one result
   from a button and verify exactly one Inbox source is created.
 - With a deliberately unavailable test authorization, verify Drive/Gmail
