@@ -40,6 +40,7 @@ TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
 PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
 PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
 PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
+SOURCE_ROOTS_SCHEMA_VERSION = 35
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -342,6 +343,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """
         ALTER TABLE provisional_intakes
         ADD COLUMN category TEXT NOT NULL DEFAULT 'uncertain'
+        """,
+    ),
+    (
+        SOURCE_ROOTS_SCHEMA_VERSION,
+        """
+        CREATE TABLE source_roots (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            path TEXT NOT NULL UNIQUE,
+            enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+            created_at TEXT NOT NULL
+        )
         """,
     ),
 )

@@ -73,6 +73,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.roots import SourceRootRepository
 from steward.records import RecordService
 from steward.calendar import (
     CalendarEventProposalService,
@@ -217,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Download Steward's local embedding model for semantic search",
     )
     subcommands.add_parser("sources", help="List registered sources")
+    root_add = subcommands.add_parser("add-root", help="Locally authorize an existing directory as a source root")
+    root_add.add_argument("name")
+    root_add.add_argument("path", type=Path)
+    subcommands.add_parser("roots", help="List locally authorized source roots")
     unregister_source_parser = subcommands.add_parser(
         "unregister-source",
         help="Remove a source from Steward's registry without deleting its original file",
@@ -780,6 +785,24 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         for source in sources:
             print(f"{source.id}\t{source.status.value}\t{source.path}")
+        return
+
+    if arguments.command == "add-root":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        try:
+            root = SourceRootRepository(database_path).add(arguments.name, arguments.path)
+        except ValueError as error:
+            print(str(error)); return
+        print(f"Authorized source root {root.id}: {root.name}\t{root.path}")
+        return
+
+    if arguments.command == "roots":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        roots = SourceRootRepository(database_path).list_all()
+        if not roots:
+            print("No locally authorized source roots."); return
+        for root in roots:
+            print(f"{root.id}\t{root.name}\t{'enabled' if root.enabled else 'disabled'}\t{root.path}")
         return
 
     if arguments.command == "unregister-source":
