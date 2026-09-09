@@ -2256,15 +2256,16 @@ class StewardActionProposalApplication:
         proposal = self._repository.get(proposal_id)
         if proposal is None:
             return "Task proposal was not found."
+        title = proposal.payload.get("title", "task")
         if proposal.status == decision:
-            return f"Task proposal {proposal.id} {proposal.status}."
+            return f"Task “{title}” was already {proposal.status}."
         if proposal.status != "pending":
-            return f"Task proposal {proposal.id} was already {proposal.status}."
+            return f"Task “{title}” was already {proposal.status}."
         if decision == "rejected":
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"Task proposal {proposal.id} rejected."
+            return f"Discarded task: {title}."
         due_at_value = proposal.payload.get("due_at") or None
         remind_at_value = proposal.payload.get("remind_at") or None
         if remind_at_value and (self._task_reminders is None or not proposal.payload.get("chat_id")):
@@ -2284,7 +2285,7 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-        return f"Task {task.id} created: {task.title}."
+        return f"Saved task: {task.title}."
 
     def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:
         if self._delivery_repository is None:

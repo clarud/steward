@@ -873,7 +873,7 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     assert "compare OpenMP scheduling" in preview.title
     assert tasks.list_open() == ()
     accepted = application.handle(make_event(text="/approve_action 1"))
-    assert accepted == "Task 1 created: compare OpenMP scheduling."
+    assert accepted == "Saved task: compare OpenMP scheduling."
     assert tasks.list_open()[0].due_hint == "before Tuesday"
     assert application.handle(make_event(text="/complete_task 1")) == "Task 1 completed: compare OpenMP scheduling."
     assert tasks.list_open() == ()
@@ -928,7 +928,7 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
 
     assert isinstance(preview, PresentedReply)
     assert "Due at: 2026-09-18T15:59:00+00:00" in preview.text
-    assert application.handle(make_event(text="/approve_action 1")) == "Task 1 created: submit CS3210 lab."
+    assert application.handle(make_event(text="/approve_action 1")) == "Saved task: submit CS3210 lab."
     assert tasks.get(1).due_at == datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
 
 
@@ -951,7 +951,7 @@ def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_pa
 
     assert isinstance(preview, PresentedReply)
     assert "Reminder at: 2026-09-18T01:00:00+00:00" in preview.text
-    assert application.handle(make_event(text="/approve_action 1")) == "Task 1 created: submit CS3210 lab."
+    assert application.handle(make_event(text="/approve_action 1")) == "Saved task: submit CS3210 lab."
     reminder = reminders.reminder_for_task(1)
     assert reminder is not None and reminder.chat_id == "100"
     assert "reminder 2026-09-18T01:00:00+00:00" in application.handle(make_event(text="/tasks"))
