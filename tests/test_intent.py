@@ -29,3 +29,15 @@ def test_reply_target_is_preserved_as_a_referenced_object() -> None:
     )
 
     assert IntentResolver().resolve(incoming).referenced_objects == ("7",)
+
+
+def test_resolver_recognizes_inbox_and_activity_without_question_punctuation() -> None:
+    resolver = IntentResolver()
+
+    inbox = resolver.resolve(event("what is in my inbox"))
+    activity = resolver.resolve(event("show my recent activity"))
+
+    assert inbox.primary_intent is Intent.INSPECT
+    assert inbox.referenced_objects == ("inbox",)
+    assert activity.primary_intent is Intent.INSPECT
+    assert activity.referenced_objects == ("activity",)

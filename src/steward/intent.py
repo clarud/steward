@@ -46,6 +46,10 @@ class IntentResolver:
             return IntentDecision(mapping[command], referenced_objects=referenced_objects)
         if event.attachments:
             return IntentDecision(Intent.CAPTURE, referenced_objects=referenced_objects)
+        if normalized in {"what is in my inbox", "what is in inbox", "show my inbox", "show inbox"}:
+            return IntentDecision(Intent.INSPECT, referenced_objects=("inbox", *referenced_objects))
+        if normalized.startswith(("show my recent activity", "show recent activity", "what happened")):
+            return IntentDecision(Intent.INSPECT, referenced_objects=("activity", *referenced_objects))
         if normalized.startswith(("find ", "search ", "look for ")):
             return IntentDecision(Intent.SEARCH, referenced_objects=referenced_objects)
         if normalized.startswith(("organize ", "sort ")):

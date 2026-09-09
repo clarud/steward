@@ -585,7 +585,17 @@ class StewardEventApplication:
         if decision.primary_intent is Intent.SEARCH:
             if self._read_application is None:
                 return "Local search is not configured for this Steward process."
-            return self._read_application.search(self._search_terms(event.text or ""))
+            return self._read_application.search(
+                self._search_terms(event.text or "", natural_language=True)
+            )
+        if decision.primary_intent is Intent.INSPECT:
+            if self._read_application is None:
+                return "Local inspection is not configured for this Steward process."
+            if "inbox" in decision.referenced_objects:
+                return self._read_application.inbox(1)
+            if "activity" in decision.referenced_objects:
+                return self._read_application.activity("")
+            return "Tell me whether you want to inspect your Inbox, a source ID, workspaces, or activity."
         if decision.primary_intent is Intent.ORGANIZE:
             if self._read_application is None:
                 return "Inbox organization is not configured for this Steward process."
@@ -632,12 +642,19 @@ class StewardEventApplication:
         return f"{saved}\n\n{proposal}" if proposal is not None else saved
 
     @staticmethod
-    def _search_terms(text: str) -> str:
+    def _search_terms(text: str, *, natural_language: bool = False) -> str:
         normalized = text.strip()
         for prefix in ("find ", "search ", "look for "):
             if normalized.casefold().startswith(prefix):
-                return normalized[len(prefix):].strip()
-        return normalized
+                normalized = normalized[len(prefix):].strip()
+                break
+        if not natural_language:
+            return normalized
+        words = [
+            word for word in normalized.replace("'", "").split()
+            if word.casefold() not in {"a", "an", "about", "for", "in", "my", "notes", "on", "the"}
+        ]
+        return " OR ".join(words) or normalized
 
     @staticmethod
     def _workspace_name(text: str) -> str:

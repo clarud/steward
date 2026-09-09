@@ -165,6 +165,9 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     assert "openmp.md" in application.handle(make_event(text="/inbox"))
     assert "Search results" in application.handle(make_event(text="/search OpenMP"))
     assert "Recent activity" in application.handle(make_event(text="/activity"))
+    assert "openmp.md" in application.handle(make_event(text="what is in my inbox"))
+    assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
+    assert "Search results" in application.handle(make_event(text="find my notes on OpenMP"))
     assert "Broad Inbox organization proposals" in application.handle(
         make_event(text="organize my inbox")
     )
