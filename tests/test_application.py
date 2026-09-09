@@ -19,6 +19,7 @@ from steward.application import (
     StewardPrivacyApplication,
     StewardOperationsApplication,
     StewardCalendarApplication,
+    StewardTaskApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -46,6 +47,7 @@ from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeSe
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
+from steward.tasks import TaskService
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -381,6 +383,30 @@ def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:
 
     assert "event-1: 2026-10-01 → 2026-10-02 — Flight" in found
     assert detail == "event-1: 2026-10-01 → 2026-10-02 — Flight"
+
+
+def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    tasks = TaskService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        task_application=StewardTaskApplication(tasks, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, task_service=tasks,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/propose_task remind me to compare OpenMP scheduling before Tuesday"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "compare OpenMP scheduling" in preview.text
+    assert tasks.list_open() == ()
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert accepted == "Task 1 created: compare OpenMP scheduling."
+    assert tasks.list_open()[0].due_hint == "before Tuesday"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

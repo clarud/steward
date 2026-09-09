@@ -32,6 +32,7 @@ from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeSe
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
+from steward.tasks import TaskService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -333,6 +334,47 @@ class StewardRecordApplication:
             for record in self._records.list_warranty_records()
         )
         return "Saved records:\n" + "\n".join(lines) if lines else "No saved records."
+
+
+class StewardTaskApplication:
+    """Turn explicit Telegram commitments into reviewable task proposals."""
+
+    CREATE_TASK = "create_task"
+
+    def __init__(self, tasks: TaskService, proposals: ActionProposalRepository, activity: ActivityService) -> None:
+        self._tasks = tasks
+        self._proposals = proposals
+        self._activity = activity
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/tasks":
+            tasks = self._tasks.list_open()
+            if not tasks:
+                return "No open tasks."
+            return "Open tasks:\n" + "\n".join(
+                f"{task.id}: {task.title}" + (f" ({task.due_hint})" if task.due_hint else "")
+                for task in tasks
+            )
+        if command != "/propose_task":
+            return None
+        if not separator:
+            return "Use /propose_task followed by what you need to do."
+        try:
+            title, due_hint = self._tasks.parse_proposal(argument)
+        except ValueError as error:
+            return str(error)
+        payload = {"title": title, "due_hint": due_hint or ""}
+        pending = self._proposals.find_pending(self.CREATE_TASK, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CREATE_TASK, payload)
+            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create task: {title}")
+        due_line = f"\nDue cue: {due_hint}" if due_hint else ""
+        return PresentedReply(
+            f"Task proposal {pending.id}: {title}{due_line}\n\nNo task has been saved yet.",
+            (ReplyAction("Accept task", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+        )
 
 
 class StewardKnowledgeApplication:
@@ -927,6 +969,7 @@ class StewardActionProposalApplication:
         record_service: RecordService | None = None,
         fragment_repository: SourceFragmentRepository | None = None,
         activity_service: ActivityService | None = None,
+        task_service: TaskService | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -935,6 +978,7 @@ class StewardActionProposalApplication:
         self._records = record_service
         self._fragments = fragment_repository
         self._activity = activity_service
+        self._tasks = task_service
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -978,6 +1022,8 @@ class StewardActionProposalApplication:
         proposal_id = int(argument.strip())
         decision = "accepted" if command == "/approve_action" else "rejected"
         proposal = self._repository.get(proposal_id)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
+            return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
             return self._review_travel_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
@@ -999,6 +1045,28 @@ class StewardActionProposalApplication:
                 f"Workspace {workspace.id}: {workspace.name} is available."
             )
         return f"Action proposal {proposal.id} {proposal.status}."
+
+    def _review_task(self, proposal_id: int, decision: str) -> str:
+        if self._tasks is None:
+            return "Task creation is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Task proposal was not found."
+        if proposal.status == decision:
+            return f"Task proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Task proposal {proposal.id} rejected."
+        task = self._tasks.create(proposal.payload["title"], proposal.payload.get("due_hint") or None)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Task {task.id} created: {task.title}."
 
     def _review_travel_record(self, proposal_id: int, decision: str) -> str:
         if self._records is None or self._fragments is None:
@@ -1061,6 +1129,7 @@ class StewardEventApplication:
         provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
         tool_agent_application: StewardToolAgentApplication | None = None,
         record_application: StewardRecordApplication | None = None,
+        task_application: StewardTaskApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
@@ -1078,6 +1147,7 @@ class StewardEventApplication:
         self._provisional_intake_application = provisional_intake_application
         self._tool_agent_application = tool_agent_application
         self._record_application = record_application
+        self._task_application = task_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._privacy_application = privacy_application
@@ -1109,6 +1179,10 @@ class StewardEventApplication:
             record_response = self._record_application.handle_command(event)
             if record_response is not None:
                 return record_response
+        if self._task_application is not None:
+            task_response = self._task_application.handle_command(event)
+            if task_response is not None:
+                return task_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:

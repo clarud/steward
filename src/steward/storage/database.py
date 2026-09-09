@@ -42,6 +42,7 @@ PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
 PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
 SOURCE_ROOTS_SCHEMA_VERSION = 35
 SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
+TASKS_SCHEMA_VERSION = 37
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -363,6 +364,19 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """
         ALTER TABLE source_roots
         ADD COLUMN exclusions TEXT NOT NULL DEFAULT '[]'
+        """,
+    ),
+    (
+        TASKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            due_hint TEXT,
+            status TEXT NOT NULL CHECK (status IN ('open', 'completed')),
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        )
         """,
     ),
 )

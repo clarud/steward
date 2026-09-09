@@ -30,6 +30,7 @@ from steward.application import (
     StewardPrivacyApplication,
     StewardOperationsApplication,
     StewardCalendarApplication,
+    StewardTaskApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -79,6 +80,7 @@ from steward.action_proposals import ActionProposalRepository, ActionProposalSer
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.roots import SourceRootRepository
 from steward.records import RecordService
+from steward.tasks import TaskService
 from steward.calendar import (
     CalendarEventProposalService,
     CalendarService,
@@ -1201,6 +1203,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 record_service=RecordService(database_path),
                 fragment_repository=fragments,
                 activity_service=activity,
+                task_service=TaskService(database_path),
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
@@ -1227,6 +1230,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             tool_agent_application=tool_agent_application,
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
+            ),
+            task_application=StewardTaskApplication(
+                TaskService(database_path), ActionProposalRepository(database_path), activity
             ),
             knowledge_application=StewardKnowledgeApplication(
                 KnowledgeService(database_path), fragments,
