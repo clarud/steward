@@ -133,3 +133,36 @@ def test_text_intake_classifies_task_and_record_cues_without_a_model(tmp_path: P
 
     assert task.category == "task"
     assert record.category == "record"
+
+
+def test_duplicate_delivery_reuses_one_pending_intake_without_a_second_capture(tmp_path: Path) -> None:
+    service, sources, activity = make_service(tmp_path)
+    original = tmp_path / "download.pdf"
+    original.write_bytes(b"pdf bytes")
+    event = make_event()
+
+    first = service.stage_file(event, original)
+    second = service.stage_file(event, original)
+
+    assert second == first
+    assert sources.list_all() == []
+    assert [item.event_type for item in activity.list_recent()] == [ActivityType.INTAKE_PROPOSED]
+
+
+def test_pending_intake_can_be_accepted_after_service_restart(tmp_path: Path) -> None:
+    service, sources, activity = make_service(tmp_path)
+    original = tmp_path / "download.pdf"
+    original.write_bytes(b"pdf bytes")
+    intake = service.stage_file(make_event(), original)
+    database_path = tmp_path / "steward.db"
+    restarted = ProvisionalIntakeService(
+        tmp_path / ".steward" / "cache" / "intake",
+        ProvisionalIntakeRepository(database_path),
+        InboxCaptureService(tmp_path / "vault" / "inbox", sources, SourceFragmentRepository(database_path), activity),
+        activity,
+    )
+
+    saved = restarted.accept(intake.id or 0, make_event(event_id="telegram:accept"))
+
+    assert saved.source.path.is_file()
+    assert not intake.staged_path.exists()
