@@ -43,14 +43,28 @@ class TelegramUpdateDeliveryRepository:
     user's message.
     """
 
-    def __init__(self, database_path: Path, *, lease_seconds: int = 900, max_attempts: int = 3) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        *,
+        lease_seconds: int = 900,
+        max_attempts: int = 3,
+        retry_backoff_seconds: int = 15,
+        max_retry_backoff_seconds: int = 300,
+    ) -> None:
         if lease_seconds <= 0:
             raise ValueError("Telegram delivery lease must be positive.")
         if max_attempts <= 0:
             raise ValueError("Telegram delivery max attempts must be positive.")
+        if retry_backoff_seconds <= 0:
+            raise ValueError("Telegram delivery retry backoff must be positive.")
+        if max_retry_backoff_seconds < retry_backoff_seconds:
+            raise ValueError("Telegram delivery maximum retry backoff must not be smaller than the base backoff.")
         self._database_path = database_path
         self._lease = timedelta(seconds=lease_seconds)
         self._max_attempts = max_attempts
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._max_retry_backoff_seconds = max_retry_backoff_seconds
 
     def claim(self, update_id: str, *, now: datetime | None = None) -> bool:
         """Atomically claim an unseen or expired-processing update."""
@@ -61,15 +75,24 @@ class TelegramUpdateDeliveryRepository:
                 "SELECT 1 FROM telegram_delivery_dead_letters WHERE update_id = ?", (update_id,)
             ).fetchone() is not None:
                 return False
-            releases = connection.execute(
-                "SELECT COUNT(*) FROM telegram_delivery_history WHERE update_id = ? AND event_type = 'released'",
+            release_row = connection.execute(
+                """
+                SELECT COUNT(*), MAX(occurred_at) FROM telegram_delivery_history
+                WHERE update_id = ? AND event_type = 'released'
+                """,
                 (update_id,),
-            ).fetchone()[0]
+            ).fetchone()
+            releases = int(release_row[0])
             if releases >= self._max_attempts:
                 connection.execute(
                     "INSERT OR IGNORE INTO telegram_delivery_dead_letters (update_id, attempts, failed_at) VALUES (?, ?, ?)",
                     (update_id, releases, claimed_at.isoformat()),
                 )
+                return False
+            last_released_at = (
+                datetime.fromisoformat(str(release_row[1])) if release_row[1] else None
+            )
+            if last_released_at is not None and claimed_at < last_released_at + self._backoff(releases):
                 return False
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO telegram_update_deliveries "
@@ -103,7 +126,7 @@ class TelegramUpdateDeliveryRepository:
         if cursor.rowcount != 1:
             raise ValueError(f"Telegram update {update_id!r} is not being processed.")
 
-    def release(self, update_id: str) -> None:
+    def release(self, update_id: str, *, now: datetime | None = None) -> None:
         """Make a failed delivery eligible for Telegram's next retry."""
 
         with sqlite3.connect(self._database_path) as connection:
@@ -113,7 +136,16 @@ class TelegramUpdateDeliveryRepository:
                 (update_id,),
             )
             if cursor.rowcount == 1:
-                self._record_history(connection, update_id, "released", datetime.now(UTC))
+                self._record_history(connection, update_id, "released", now or datetime.now(UTC))
+
+    def _backoff(self, releases: int) -> timedelta:
+        """Return a capped exponential delay after one or more failed attempts."""
+
+        seconds = min(
+            self._retry_backoff_seconds * (2 ** max(0, releases - 1)),
+            self._max_retry_backoff_seconds,
+        )
+        return timedelta(seconds=seconds)
 
     @staticmethod
     def _record_history(

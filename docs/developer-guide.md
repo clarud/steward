@@ -1164,8 +1164,9 @@ behavior easy to edit and inspect in code review.
   restarted process can continue a chat thread. The adapter also has a local
   allowlist, durable successful-update deduplication, and a metadata-only
   dead-letter table. It limits repeated failures to three attempts, which can
-  be inspected with `steward telegram-dead-letters`; it still has no time-based
-  retry backoff.
+  be inspected with `steward telegram-dead-letters`. Failed updates wait 15,
+  then 30 seconds, then up to a five-minute capped exponential delay before a
+  redelivered update can be claimed again.
 - Telegram captures use `/save` and the normal Bot API download ceiling. An
   oversized upload can be relayed through an explicit `/drive_import FILE_ID`
   command, but there is no self-hosted Bot API server or automatic Drive sync.

@@ -100,7 +100,7 @@ def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
     assert duplicate_message.replies == []
 
 
-def test_adapter_releases_a_failed_update_for_a_retry(tmp_path) -> None:
+def test_adapter_defers_an_immediate_retry_after_a_failure(tmp_path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
     handler = FailingThenWorkingHandler()
@@ -113,8 +113,8 @@ def test_adapter_releases_a_failed_update_for_a_retry(tmp_path) -> None:
     retried_message = FakeMessage()
     asyncio.run(adapter.handle_update(FakeUpdate(retried_message), None))  # type: ignore[arg-type]
 
-    assert len(handler.events) == 1
-    assert retried_message.replies == ["A TLB caches address translations. [F1]"]
+    assert handler.events == []
+    assert retried_message.replies == []
 
 
 def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
