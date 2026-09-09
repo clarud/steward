@@ -14,6 +14,8 @@ def event(text: str | None, attachments: tuple[str, ...] = ()) -> IncomingEvent:
     ("/save a note", Intent.CAPTURE), ("/delete this", Intent.DELETE),
     ("/organize inbox", Intent.ORGANIZE), ("/inspect 4", Intent.INSPECT),
     ("What is a TLB?", Intent.ASK), ("hello", Intent.UNKNOWN),
+    ("show me my upcoming events", Intent.ASK),
+    ("summarize my CS3210 notes", Intent.ASK),
 ])
 def test_resolver_uses_deterministic_signals(text, intent) -> None:
     assert IntentResolver().resolve(event(text)).primary_intent is intent

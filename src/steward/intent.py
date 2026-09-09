@@ -57,7 +57,10 @@ class IntentResolver:
         if normalized.startswith(("create a workspace", "create workspace", "new workspace")):
             return IntentDecision(Intent.CREATE_WORKSPACE, referenced_objects=referenced_objects)
         if text.endswith("?") or normalized.startswith(
-            ("what ", "where ", "when ", "who ", "why ", "how ", "do i ", "can i ")
+            (
+                "what ", "where ", "when ", "who ", "why ", "how ", "do i ", "can i ",
+                "show me ", "tell me ", "list ", "summarize ", "explain ", "help me understand ",
+            )
         ):
             return IntentDecision(Intent.ASK, referenced_objects=referenced_objects)
         return IntentDecision(Intent.UNKNOWN, referenced_objects=referenced_objects, confidence="unresolved")
