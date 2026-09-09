@@ -11,6 +11,7 @@ from steward.sources import (
     SourceStatus,
     SourceType,
 )
+from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
 from steward.storage import initialize_database
 
 
@@ -120,3 +121,39 @@ def test_repository_rejects_updating_an_unknown_source(tmp_path: Path) -> None:
 
     with pytest.raises(SourceNotFoundError, match="999"):
         SourceRepository(database_path).update(unknown_source)
+
+
+def test_unregister_removes_registry_and_derived_data_but_retains_original_file(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    source_path = tmp_path / "vault" / "note.md"
+    source_path.parent.mkdir()
+    source_path.write_text("# Retained original", encoding="utf-8")
+    repository = SourceRepository(database_path)
+    source = repository.add(make_unregistered_source(source_path))
+    fragments = SourceFragmentRepository(database_path)
+    fragments.replace_for_source(
+        ExtractionResult(
+            source_id=source.id or 0,
+            fragments=(
+                SourceFragment(
+                    id=None,
+                    source_id=source.id or 0,
+                    heading="Retained original",
+                    ordinal=0,
+                    text="The derived index must go away.",
+                    location="lines 1-1",
+                ),
+            ),
+        )
+    )
+
+    removed = repository.unregister(source.id or 0)
+
+    assert removed == source
+    assert source_path.read_text(encoding="utf-8") == "# Retained original"
+    assert repository.get_by_id(source.id or 0) is None
+    assert fragments.list_for_source(source.id or 0) == ()
+    assert fragments.search("derived") == ()

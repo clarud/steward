@@ -207,6 +207,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Download Steward's local embedding model for semantic search",
     )
     subcommands.add_parser("sources", help="List registered sources")
+    unregister_source_parser = subcommands.add_parser(
+        "unregister-source",
+        help="Remove a source from Steward's registry without deleting its original file",
+    )
+    unregister_source_parser.add_argument("source_id", type=int)
+    unregister_source_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Confirm removal of local metadata and derived indexes",
+    )
     search_parser = subcommands.add_parser("search", help="Search indexed source fragments")
     search_parser.add_argument("query", help="Terms to search for")
     search_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
@@ -760,6 +770,31 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         for source in sources:
             print(f"{source.id}\t{source.status.value}\t{source.path}")
+        return
+
+    if arguments.command == "unregister-source":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        sources = SourceRepository(database_path)
+        source = sources.get_by_id(arguments.source_id)
+        if source is None:
+            print(f"Source {arguments.source_id} was not found.")
+            return
+        if not arguments.confirm:
+            print(
+                f"Source {source.id} at {source.path} will be unregistered. "
+                "Its original file will not be deleted. Re-run with --confirm."
+            )
+            return
+        removed = sources.unregister(arguments.source_id)
+        ActivityService(database_path).record(
+            ActivityType.SOURCE_UNREGISTERED,
+            object_id=str(removed.id),
+            details=f"Unregistered local metadata; original file retained at {removed.path}",
+        )
+        print(
+            f"Unregistered source {removed.id}. Its original file was retained at {removed.path}."
+        )
         return
 
     if arguments.command == "search":

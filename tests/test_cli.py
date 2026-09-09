@@ -71,6 +71,30 @@ def test_cli_sources_lists_registered_sources(tmp_path: Path, monkeypatch, capsy
     assert capsys.readouterr().out == f"1\tactive\t{note_path.resolve()}\n"
 
 
+def test_cli_unregister_source_requires_confirmation_and_retains_original(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    note_path = vault / "note.md"
+    note_path.write_text("# Note", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    main(["scan", str(vault)])
+    capsys.readouterr()
+
+    main(["unregister-source", "1"])
+
+    assert "will be unregistered" in capsys.readouterr().out
+    assert SourceRepository(data_dir / "steward.db").get_by_id(1) is not None
+
+    main(["unregister-source", "1", "--confirm"])
+
+    assert "original file was retained" in capsys.readouterr().out
+    assert note_path.is_file()
+    assert SourceRepository(data_dir / "steward.db").get_by_id(1) is None
+
+
 def test_cli_search_returns_matching_fragment(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()

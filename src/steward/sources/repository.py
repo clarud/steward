@@ -117,6 +117,29 @@ class SourceRepository:
         if cursor.rowcount != 1:
             raise SourceNotFoundError(f"Source id {source.id} is not registered.")
 
+    def unregister(self, source_id: int) -> Source:
+        """Remove one Source's local registry and derived data, never its file.
+
+        This is intentionally not named ``delete``: a Source represents original
+        evidence on the filesystem, while this repository owns only SQLite
+        operational metadata.  Foreign-key cascades remove relationships and
+        derived rows; the separate FTS table is cleared explicitly.
+        """
+        source = self.get_by_id(source_id)
+        if source is None:
+            raise SourceNotFoundError(f"Source id {source_id} is not registered.")
+
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "DELETE FROM source_fragments_fts WHERE source_id = ?", (source_id,)
+            )
+            cursor = connection.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+        if cursor.rowcount != 1:
+            raise SourceNotFoundError(f"Source id {source_id} is not registered.")
+        return source
+
     def list_active(self) -> list[Source]:
         """Return every Source whose current path was last observed as present."""
         with sqlite3.connect(self._database_path) as connection:
