@@ -1,4 +1,4 @@
-"""OpenAI-compatible adapter for Steward's explicit LangGraph tool loop."""
+"""Responses API adapter for Steward's explicit LangGraph tool loop."""
 
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleToolCallingModel:
-    """Send client-executed function tools to an OpenAI-compatible endpoint.
+    """Adapt SoCLaaS's Responses API client-executed function tools.
 
-    The remote service proposes a function call only.  LangGraph's local
-    ``ToolNode`` remains the sole executor of Steward's allowlisted tools.
+    SoCLaaS returns function-call *requests* through ``/v1/responses``. This
+    adapter turns them into LangChain ``AIMessage.tool_calls``; LangGraph's
+    local ``ToolNode`` remains the only executor of Steward tools.
     """
 
     def __init__(
@@ -44,90 +45,101 @@ class OpenAICompatibleToolCallingModel:
         return self
 
     def invoke(self, messages: list[BaseMessage]) -> AIMessage:
-        payload: dict[str, Any] = {"model": self._model, "messages": self._messages(messages)}
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "input": self._input(messages),
+            # LangGraph persists Steward's conversation state locally; no
+            # provider-side state must be retained to continue this loop.
+            "store": False,
+        }
+        instructions = self._instructions(messages)
+        if instructions:
+            # SoCLaaS's Responses shim accepts system guidance through the
+            # documented ``instructions`` field more reliably than a system
+            # message embedded in the chat-style input history.
+            payload["instructions"] = instructions
         if self._tools:
             payload["tools"] = [self._tool_schema(tool) for tool in self._tools]
         try:
-            response = self._client.chat.completions.create(**payload)
+            response = self._client.responses.create(**payload)
         except Exception as error:
             logger.warning(
                 "OpenAI-compatible tool request failed (%s): %s", type(error).__name__, error
             )
             raise ModelGatewayError("The OpenAI-compatible tool-agent request could not be completed.") from error
 
-        choices = getattr(response, "choices", ())
-        message = getattr(choices[0], "message", None) if choices else None
-        if message is None:
-            raise ModelGatewayError("The OpenAI-compatible provider returned no assistant message.")
-        calls = self._tool_calls(getattr(message, "tool_calls", None))
-        text = str(getattr(message, "content", "") or "")
+        calls = self._tool_calls(getattr(response, "output", ()))
+        text = str(getattr(response, "output_text", "") or "").strip()
         if calls:
             return AIMessage(content=text, tool_calls=calls)
-        if not text.strip():
+        if not text:
             return AIMessage(
                 "I completed the available lookup, but the provider did not return a final answer. Please try again."
             )
         return AIMessage(content=text)
-
 
     @staticmethod
     def _tool_schema(tool: BaseTool) -> dict[str, Any]:
         schema = tool.args_schema.model_json_schema()
         return {
             "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description or tool.name,
-                "parameters": {
-                    key: value
-                    for key, value in schema.items()
-                    if key in {"type", "properties", "required", "description"}
-                },
+            "name": tool.name,
+            "description": tool.description or tool.name,
+            "parameters": {
+                key: value
+                for key, value in schema.items()
+                if key in {"type", "properties", "required", "description"}
             },
         }
 
-
     @staticmethod
-    def _messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
+    def _input(messages: list[BaseMessage]) -> list[dict[str, Any]]:
+        """Translate LangGraph messages to stateless Responses API input."""
         serialized: list[dict[str, Any]] = []
         for message in messages:
-            if isinstance(message, SystemMessage):
-                serialized.append({"role": "system", "content": str(message.content)})
-            elif isinstance(message, HumanMessage):
+            if isinstance(message, HumanMessage):
                 serialized.append({"role": "user", "content": str(message.content)})
             elif isinstance(message, AIMessage):
-                item: dict[str, Any] = {"role": "assistant", "content": str(message.content)}
-                if message.tool_calls:
-                    item["tool_calls"] = [
-                        {
-                            "id": call["id"],
-                            "type": "function",
-                            "function": {
-                                "name": call["name"],
-                                "arguments": json.dumps(call["args"]),
-                            },
-                        }
-                        for call in message.tool_calls
-                    ]
-                serialized.append(item)
+                if message.content:
+                    serialized.append({"role": "assistant", "content": str(message.content)})
+                serialized.extend(
+                    {
+                        "type": "function_call",
+                        "call_id": call["id"],
+                        "name": call["name"],
+                        "arguments": json.dumps(call["args"]),
+                    }
+                    for call in message.tool_calls
+                )
             elif isinstance(message, ToolMessage):
                 serialized.append(
                     {
-                        "role": "tool",
-                        "tool_call_id": message.tool_call_id,
-                        "content": str(message.content),
+                        "type": "function_call_output",
+                        "call_id": message.tool_call_id,
+                        "output": str(message.content),
                     }
                 )
         return serialized
 
     @staticmethod
-    def _tool_calls(raw_calls: object) -> list[dict[str, Any]]:
+    def _instructions(messages: list[BaseMessage]) -> str:
+        """Combine LangGraph system messages for the Responses instructions field."""
+        return "\n\n".join(
+            str(message.content).strip()
+            for message in messages
+            if isinstance(message, SystemMessage) and str(message.content).strip()
+        )
+
+    @staticmethod
+    def _tool_calls(raw_output: object) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
-        for raw_call in raw_calls or ():
-            function = getattr(raw_call, "function", None)
-            name = getattr(function, "name", None)
-            arguments = getattr(function, "arguments", "{}")
-            call_id = getattr(raw_call, "id", None)
+        for item in raw_output or ():
+            if getattr(item, "type", None) != "function_call":
+                continue
+            name = getattr(item, "name", None)
+            arguments = getattr(item, "arguments", "{}")
+            # Responses uses call_id, while some compatible shims use id.
+            call_id = getattr(item, "call_id", None) or getattr(item, "id", None)
             if not isinstance(name, str) or not name.strip() or not isinstance(call_id, str):
                 continue
             try:

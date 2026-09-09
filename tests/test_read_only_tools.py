@@ -133,3 +133,21 @@ def test_read_only_tools_recover_when_an_agent_searches_a_markdown_filename(tmp_
     results = json.loads(service.search_sources("COURSE_DETAILS.md"))
 
     assert results[0]["source_id"] == source.id
+
+
+def test_read_only_tool_limits_bound_invalid_model_arguments(tmp_path: Path) -> None:
+    """Model-generated result limits cannot terminate an otherwise safe search."""
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    service = ReadOnlyToolService(
+        SourceRepository(database),
+        SourceFragmentRepository(database),
+        LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+        KnowledgeService(database),
+        RecordService(database),
+        WorkspaceRepository(database),
+        ActivityService(database),
+    )
+
+    assert service._limit(0) == 1
+    assert service._limit(21) == 20

@@ -219,9 +219,15 @@ class ReadOnlyToolService:
 
     @staticmethod
     def _limit(value: int) -> int:
-        if not 1 <= value <= 20:
-            raise ValueError("Tool limit must be between 1 and 20.")
-        return value
+        """Keep model-provided result counts within the read-only tool budget.
+
+        A tool call is model output, not a trusted API request.  Small local
+        models in particular sometimes emit ``0`` or an overly large value
+        despite the JSON schema.  Bounding it keeps a harmless argument error
+        from aborting the entire agent loop, while still preventing an
+        unexpectedly large result from being sent back into model context.
+        """
+        return max(1, min(value, 20))
 
     def _permits_external_model(self, source_id: int | None) -> bool:
         return source_id is not None and (
