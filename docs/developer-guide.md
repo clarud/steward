@@ -1027,8 +1027,8 @@ behavior easy to edit and inspect in code review.
 
 - Capture currently supports Markdown, plain text, DOCX, HTML, images, and PDFs with native text.
   Image OCR uses a separately installed local `tesseract` executable; unavailable OCR never prevents
-  preservation of the original. OCR for scanned PDFs and large-file relay storage are
-  future work.
+  preservation of the original. The content hash prevents unchanged images from being OCRed again during
+  a normal reindex. OCR for scanned PDFs remains future work.
 - Heading-based fragments are useful but not universally optimal. Very long
   sections can create overly large fragments; very short headings can create
   too little context.

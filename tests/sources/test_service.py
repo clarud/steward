@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from steward.extraction import MarkdownExtractor, SourceFragmentRepository
+from steward.extraction import ExtractionResult, MarkdownExtractor, SourceFragment, SourceFragmentRepository
+from steward.sources import SourceType
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
@@ -105,3 +106,34 @@ def test_source_service_scans_and_extracts_html_files(tmp_path: Path) -> None:
     assert [(fragment.heading, fragment.text) for fragment in fragments.list_for_source(source.id or 0)] == [
         ("TLB", "Caches translations.")
     ]
+
+
+def test_source_service_does_not_repeat_unchanged_image_ocr(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "vault"; vault.mkdir()
+    (vault / "receipt.png").write_bytes(b"image")
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+    service = SourceService(sources, fragments, MarkdownExtractor())
+
+    class CountingOcr:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def extract(self, source):
+            self.calls += 1
+            return ExtractionResult(
+                source.id or 0,
+                (SourceFragment(None, source.id or 0, None, 0, "Booking ABC123", "image OCR"),),
+            )
+
+    extractor = CountingOcr()
+    service._document_extraction._extractors[SourceType.IMAGE] = extractor
+
+    service.scan_source_root(vault)
+    service.scan_source_root(vault)
+
+    assert extractor.calls == 1
+    source = sources.get_by_path((vault / "receipt.png").resolve())
+    assert source is not None
+    assert [fragment.text for fragment in fragments.list_for_source(source.id or 0)] == ["Booking ABC123"]

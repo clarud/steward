@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class SourceService:
-    """Coordinate source scanning with refresh of derived Markdown fragments."""
+    """Coordinate scanning and refresh derived fragments only when content changes."""
 
     def __init__(
         self,
@@ -45,7 +45,8 @@ class SourceService:
         self._semantic_index = semantic_index
 
     def scan_markdown_root(self, root: Path) -> ScanResult:
-        """Synchronize Source metadata, then refresh active Markdown fragments."""
+        """Synchronize metadata, then refresh changed Markdown fragments only."""
+        before = self._active_content_hashes()
         result = scan_markdown_root(root, self._source_repository)
         resolved_root = root.resolve()
 
@@ -53,6 +54,7 @@ class SourceService:
             if (
                 source.source_type is SourceType.MARKDOWN
                 and source.path.is_relative_to(resolved_root)
+                and self._needs_extraction(source, before)
             ):
                 extraction_result = self._markdown_extractor.extract(source)
                 fragments = self._fragment_repository.replace_for_source(extraction_result)
@@ -62,12 +64,15 @@ class SourceService:
         return result
 
     def scan_source_root(self, root: Path) -> ScanResult:
-        """Synchronize and extract every source type currently supported in a vault."""
+        """Synchronize and extract only new, changed, or restored vault sources."""
 
+        before = self._active_content_hashes()
         result = scan_source_root(root, self._source_repository)
         resolved_root = root.resolve()
         for source in self._source_repository.list_active():
             if not source.path.is_relative_to(resolved_root):
+                continue
+            if not self._needs_extraction(source, before):
                 continue
             try:
                 if source.source_type is SourceType.MARKDOWN:
@@ -97,6 +102,26 @@ class SourceService:
             if self._semantic_index is not None:
                 self._semantic_index.replace_for_source(fragments)
         return result
+
+    def _active_content_hashes(self) -> dict[Path, str]:
+        """Snapshot source content before a scan, not mutable file timestamps."""
+
+        return {
+            source.path: source.content_hash
+            for source in self._source_repository.list_active()
+        }
+
+    @staticmethod
+    def _needs_extraction(source: Source, previous_hashes: dict[Path, str]) -> bool:
+        """Derived text is valid until a new original hash replaces it.
+
+        A source missing from the pre-scan snapshot is either newly discovered
+        or restored after being missing. Both need derived data. A timestamp-only
+        touch retains the same hash and does not justify repeating OCR or a
+        parser invocation.
+        """
+
+        return previous_hashes.get(source.path) != source.content_hash
 
     def refresh_markdown_path(self, path: Path) -> str:
         """Hash one watched path and re-extract only when its actual content changed."""
