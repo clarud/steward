@@ -80,8 +80,9 @@ steward hybrid-search "the little cache CPUs use for address translation"
 ## Use the local search UI
 
 Run a localhost-only browser interface over the same lexical index used by
-`steward search`. It displays source paths and fragment locations, and does not
-send source text to a model or external service.
+`steward search`. It displays source paths and fragment locations; click a
+result to read its locally stored extracted fragments with provenance and safe
+pagination. It does not send source text to a model or external service.
 
 ```powershell
 steward ui

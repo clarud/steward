@@ -651,8 +651,12 @@ never changes the original file or source identity.
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by
 default. The implementation rejects non-loopback hosts, uses the existing
 `LexicalSearchService` by default (or `HybridRetriever` with `--mode hybrid`), escapes all query/source content before HTML rendering,
-and exposes only a search form plus source-path and fragment-location results.
-It intentionally contains no write controls, model calls, OAuth credentials, or
+and exposes a search form plus source-path and fragment-location results.
+Search-hit links lead to `/sources/{id}`, which reads only a registered SQLite
+source identity and its already-derived fragments: it never accepts an arbitrary
+filesystem path. Source pages escape extracted text, show source type/status and
+fragment provenance, and page long sources in groups of 50 fragments. The UI
+intentionally contains no write controls, model calls, OAuth credentials, or
 external integrations. This gives Steward a locally inspectable UI surface
 without silently expanding its trust boundary.
 
