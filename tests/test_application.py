@@ -870,7 +870,7 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     preview = application.handle(make_event(text="/propose_task remind me to compare OpenMP scheduling before Tuesday"))
 
     assert isinstance(preview, PresentedReply)
-    assert "compare OpenMP scheduling" in preview.text
+    assert "compare OpenMP scheduling" in preview.title
     assert tasks.list_open() == ()
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert accepted == "Task 1 created: compare OpenMP scheduling."
@@ -890,7 +890,8 @@ def test_deterministic_natural_task_phrase_creates_the_same_reviewable_proposal(
     response = application.handle(make_event(text="remind me to compare OpenMP scheduling before Tuesday"))
 
     assert isinstance(response, PresentedReply)
-    assert "Task proposal 1" in response.text
+    assert response.title == "Save task: compare OpenMP scheduling"
+    assert "No task has been saved yet." in response.text
     assert tasks.list_open() == ()
 
 

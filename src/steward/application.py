@@ -924,8 +924,9 @@ class StewardTaskApplication:
         if remind_at:
             due_line += f"\nReminder at: {remind_at.isoformat()}"
         return PresentedReply(
-            f"Task proposal {pending.id}: {title}{due_line}\n\nNo task has been saved yet.",
-            (ReplyAction("Accept task", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+            f"{due_line.lstrip()}\n\nNo task has been saved yet.",
+            (ReplyAction("Accept", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
+            title=f"Save task: {title}", icon="✅",
         )
 
 
