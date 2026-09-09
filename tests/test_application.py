@@ -230,17 +230,32 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
         )
     )
     records = RecordService(database_path)
+    activity = ActivityService(database_path)
+    action_repository = ActionProposalRepository(database_path)
+    action_application = StewardActionProposalApplication(
+        action_repository,
+        ActionProposalService(action_repository, WorkspaceRepository(database_path), activity),
+        record_service=records,
+        fragment_repository=fragments,
+        activity_service=activity,
+    )
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
-        record_application=StewardRecordApplication(records, fragments),
+        action_proposal_application=action_application,
+        record_application=StewardRecordApplication(records, fragments, action_repository, activity),
     )
 
     response = application.handle(make_event(text="/propose_travel_record 1"))
 
-    assert "Flight SQ638" not in response
-    assert "flight: SQ638" in response
-    assert "fragment 1" in response
+    assert isinstance(response, PresentedReply)
+    assert "flight: SQ638" in response.text
+    assert "fragment 1" in response.text
     assert records.list_travel_records() == []
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert accepted == "Travel record 1 created from source 1."
+    assert records.list_travel_records()[0].flight_number == "SQ638"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

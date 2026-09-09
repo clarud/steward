@@ -247,9 +247,19 @@ class StewardToolAgentApplication:
 class StewardRecordApplication:
     """Render evidence-backed record reads and extraction previews for Telegram."""
 
-    def __init__(self, records: RecordService, fragments: SourceFragmentRepository) -> None:
+    CREATE_TRAVEL_RECORD = "create_travel_record"
+
+    def __init__(
+        self,
+        records: RecordService,
+        fragments: SourceFragmentRepository,
+        proposals: ActionProposalRepository,
+        activity: ActivityService,
+    ) -> None:
         self._records = records
         self._fragments = fragments
+        self._proposals = proposals
+        self._activity = activity
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -283,9 +293,23 @@ class StewardRecordApplication:
             for label, field, value in fields
             if value is not None and field in proposal.field_evidence
         )
-        return (
+        pending = self._proposals.find_pending(
+            self.CREATE_TRAVEL_RECORD, {"source_id": str(source_id)}
+        )
+        if pending is None:
+            pending = self._proposals.add(self.CREATE_TRAVEL_RECORD, {"source_id": str(source_id)})
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(pending.id),
+                details=f"Create travel record from source {source_id}",
+            )
+        return PresentedReply(
             f"Travel record preview from source {source_id}:\n{rendered}\n\n"
-            "This is a proposal only; no travel record has been saved."
+            f"Proposal {pending.id}: no travel record has been saved.",
+            (
+                ReplyAction("Accept record", f"/approve_action {pending.id}"),
+                ReplyAction("Reject", f"/reject_action {pending.id}"),
+            ),
         )
 
     def _list_records(self) -> str:
@@ -689,11 +713,17 @@ class StewardActionProposalApplication:
         service: ActionProposalService,
         calendar_proposals: CalendarEventProposalService | None = None,
         calendar_writer_factory: Callable[[], CalendarWriteService] | None = None,
+        record_service: RecordService | None = None,
+        fragment_repository: SourceFragmentRepository | None = None,
+        activity_service: ActivityService | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
         self._calendar_proposals = calendar_proposals
         self._calendar_writer_factory = calendar_writer_factory
+        self._records = record_service
+        self._fragments = fragment_repository
+        self._activity = activity_service
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -720,6 +750,8 @@ class StewardActionProposalApplication:
         proposal_id = int(argument.strip())
         decision = "accepted" if command == "/approve_action" else "rejected"
         proposal = self._repository.get(proposal_id)
+        if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
+            return self._review_travel_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
             if self._calendar_proposals is None:
                 return "Calendar proposal review is not configured on this Steward process."
@@ -739,6 +771,35 @@ class StewardActionProposalApplication:
                 f"Workspace {workspace.id}: {workspace.name} is available."
             )
         return f"Action proposal {proposal.id} {proposal.status}."
+
+    def _review_travel_record(self, proposal_id: int, decision: str) -> str:
+        if self._records is None or self._fragments is None:
+            return "Travel-record review is not configured on this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Action proposal was not found."
+        if proposal.status == decision:
+            return f"Travel-record proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Action proposal {proposal.id} was already {proposal.status}."
+        if decision == "accepted":
+            source_id = int(proposal.payload["source_id"])
+            fragments = self._fragments.list_for_source(source_id)
+            record_proposal = self._records.propose_travel_record(
+                source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+            )
+            try:
+                record = self._records.create_from_proposal(record_proposal)
+            except ValueError as error:
+                return str(error)
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Travel record {record.id} created from source {source_id}."
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Travel-record proposal {proposal.id} rejected."
 
     def propose_workspace(self, name: str) -> str:
         """Create a durable workspace proposal without creating the workspace."""

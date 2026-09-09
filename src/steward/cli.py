@@ -1120,6 +1120,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                     activity,
                 ),
                 _calendar_writer_factory(settings, database_path),
+                record_service=RecordService(database_path),
+                fragment_repository=fragments,
+                activity_service=activity,
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
@@ -1144,7 +1147,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
             ),
             tool_agent_application=tool_agent_application,
-            record_application=StewardRecordApplication(RecordService(database_path), fragments),
+            record_application=StewardRecordApplication(
+                RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
+            ),
         )
         run_telegram_polling(
             token,
