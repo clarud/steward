@@ -534,6 +534,28 @@ def test_deadline_phrase_creates_a_reviewable_task_proposal(tmp_path: Path) -> N
     assert tasks.list_open() == ()
 
 
+def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        task_application=StewardTaskApplication(tasks, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, task_service=tasks,
+        ),
+    )
+
+    preview = application.handle(
+        make_event(text="/propose_task submit CS3210 lab --due-at 2026-09-18T23:59:00+08:00")
+    )
+
+    assert isinstance(preview, PresentedReply)
+    assert "Due at: 2026-09-18T15:59:00+00:00" in preview.text
+    assert application.handle(make_event(text="/approve_action 1")) == "Task 1 created: submit CS3210 lab."
+    assert tasks.get(1).due_at == datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
+
+
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

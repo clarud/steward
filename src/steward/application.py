@@ -452,7 +452,9 @@ class StewardTaskApplication:
             if not tasks:
                 return "No open tasks."
             return "Open tasks:\n" + "\n".join(
-                f"{task.id}: {task.title}" + (f" ({task.due_hint})" if task.due_hint else "")
+                f"{task.id}: {task.title}"
+                + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
+                + (f" ({task.due_hint})" if task.due_hint else "")
                 for task in tasks
             )
         if command == "/complete_task":
@@ -476,15 +478,17 @@ class StewardTaskApplication:
 
     def propose(self, text: str) -> str | PresentedReply:
         try:
-            title, due_hint = self._tasks.parse_proposal(text)
+            title, due_hint, due_at = self._tasks.parse_proposal_with_due_at(text)
         except ValueError as error:
             return str(error)
-        payload = {"title": title, "due_hint": due_hint or ""}
+        payload = {"title": title, "due_hint": due_hint or "", "due_at": due_at.isoformat() if due_at else ""}
         pending = self._proposals.find_pending(self.CREATE_TASK, payload)
         if pending is None:
             pending = self._proposals.add(self.CREATE_TASK, payload)
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create task: {title}")
         due_line = f"\nDue cue: {due_hint}" if due_hint else ""
+        if due_at:
+            due_line += f"\nDue at: {due_at.isoformat()}"
         return PresentedReply(
             f"Task proposal {pending.id}: {title}{due_line}\n\nNo task has been saved yet.",
             (ReplyAction("Accept task", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
@@ -1362,7 +1366,12 @@ class StewardActionProposalApplication:
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return f"Task proposal {proposal.id} rejected."
-        task = self._tasks.create(proposal.payload["title"], proposal.payload.get("due_hint") or None)
+        due_at_value = proposal.payload.get("due_at") or None
+        task = self._tasks.create(
+            proposal.payload["title"],
+            proposal.payload.get("due_hint") or None,
+            TaskService.parse_due_at(due_at_value) if due_at_value else None,
+        )
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)

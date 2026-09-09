@@ -44,6 +44,7 @@ SOURCE_ROOTS_SCHEMA_VERSION = 35
 SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
 TASKS_SCHEMA_VERSION = 37
 TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
+TASK_DUE_AT_SCHEMA_VERSION = 39
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -389,6 +390,10 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             recovered_at TEXT NOT NULL
         )
         """,
+    ),
+    (
+        TASK_DUE_AT_SCHEMA_VERSION,
+        "ALTER TABLE tasks ADD COLUMN due_at TEXT",
     ),
 )
 

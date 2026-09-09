@@ -53,6 +53,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Send `deadline: submit CS3210 lab due Friday` without a command. Verify the
   review card preserves `due Friday` as a cue and does not invent a date or
   timezone.
+- For a precise deadline, send `/propose_task submit CS3210 lab --due-at
+  2026-09-18T23:59:00+08:00`. Verify the review card shows the normalized UTC
+  instant. A timestamp without an explicit offset must be rejected rather than
+  silently assigned your computer's time zone.
 - Accept it, inspect `/tasks`, then use `/complete_task ID` twice. The second
   response should say it is already completed, not create another audit event.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
