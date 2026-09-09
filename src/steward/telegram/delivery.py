@@ -3,8 +3,19 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+
+@dataclass(frozen=True, slots=True)
+class TelegramDelivery:
+    """Metadata-only view of one locally coordinated Telegram update."""
+
+    update_id: str
+    status: str
+    claimed_at: datetime
+    delivered_at: datetime | None
 
 
 class TelegramUpdateDeliveryRepository:
@@ -65,3 +76,19 @@ class TelegramUpdateDeliveryRepository:
                 "WHERE update_id = ? AND status = 'processing'",
                 (update_id,),
             )
+
+    def list_recent(self, *, limit: int = 20) -> tuple[TelegramDelivery, ...]:
+        """Inspect recent local delivery state without retaining message content."""
+        if not 1 <= limit <= 100:
+            raise ValueError("Telegram delivery limit must be between 1 and 100.")
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT update_id, status, claimed_at, delivered_at "
+                "FROM telegram_update_deliveries ORDER BY claimed_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return tuple(
+            TelegramDelivery(str(row[0]), str(row[1]), datetime.fromisoformat(str(row[2])),
+                             datetime.fromisoformat(str(row[3])) if row[3] else None)
+            for row in rows
+        )

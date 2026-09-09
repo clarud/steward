@@ -387,6 +387,12 @@ does not need a public webhook endpoint. Steward records successfully replied
 Telegram update IDs in its local SQLite database, so a redelivered update is
 not handled twice; a failed delivery is left eligible for retry.
 
+Inspect metadata-only local delivery state when troubleshooting polling:
+
+```powershell
+steward telegram-deliveries
+```
+
 An allowlisted Telegram chat can review pending workspace proposals created by
 `steward agent`:
 

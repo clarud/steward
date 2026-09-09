@@ -552,6 +552,11 @@ future action services must therefore remain idempotent. A true external
 exactly-once guarantee would require an outbound-message idempotency facility
 that the Telegram Bot API does not provide.
 
+`steward telegram-deliveries` exposes only local coordination metadata: update
+ID, processing/delivered status, claim time, and delivered time. It never stores
+or prints Telegram message text, but makes a stuck lease or repeated delivery
+observable during local troubleshooting.
+
 ### Reviewable agent writes from Telegram
 
 The tool agent can create a pending `ActionProposal` for workspace creation and,

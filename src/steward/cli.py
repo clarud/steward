@@ -238,6 +238,10 @@ def build_parser() -> argparse.ArgumentParser:
     telegram_parser.add_argument(
         "--limit", type=int, default=5, help="Maximum evidence fragments per question"
     )
+    telegram_deliveries = subcommands.add_parser(
+        "telegram-deliveries", help="Inspect local Telegram delivery coordination state"
+    )
+    telegram_deliveries.add_argument("--limit", type=int, default=20)
     ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
     ui_parser.add_argument("--host", default="127.0.0.1")
     ui_parser.add_argument("--port", type=int, default=8765)
@@ -927,6 +931,26 @@ def main(argv: Sequence[str] | None = None) -> None:
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             delivery_repository=TelegramUpdateDeliveryRepository(database_path),
         )
+        return
+
+    if arguments.command == "telegram-deliveries":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            deliveries = TelegramUpdateDeliveryRepository(database_path).list_recent(
+                limit=arguments.limit
+            )
+        except ValueError as error:
+            print(str(error))
+            return
+        if not deliveries:
+            print("No local Telegram delivery records.")
+            return
+        for delivery in deliveries:
+            print(
+                f"{delivery.update_id}\t{delivery.status}\t{delivery.claimed_at.isoformat()}\t"
+                f"{delivery.delivered_at.isoformat() if delivery.delivered_at else ''}"
+            )
         return
 
     if arguments.command == "ui":
