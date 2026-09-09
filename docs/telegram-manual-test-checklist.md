@@ -128,6 +128,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## External systems and privacy
 
+- Use `/integrations`. It must report only local readiness, never a client
+  path, token value, or refresh token. A missing integration says it needs
+  local browser authorization; an expired token says whether local refresh may
+  be available or local reauthorization is required. Telegram must not launch
+  the OAuth flow.
+
 - Complete Google OAuth locally in a browser, never in Telegram.
 - Use `/calendar_search` and `/calendar_get EVENT_ID`; compare results with
   Google Calendar directly.

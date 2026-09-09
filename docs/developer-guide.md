@@ -648,6 +648,12 @@ archiving remain separate future work.
 
 ### Google Drive search and explicit Inbox import
 
+`/integrations` is a metadata-only Telegram readiness card. It never calls a
+Google API, starts OAuth, or displays a token/client path. It reports whether a
+token is absent, unreadable, present, expired with a local refresh token, or
+expired without one. This guides the user back to local authorization without
+claiming that a token file alone proves remote access will succeed.
+
 `GoogleDriveService` is a separate read-only external boundary. Its OAuth flow
 uses `drive.readonly`, stored in a dedicated `google-drive-token.json`, rather
 than reusing broader Calendar credentials. A token created for the older,

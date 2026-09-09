@@ -12,6 +12,7 @@ from steward.answer import AnswerCitation
 from steward.capture import CaptureResult, InboxCaptureService
 from pathlib import Path
 from steward.events import IncomingEvent
+from steward.integrations import oauth_token_readiness
 from steward.intent import Intent, IntentResolver
 from steward.organization import (
     OrganizationApprovalThreadRepository,
@@ -1110,10 +1111,7 @@ class StewardIntegrationStatusApplication:
             "Gmail": token_dir / "gmail-token.json",
         }
         lines = ["Google integration status (metadata only):", f"OAuth client: {config_state}"]
-        lines.extend(
-            f"{name}: {'local token present' if token.is_file() else 'needs local browser authorization'}"
-            for name, token in states.items()
-        )
+        lines.extend(f"{name}: {oauth_token_readiness(token)}" for name, token in states.items())
         lines.append("Authorize or change OAuth settings only on the local machine.")
         return PresentedReply(
             "\n".join(lines),
