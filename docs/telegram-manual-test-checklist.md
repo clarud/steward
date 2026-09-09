@@ -42,9 +42,15 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 - Send a document without `/save`. Verify it is described as staged and has
   **Save to Inbox** and **Do not keep** choices.
+- Send a harmless `https://...` link. Verify it is staged as a **reference**;
+  Steward must not fetch it, send it to a model, or save it until you choose
+  **Save**.
 - Choose **Do not keep**. Verify no file appears in Inbox.
 - Send another document, add `/intake_context ID CS3210 OpenMP assignment`,
   then choose **Save to Inbox**. Verify the original appears once in Inbox.
+- Prefer the card flow as well: choose **Add context**, then reply normally
+  with `CS3210 OpenMP assignment`. Restart the bot before replying once; the
+  reply should still revise the same pending card without saving it.
 - If local staging is deliberately unavailable in a test setup, verify an
   intake accept/discard/context retry message never exposes the staging path.
 - While an intake or organization proposal is pending, stop the local bot with
@@ -67,6 +73,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Send `deadline: submit CS3210 lab due Friday` without a command. Verify the
   review card preserves `due Friday` as a cue and does not invent a date or
   timezone.
+- Send `I need to submit CS3210 lab by Friday`. Verify it produces the same
+  reviewable task proposal. Send `I need to understand TLBs` separately; it
+  must not be treated as a task solely because it begins with `I need to`.
 - For a precise deadline, send `/propose_task submit CS3210 lab --due-at
   2026-09-18T23:59:00+08:00`. Verify the review card shows the normalized UTC
   instant. A timestamp without an explicit offset must be rejected rather than
@@ -87,6 +96,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
+- For a staged flight message with `Flight`, `Departure`, `Arrival`, and
+  `Booking Reference` lines, choose **Save**. Verify Inbox capture is followed
+  by a Travel Record review card, not an immediately created record. After
+  accepting that record, use **Add to calendar** and verify it opens a second,
+  separately approved Calendar proposal.
 - For a saved travel record, use `/propose_travel_reference RECORD_ID TYPE
   FRAGMENT_ID VALUE` with an exact value that appears in the record's source
   fragment. Verify it stays pending until approval and `/travel_references
