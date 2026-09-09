@@ -1780,6 +1780,7 @@ def test_accepted_flight_intake_immediately_offers_a_record_review(tmp_path: Pat
     assert "Saved to Inbox" in reviewed.text
     assert "flight: SQ638" in reviewed.text
     assert proposals.get(1) is not None
+    assert any(action.command == "/organize" for action in reviewed.actions)
     assert RecordService(database_path).list_travel_records() == []
 
 

@@ -725,6 +725,7 @@ class StewardRecordApplication:
             f"{rendered}\n\nNo travel record has been saved yet.",
             (
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
+                ReplyAction("Organize Inbox", "/organize"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
             title="Review travel record",
@@ -846,7 +847,11 @@ class StewardRecordApplication:
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create {label} record from source {source_id}")
         return PresentedReply(
             "\n".join(fields) + f"\n\nNo {label} record has been saved yet.",
-            (ReplyAction("Accept record", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+            (
+                ReplyAction("Accept record", f"/approve_action {pending.id}"),
+                ReplyAction("Organize Inbox", "/organize"),
+                ReplyAction("Reject", f"/reject_action {pending.id}"),
+            ),
             title=f"Review {label} record",
             icon="🧾" if label == "receipt" else "🛡️",
         )
