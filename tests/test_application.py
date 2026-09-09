@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+import sqlite3
 
 from steward.answer import AnswerCitation
 from steward.application import (
@@ -54,6 +55,7 @@ from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskService
 from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 
 class FakeGraph:
@@ -843,6 +845,41 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert accepted == "Proposal 1 accepted."
     assert (tmp_path / "vault" / "projects" / "Steward" / "telegram-100-11-Steward-notes.md").is_file()
     assert proposals.get(1).status == "accepted"
+
+
+def test_telegram_organization_approval_survives_a_process_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; checkpoints = tmp_path / "checkpoints.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "Steward-design.md"; source_path.write_text("# Design", encoding="utf-8")
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 8, now, now, now))
+    workspaces = WorkspaceRepository(database); workspaces.create("Steward")
+    proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
+    service = OrganizationApprovalService(proposals, sources, FileMutationService(sources, activity), activity)
+    first_connection = sqlite3.connect(checkpoints, check_same_thread=False)
+    first = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(proposals, checkpointer=SqliteSaver(first_connection), review_proposal=service.review),
+        source_repository=sources, inbox_dir=inbox,
+    )
+
+    paused = first.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+
+    assert isinstance(paused, PresentedReply)
+    first_connection.close()
+    restarted_connection = sqlite3.connect(checkpoints, check_same_thread=False)
+    restarted = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(proposals, checkpointer=SqliteSaver(restarted_connection), review_proposal=service.review),
+        source_repository=sources, inbox_dir=inbox,
+    )
+    accepted = restarted.handle_decision(make_event(text="/organization_accept 1"))
+    restarted_connection.close()
+
+    assert accepted == "Proposal 1 accepted."
+    assert proposals.get(1).status == "accepted"
+    assert (tmp_path / "vault" / "projects" / "Steward" / "Steward-design.md").is_file()
 
 
 def test_organize_inbox_creates_one_durable_proposal_before_any_move(tmp_path: Path) -> None:
