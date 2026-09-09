@@ -1290,6 +1290,8 @@ class StewardCuratedNoteApplication:
                     icon="✏️",
                 )
             return "Use /curate_edit followed by the proposal ID and replacement text. Nothing has been saved yet."
+        if self._contexts is not None:
+            self._contexts.clear(event.platform, event.chat_id)
         return self._revise(int(identifier), replacement)
 
     def _revise(self, proposal_id: int, replacement: str) -> str | PresentedReply:

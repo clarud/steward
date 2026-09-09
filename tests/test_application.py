@@ -1417,6 +1417,30 @@ def test_telegram_can_edit_a_curated_note_before_it_is_saved(tmp_path: Path) -> 
     )
 
 
+def test_pending_curated_note_edit_survives_an_application_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+
+    def build() -> StewardEventApplication:
+        return StewardEventApplication(
+            StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+            curated_note_application=StewardCuratedNoteApplication(proposals, activity, contexts=contexts),
+        )
+
+    first = build()
+    first.handle(make_event(text="/propose_note # TLB\n\nInitial draft."))
+    prompt = first.handle(make_event(text="/curate_edit 1"))
+    restarted = build()
+    revised = restarted.handle(make_event(text="# TLB\n\nEdited after restart."))
+
+    assert isinstance(prompt, PresentedReply)
+    assert isinstance(revised, PresentedReply)
+    assert "Edited after restart" in revised.text
+    assert proposals.get(1).status == "rejected"
+    assert proposals.get(2).status == "pending"
+
+
 def test_curate_requires_a_replied_to_text_message(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     application = StewardEventApplication(

@@ -557,7 +557,8 @@ explicit operations:
 - Curated note drafts are similarly non-canonical. **Edit** opens a durable,
   chat-scoped input step; the replacement creates a new pending proposal and
   marks the earlier draft rejected as superseded. Steward never overwrites the
-  draft that was originally shown to the user.
+  draft that was originally shown to the user. The opaque proposal reference is
+  SQLite-backed, so the replacement can be supplied after a process restart.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
