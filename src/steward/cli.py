@@ -1332,6 +1332,27 @@ def main(argv: Sequence[str] | None = None) -> None:
         fragments = SourceFragmentRepository(database_path)
         source_service = SourceService(sources, fragments, MarkdownExtractor())
 
+        def telegram_runtime_status() -> tuple[str, ...]:
+            """Return owner-safe operational labels without creating local state."""
+            operational = _database_health(database_path)
+            checkpoints = _database_health(settings.data_dir / "checkpoints.db")
+            try:
+                roots = SourceRootRepository(database_path).list_all() if operational == "available" else ()
+                root_summary = (
+                    f"{sum(root.health == 'available' for root in roots)} available, "
+                    f"{sum(root.health == 'missing' for root in roots)} missing, "
+                    f"{sum(root.health == 'disabled' for root in roots)} disabled"
+                    if operational == "available" else "unavailable"
+                )
+            except sqlite3.Error:
+                root_summary = "unavailable"
+            return (
+                f"Operational database: {operational}",
+                f"Conversation checkpoints: {checkpoints}",
+                f"Authorized roots: {root_summary}",
+                f"Model provider: {settings.model_provider} configured",
+            )
+
         def rebuild_semantic_index() -> int:
             """Use the already-local embedding model only after Telegram approval."""
             semantic_service = SourceService(
@@ -1453,6 +1474,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                         sources, SQLiteSemanticIndex(database_path, embedding_provider)
                     ),
                 ),
+                runtime_status=telegram_runtime_status,
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(
                 ProvisionalIntakeService(

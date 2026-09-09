@@ -319,6 +319,46 @@ def test_status_reports_review_and_delivery_health_without_message_content(tmp_p
     assert "Telegram delivery: 1 processing, 0 dead letters" in response
 
 
+def test_status_renders_only_injected_safe_runtime_labels(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    reads = StewardReadApplication(
+        SourceRepository(database), SourceFragmentRepository(database),
+        LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+        WorkspaceRepository(database), ActivityService(database), tmp_path,
+        runtime_status=lambda: (
+            "Operational database: available",
+            "Conversation checkpoints: unavailable",
+            "Authorized roots: 1 available, 0 missing, 0 disabled",
+            "Model provider: local configured",
+        ),
+    )
+
+    response = reads.status()
+
+    assert "Operational database: available" in response
+    assert "Conversation checkpoints: unavailable" in response
+    assert "Model provider: local configured" in response
+    assert str(tmp_path) not in response
+
+
+def test_status_hides_runtime_callback_failures(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+
+    def fail() -> tuple[str, ...]:
+        raise RuntimeError(f"C:/private/{tmp_path.name}/database")
+
+    reads = StewardReadApplication(
+        SourceRepository(database), SourceFragmentRepository(database),
+        LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+        WorkspaceRepository(database), ActivityService(database), tmp_path, runtime_status=fail,
+    )
+
+    response = reads.status()
+
+    assert "Local runtime health: temporarily unavailable" in response
+    assert "C:/private" not in response
+
+
 def test_event_application_gives_helpful_unknown_response() -> None:
     response = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})())

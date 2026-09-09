@@ -124,6 +124,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Before and after restarting the local Telegram process, run `steward health`.
   Confirm it reports database/checkpoint availability, root counts, and only
   whether a Telegram token is configured—never paths, source text, or tokens.
+- Run Telegram `/status` as well. Confirm it reports only operational/checkpoint
+  availability, aggregate root health, and configured provider name—never local
+  paths, source text, model URLs, or credentials.
 - Temporarily stop the model provider, then ask a question. Verify a clear
   failure message and that source files remain unchanged.
 - Disconnect a mapped/network root if you use one; `/roots` should report it as

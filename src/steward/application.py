@@ -74,6 +74,7 @@ class StewardReadApplication:
         deliveries: TelegramUpdateDeliveryRepository | None = None,
         semantic_search: SemanticSearchService | None = None,
         hybrid_retriever: HybridRetriever | None = None,
+        runtime_status: Callable[[], tuple[str, ...]] | None = None,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -85,6 +86,7 @@ class StewardReadApplication:
         self._deliveries = deliveries
         self._semantic_search = semantic_search
         self._hybrid_retriever = hybrid_retriever
+        self._runtime_status = runtime_status
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -172,6 +174,11 @@ class StewardReadApplication:
             processing = sum(delivery.status == "processing" for delivery in recent)
             dead_letters = len(self._deliveries.list_dead_letters(limit=20))
             lines.append(f"Telegram delivery: {processing} processing, {dead_letters} dead letters")
+        if self._runtime_status is not None:
+            try:
+                lines.extend(self._runtime_status())
+            except Exception:
+                lines.append("Local runtime health: temporarily unavailable")
         lines.append("Use /help for available Telegram interactions.")
         return "\n".join(lines)
 
