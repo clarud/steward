@@ -96,6 +96,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.
+- With the local embedding model installed, compare `/search TERMS`,
+  `/semantic_search QUESTION`, and `/hybrid_search QUESTION`. Verify that all
+  results identify only filenames, source IDs, and derived locations; none
+  invoke an external model or expose local directories.
 - Reply to a text discussion message with `/curate`. Verify the staged note
   identifies its origin as a user-selected Telegram reply, is not saved before
   approval, and becomes a labeled Inbox Markdown note only after approval.

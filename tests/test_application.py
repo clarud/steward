@@ -46,7 +46,7 @@ from steward.sources import Source, SourceRepository, SourceType
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository, WorkspaceService
-from steward.retrieval import LexicalSearchService
+from steward.retrieval import HybridSearchHit, LexicalSearchService, SemanticSearchHit
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
@@ -212,6 +212,64 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     assert "Workspace proposal 1" in application.handle(
         make_event(text="create a workspace for jobs")
     )
+
+
+def test_telegram_exposes_local_semantic_and_hybrid_search_without_a_model_call(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "memory.md"; source_path.write_text("TLB notes", encoding="utf-8")
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database_path)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 9, now, now, now))
+    fragments = SourceFragmentRepository(database_path)
+    fragment = fragments.replace_for_source(ExtractionResult(
+        source.id or 0,
+        (SourceFragment(None, source.id or 0, "TLB", 0, "A TLB caches translations.", "lines 1-1"),),
+    ))[0]
+
+    class Semantic:
+        def search(self, query: str, *, limit: int):
+            assert query == "CPU translation cache" and limit == 5
+            return (SemanticSearchHit(source, fragment, 0.91),)
+
+    class Hybrid:
+        def search(self, query: str, *, limit: int):
+            assert query == "CPU translation cache" and limit == 5
+            return (HybridSearchHit(source, fragment, 0.031, None, 0.91),)
+
+    reads = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments),
+        WorkspaceRepository(database_path), ActivityService(database_path), inbox,
+        semantic_search=Semantic(), hybrid_retriever=Hybrid(),
+    )
+
+    semantic = reads.handle_command(make_event(text="/semantic_search CPU translation cache"))
+    hybrid = reads.handle_command(make_event(text="/hybrid_search CPU translation cache"))
+
+    assert "Semantic search results" in semantic and "memory.md" in semantic
+    assert "similarity 0.91" in semantic and str(tmp_path) not in semantic
+    assert "Hybrid search results" in hybrid and "fusion 0.031" in hybrid
+
+
+def test_telegram_semantic_search_has_a_safe_unavailable_response(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+
+    class UnavailableSemantic:
+        def search(self, query: str, *, limit: int):
+            raise RuntimeError("C:/private/embedding-cache is missing")
+
+    reads = StewardReadApplication(
+        SourceRepository(database_path), SourceFragmentRepository(database_path),
+        LexicalSearchService(SourceRepository(database_path), SourceFragmentRepository(database_path)),
+        WorkspaceRepository(database_path), ActivityService(database_path), tmp_path,
+        semantic_search=UnavailableSemantic(),
+    )
+
+    response = reads.handle_command(make_event(text="/semantic_search cache"))
+
+    assert response == "Semantic search is temporarily unavailable. Verify the local embedding model and derived index."
+    assert "C:/private" not in response
 
 
 def test_activity_hides_local_directory_structure_from_telegram(tmp_path: Path) -> None:

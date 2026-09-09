@@ -682,7 +682,11 @@ def _calendar_reader_factory(settings: Settings):
 
 
 def _build_question_graph(
-    settings: Settings, model_gateway: ModelGateway, *, limit: int
+    settings: Settings,
+    model_gateway: ModelGateway,
+    *,
+    limit: int,
+    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
 ):
     """Compose the reusable local retrieval-and-answer workflow."""
 
@@ -690,9 +694,10 @@ def _build_question_graph(
     initialize_database(database_path)
     source_repository = SourceRepository(database_path)
     fragment_repository = SourceFragmentRepository(database_path)
+    embedding_provider = embedding_provider or SentenceTransformerEmbeddingProvider()
     semantic_search = SemanticSearchService(
         source_repository,
-        SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
+        SQLiteSemanticIndex(database_path, embedding_provider),
     )
     retriever = HybridRetriever(
         LexicalSearchService(source_repository, fragment_repository), semantic_search
@@ -1314,21 +1319,27 @@ def main(argv: Sequence[str] | None = None) -> None:
         model_gateway = _model_gateway_from_settings(settings, command="telegram")
         if model_gateway is None:
             return
-        graph = _build_question_graph(settings, model_gateway, limit=arguments.limit)
         database_path = settings.data_dir / "steward.db"
+        embedding_provider = SentenceTransformerEmbeddingProvider()
+        graph = _build_question_graph(
+            settings,
+            model_gateway,
+            limit=arguments.limit,
+            embedding_provider=embedding_provider,
+        )
         sources = SourceRepository(database_path)
         activity = ActivityService(database_path)
         fragments = SourceFragmentRepository(database_path)
         source_service = SourceService(sources, fragments, MarkdownExtractor())
 
         def rebuild_semantic_index() -> int:
-            """Load the already-local embedding model only after Telegram approval."""
+            """Use the already-local embedding model only after Telegram approval."""
             semantic_service = SourceService(
                 sources,
                 fragments,
                 MarkdownExtractor(),
                 semantic_index=SQLiteSemanticIndex(
-                    database_path, SentenceTransformerEmbeddingProvider()
+                    database_path, embedding_provider
                 ),
             )
             return semantic_service.rebuild_semantic_index()
@@ -1433,6 +1444,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                 settings.inbox_dir,
                 ActionProposalRepository(database_path),
                 TelegramUpdateDeliveryRepository(database_path),
+                SemanticSearchService(
+                    sources, SQLiteSemanticIndex(database_path, embedding_provider)
+                ),
+                HybridRetriever(
+                    LexicalSearchService(sources, fragments),
+                    SemanticSearchService(
+                        sources, SQLiteSemanticIndex(database_path, embedding_provider)
+                    ),
+                ),
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(
                 ProvisionalIntakeService(

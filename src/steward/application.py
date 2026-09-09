@@ -26,7 +26,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
-from steward.retrieval import LexicalSearchService
+from steward.retrieval import HybridRetriever, LexicalSearchService, SemanticSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import IntakeAnalysisMode, ProvisionalIntake, ProvisionalIntakeService
@@ -66,6 +66,8 @@ class StewardReadApplication:
         inbox_dir: Path,
         action_proposals: ActionProposalRepository | None = None,
         deliveries: TelegramUpdateDeliveryRepository | None = None,
+        semantic_search: SemanticSearchService | None = None,
+        hybrid_retriever: HybridRetriever | None = None,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -75,6 +77,8 @@ class StewardReadApplication:
         self._inbox_dir = inbox_dir.resolve()
         self._action_proposals = action_proposals
         self._deliveries = deliveries
+        self._semantic_search = semantic_search
+        self._hybrid_retriever = hybrid_retriever
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -97,6 +101,10 @@ class StewardReadApplication:
             return self.activity(argument)
         if command == "/search":
             return self.search(argument)
+        if command == "/semantic_search":
+            return self.semantic_search(argument)
+        if command == "/hybrid_search":
+            return self.hybrid_search(argument)
         return None
 
     @staticmethod
@@ -109,6 +117,8 @@ class StewardReadApplication:
             "/sources [page] — registered sources\n"
             "/source ID — one source and its extracted-text status\n"
             "/search TERMS — local lexical search\n"
+            "/semantic_search QUESTION — local meaning-based search\n"
+            "/hybrid_search QUESTION — combined lexical and semantic search\n"
             "/workspaces — current workspaces\n"
             "/activity [term] — recent audit events\n"
             "/records, /tasks, /roots — saved state\n"
@@ -233,6 +243,44 @@ class StewardReadApplication:
         return "Search results:\n" + "\n".join(
             f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
             f"[{hit.fragment.heading or 'Preamble'}]\n{(hit.highlighted_text or hit.fragment.text)[:180]}"
+            for hit in hits
+        )
+
+    def semantic_search(self, query: str) -> str:
+        """Search already-derived local vectors without involving an LLM."""
+        if not query:
+            return "Use /semantic_search followed by a natural-language phrase."
+        if self._semantic_search is None:
+            return "Semantic search is not configured locally. Install the local embedding model first."
+        try:
+            hits = self._semantic_search.search(query, limit=5)
+        except (OSError, RuntimeError, ValueError):
+            return "Semantic search is temporarily unavailable. Verify the local embedding model and derived index."
+        if not hits:
+            return f"No local semantic matches: {query!r}."
+        return "Semantic search results:\n" + "\n".join(
+            f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
+            f"[{hit.fragment.heading or 'Preamble'}] (similarity {hit.score:.2f})\n"
+            f"{hit.fragment.text[:180]}"
+            for hit in hits
+        )
+
+    def hybrid_search(self, query: str) -> str:
+        """Fuse local lexical and semantic rankings without a provider call."""
+        if not query:
+            return "Use /hybrid_search followed by a question or phrase."
+        if self._hybrid_retriever is None:
+            return "Hybrid search is not configured locally. Install the local embedding model first."
+        try:
+            hits = self._hybrid_retriever.search(query, limit=5)
+        except (OSError, RuntimeError, ValueError):
+            return "Hybrid search is temporarily unavailable. Verify the local embedding model and derived index."
+        if not hits:
+            return f"No local hybrid matches: {query!r}."
+        return "Hybrid search results:\n" + "\n".join(
+            f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
+            f"[{hit.fragment.heading or 'Preamble'}] (fusion {hit.score:.3f})\n"
+            f"{hit.fragment.text[:180]}"
             for hit in hits
         )
 

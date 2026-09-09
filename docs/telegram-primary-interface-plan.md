@@ -209,7 +209,7 @@ Before each implementation slice, maintain a command-to-interaction mapping:
 
 | CLI capability group | Telegram interaction | Safety boundary |
 | --- | --- | --- |
-| `sources`, search, semantic/hybrid search, inspect source | `/search`, source cards, pagination, natural language | read-only; privacy filter before model use |
+| `sources`, search, semantic/hybrid search, inspect source | `/search`, `/semantic_search`, `/hybrid_search`, source cards, pagination, natural language | read-only; privacy filter before model use |
 | capture, reextract, indexing | attachment capture, `/save`, explicit reprocess action | preserve original; confirm expensive work |
 | workspaces and source links | `/workspace`, natural language, proposal cards | creation/linking is audited; writes may require review |
 | Inbox review and organization proposals | `/inbox`, proposal cards, evidence buttons | no move until approval |
