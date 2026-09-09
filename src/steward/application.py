@@ -154,7 +154,7 @@ class StewardReadApplication:
             "/propose_reextract SOURCE_ID, /propose_rebuild_index, /propose_unregister_source SOURCE_ID â€” reviewed source maintenance\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
-            "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE, "
+            "Inspect organization history with /organization_proposals. Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE, "
             "or /organization_keep_inbox ID.\n\n"
             "Admin diagnostics: /integrations, /deliveries, /delivery_history, /dead_letters\n"
             "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"

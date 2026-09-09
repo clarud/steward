@@ -158,6 +158,7 @@ def test_help_explains_read_boundaries_and_reviewable_writes() -> None:
     assert "/integrations" in help_text
     assert "/propose_unregister_source SOURCE_ID" in help_text
     assert "/metrics - aggregate local decisions" in help_text
+    assert "/organization_proposals" in help_text
     assert "review-required writes" in help_text.casefold()
 
 
