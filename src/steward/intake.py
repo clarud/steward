@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from shutil import copy2
 
@@ -12,6 +13,23 @@ from steward.activity import ActivityService, ActivityType
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.sources import source_type_for_path
+from steward.privacy import PrivacyRule, PrivacyService
+
+
+class IntakeAnalysisMode(StrEnum):
+    """The model boundary a user chooses before a staged item is retained."""
+
+    EXTERNAL = "external"
+    LOCAL = "local"
+    NONE = "none"
+
+    @property
+    def privacy_rule(self) -> PrivacyRule:
+        return {
+            IntakeAnalysisMode.EXTERNAL: PrivacyRule.EXTERNAL_ALLOWED,
+            IntakeAnalysisMode.LOCAL: PrivacyRule.LOCAL_MODEL_ONLY,
+            IntakeAnalysisMode.NONE: PrivacyRule.NO_MODEL,
+        }[self]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +46,7 @@ class ProvisionalIntake:
     original_name: str
     category: str
     summary: str
+    analysis_mode: IntakeAnalysisMode
     status: str
     created_at: datetime
     decided_at: datetime | None = None
@@ -47,13 +66,13 @@ class ProvisionalIntakeRepository:
                 """
                 INSERT INTO provisional_intakes (
                     event_id, platform, chat_id, message_id, kind, staged_path,
-                    original_name, category, summary, status, created_at, decided_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    original_name, category, summary, analysis_mode, status, created_at, decided_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     intake.event_id, intake.platform, intake.chat_id, intake.message_id,
                     intake.kind, str(intake.staged_path), intake.original_name, intake.category,
-                    intake.summary, intake.status, intake.created_at.isoformat(),
+                    intake.summary, intake.analysis_mode.value, intake.status, intake.created_at.isoformat(),
                     intake.decided_at.isoformat() if intake.decided_at else None,
                 ),
             )
@@ -64,7 +83,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at
                 FROM provisional_intakes WHERE id = ?
                 """,
                 (intake_id,),
@@ -76,7 +95,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at
                 FROM provisional_intakes WHERE event_id = ?
                 """,
                 (event_id,),
@@ -118,14 +137,30 @@ class ProvisionalIntakeRepository:
                 (category, summary, intake_id),
             )
 
+    def set_analysis_mode(self, intake_id: int, mode: IntakeAnalysisMode) -> ProvisionalIntake:
+        intake = self.get(intake_id)
+        if intake is None:
+            raise ValueError(f"Provisional intake {intake_id} was not found.")
+        if intake.status != "pending":
+            raise ValueError(f"Provisional intake {intake_id} was already {intake.status}.")
+        if intake.analysis_mode is mode:
+            return intake
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "UPDATE provisional_intakes SET analysis_mode = ? WHERE id = ?",
+                (mode.value, intake_id),
+            )
+        return replace(intake, analysis_mode=mode)
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> ProvisionalIntake:
         return ProvisionalIntake(
             id=int(row[0]), event_id=str(row[1]), platform=str(row[2]), chat_id=str(row[3]),
             message_id=str(row[4]), kind=str(row[5]), staged_path=Path(str(row[6])),
-            original_name=str(row[7]), category=str(row[8]), summary=str(row[9]), status=str(row[10]),
-            created_at=datetime.fromisoformat(str(row[11])),
-            decided_at=datetime.fromisoformat(str(row[12])) if row[12] else None,
+            original_name=str(row[7]), category=str(row[8]), summary=str(row[9]),
+            analysis_mode=IntakeAnalysisMode(str(row[10])), status=str(row[11]),
+            created_at=datetime.fromisoformat(str(row[12])),
+            decided_at=datetime.fromisoformat(str(row[13])) if row[13] else None,
         )
 
 
@@ -138,11 +173,13 @@ class ProvisionalIntakeService:
         repository: ProvisionalIntakeRepository,
         capture_service: InboxCaptureService,
         activity_service: ActivityService,
+        privacy_service: PrivacyService,
     ) -> None:
         self._staging_dir = staging_dir
         self._repository = repository
         self._capture = capture_service
         self._activity = activity_service
+        self._privacy = privacy_service
 
     def stage_file(self, event: IncomingEvent, original_path: Path) -> ProvisionalIntake:
         existing = self._repository.get_by_event_id(event.id)
@@ -159,7 +196,7 @@ class ProvisionalIntakeService:
             ProvisionalIntake(
                 None, event.id, event.platform, event.chat_id, event.message_id, "file",
                 staged_path, original_name, category, summary,
-                "pending", datetime.now(UTC),
+                IntakeAnalysisMode.NONE, "pending", datetime.now(UTC),
             )
         )
         self._activity.record(ActivityType.INTAKE_PROPOSED, object_id=str(intake.id), details=intake.summary)
@@ -179,8 +216,8 @@ class ProvisionalIntakeService:
         intake = self._repository.add(
             ProvisionalIntake(
                 None, event.id, event.platform, event.chat_id, event.message_id, "text",
-                staged_path, "message.md", *self._classify_text(text), "pending",
-                datetime.now(UTC),
+                staged_path, "message.md", *self._classify_text(text),
+                IntakeAnalysisMode.NONE, "pending", datetime.now(UTC),
             )
         )
         self._activity.record(ActivityType.INTAKE_PROPOSED, object_id=str(intake.id), details=intake.summary)
@@ -202,9 +239,16 @@ class ProvisionalIntakeService:
                 replace(capture_event, text=intake.staged_path.read_text(encoding="utf-8"), attachments=())
             )
         )
+        if result.source.id is None:
+            raise RuntimeError("Captured sources must have an ID before applying intake privacy.")
+        self._privacy.set_rule(result.source.id, intake.analysis_mode.privacy_rule)
         decided = self._repository.decide(intake_id, "accepted")
         decided.staged_path.unlink(missing_ok=True)
-        self._activity.record(ActivityType.INTAKE_ACCEPTED, object_id=str(intake_id), details=str(result.source.path))
+        self._activity.record(
+            ActivityType.INTAKE_ACCEPTED,
+            object_id=str(intake_id),
+            details=f"{result.source.path.name}; analysis={intake.analysis_mode.value}",
+        )
         return result
 
     def discard(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
@@ -227,6 +271,19 @@ class ProvisionalIntakeService:
         self._repository.set_classification(intake_id, category, summary)
         self._activity.record(ActivityType.INTAKE_REVISED, object_id=str(intake_id), details=normalized)
         return replace(intake, category=category, summary=summary)
+
+    def set_analysis_mode(
+        self, intake_id: int, chat_id: str, mode: IntakeAnalysisMode
+    ) -> ProvisionalIntake:
+        """Persist a user's model-boundary choice before capture can invoke organization."""
+        self._pending_for_chat(intake_id, chat_id)
+        intake = self._repository.set_analysis_mode(intake_id, mode)
+        self._activity.record(
+            ActivityType.INTAKE_ANALYSIS_SELECTED,
+            object_id=str(intake_id),
+            details=f"analysis={mode.value}",
+        )
+        return intake
 
     def _pending_for_chat(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
         intake = self._repository.get(intake_id)

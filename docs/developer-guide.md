@@ -548,7 +548,10 @@ explicit operations:
   authoritative external state.
 - Attachments and substantial text are staged as provisional intake. Saving,
   discarding, or adding context is explicit; an attachment is not silently
-  retained merely because it arrived in chat.
+  retained merely because it arrived in chat. Provisional material defaults to
+  `no_model`; `/intake_analysis ID external|local|none` makes the model boundary
+  explicit before acceptance. When accepted, that choice becomes the captured
+  Source's privacy rule before any model-assisted organization can run.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
@@ -1199,7 +1202,9 @@ behavior easy to edit and inspect in code review.
   then 30 seconds, then up to a five-minute capped exponential delay before a
   redelivered update can be claimed again.
 - Telegram attachments and substantial text use provisional intake by default;
-  `/save` remains an explicit immediate-capture shortcut. The normal Bot API
+  their default analysis boundary is `no_model`, and `/intake_analysis` can
+  explicitly permit a local or external model before saving. `/save` remains an
+  explicit immediate-capture shortcut. The normal Bot API
   download ceiling still applies. An oversized upload can be selected through
   explicit Drive search/import, but there is no self-hosted Bot API server or
   automatic Drive sync.

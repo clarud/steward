@@ -50,7 +50,7 @@ from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
-from steward.privacy import PrivacyService
+from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskService
 from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
@@ -872,6 +872,7 @@ def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) 
             ProvisionalIntakeRepository(database_path),
             capture_service,
             activity,
+            PrivacyService(database_path),
         )
     )
     application = StewardEventApplication(
@@ -887,7 +888,16 @@ def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) 
     proposed = application.handle_file(attachment_event, original)
 
     assert isinstance(proposed, PresentedReply)
+    assert any(action.command == "/intake_analysis 1 external" for action in proposed.actions)
     assert sources.list_all() == []
+    selected = application.handle(
+        IncomingEvent(
+            "telegram:analysis", "telegram", "100", "13", None,
+            datetime(2026, 9, 9, tzinfo=UTC), "/intake_analysis 1 external",
+        )
+    )
+    assert isinstance(selected, PresentedReply)
+    assert "external" in selected.text
     accepted = application.handle(
         IncomingEvent(
             "telegram:accept", "telegram", "100", "13", None,
@@ -896,6 +906,7 @@ def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) 
     )
     assert "Saved to Inbox" in accepted
     assert len(sources.list_all()) == 1
+    assert PrivacyService(database_path).rule_for(1) is PrivacyRule.EXTERNAL_ALLOWED
 
 
 def test_provisional_intake_context_command_updates_without_saving(tmp_path: Path) -> None:
@@ -907,7 +918,7 @@ def test_provisional_intake_context_command_updates_without_saving(tmp_path: Pat
     provisional = StewardProvisionalIntakeApplication(
         ProvisionalIntakeService(
             tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
-            capture_service, activity,
+            capture_service, activity, PrivacyService(database_path),
         )
     )
     original = tmp_path / "notes.pdf"

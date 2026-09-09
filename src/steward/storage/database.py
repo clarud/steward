@@ -47,6 +47,7 @@ TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
 TASK_DUE_AT_SCHEMA_VERSION = 39
 CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
 ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
+PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -411,6 +412,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
         ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION,
         "ALTER TABLE organization_proposals ADD COLUMN workspace_name TEXT",
+    ),
+    (
+        PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION,
+        """
+        ALTER TABLE provisional_intakes
+        ADD COLUMN analysis_mode TEXT NOT NULL DEFAULT 'none'
+        CHECK (analysis_mode IN ('external', 'local', 'none'))
+        """,
     ),
 )
 

@@ -7,7 +7,8 @@ from steward.activity import ActivityService, ActivityType
 from steward.capture import InboxCaptureService
 from steward.events import IncomingEvent
 from steward.extraction import SourceFragmentRepository
-from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.intake import IntakeAnalysisMode, ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.privacy import PrivacyRule, PrivacyService
 from steward.sources import SourceRepository
 from steward.storage import initialize_database
 
@@ -33,6 +34,7 @@ def make_service(tmp_path: Path) -> tuple[ProvisionalIntakeService, SourceReposi
             ProvisionalIntakeRepository(database_path),
             capture,
             activity,
+            PrivacyService(database_path),
         ),
         sources,
         activity,
@@ -52,6 +54,7 @@ def test_file_is_staged_without_registering_a_source_until_accepted(tmp_path: Pa
     assert sources.list_all() == []
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_PROPOSED
     assert intake.category == "document"
+    assert intake.analysis_mode is IntakeAnalysisMode.NONE
     assert "No content was sent to a model" in intake.summary
 
     saved = service.accept(intake.id or 0, event)
@@ -60,6 +63,7 @@ def test_file_is_staged_without_registering_a_source_until_accepted(tmp_path: Pa
     assert saved.source.path.is_file()
     assert not intake.staged_path.exists()
     assert sources.list_all() == [saved.source]
+    assert PrivacyService(tmp_path / "steward.db").rule_for(saved.source.id or 0) is PrivacyRule.NO_MODEL
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_ACCEPTED
 
 
@@ -117,6 +121,37 @@ def test_context_revision_is_audited_without_saving_the_staged_file(tmp_path: Pa
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_REVISED
 
 
+def test_user_selects_an_analysis_boundary_before_capture_and_it_controls_source_privacy(tmp_path: Path) -> None:
+    service, sources, activity = make_service(tmp_path)
+    original = tmp_path / "notes.pdf"; original.write_bytes(b"pdf bytes")
+    intake = service.stage_file(make_event(), original)
+
+    selected = service.set_analysis_mode(
+        intake.id or 0, "100", IntakeAnalysisMode.EXTERNAL
+    )
+    assert ProvisionalIntakeRepository(tmp_path / "steward.db").get(intake.id or 0) == selected
+    saved = service.accept(intake.id or 0, make_event(event_id="telegram:accept"))
+
+    assert selected.analysis_mode is IntakeAnalysisMode.EXTERNAL
+    assert PrivacyService(tmp_path / "steward.db").rule_for(saved.source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
+    assert sources.list_all() == [saved.source]
+    assert [event.event_type for event in activity.list_recent()] == [
+        ActivityType.INTAKE_ACCEPTED,
+        ActivityType.SOURCE_CAPTURED,
+        ActivityType.INTAKE_ANALYSIS_SELECTED,
+        ActivityType.INTAKE_PROPOSED,
+    ]
+
+
+def test_another_chat_cannot_change_a_pending_intake_analysis_boundary(tmp_path: Path) -> None:
+    service, _, _ = make_service(tmp_path)
+    original = tmp_path / "notes.pdf"; original.write_bytes(b"pdf bytes")
+    intake = service.stage_file(make_event(), original)
+
+    with pytest.raises(ValueError, match="another chat"):
+        service.set_analysis_mode(intake.id or 0, "other", IntakeAnalysisMode.LOCAL)
+
+
 def test_text_intake_classifies_task_and_record_cues_without_a_model(tmp_path: Path) -> None:
     service, _, _ = make_service(tmp_path)
     task_event = IncomingEvent(
@@ -160,6 +195,7 @@ def test_pending_intake_can_be_accepted_after_service_restart(tmp_path: Path) ->
         ProvisionalIntakeRepository(database_path),
         InboxCaptureService(tmp_path / "vault" / "inbox", sources, SourceFragmentRepository(database_path), activity),
         activity,
+        PrivacyService(database_path),
     )
 
     saved = restarted.accept(intake.id or 0, make_event(event_id="telegram:accept"))

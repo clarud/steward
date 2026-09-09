@@ -28,7 +28,7 @@ from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
-from steward.intake import ProvisionalIntakeService
+from steward.intake import IntakeAnalysisMode, ProvisionalIntake, ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
@@ -114,6 +114,7 @@ class StewardReadApplication:
             "/propose_task TEXT, /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /curate (reply to a discussion message), /research QUESTION\n"
+            "For a staged attachment/note: /intake_analysis ID external|local|none before saving\n"
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
             "/propose_warranty_record SOURCE_ID\n"
@@ -1043,24 +1044,18 @@ class StewardProvisionalIntakeApplication:
             return PresentedReply("This attachment was previously discarded. Send it again to reconsider it.")
         return PresentedReply(
             f"Provisional intake {intake.id}: {intake.summary}\n\n"
-            "It is staged locally and has not been added to your Inbox.",
-            (
-                ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
-                ReplyAction("Add context", f"/intake_context {intake.id}"),
-                ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
-            ),
+            "It is staged locally and has not been added to your Inbox.\n"
+            "Analysis boundary: no model (default).",
+            self._actions(intake),
         )
 
     def begin_text(self, event: IncomingEvent) -> PresentedReply:
         intake = self._service.stage_text(event)
         return PresentedReply(
             f"Provisional intake {intake.id}: {intake.summary}\n\n"
-            "It is staged locally and has not been added to your Inbox.",
-            (
-                ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
-                ReplyAction("Add context", f"/intake_context {intake.id}"),
-                ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
-            ),
+            "It is staged locally and has not been added to your Inbox.\n"
+            "Analysis boundary: no model (default).",
+            self._actions(intake),
         )
 
     @staticmethod
@@ -1076,7 +1071,7 @@ class StewardProvisionalIntakeApplication:
     def handle_command(self, event: IncomingEvent) -> CaptureResult | str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/intake_accept", "/intake_discard", "/intake_context"}:
+        if command not in {"/intake_accept", "/intake_discard", "/intake_context", "/intake_analysis"}:
             return None
         intake_identifier, context_separator, context = argument.strip().partition(" ")
         if not separator or not intake_identifier.isdigit():
@@ -1094,15 +1089,45 @@ class StewardProvisionalIntakeApplication:
                 intake = self._service.add_context(intake_id, event.chat_id, context)
                 return PresentedReply(
                     f"Updated provisional intake {intake.id}: {intake.summary}",
-                    (
-                        ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
-                        ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
-                    ),
+                    self._actions(intake),
+                )
+            if command == "/intake_analysis":
+                if not context_separator:
+                    return "Use /intake_analysis followed by an intake ID and external, local, or none."
+                try:
+                    mode = IntakeAnalysisMode(context.casefold())
+                except ValueError:
+                    return "Intake analysis mode must be external, local, or none."
+                intake = self._service.set_analysis_mode(intake_id, event.chat_id, mode)
+                description = {
+                    IntakeAnalysisMode.EXTERNAL: "A configured external model may analyze extracted content after you save it.",
+                    IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
+                    IntakeAnalysisMode.NONE: "No model may analyze this item after you save it.",
+                }[mode]
+                return PresentedReply(
+                    f"Analysis boundary for provisional intake {intake.id}: {mode.value}. {description}",
+                    self._actions(intake),
                 )
             intake = self._service.discard(intake_id, event.chat_id)
         except (OSError, ValueError) as error:
             return str(error)
         return f"Discarded provisional intake {intake.id}; its staged copy was removed."
+
+    @staticmethod
+    def _actions(intake: ProvisionalIntake) -> tuple[ReplyAction, ...]:
+        """Keep the model-boundary choice visible before a save can trigger organization."""
+        save_label = {
+            IntakeAnalysisMode.EXTERNAL: "Save (external allowed)",
+            IntakeAnalysisMode.LOCAL: "Save (local only)",
+            IntakeAnalysisMode.NONE: "Save (no model)",
+        }[intake.analysis_mode]
+        return (
+            ReplyAction(save_label, f"/intake_accept {intake.id}"),
+            ReplyAction("Use local model", f"/intake_analysis {intake.id} local"),
+            ReplyAction("Allow external model", f"/intake_analysis {intake.id} external"),
+            ReplyAction("Add context", f"/intake_context {intake.id}"),
+            ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
+        )
 
 
 class DriveInboxImporter(Protocol):

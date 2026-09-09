@@ -335,6 +335,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("intake_accept", adapter.handle_update))
     application.add_handler(CommandHandler("intake_discard", adapter.handle_update))
     application.add_handler(CommandHandler("intake_context", adapter.handle_update))
+    application.add_handler(CommandHandler("intake_analysis", adapter.handle_update))
     capture_adapter = TelegramAdapter(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,

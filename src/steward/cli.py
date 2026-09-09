@@ -1421,6 +1421,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ProvisionalIntakeRepository(database_path),
                     capture_service,
                     activity,
+                    privacy,
                 )
             ),
             tool_agent_application=tool_agent_application,
