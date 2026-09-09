@@ -211,7 +211,7 @@ class PdfExtractor:
         fragments = []
         try:
             for page_number, page in enumerate(PdfReader(source.path).pages, start=1):
-                text = page.extract_text().strip()
+                text = (page.extract_text() or "").strip()
                 if text:
                     fragments.append(SourceFragment(None, source.id, None, len(fragments), text, f"page {page_number}"))
         except (OSError, PyPdfError) as error:

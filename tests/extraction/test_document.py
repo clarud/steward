@@ -113,8 +113,8 @@ def test_pdf_extractor_uses_local_ocr_only_when_native_pdf_text_is_absent(tmp_pa
     source = Source(1, path, "a" * 64, SourceType.PDF, path.stat().st_size, now, now, now)
 
     class Page:
-        def extract_text(self) -> str:
-            return ""
+        def extract_text(self) -> None:
+            return None
 
     class Reader:
         pages = [Page()]
