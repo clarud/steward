@@ -816,6 +816,37 @@ def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) ->
     assert activity.list_recent()[0].object_id == "1"
 
 
+def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    path = tmp_path / "note.md"; path.write_text("note", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    source = sources.add(Source(None, path, "b" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    activity = ActivityService(database_path)
+    proposals = ActionProposalRepository(database_path)
+    privacy = PrivacyService(database_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        privacy_application=StewardPrivacyApplication(privacy, sources, activity, proposals),
+    )
+
+    proposed = application.handle(make_event(text=f"/set_privacy {source.id} no_model"))
+
+    assert isinstance(proposed, PresentedReply)
+    assert proposed.title == "Review privacy change"
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
+    assert proposals.get(1).status == "pending"
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Privacy rule applied"
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.NO_MODEL
+    assert proposals.get(1).status == "accepted"
+    repeated = application.handle(make_event(text="/approve_action 1"))
+    assert repeated == "Privacy proposal 1 was already accepted."
+
+
 def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     deliveries = TelegramUpdateDeliveryRepository(database_path)

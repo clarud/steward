@@ -253,6 +253,10 @@ class StewardReviewInboxApplication:
             return "Refresh extracted text", "Derived text and search fragments will be rebuilt; the original stays unchanged."
         if action_type == "rebuild_semantic_index":
             return "Rebuild local search index", "Derived semantic search data will be rebuilt; original sources stay unchanged."
+        if action_type == StewardPrivacyApplication.SET_SOURCE_PRIVACY:
+            source_id = payload.get("source_id", "source")
+            rule = payload.get("rule", "selected rule")
+            return f"Change privacy for source {source_id}", f"Source {source_id} will use {rule} after approval."
         return "Review requested action", "Steward needs your approval before making this change."
 
 
@@ -1454,17 +1458,21 @@ class StewardRootsApplication:
 class StewardPrivacyApplication:
     """Explicit source-level model-boundary controls for an authorized chat."""
 
+    SET_SOURCE_PRIVACY = "set_source_privacy"
+
     def __init__(
         self,
         privacy: PrivacyService,
         sources: SourceRepository,
         activity: ActivityService | None = None,
+        proposals: ActionProposalRepository | None = None,
     ) -> None:
         self._privacy = privacy
         self._sources = sources
         self._activity = activity
+        self._proposals = proposals
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/privacy":
@@ -1474,6 +1482,8 @@ class StewardPrivacyApplication:
             if self._sources.get_by_id(source_id) is None:
                 return f"Source {source_id} was not found."
             return f"Source {source_id} privacy rule: {self._privacy.rule_for(source_id).value}"
+        if command in {"/approve_action", "/reject_action"}:
+            return self._review_privacy_proposal(command, separator, argument)
         if command != "/set_privacy":
             return None
         parts = argument.split()
@@ -1487,6 +1497,33 @@ class StewardPrivacyApplication:
         except ValueError:
             return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
         previous_rule = self._privacy.rule_for(source_id)
+        if self._proposals is not None:
+            payload = {"source_id": str(source_id), "rule": rule.value}
+            proposal = self._proposals.find_pending(self.SET_SOURCE_PRIVACY, payload)
+            if proposal is None:
+                proposal = self._proposals.add(self.SET_SOURCE_PRIVACY, payload)
+                if self._activity is not None:
+                    self._activity.record(
+                        ActivityType.ACTION_PROPOSED,
+                        object_id=str(proposal.id),
+                        details=f"Change source {source_id} privacy: {previous_rule.value} -> {rule.value}",
+                    )
+            consequence = {
+                PrivacyRule.EXTERNAL_ALLOWED: "Raw extracted content may be sent to a configured external model.",
+                PrivacyRule.EXTERNAL_REDACTED: "External model access remains blocked until Steward has a reviewed redaction capability.",
+                PrivacyRule.LOCAL_MODEL_ONLY: "Raw extracted content remains available only to a configured local model.",
+                PrivacyRule.NO_MODEL: "No model may receive this source's raw extracted content.",
+            }[rule]
+            return PresentedReply(
+                f"Source {source_id}: {previous_rule.value} → {rule.value}\n\n{consequence}\n\n"
+                "The privacy rule is unchanged until you approve.",
+                (
+                    ReplyAction("Apply privacy rule", f"/approve_action {proposal.id}"),
+                    ReplyAction("Reject", f"/reject_action {proposal.id}"),
+                ),
+                title="Review privacy change",
+                icon="🔒",
+            )
         self._privacy.set_rule(source_id, rule)
         if self._activity is not None and previous_rule != rule:
             self._activity.record(
@@ -1495,6 +1532,56 @@ class StewardPrivacyApplication:
                 details=f"{previous_rule.value} -> {rule.value}",
             )
         return f"Source {source_id} privacy rule set to {rule.value}."
+
+    def _review_privacy_proposal(
+        self, command: str, separator: str, argument: str
+    ) -> str | PresentedReply | None:
+        if self._proposals is None:
+            return None
+        if not separator or not argument.strip().isdigit():
+            return None
+        proposal = self._proposals.get(int(argument.strip()))
+        if proposal is None or proposal.action_type != self.SET_SOURCE_PRIVACY:
+            return None
+        decision = "accepted" if command == "/approve_action" else "rejected"
+        if proposal.status == decision:
+            return f"Privacy proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Privacy proposal {proposal.id} was already {proposal.status}."
+        source_id = int(proposal.payload["source_id"])
+        source = self._sources.get_by_id(source_id)
+        if source is None:
+            return "The source for this privacy proposal is no longer registered. The proposal remains pending."
+        if decision == "accepted":
+            rule = PrivacyRule(proposal.payload["rule"])
+            previous_rule = self._privacy.rule_for(source_id)
+            self._privacy.set_rule(source_id, rule)
+            if self._activity is not None and previous_rule != rule:
+                self._activity.record(
+                    ActivityType.SOURCE_PRIVACY_CHANGED,
+                    object_id=str(source_id),
+                    details=f"{previous_rule.value} -> {rule.value}",
+                )
+            text = f"Source {source_id} privacy rule is now {rule.value}."
+            title = "Privacy rule applied"
+            icon = "🔒"
+        else:
+            text = f"Source {source_id} privacy rule remains {self._privacy.rule_for(source_id).value}."
+            title = "Privacy change declined"
+            icon = "↩️"
+        self._proposals.set_status(proposal.id or 0, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
+                object_id=str(proposal.id),
+                details=proposal.action_type,
+            )
+        return PresentedReply(
+            text,
+            (ReplyAction("Home", "/home"),),
+            title=title,
+            icon=icon,
+        )
 
 
 class StewardCalendarApplication:

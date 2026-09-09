@@ -1562,7 +1562,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 KnowledgeConnector(database_path), sources,
             ),
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
-            privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources, activity),
+            privacy_application=StewardPrivacyApplication(
+                PrivacyService(database_path),
+                sources,
+                activity,
+                ActionProposalRepository(database_path),
+            ),
             operations_application=StewardOperationsApplication(
                 TelegramUpdateDeliveryRepository(database_path),
                 ActionProposalRepository(database_path),
