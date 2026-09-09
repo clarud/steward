@@ -113,6 +113,28 @@ def test_checkpointed_thread_resolves_a_follow_up_after_graph_recreation() -> No
     )
 
 
+def test_checkpointed_thread_resolves_last_source_reference_after_restart() -> None:
+    retriever = FakeRetriever((_hit(),))
+    gateway = FakeGateway()
+    saver = InMemorySaver()
+    config = {"configurable": {"thread_id": "telegram:100"}}
+    graph = build_retrieval_answer_graph(
+        retriever, AnswerService(retriever, ContextBuilder(), gateway), checkpointer=saver
+    )
+    graph.invoke({"question": "What does a TLB do?"}, config)
+
+    restarted = build_retrieval_answer_graph(
+        retriever, AnswerService(retriever, ContextBuilder(), gateway), checkpointer=saver
+    )
+    restarted.invoke({"question": "Show more from the last source."}, config)
+
+    assert retriever.queries[-1] == (
+        "Previous question: What does a TLB do?\n"
+        "Previously retrieved sources: virtual-memory.md\n"
+        "Current question: Show more from the last source."
+    )
+
+
 def test_sqlite_checkpointer_restores_a_thread_after_connection_restart(tmp_path: Path) -> None:
     database_path = tmp_path / "checkpoints.db"
     retriever = FakeRetriever((_hit(),))

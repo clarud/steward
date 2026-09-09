@@ -51,7 +51,12 @@ def build_retrieval_answer_graph(
         )
         question = state["question"]
         referential = bool(
-            re.search(r"\b(that|this|it|they|them|those|former|latter|above)\b", question, re.I)
+            re.search(
+                r"\b(that|this|it|they|them|those|former|latter|above)\b"
+                r"|\b(?:the )?last (?:source|document|file|note)\b",
+                question,
+                re.I,
+            )
         )
         labels = state.get("recent_source_labels", [])
         resolved = question
