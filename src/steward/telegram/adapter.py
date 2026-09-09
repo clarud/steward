@@ -306,6 +306,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("correct_receipt_record", adapter.handle_update))
     application.add_handler(CommandHandler("correct_warranty_record", adapter.handle_update))
     application.add_handler(CommandHandler("calendar_travel", adapter.handle_update))
+    application.add_handler(CommandHandler("calendar_task", adapter.handle_update))
     application.add_handler(CommandHandler("knowledge", adapter.handle_update))
     application.add_handler(CommandHandler("knowledge_proposals", adapter.handle_update))
     application.add_handler(CommandHandler("propose_enrichment", adapter.handle_update))

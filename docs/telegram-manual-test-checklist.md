@@ -59,6 +59,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   silently assigned your computer's time zone.
 - Accept it, inspect `/tasks`, then use `/complete_task ID` twice. The second
   response should say it is already completed, not create another audit event.
+- For a task with an explicit `--due-at` value, use `/calendar_task ID`.
+  Verify it is a review card and that accepting it creates only one short
+  `Due: ...` deadline marker in Calendar; repeating approval must not duplicate
+  the event.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
   `/propose_receipt_record SOURCE_ID`, and `/propose_warranty_record SOURCE_ID`.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.

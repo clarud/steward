@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 import sqlite3
@@ -12,6 +12,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposal, ActionProposalRepository
 from steward.records import TravelRecord
 from steward.records import RecordService
+from steward.tasks import Task, TaskService
 
 
 GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
@@ -218,6 +219,34 @@ class CalendarWriteService:
 
         return event
 
+    def create_task_deadline_event(self, task: Task) -> CalendarEvent:
+        """Create one reviewed, idempotent Calendar marker for a precise task deadline."""
+
+        if task.id is None:
+            raise ValueError("Only persisted tasks can create Calendar events.")
+        if task.due_at is None:
+            raise ValueError("Tasks need an explicit timezone-aware deadline for Calendar.")
+        if task.due_at.tzinfo is None or task.due_at.utcoffset() is None:
+            raise ValueError("Task deadlines must include a timezone for Calendar.")
+        key = f"task:{task.id}"
+        existing = self._existing_task_event(key)
+        if existing is not None:
+            return self._calendar.get_event(existing)
+        recovered = self._calendar.find_by_idempotency_key(key)
+        if recovered is not None:
+            self._link_task_event(key, task.id, recovered.id)
+            return recovered
+        start = task.due_at.astimezone(UTC)
+        event = self._calendar.create_event(
+            summary=f"Due: {task.title}",
+            start=start,
+            end=start + timedelta(minutes=15),
+            description=f"Steward task {task.id}. This is a reviewed deadline marker.",
+            idempotency_key=key,
+        )
+        self._link_task_event(key, task.id, event.id)
+        return event
+
     def _link(self, key: str, record_id: int, event_id: str) -> None:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -235,21 +264,42 @@ class CalendarWriteService:
             ).fetchone()
         return str(row[0]) if row else None
 
+    def _link_task_event(self, key: str, task_id: int, event_id: str) -> None:
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO calendar_task_event_links "
+                "(idempotency_key, task_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
+                (key, task_id, event_id, datetime.now(UTC).isoformat()),
+            )
+        if cursor.rowcount:
+            self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event_id, details=key)
+
+    def _existing_task_event(self, key: str) -> str | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT external_event_id FROM calendar_task_event_links WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+        return str(row[0]) if row else None
+
 
 class CalendarEventProposalService:
     """Persist Calendar requests before an explicit approval can create an event."""
 
     CREATE_TRAVEL_EVENT = "create_calendar_travel_event"
+    CREATE_TASK_EVENT = "create_calendar_task_event"
 
     def __init__(
         self,
         proposals: ActionProposalRepository,
         records: RecordService,
         activity: ActivityService,
+        tasks: TaskService | None = None,
     ) -> None:
         self._proposals = proposals
         self._records = records
         self._activity = activity
+        self._tasks = tasks
 
     def propose_travel_event(self, record_id: int) -> ActionProposal:
         record = self._record(record_id)
@@ -263,6 +313,21 @@ class CalendarEventProposalService:
             ActivityType.ACTION_PROPOSED,
             object_id=str(proposal.id),
             details=f"Create Calendar event for travel record {record_id}",
+        )
+        return proposal
+
+    def propose_task_event(self, task_id: int) -> ActionProposal:
+        task = self._task(task_id)
+        self._validate_task(task)
+        payload = {"task_id": str(task_id)}
+        existing = self._proposals.find_pending(self.CREATE_TASK_EVENT, payload)
+        if existing is not None:
+            return existing
+        proposal = self._proposals.add(self.CREATE_TASK_EVENT, payload)
+        self._activity.record(
+            ActivityType.ACTION_PROPOSED,
+            object_id=str(proposal.id),
+            details=f"Create Calendar deadline event for task {task_id}",
         )
         return proposal
 
@@ -284,7 +349,10 @@ class CalendarEventProposalService:
         if decision == "accepted":
             if calendar_writer is None:
                 raise ValueError("Calendar authorization is required to accept this proposal.")
-            calendar_writer.create_travel_event(self._record(int(proposal.payload["record_id"])))
+            if proposal.action_type == self.CREATE_TRAVEL_EVENT:
+                calendar_writer.create_travel_event(self._record(int(proposal.payload["record_id"])))
+            else:
+                calendar_writer.create_task_deadline_event(self._task(int(proposal.payload["task_id"])))
         self._proposals.set_status(proposal_id, decision)
         self._activity.record(
             ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
@@ -298,7 +366,7 @@ class CalendarEventProposalService:
 
     def _proposal(self, proposal_id: int) -> ActionProposal:
         proposal = self._proposals.get(proposal_id)
-        if proposal is None or proposal.action_type != self.CREATE_TRAVEL_EVENT:
+        if proposal is None or proposal.action_type not in {self.CREATE_TRAVEL_EVENT, self.CREATE_TASK_EVENT}:
             raise ValueError("Calendar event proposal was not found.")
         return proposal
 
@@ -308,6 +376,14 @@ class CalendarEventProposalService:
             raise ValueError(f"Travel record {record_id} was not found.")
         return record
 
+    def _task(self, task_id: int) -> Task:
+        if self._tasks is None:
+            raise ValueError("Task Calendar proposals are not configured for this Steward process.")
+        task = self._tasks.get(task_id)
+        if task is None:
+            raise ValueError(f"Task {task_id} was not found.")
+        return task
+
     @staticmethod
     def _validate_record(record: TravelRecord) -> None:
         if record.departure_time is None or record.arrival_time is None:
@@ -316,3 +392,10 @@ class CalendarEventProposalService:
             raise ValueError("Travel record times must include a timezone for Calendar.")
         if record.departure_time >= record.arrival_time:
             raise ValueError("Travel record departure must be before arrival for Calendar.")
+
+    @staticmethod
+    def _validate_task(task: Task) -> None:
+        if task.due_at is None:
+            raise ValueError("Tasks need an explicit timezone-aware deadline for Calendar.")
+        if task.due_at.tzinfo is None or task.due_at.utcoffset() is None:
+            raise ValueError("Task deadlines must include a timezone for Calendar.")

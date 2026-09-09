@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import sqlite3
 
 import pytest
 
@@ -8,6 +9,7 @@ from steward.action_proposals import ActionProposalRepository
 from steward.records import RecordService, TravelRecord
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
+from steward.tasks import TaskService
 from steward.tools import CalendarReadToolService, build_calendar_read_tools
 
 
@@ -213,3 +215,28 @@ def test_calendar_event_proposal_rejects_invalid_record_times_before_creating_a_
         service.propose_travel_event(record.id or 0)
 
     assert ActionProposalRepository(database).list_all() == []
+
+
+def test_task_calendar_event_requires_review_and_is_idempotent(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    task = TaskService(database).create(
+        "Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
+    )
+    proposals = CalendarEventProposalService(
+        ActionProposalRepository(database), RecordService(database), activity, TaskService(database)
+    )
+
+    pending = proposals.propose_task_event(task.id or 0)
+
+    assert pending.status == "pending"
+    assert pending.action_type == "create_calendar_task_event"
+    writer = CalendarWriteService(CalendarService(FakeCalendarClient()), database, activity)
+    accepted = proposals.review(pending.id or 0, "accepted", writer)
+    assert accepted.status == "accepted"
+    created = writer.create_task_deadline_event(task)
+    assert created.id == "created-event"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT task_id, external_event_id FROM calendar_task_event_links"
+        ).fetchall() == [(task.id, "created-event")]

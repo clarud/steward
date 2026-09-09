@@ -118,7 +118,7 @@ class StewardReadApplication:
             "/correct_travel_record RECORD_ID FIELD VALUE\n"
             "/correct_receipt_record RECORD_ID FIELD VALUE\n"
             "/correct_warranty_record RECORD_ID FIELD VALUE\n"
-            "/calendar_travel RECORD_ID\n"
+            "/calendar_travel RECORD_ID, /calendar_task TASK_ID\n"
             "/drive_search QUERY, /gmail_search QUERY\n"
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
@@ -1320,15 +1320,29 @@ class StewardActionProposalApplication:
 
         command, separator, argument = text.partition(" ")
         command = command.partition("@")[0]
-        if command == "/calendar_travel":
+        if command in {"/calendar_travel", "/calendar_task"}:
             if not separator or not argument.strip().isdigit():
-                return "Use /calendar_travel followed by a saved travel record ID."
+                target = "a saved travel record ID" if command == "/calendar_travel" else "a saved task ID"
+                return f"Use {command} followed by {target}."
             if self._calendar_proposals is None:
                 return "Calendar proposals are not configured on this Steward process."
             try:
-                proposal = self._calendar_proposals.propose_travel_event(int(argument.strip()))
+                proposal = (
+                    self._calendar_proposals.propose_travel_event(int(argument.strip()))
+                    if command == "/calendar_travel"
+                    else self._calendar_proposals.propose_task_event(int(argument.strip()))
+                )
             except ValueError as error:
                 return str(error)
+            if command == "/calendar_task":
+                return PresentedReply(
+                    f"Calendar proposal {proposal.id} is pending for task {proposal.payload['task_id']}. "
+                    "No Calendar event has been created.",
+                    (
+                        ReplyAction("Create deadline event", f"/approve_action {proposal.id}"),
+                        ReplyAction("Reject", f"/reject_action {proposal.id}"),
+                    ),
+                )
             return PresentedReply(
                 f"Calendar proposal {proposal.id} is pending for travel record "
                 f"{proposal.payload['record_id']}. No Calendar event has been created.",

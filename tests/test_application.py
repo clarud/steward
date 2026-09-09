@@ -1176,6 +1176,26 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     assert response.actions[0].command == "/approve_action 1"
 
 
+def test_telegram_can_create_a_reviewed_task_calendar_proposal(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    activity = ActivityService(database_path)
+    tasks = TaskService(database_path)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+    repository = ActionProposalRepository(database_path)
+    app = StewardActionProposalApplication(
+        repository,
+        ActionProposalService(repository, WorkspaceRepository(database_path), activity),
+        CalendarEventProposalService(repository, RecordService(database_path), activity, tasks),
+    )
+
+    response = app.handle_command(make_event(text=f"/calendar_task {task.id}"))
+
+    assert isinstance(response, PresentedReply)
+    assert "task 1" in response.text
+    assert "No Calendar event has been created" in response.text
+    assert repository.get(1).action_type == "create_calendar_task_event"
+
+
 def test_telegram_can_explicitly_import_one_drive_file() -> None:
     class Importer:
         def __init__(self) -> None:

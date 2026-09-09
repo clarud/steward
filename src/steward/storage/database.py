@@ -45,6 +45,7 @@ SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
 TASKS_SCHEMA_VERSION = 37
 TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
 TASK_DUE_AT_SCHEMA_VERSION = 39
+CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -394,6 +395,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
         TASK_DUE_AT_SCHEMA_VERSION,
         "ALTER TABLE tasks ADD COLUMN due_at TEXT",
+    ),
+    (
+        CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE calendar_task_event_links (
+            idempotency_key TEXT PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            external_event_id TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
     ),
 )
 

@@ -1297,6 +1297,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ActionProposalRepository(database_path),
                     RecordService(database_path),
                     activity,
+                    TaskService(database_path),
                 ),
                 _calendar_writer_factory(settings, database_path),
                 record_service=RecordService(database_path),
