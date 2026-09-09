@@ -152,6 +152,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Reply to a text discussion message with `/curate`. Verify the staged note
   identifies its origin as a user-selected Telegram reply, is not saved before
   approval, and becomes a labeled Inbox Markdown note only after approval.
+  Confirm approval ends with a **Curated note saved** card offering **Inbox**,
+  while rejection ends with **Curated note declined** and does not create a
+  source.
 - Reply to a non-sensitive discussion message with `/curate_synthesize local`.
   Verify that the returned model draft is marked as local-model synthesis and
   remains unsaved until approval. Use `external` only when you deliberately
