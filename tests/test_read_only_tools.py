@@ -36,7 +36,11 @@ def test_read_only_tools_return_provenance_without_changing_domain_state(tmp_pat
     workspaces = WorkspaceRepository(database)
     workspaces.create("Operating Systems")
     activity = ActivityService(database)
-    activity.record(ActivityType.SOURCE_CAPTURED, object_id=str(source.id), details="tlb.md")
+    activity.record(
+        ActivityType.SOURCE_CAPTURED,
+        object_id=str(source.id),
+        details=str(tmp_path / "private" / "tlb.md"),
+    )
     service = ReadOnlyToolService(
         sources, fragments, LexicalSearchService(sources, fragments), knowledge,
         RecordService(database), workspaces, activity,
@@ -49,10 +53,16 @@ def test_read_only_tools_return_provenance_without_changing_domain_state(tmp_pat
     events = json.loads(service.search_activity("captured"))
 
     assert source_hits[0]["fragment_id"] == stored.id
+    assert source_hits[0]["filename"] == "tlb.md"
+    assert "path" not in source_hits[0]
+    assert read["filename"] == "tlb.md"
+    assert "path" not in read
     assert read["fragments"][0]["text"] == "TLBs cache translations."
     assert found_concept["concept"]["id"] == concept.id
     assert found_workspaces[0]["name"] == "Operating Systems"
     assert events[0]["event_type"] == "source_captured"
+    assert events[0]["details"] == "local file: tlb.md"
+    assert str(tmp_path) not in json.dumps({"hits": source_hits, "read": read, "events": events})
     assert len(sources.list_all()) == 1
     assert len(activity.list_recent()) == 1
 

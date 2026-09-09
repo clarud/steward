@@ -368,9 +368,11 @@ without local support.
 ### ContextBuilder
 
 Each selected fragment is labelled with a stable request-local key such as
-`[F1]`, followed by the source path, heading, line location, and excerpt.
+`[F1]`, followed by a source filename, heading, line location, and excerpt.
 `AnswerContext.prompt` is the exact text sent to the model, while
-`AnswerContext.citations` holds the matching structured metadata.
+`AnswerContext.citations` holds the matching structured local metadata,
+including the physical path needed for provenance. The prompt deliberately
+does not expose local directory structure to a model.
 
 After generation, `CitationVerification` extracts inline request-local keys
 such as `[F1]` and compares them with that exact context. For a generated
@@ -876,7 +878,9 @@ Phase 21 adds the first actual tool-choosing loop without using a generic
 prebuilt agent. `ReadOnlyToolService` adapts ordinary services into six
 JSON-returning tools: `search_sources`, `read_source`, `search_knowledge`,
 `search_records`, `search_workspaces`, and `search_activity`. They have no
-mutation capability.
+mutation capability. Source tool results expose a Steward source ID and
+filename, not a physical filesystem path; path-like Activity details are
+redacted before entering model context.
 
 `build_tool_agent_graph()` defines the LangGraph sequence explicitly:
 

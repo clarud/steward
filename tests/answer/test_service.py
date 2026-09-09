@@ -83,6 +83,8 @@ def test_answer_service_sends_only_retrieved_evidence_to_model() -> None:
     assert result.context is not None
     assert "What does a TLB do?" in result.context.prompt
     assert "A TLB caches recently used address translations." in result.context.prompt
+    assert "Source: virtual-memory.md" in result.context.prompt
+    assert "C:/vault" not in result.context.prompt
     assert gateway.input_text == result.context.prompt
     assert gateway.instructions == GROUNDING_INSTRUCTIONS
     assert retriever.received_query == "What does a TLB do?"

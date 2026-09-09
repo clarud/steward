@@ -120,7 +120,7 @@ def test_question_application_includes_source_details_for_citations() -> None:
 
     assert response == (
         "A TLB caches translations. [F1]\n\n"
-        f"Sources:\n[F1] {Path('vault/virtual-memory.md')}:lines 4-6 [TLB]"
+        "Sources:\n[F1] virtual-memory.md:lines 4-6 [TLB]"
     )
 
 
@@ -198,6 +198,9 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     assert "openmp.md" in application.handle(make_event(text="/inbox"))
     assert "Search results" in application.handle(make_event(text="/search OpenMP"))
     assert "Recent activity" in application.handle(make_event(text="/activity"))
+    source_details = application.handle(make_event(text="/source 1"))
+    assert "Filename: openmp.md" in source_details
+    assert str(tmp_path) not in source_details
     assert "openmp.md" in application.handle(make_event(text="what is in my inbox"))
     assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
     assert "Search results" in application.handle(make_event(text="find my notes on OpenMP"))
@@ -943,7 +946,7 @@ def test_event_application_routes_downloaded_document_to_capture_service(tmp_pat
 
     response = application.handle_file(make_event(text=None), document)
 
-    assert response == "Saved to Inbox: vault\\inbox\\note.pdf"
+    assert response == "Saved to Inbox: note.pdf"
     assert capture.received == (make_event(text=None), document)
 
 
@@ -1396,7 +1399,7 @@ def test_telegram_can_explicitly_import_one_drive_file() -> None:
     response = application.handle(make_event(text="/drive_import file-42"))
 
     assert importer.file_ids == ["file-42"]
-    assert response == "Imported Drive file to Inbox: vault\\inbox\\drive-import-file-42-note.pdf"
+    assert response == "Imported Drive file to Inbox: drive-import-file-42-note.pdf"
 
 
 def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
@@ -1436,7 +1439,7 @@ def test_telegram_can_explicitly_import_one_gmail_message() -> None:
     application = StewardGmailImportApplication(Importer())
 
     assert application.handle_command(make_event(text="/gmail_import mail-42")) == (
-        "Imported Gmail message to Inbox: vault\\inbox\\gmail-import-mail-42.eml"
+        "Imported Gmail message to Inbox: gmail-import-mail-42.eml"
     )
     assert application.handle_command(make_event(text="/gmail_import")) == (
         "Use /gmail_import followed by one Gmail message ID."

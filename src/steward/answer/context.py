@@ -35,7 +35,7 @@ class ContextBuilder:
             prefix = "\n".join(
                 (
                     f"[{key}]",
-                    f"Source: {hit.source.path}",
+                    f"Source: {hit.source.path.name}",
                     f"Location: {heading}, {hit.fragment.location}",
                     "Excerpt:",
                 )

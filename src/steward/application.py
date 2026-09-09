@@ -171,7 +171,7 @@ class StewardReadApplication:
         return (
             f"Source {source.id}: {source.path.name}\n"
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
-            f"Path: {source.path}\nExtracted fragments: {len(fragments)}"
+            f"Filename: {source.path.name}\nExtracted fragments: {len(fragments)}"
         )
 
     def workspaces(self) -> str:
@@ -609,7 +609,7 @@ class StewardResearchApplication:
                 return "That research card is no longer available. Run /research again before retaining it."
             result = self._retention.retain(bundle)
             state = "Already retained" if result.duplicate else "Retained"
-            return f"{state} the reviewed external research note in Inbox: {result.source.path}"
+            return f"{state} the reviewed external research note in Inbox: {result.source.path.name}"
         if not separator or not query.strip():
             return f"Use {command} followed by a research question."
         provider = self._provider_factory()
@@ -622,7 +622,7 @@ class StewardResearchApplication:
         if command == "/research_retain":
             result = self._retention.retain(bundle)
             state = "Already retained" if result.duplicate else "Retained"
-            return f"{state} external research note in Inbox: {result.source.path}"
+            return f"{state} external research note in Inbox: {result.source.path.name}"
         sources = "\n".join(f"- {source.title}: {source.url}" for source in bundle.sources)
         text = f"External research — ephemeral, not saved:\n\n{bundle.answer}"
         if sources:
@@ -980,7 +980,7 @@ class StewardQuestionApplication:
         for citation in citations:
             heading = citation.heading or "Preamble"
             source_lines.append(
-                f"[{citation.key}] {citation.source_path}:"
+                f"[{citation.key}] {citation.source_path.name}:"
                 f"{citation.location} [{heading}]"
             )
         return f"{result['answer']}\n\nSources:\n" + "\n".join(source_lines)
@@ -1015,8 +1015,8 @@ class StewardCaptureApplication:
     @staticmethod
     def format_result(result: CaptureResult) -> str:
         if result.duplicate:
-            return f"Already saved: {result.source.path}"
-        return f"Saved to Inbox: {result.source.path}"
+            return f"Already saved to Inbox: {result.source.path.name}"
+        return f"Saved to Inbox: {result.source.path.name}"
 
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
         """Preserve a document already downloaded by a transport adapter."""
@@ -1137,7 +1137,7 @@ class StewardDriveImportApplication:
         except (OSError, ValueError) as error:
             return f"Drive import failed: {error}"
         status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
-        return f"{status}: {result.source.path}"
+        return f"{status}: {result.source.path.name}"
 
     def _search(self, query: str) -> str | PresentedReply:
         if self._importer is None or not hasattr(self._importer, "search"):
@@ -1187,7 +1187,7 @@ class StewardGmailImportApplication:
         except (OSError, ValueError) as error:
             return f"Gmail import failed: {error}"
         status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
-        return f"{status}: {result.source.path}"
+        return f"{status}: {result.source.path.name}"
 
     def _search(self, query: str) -> str | PresentedReply:
         if self._importer is None or not hasattr(self._importer, "search"):
@@ -1633,7 +1633,7 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         state = "Already saved" if result.duplicate else "Saved"
-        return f"{state} curated note to Inbox: {result.source.path}"
+        return f"{state} curated note to Inbox: {result.source.path.name}"
 
     def _review_workspace_link(self, proposal_id: int, decision: str) -> str:
         if self._workspaces is None or self._sources is None:

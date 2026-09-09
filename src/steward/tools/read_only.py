@@ -71,7 +71,7 @@ class ReadOnlyToolService:
             [
                 {
                     "source_id": hit.source.id,
-                    "path": str(hit.source.path),
+                    "filename": hit.source.path.name,
                     "fragment_id": hit.fragment.id,
                     "heading": hit.fragment.heading,
                     "location": hit.fragment.location,
@@ -95,7 +95,7 @@ class ReadOnlyToolService:
         return self._json(
             {
                 "id": source.id,
-                "path": str(source.path),
+                "filename": source.path.name,
                 "source_type": source.source_type.value,
                 "fragments": [
                     {
@@ -206,7 +206,7 @@ class ReadOnlyToolService:
                     "id": event.id,
                     "event_type": event.event_type.value,
                     "object_id": event.object_id,
-                    "details": event.details,
+                    "details": self._safe_activity_details(event.details),
                     "occurred_at": event.occurred_at.isoformat(),
                 }
                 for event in events
@@ -233,6 +233,20 @@ class ReadOnlyToolService:
         return source_id is not None and (
             self._privacy is None or self._privacy.permits_external_model(source_id)
         )
+
+    @staticmethod
+    def _safe_activity_details(details: str) -> str:
+        """Keep audit usefulness while withholding local directory structure from a model."""
+        looks_like_path = (
+            details.startswith("/")
+            or (len(details) > 2 and details[1] == ":" and details[2] in "\\/")
+            or "/" in details
+            or "\\" in details
+        )
+        if not looks_like_path:
+            return details
+        filename = details.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        return f"local file: {filename or '(name withheld)'}"
 
     @staticmethod
     def _json(value: object) -> str:
