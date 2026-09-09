@@ -24,6 +24,8 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 - Send `/status`; verify it reports local counts and delivery health, never a
   token or message body.
+- Send `/metrics`; verify it reports only aggregate activity-event counts, not
+  filenames, paths, source text, or individual event details.
 - Send `/help`; verify the listed commands are understandable.
 - Send an unknown command such as `/steward_typo`. Verify Steward replies with
   a safe clarification/helpful next step instead of silently ignoring it.

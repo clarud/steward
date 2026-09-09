@@ -57,3 +57,11 @@ class ActivityService:
         with sqlite3.connect(self._database_path) as connection:
             rows=connection.execute("SELECT id,event_type,object_id,details,occurred_at FROM activity_events ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
         return [ActivityEvent(int(r[0]),ActivityType(str(r[1])),str(r[2]) if r[2] else None,str(r[3]),datetime.fromisoformat(str(r[4]))) for r in rows]
+
+    def counts(self) -> dict[ActivityType, int]:
+        """Return aggregate audit counts without reading event details."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT event_type, COUNT(*) FROM activity_events GROUP BY event_type"
+            ).fetchall()
+        return {ActivityType(str(event_type)): int(count) for event_type, count in rows}

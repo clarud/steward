@@ -107,6 +107,8 @@ class StewardReadApplication:
             return self.workspaces()
         if command == "/activity":
             return self.activity(argument)
+        if command == "/metrics":
+            return self.metrics()
         if command == "/search":
             return self.search(argument)
         if command == "/semantic_search":
@@ -225,6 +227,16 @@ class StewardReadApplication:
         return "Recent activity:\n" + "\n".join(
             f"{event.id}: {event.event_type.value} — {self._safe_activity_details(event.details)}"
             for event in events
+        )
+
+    def metrics(self) -> str:
+        """Show aggregate operational evidence without exposing event content."""
+        counts = self._activity.counts()
+        if not counts:
+            return "No local activity metrics yet."
+        return "Local activity metrics:\n" + "\n".join(
+            f"{event_type.value}: {count}"
+            for event_type, count in sorted(counts.items(), key=lambda item: item[0].value)
         )
 
     @staticmethod

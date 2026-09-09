@@ -303,6 +303,24 @@ def test_activity_hides_local_directory_structure_from_telegram(tmp_path: Path) 
     assert "local file:" in response
 
 
+def test_metrics_reports_aggregate_activity_without_event_details(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    activity = ActivityService(database)
+    activity.record(ActivityType.ACTION_REJECTED, details="C:/private/secret-note.md")
+    activity.record(ActivityType.ACTION_REJECTED, details="another private detail")
+    reads = StewardReadApplication(
+        SourceRepository(database), SourceFragmentRepository(database),
+        LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+        WorkspaceRepository(database), activity, inbox,
+    )
+
+    response = reads.handle_command(make_event(text="/metrics"))
+
+    assert response == "Local activity metrics:\naction_rejected: 2"
+    assert "C:/private" not in response and "another private detail" not in response
+
+
 def test_status_reports_review_and_delivery_health_without_message_content(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
