@@ -693,6 +693,12 @@ Done when each action is authorized by chat/user, explains its effect, emits
 Activity, and has tests for OAuth/configuration failure, unauthorized access,
 duplicate import, and confirmation refusal.
 
+Dead-letter recovery must not fabricate a replay. Steward retains delivery
+metadata, not Telegram message bodies, so a future confirmed recovery action
+can only reopen an update for a genuine Telegram redelivery while recording an
+audit event and a new retry budget. It cannot rerun an unavailable original
+payload locally.
+
 ### Goal 9 — End-to-end evaluation and daily-use hardening
 
 **User outcome:** Steward is dependable enough to use as the main personal
