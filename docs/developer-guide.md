@@ -1150,6 +1150,10 @@ behavior easy to edit and inspect in code review.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
   not a general airline-document parser; Calendar events require a travel
   record plus explicit proposal approval or an explicit CLI write command.
+- Receipt records are the next record family. `propose-receipt-record` and
+  `create-receipt-record` recognize a conservative labeled shape (merchant,
+  total, currency, purchase date, and receipt number). They are not a general
+  receipt understanding system and do not infer unlabeled totals.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.

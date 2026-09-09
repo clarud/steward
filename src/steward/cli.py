@@ -302,6 +302,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create_travel_parser.add_argument("source_id", type=int)
     subcommands.add_parser("travel-records", help="List saved travel records")
+    receipt_parser = subcommands.add_parser("propose-receipt-record", help="Interpret source fragments as a receipt record")
+    receipt_parser.add_argument("source_id", type=int)
+    create_receipt_parser = subcommands.add_parser(
+        "create-receipt-record", help="Persist an evidence-backed receipt record proposed from a source"
+    )
+    create_receipt_parser.add_argument("source_id", type=int)
+    subcommands.add_parser("receipt-records", help="List saved receipt records")
     travel_references = subcommands.add_parser(
         "travel-record-references", help="List source-backed references for a travel record"
     )
@@ -1425,6 +1432,38 @@ def main(argv: Sequence[str] | None = None) -> None:
         initialize_database(database_path)
         for record in RecordService(database_path).list_travel_records():
             print(f"{record.id}\t{record.flight_number or ''}\t{record.departure or ''}\t{record.arrival or ''}")
+        return
+
+    if arguments.command == "propose-receipt-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        proposal = RecordService(database_path).propose_receipt_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = proposal.record
+        amount = f"{record.total_cents / 100:.2f}" if record.total_cents is not None else ""
+        print(f"merchant={record.merchant or ''}\ttotal={amount}\tcurrency={record.currency or ''}\tevidence={proposal.field_evidence}")
+        return
+
+    if arguments.command == "create-receipt-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        records = RecordService(database_path)
+        proposal = records.propose_receipt_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = records.create_receipt_from_proposal(proposal)
+        print(f"Created receipt record {record.id} from source {record.source_id}.")
+        return
+
+    if arguments.command == "receipt-records":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        for record in RecordService(database_path).list_receipt_records():
+            total = f"{record.total_cents / 100:.2f}" if record.total_cents is not None else ""
+            print(f"{record.id}\t{record.merchant or ''}\t{total}\t{record.currency or ''}\t{record.receipt_number or ''}")
         return
 
     if arguments.command in {"travel-record-references", "add-travel-record-reference"}:

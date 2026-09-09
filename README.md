@@ -34,6 +34,10 @@ The repository also includes versioned retrieval and product evaluation cases
 for regression checks across retrieval, organization, records, knowledge, and
 agent safety.
 
+Receipt records are deterministic, evidence-backed projections over sources:
+merchant, total, currency, purchase time, and receipt number are proposed from
+labeled extracted text, then only persisted when evidence exists for a field.
+
 ## Local setup
 
 Requires Python 3.12 or newer.

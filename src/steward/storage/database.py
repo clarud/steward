@@ -31,6 +31,8 @@ TELEGRAM_UPDATE_DELIVERIES_SCHEMA_VERSION = 22
 TRAVEL_RECORD_REFERENCES_SCHEMA_VERSION = 23
 TELEGRAM_DELIVERY_HISTORY_SCHEMA_VERSION = 24
 TELEGRAM_DELIVERY_DEAD_LETTER_SCHEMA_VERSION = 25
+RECEIPT_RECORDS_SCHEMA_VERSION = 26
+RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION = 27
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -246,6 +248,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             failed_at TEXT NOT NULL
         )
         """,
+    ),
+    (
+        RECEIPT_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE receipt_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            merchant TEXT, total_cents INTEGER, currency TEXT, purchased_at TEXT, receipt_number TEXT)""",
+    ),
+    (
+        RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE receipt_record_evidence (receipt_record_id INTEGER NOT NULL REFERENCES receipt_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (receipt_record_id, field_name))""",
     ),
 )
 

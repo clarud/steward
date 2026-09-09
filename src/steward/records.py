@@ -33,6 +33,15 @@ class TravelRecordReference:
     value: str
     fragment_id: int
 
+@dataclass(frozen=True, slots=True)
+class ReceiptRecord:
+    id: int | None; source_id: int; merchant: str | None; total_cents: int | None
+    currency: str | None; purchased_at: datetime | None; receipt_number: str | None
+
+@dataclass(frozen=True, slots=True)
+class ReceiptRecordProposal:
+    record: ReceiptRecord; field_evidence: dict[str, int]
+
 class RecordService:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -55,6 +64,35 @@ class RecordService:
             record.arrival_time,
             record.booking_reference,
         )
+
+    def propose_receipt_record(self, source_id: int, fragments: list[tuple[int, str]]) -> ReceiptRecordProposal:
+        merchant = currency = receipt_number = None; total_cents = None; purchased_at = None; evidence: dict[str, int] = {}
+        for fragment_id, text in fragments:
+            if merchant is None and (match := re.search(r"(?:Merchant|Store):\s*([^\n]+)", text, re.I)):
+                merchant = match.group(1).strip(); evidence["merchant"] = fragment_id
+            if total_cents is None and (match := re.search(r"(?:Total|Amount Paid):\s*([A-Z]{3})?\s*[$]?\s*(\d+(?:\.\d{2})?)", text, re.I)):
+                currency = match.group(1) or "USD"; total_cents = round(float(match.group(2)) * 100); evidence["total_cents"] = fragment_id; evidence["currency"] = fragment_id
+            if receipt_number is None and (match := re.search(r"(?:Receipt|Invoice)(?: Number| No\.?| #)?:\s*([^\s]+)", text, re.I)):
+                receipt_number = match.group(1); evidence["receipt_number"] = fragment_id
+            if purchased_at is None and (value := self._labeled_datetime("Purchase Date", text)):
+                purchased_at = value; evidence["purchased_at"] = fragment_id
+        return ReceiptRecordProposal(ReceiptRecord(None, source_id, merchant, total_cents, currency, purchased_at, receipt_number), evidence)
+
+    def create_receipt_from_proposal(self, proposal: ReceiptRecordProposal) -> ReceiptRecord:
+        if not proposal.field_evidence:
+            raise ValueError("Cannot create a receipt record without extracted, evidenced fields")
+        record = proposal.record
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            cursor = connection.execute("INSERT INTO receipt_records (source_id, merchant, total_cents, currency, purchased_at, receipt_number) VALUES (?, ?, ?, ?, ?, ?)", (record.source_id, record.merchant, record.total_cents, record.currency, record.purchased_at.isoformat() if record.purchased_at else None, record.receipt_number))
+            record_id = int(cursor.lastrowid)
+            connection.executemany("INSERT INTO receipt_record_evidence (receipt_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
+        return ReceiptRecord(record_id, record.source_id, record.merchant, record.total_cents, record.currency, record.purchased_at, record.receipt_number)
+
+    def list_receipt_records(self) -> list[ReceiptRecord]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute("SELECT id, source_id, merchant, total_cents, currency, purchased_at, receipt_number FROM receipt_records ORDER BY id").fetchall()
+        return [ReceiptRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, int(row[3]) if row[3] is not None else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None, str(row[6]) if row[6] else None) for row in rows]
 
     def create_from_proposal(self, proposal: TravelRecordProposal) -> TravelRecord:
         """Persist an explicitly accepted proposal and its field-level evidence.
