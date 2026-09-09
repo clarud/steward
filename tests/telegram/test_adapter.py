@@ -128,6 +128,20 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
     assert message.replies == ["A TLB caches address translations. [F1]"]
 
 
+def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:
+    class LongHandler(FakeEventHandler):
+        def handle(self, event: IncomingEvent) -> str:
+            self.events.append(event)
+            return "evidence " * 700
+
+    message = FakeMessage()
+    asyncio.run(TelegramAdapter(LongHandler()).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert len(message.replies) == 2
+    assert all(len(reply) <= 3_800 for reply in message.replies)
+    assert "".join(message.replies) == "evidence " * 700
+
+
 def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(tmp_path) -> None:
     class ProposalHandler(FakeEventHandler):
         def handle(self, event: IncomingEvent) -> PresentedReply:

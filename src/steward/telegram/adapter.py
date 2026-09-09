@@ -233,25 +233,26 @@ class TelegramAdapter:
         """Render escaped HTML and locally-resolved compact follow-up buttons."""
         if isinstance(response, PresentedReply):
             self._remember_review(event, response)
-        rendered = self._presenter.render(
+        rendered_messages = self._presenter.render_many(
             response if isinstance(response, PresentedReply) else str(response)
         )
-        if not rendered.rows or self._callbacks is None:
-            await message.reply_text(rendered.text, parse_mode="HTML")  # type: ignore[attr-defined]
-            return
-        buttons = [
-            [
-                InlineKeyboardButton(
-                    action.label,
-                    callback_data=self._callbacks.create(event.chat_id, action.command).token,
-                )
-                for action in row
+        for rendered in rendered_messages:
+            if not rendered.rows or self._callbacks is None:
+                await message.reply_text(rendered.text, parse_mode="HTML")  # type: ignore[attr-defined]
+                continue
+            buttons = [
+                [
+                    InlineKeyboardButton(
+                        action.label,
+                        callback_data=self._callbacks.create(event.chat_id, action.command).token,
+                    )
+                    for action in row
+                ]
+                for row in rendered.rows
             ]
-            for row in rendered.rows
-        ]
-        await message.reply_text(  # type: ignore[attr-defined]
-            rendered.text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            await message.reply_text(  # type: ignore[attr-defined]
+                rendered.text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
+            )
 
     def _remember_review(self, event: IncomingEvent, response: PresentedReply) -> None:
         """Associate a displayed approval card with this chat, never with its text."""

@@ -19,6 +19,10 @@ class RenderedTelegramReply:
 class TelegramPresenter:
     """Keep Telegram formatting and button constraints out of application services."""
 
+    # Stay below Telegram's 4096-character limit, leaving room for transport
+    # additions and avoiding splits through most escaped entities.
+    _MAX_MESSAGE_CHARACTERS = 3_800
+
     _LABELS = {
         "Allow external model": "Use external",
         "Use local model": "Use local",
@@ -58,6 +62,27 @@ class TelegramPresenter:
             rendered += f"\n\n{escape(body)}"
         return RenderedTelegramReply(rendered, self.action_rows(response.actions))
 
+    def render_many(self, response: str | PresentedReply) -> tuple[RenderedTelegramReply, ...]:
+        """Render one response into Telegram-sized messages.
+
+        Content is escaped before splitting. The splitter preserves the exact
+        escaped text and avoids ending a chunk inside an HTML entity. Buttons
+        belong only to the final message so a user never sees duplicate
+        approval controls after a long answer.
+        """
+
+        rendered = self.render(response)
+        chunks = self._split_html(rendered.text)
+        if len(chunks) == 1:
+            return (rendered,)
+        return tuple(
+            RenderedTelegramReply(
+                text,
+                rendered.rows if index == len(chunks) - 1 else (),
+            )
+            for index, text in enumerate(chunks)
+        )
+
     def action_rows(self, actions: tuple[ReplyAction, ...]) -> tuple[tuple[ReplyAction, ...], ...]:
         """Make visually short buttons and avoid one unusably wide button row."""
 
@@ -86,3 +111,23 @@ class TelegramPresenter:
         if not separator or len(first) > 88:
             return "Steward", text.strip()
         return first.rstrip(":"), remainder.lstrip()
+
+    @classmethod
+    def _split_html(cls, text: str) -> tuple[str, ...]:
+        if len(text) <= cls._MAX_MESSAGE_CHARACTERS:
+            return (text,)
+        chunks: list[str] = []
+        remaining = text
+        while len(remaining) > cls._MAX_MESSAGE_CHARACTERS:
+            limit = cls._MAX_MESSAGE_CHARACTERS
+            boundary = max(remaining.rfind("\n", 0, limit), remaining.rfind(" ", 0, limit))
+            cut = boundary if boundary > limit // 2 else limit
+            ampersand = remaining.rfind("&", 0, cut)
+            if ampersand != -1 and remaining.rfind(";", ampersand, cut) == -1:
+                cut = ampersand
+            if cut == 0:
+                cut = limit
+            chunks.append(remaining[:cut])
+            remaining = remaining[cut:]
+        chunks.append(remaining)
+        return tuple(chunks)

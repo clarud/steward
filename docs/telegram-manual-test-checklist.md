@@ -31,6 +31,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   a safe clarification/helpful next step instead of silently ignoring it.
 - Send `/sources`, `/inbox`, `/search OpenMP`, `/source 1`, `/workspaces`, and
   `/activity`; use pagination where it appears.
+- Open a deliberately long harmless source or broad search result. Verify a
+  long answer arrives as consecutive readable messages rather than a Telegram
+  delivery error, and any action buttons appear only on the final message.
 - Ask a normal local question and a follow-up that uses a reference such as
   “How does that relate to TLBs?” Verify citations point to test-vault sources.
 - Reply to an earlier harmless discussion message with a normal question such
