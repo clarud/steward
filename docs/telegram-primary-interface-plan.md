@@ -48,6 +48,36 @@ Current observed limitations to address:
 - production retrieval must never include test-fixture sources;
 - the CLI has many capabilities that Telegram cannot yet initiate or inspect.
 
+## Existing-vault onboarding
+
+Steward can start from an existing human-maintained folder rather than requiring
+a new folder hierarchy. For example:
+
+```powershell
+steward scan "C:\Users\clare\Documents\School Notes"
+```
+
+Scanning registers supported files at their existing paths, hashes and extracts
+them, and builds derived indexes. It does **not** copy, move, rename, or rewrite
+the original notes. SQLite stores Steward's operational metadata separately in
+`.steward/`.
+
+Telegram should eventually make this discoverable as a locally confirmed setup
+flow:
+
+```text
+Choose an existing local folder in the local setup UI
+→ display its file count and supported types
+→ confirm the allowed root
+→ scan in place
+→ report results in Telegram
+```
+
+The folder picker and root authorization stay local because Telegram must not
+gain arbitrary filesystem access. The scanner must exclude the Steward
+repository, test fixtures, `.steward/`, and other configured exclusions unless
+the user deliberately chooses them.
+
 ## Capability catalogue
 
 Before each implementation slice, maintain a command-to-interaction mapping:
@@ -137,7 +167,63 @@ Acceptance criteria:
   failure;
 - routing tests cover text, caption, reply, duplicate update, and restart.
 
-### 3. Search, sources, and retrieval controls
+### 3. Provisional capture and guided routing
+
+Replace the command-first `/save` experience with a provisional intake flow for
+attachments and substantial information dumps. A normal question remains an
+ordinary conversation; an attachment or candidate fact is analyzed without
+becoming durable until the user decides.
+
+```text
+incoming attachment or substantial text
+→ local/allowed provisional analysis
+→ classify: document, thought, task, deadline, record, decision, knowledge,
+  reference, question, or uncertain
+→ show concise explanation and proposed next steps
+→ user saves, asks for more analysis, supplies context, or discards
+→ only approved material enters Inbox/Source/Record/Task state
+```
+
+Example when context is insufficient:
+
+```text
+Steward: This looks like a technical PDF, but I cannot confidently place it.
+         It may relate to CS3210 or a new project.
+
+         [Save to Inbox] [Tell me what it relates to] [Show extracted summary]
+         [Do not keep]
+
+You: It is for my CS3210 assignment on OpenMP.
+
+Steward: Updated proposal: save to Inbox and link to CS3210 Revision.
+         [Accept] [Edit] [Keep in Inbox]
+```
+
+Supplementary context is an input to a new or updated proposal, not a hidden
+command to change a file. Steward records the rationale, supplied guidance,
+supporting evidence, and final human decision. If it remains uncertain, Inbox
+is still the correct outcome.
+
+Sensitive documents must offer an explicit analysis boundary before any cloud
+model sees extracted text:
+
+```text
+[Analyze locally] [Save without model analysis]
+[Allow configured external model] [Do not keep]
+```
+
+Acceptance criteria:
+
+- `/save` remains a supported explicit shortcut but is no longer required for
+  ordinary attachment intake;
+- no attachment or text dump is retained permanently without a clear user
+  choice, except where the user configured a deliberate auto-capture policy;
+- the user can add context and receive an updated routing proposal;
+- every proposal revision and final decision is auditable;
+- temporary downloaded files are cleaned up when the user chooses not to keep
+  them.
+
+### 4. Search, sources, and retrieval controls
 
 Expose source listing, lexical search, semantic search, hybrid search, source
 inspection, and re-extraction through Telegram.
@@ -163,7 +249,7 @@ Acceptance criteria:
 - test fixtures cannot enter a production registry;
 - expensive reprocessing requires confirmation and records Activity.
 
-### 4. Workspaces and Inbox organization
+### 5. Workspaces and Inbox organization
 
 Expose workspace listing/creation, source linking, Inbox inspection, emerging
 workspace review, organization proposals, and proposal decisions.
@@ -189,7 +275,7 @@ Acceptance criteria:
 - approval remains safe across process restart and duplicate callback delivery;
 - all decisions produce Activity events.
 
-### 5. Knowledge and evidence workflows
+### 6. Knowledge and evidence workflows
 
 Expose concept lookup, claim inspection, knowledge connectors, enrichment
 proposals, proposal lists, and accept/reject review.
@@ -207,7 +293,7 @@ rationale
 Derived synthesis remains non-canonical. Canonical claims and evidence links
 change only through the deterministic knowledge service after approval.
 
-### 6. Record workflows
+### 7. Record workflows
 
 Expose travel, receipt, warranty, and travel-reference capabilities in
 Telegram. An uploaded document can create an extraction proposal, followed by
@@ -224,7 +310,7 @@ Departure time: ...
 Every accepted field keeps a pointer to the source fragment/page that supports
 it. Corrections must be explicit user inputs and audited.
 
-### 7. Calendar integration
+### 8. Calendar integration
 
 Expose Calendar search, event inspection, travel-event proposals, review, and
 event creation.
@@ -245,7 +331,7 @@ resolve travel record
 → store external event ID and Activity
 ```
 
-### 8. Research, Drive, and Gmail
+### 9. Research, Drive, and Gmail
 
 Research results are Telegram cards with source links, an ephemeral synthesis,
 and explicit `Keep` / `Discard` controls. Retaining material sends it through
@@ -255,7 +341,7 @@ Drive and Gmail search/import are selection workflows. OAuth remains local;
 imports are always explicit. Telegram must never offer a broad background sync
 without a separate deliberate product decision.
 
-### 9. Privacy and operational controls
+### 10. Privacy and operational controls
 
 Expose source privacy inspection and changes to the authorized owner. Before a
 cloud-model action on a sensitive source, show the model destination and ask
@@ -267,7 +353,7 @@ These are owner-only administrative interactions. Commands that start a local
 service, download a model, retry a failed delivery, or consume substantial
 resources require confirmation and clear status feedback.
 
-### 10. Reliability, observability, and evaluation
+### 11. Reliability, observability, and evaluation
 
 For every Telegram capability, test:
 
@@ -292,13 +378,14 @@ Build in small, independently testable slices:
 1. Interaction foundation: `/help`, `/status`, cards, pagination, callback
    validation.
 2. Intent routing: no-punctuation questions, Inbox inspection, source search.
-3. Workspaces and organization proposals/reviews.
-4. Knowledge proposal/review flows.
-5. Records and field-review flows.
-6. Calendar read, then proposal/review/write flows.
-7. Research retention, Drive import, and Gmail import.
-8. Privacy settings and administrative operations.
-9. Reliability/evaluation pass across all Telegram flows.
+3. Provisional attachment/text intake and guided routing proposals.
+4. Workspaces and organization proposals/reviews.
+5. Knowledge proposal/review flows.
+6. Records and field-review flows.
+7. Calendar read, then proposal/review/write flows.
+8. Research retention, Drive import, and Gmail import.
+9. Privacy settings and administrative operations.
+10. Reliability/evaluation pass across all Telegram flows.
 
 Each slice must preserve the invariants in `docs/invariants.md`, include unit
 and integration tests, and be reviewed before the next slice begins.
@@ -333,4 +420,7 @@ tests and failure cases
 
 ### Ideas backlog
 
-- 
+- Guided routing conversation after uncertain intake: user supplies project,
+  course, purpose, or privacy context; Steward updates a reviewable proposal.
+- Existing-folder onboarding: select a local directory, scan it in place, and
+  receive scan status and retrieval readiness through Telegram.
