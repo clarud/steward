@@ -188,6 +188,10 @@ steward gmail-search "from:airline newer_than:1y"
 steward gmail-import GMAIL_MESSAGE_ID
 ```
 
+An allowlisted Telegram chat can perform the same explicit action with
+`/gmail_import GMAIL_MESSAGE_ID`. It downloads only that raw message into
+Inbox; it does not search, send, or automatically sync mail.
+
 Use Calendar reads in the tool agent only when requested explicitly:
 
 ```powershell

@@ -148,6 +148,39 @@ class StewardDriveImportApplication:
         return f"{status}: {result.source.path}"
 
 
+class GmailInboxImporter(Protocol):
+    """Narrow boundary used by a transport command to import one Gmail ID."""
+
+    def import_message(self, message_id: str) -> CaptureResult: ...
+
+
+class StewardGmailImportApplication:
+    """Turn a precise Telegram command into an explicit Gmail Inbox import."""
+
+    def __init__(self, importer: GmailInboxImporter | None) -> None:
+        self._importer = importer
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command != "/gmail_import":
+            return None
+        message_id = argument.strip()
+        if not separator or not message_id or any(character.isspace() for character in message_id):
+            return "Use /gmail_import followed by one Gmail message ID."
+        if self._importer is None:
+            return (
+                "Gmail import is not configured on this Steward process. "
+                "Set STEWARD_GOOGLE_CLIENT_SECRETS, authorize Gmail, then try again."
+            )
+        try:
+            result = self._importer.import_message(message_id)
+        except (OSError, ValueError) as error:
+            return f"Gmail import failed: {error}"
+        status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
+        return f"{status}: {result.source.path}"
+
+
 class OrganizationApprovalGraph(Protocol):
     """The small resumable graph surface required by the approval application."""
 
@@ -312,6 +345,7 @@ class StewardEventApplication:
         organization_approval_application: StewardOrganizationApprovalApplication | None = None,
         action_proposal_application: StewardActionProposalApplication | None = None,
         drive_import_application: StewardDriveImportApplication | None = None,
+        gmail_import_application: StewardGmailImportApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -319,12 +353,17 @@ class StewardEventApplication:
         self._organization_approval_application = organization_approval_application
         self._action_proposal_application = action_proposal_application
         self._drive_import_application = drive_import_application
+        self._gmail_import_application = gmail_import_application
 
     def handle(self, event: IncomingEvent) -> str:
         if self._drive_import_application is not None:
             drive_response = self._drive_import_application.handle_command(event)
             if drive_response is not None:
                 return drive_response
+        if self._gmail_import_application is not None:
+            gmail_response = self._gmail_import_application.handle_command(event)
+            if gmail_response is not None:
+                return gmail_response
         if self._action_proposal_application is not None:
             action_response = self._action_proposal_application.handle_command(event)
             if action_response is not None:

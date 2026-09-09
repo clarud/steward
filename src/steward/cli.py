@@ -17,12 +17,12 @@ from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
     StewardDriveImportApplication,
+    StewardGmailImportApplication,
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
 )
 from steward.capture import InboxCaptureService
-from steward.events import IncomingEvent
 from steward.answer import (
     AnswerService,
     ContextBuilder,
@@ -67,7 +67,7 @@ from steward.calendar import (
     authorize_google_calendar,
 )
 from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
-from steward.gmail import GmailService, authorize_gmail
+from steward.gmail import GmailInboxImportService, GmailService, authorize_gmail
 from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
 from steward.research import (
     GeminiGoogleSearchProvider,
@@ -423,6 +423,33 @@ def _drive_inbox_importer(
     if not os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS"):
         return None
     return _ConfiguredDriveInboxImporter(settings, capture_service)
+
+
+class _ConfiguredGmailInboxImporter:
+    """Authorize Gmail lazily, only after an explicit Telegram import command."""
+
+    def __init__(self, settings: Settings, capture_service: InboxCaptureService) -> None:
+        self._settings = settings
+        self._capture_service = capture_service
+
+    def import_message(self, message_id: str):
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before importing from Gmail.")
+        gmail = GmailService(
+            authorize_gmail(
+                Path(configured), self._settings.data_dir / "config" / "gmail-token.json"
+            )
+        )
+        return GmailInboxImportService(gmail, self._capture_service).import_message(message_id)
+
+
+def _gmail_inbox_importer(
+    settings: Settings, capture_service: InboxCaptureService
+) -> _ConfiguredGmailInboxImporter | None:
+    if not os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS"):
+        return None
+    return _ConfiguredGmailInboxImporter(settings, capture_service)
 
 
 def _calendar_writer_factory(settings: Settings, database_path: Path):
@@ -843,6 +870,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
             ),
+            gmail_import_application=StewardGmailImportApplication(
+                _gmail_inbox_importer(settings, capture_service)
+            ),
         )
         run_telegram_polling(
             token,
@@ -943,13 +973,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before importing from Gmail.")
             return
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        gmail = GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json"))
-        with TemporaryDirectory() as temporary_dir:
-            downloaded = Path(temporary_dir) / f"gmail-{arguments.message_id}.eml"
-            downloaded.write_bytes(gmail.download_raw(arguments.message_id))
-            result = InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path)).capture_file(
-                IncomingEvent(f"gmail:{arguments.message_id}", "gmail", "import", arguments.message_id, None, datetime.now().astimezone(), None, (downloaded.name,)), downloaded
-            )
+        result = GmailInboxImportService(
+            GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json")),
+            InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path)),
+        ).import_message(arguments.message_id)
         print(("Already imported" if result.duplicate else "Imported") + f" Gmail message to Inbox: {result.source.path}")
         return
 

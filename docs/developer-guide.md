@@ -622,6 +622,11 @@ explicitly requests that message's raw RFC 822 data, stores it as a canonical
 `.eml` original through `InboxCaptureService`, and never sends or automatically
 imports mail.
 
+`GmailInboxImportService` is shared by the CLI and Telegram's explicit
+`/gmail_import MESSAGE_ID` command. The command is available only to the
+allowlisted Telegram adapter and uses a lazy OAuth boundary: bot startup and
+ordinary messages do not inspect Gmail or trigger browser authorization.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by

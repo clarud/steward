@@ -1,7 +1,8 @@
 import pytest
 from base64 import urlsafe_b64encode
 
-from steward.gmail import GmailService
+from steward.capture import CaptureResult
+from steward.gmail import GmailInboxImportService, GmailService
 
 
 class Request:
@@ -55,3 +56,28 @@ def test_gmail_download_raw_decodes_an_explicit_message() -> None:
 
     assert GmailService(client).download_raw("mail-1") == raw
     client.messages_api.get = original_get
+
+
+def test_explicit_gmail_import_captures_a_raw_original_with_a_stable_event(tmp_path) -> None:
+    class Gmail:
+        def download_raw(self, message_id: str) -> bytes:
+            assert message_id == "mail-42"
+            return b"Subject: Flight\n\nChanged"
+
+    class Capture:
+        def __init__(self) -> None:
+            self.event = None
+            self.contents = None
+
+        def capture_file(self, event, path):
+            self.event = event
+            self.contents = path.read_bytes()
+            return CaptureResult(type("Source", (), {"path": tmp_path / "inbox" / "gmail-import-mail-42.eml"})(), False)
+
+    capture = Capture()
+    result = GmailInboxImportService(Gmail(), capture).import_message("mail-42")
+
+    assert result.duplicate is False
+    assert capture.contents == b"Subject: Flight\n\nChanged"
+    assert capture.event.id == "gmail:mail-42"
+    assert capture.event.attachments == ("gmail-mail-42.eml",)

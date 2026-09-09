@@ -6,6 +6,7 @@ from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
     StewardDriveImportApplication,
+    StewardGmailImportApplication,
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
@@ -359,4 +360,20 @@ def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
     assert application.handle_command(make_event(text="/drive_import file-42")) == (
         "Drive import is not configured on this Steward process. "
         "Set STEWARD_GOOGLE_CLIENT_SECRETS, authorize Drive, then try again."
+    )
+
+
+def test_telegram_can_explicitly_import_one_gmail_message() -> None:
+    class Importer:
+        def import_message(self, message_id: str) -> CaptureResult:
+            assert message_id == "mail-42"
+            return CaptureResult(type("Source", (), {"path": Path("vault/inbox/gmail-import-mail-42.eml")})(), False)
+
+    application = StewardGmailImportApplication(Importer())
+
+    assert application.handle_command(make_event(text="/gmail_import mail-42")) == (
+        "Imported Gmail message to Inbox: vault\\inbox\\gmail-import-mail-42.eml"
+    )
+    assert application.handle_command(make_event(text="/gmail_import")) == (
+        "Use /gmail_import followed by one Gmail message ID."
     )

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from base64 import urlsafe_b64decode
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Protocol
+
+from steward.capture import CaptureResult, InboxCaptureService
+from steward.events import IncomingEvent
 
 
 GOOGLE_GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
@@ -76,6 +81,34 @@ class GmailService:
         if not isinstance(raw, str) or not raw:
             raise ValueError("Gmail message does not contain raw content.")
         return urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+
+
+class GmailInboxImportService:
+    """Preserve one explicitly selected Gmail original in the local Inbox."""
+
+    def __init__(self, gmail_service: GmailService, capture_service: InboxCaptureService) -> None:
+        self._gmail = gmail_service
+        self._capture = capture_service
+
+    def import_message(self, message_id: str) -> CaptureResult:
+        if not message_id.strip() or any(character.isspace() for character in message_id):
+            raise ValueError("Gmail message ID must be one non-empty value.")
+        with TemporaryDirectory() as temporary_dir:
+            downloaded = Path(temporary_dir) / f"gmail-{message_id}.eml"
+            downloaded.write_bytes(self._gmail.download_raw(message_id))
+            return self._capture.capture_file(
+                IncomingEvent(
+                    id=f"gmail:{message_id}",
+                    platform="gmail",
+                    chat_id="import",
+                    message_id=message_id,
+                    reply_to_id=None,
+                    timestamp=datetime.now().astimezone(),
+                    text=None,
+                    attachments=(downloaded.name,),
+                ),
+                downloaded,
+            )
 
 
 def authorize_gmail(client_secrets_path: Path, token_path: Path) -> GmailApi:
