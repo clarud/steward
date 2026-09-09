@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from steward.storage import INITIAL_SCHEMA_VERSION, initialize_database, snapshot_database
+from steward.storage import INITIAL_SCHEMA_VERSION, initialize_database, restore_database, snapshot_database
 from steward.storage.database import (
     FRAGMENTS_SCHEMA_VERSION,
     LEXICAL_SEARCH_SCHEMA_VERSION,
@@ -140,3 +140,19 @@ def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: 
         assert connection.execute("SELECT details FROM activity_events").fetchone() == ("test",)
     with pytest.raises(ValueError, match="already exists"):
         snapshot_database(source, snapshot)
+
+
+def test_restore_database_replaces_active_state_only_after_a_safety_snapshot(tmp_path: Path) -> None:
+    active = tmp_path / "steward.db"; initialize_database(active)
+    with sqlite3.connect(active) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)", ("source_captured", "1", "before", "2026-09-10T00:00:00+00:00"))
+    snapshot = snapshot_database(active, tmp_path / "snapshot.db")
+    with sqlite3.connect(active) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)", ("source_captured", "2", "after", "2026-09-10T00:01:00+00:00"))
+
+    safety_backup = restore_database(snapshot, active, tmp_path / "safety.db")
+
+    with sqlite3.connect(active) as connection:
+        assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",)]
+    with sqlite3.connect(safety_backup) as connection:
+        assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",), ("after",)]

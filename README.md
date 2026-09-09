@@ -72,9 +72,18 @@ steward backup --destination D:\Steward-backups\2026-09-10
 ```
 
 The command never overwrites an existing destination and snapshots both
-`steward.db` and `checkpoints.db` when present. Restoring a snapshot is a
-deliberate local maintenance operation: stop Steward first, preserve the
-current `.steward/` directory, then replace only the intended database files.
+`steward.db` and `checkpoints.db` when present. Restore is deliberately local:
+stop Steward first, then name both the snapshot and a new write-once safety
+backup for the database being replaced.
+
+```powershell
+steward restore --snapshot D:\Steward-backups\2026-09-10\steward.db `
+  --destination .steward\steward.db `
+  --safety-backup D:\Steward-backups\before-restore\steward.db --confirm
+```
+
+Steward refuses to restore without `--confirm` and creates the safety snapshot
+before replacing the destination.
 
 ## Search a vault
 

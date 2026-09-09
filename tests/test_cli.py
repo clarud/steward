@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
+import sqlite3
 
 from steward.cli import (
     _configure_console_encoding,
@@ -16,7 +17,7 @@ from steward.sources import Source, SourceRepository, SourceType
 from steward.records import RecordService, TravelRecord
 from steward.knowledge import KnowledgeService
 from steward.extraction import ExtractionResult, SourceFragment
-from steward.storage import initialize_database
+from steward.storage import initialize_database, snapshot_database
 from steward.activity import ActivityService, ActivityType
 from steward.telegram import TelegramUpdateDeliveryRepository
 
@@ -41,6 +42,26 @@ def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, 
     assert (destination / "checkpoints.db").is_file()
     main(["backup", "--destination", str(destination)])
     assert "already exists" in capsys.readouterr().out
+
+
+def test_cli_restore_requires_confirmation_then_preserves_a_safety_backup(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    active = data_dir / "steward.db"; initialize_database(active)
+    with sqlite3.connect(active) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)", ("source_captured", "1", "before", "2026-09-10T00:00:00+00:00"))
+    snapshot = snapshot_database(active, tmp_path / "snapshot.db")
+    with sqlite3.connect(active) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)", ("source_captured", "2", "after", "2026-09-10T00:01:00+00:00"))
+    safety = tmp_path / "safety.db"
+
+    main(["restore", "--snapshot", str(snapshot), "--destination", str(active), "--safety-backup", str(safety)])
+    assert capsys.readouterr().out.startswith("Refusing to restore without --confirm.")
+    main(["restore", "--snapshot", str(snapshot), "--destination", str(active), "--safety-backup", str(safety), "--confirm"])
+
+    assert "Restored" in capsys.readouterr().out
+    with sqlite3.connect(active) as connection:
+        assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",)]
+    assert safety.is_file()
 
 
 def test_cli_scan_registers_markdown_sources(

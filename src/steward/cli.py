@@ -57,7 +57,7 @@ from steward.graphs import (
 from steward.logging import configure_logging
 from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
-from steward.storage import initialize_database, snapshot_database
+from steward.storage import initialize_database, restore_database, snapshot_database
 from steward.retrieval import (
     HybridRetriever,
     LexicalSearchService,
@@ -237,6 +237,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--destination", type=Path,
         help="New directory for snapshots (defaults to DATA_DIR/backups/<timestamp>)",
     )
+    restore_parser = subcommands.add_parser(
+        "restore", help="Restore one local SQLite database from a snapshot after creating a safety backup"
+    )
+    restore_parser.add_argument("--snapshot", type=Path, required=True, help="Existing SQLite snapshot to restore")
+    restore_parser.add_argument("--destination", type=Path, required=True, help="Existing active database to replace")
+    restore_parser.add_argument("--safety-backup", type=Path, required=True, help="New path for a safety snapshot of the active database")
+    restore_parser.add_argument("--confirm", action="store_true", help="Confirm that Steward is stopped and the database will be replaced")
     root_add = subcommands.add_parser("add-root", help="Locally authorize an existing directory as a source root")
     root_add.add_argument("name")
     root_add.add_argument("path", type=Path)
@@ -735,6 +742,20 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Backup failed: {error}")
             return
         print("Backed up local Steward databases:\n" + "\n".join(str(path) for path in snapshots))
+        return
+
+    if arguments.command == "restore":
+        if not arguments.confirm:
+            print("Refusing to restore without --confirm. Stop Steward first; restore replaces the active database after creating its safety backup.")
+            return
+        try:
+            safety_backup = restore_database(
+                arguments.snapshot, arguments.destination, arguments.safety_backup
+            )
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f"Restore failed: {error}")
+            return
+        print(f"Restored {arguments.destination.resolve()} from snapshot. Safety backup: {safety_backup}")
         return
 
     if arguments.command == "scan":

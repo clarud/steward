@@ -475,3 +475,33 @@ def snapshot_database(source_path: Path, destination_path: Path) -> Path:
             destination.unlink()
         raise
     return destination
+
+
+def restore_database(snapshot_path: Path, destination_path: Path, safety_backup_path: Path) -> Path:
+    """Restore a SQLite snapshot after first creating a write-once safety copy.
+
+    Callers must obtain explicit user confirmation and stop Steward processes
+    before calling this function. The active database is never replaced unless
+    its current state has been backed up to a new, caller-selected path.
+    """
+
+    snapshot = snapshot_path.resolve()
+    destination = destination_path.resolve()
+    safety_backup = safety_backup_path.resolve()
+    if not snapshot.is_file():
+        raise ValueError(f"Database snapshot was not found: {snapshot}")
+    if not destination.is_file():
+        raise ValueError(f"Database to restore was not found: {destination}")
+    if snapshot == destination:
+        raise ValueError("Database snapshot must differ from its restore destination.")
+    if safety_backup in {snapshot, destination}:
+        raise ValueError("Safety backup must differ from both snapshot and restore destination.")
+    snapshot_database(destination, safety_backup)
+    try:
+        with sqlite3.connect(snapshot) as source_connection, sqlite3.connect(destination) as destination_connection:
+            source_connection.backup(destination_connection)
+    except sqlite3.Error:
+        with sqlite3.connect(safety_backup) as safety_connection, sqlite3.connect(destination) as destination_connection:
+            safety_connection.backup(destination_connection)
+        raise
+    return safety_backup
