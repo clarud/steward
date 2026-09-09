@@ -56,6 +56,7 @@ from steward.tasks import TaskService
 from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.errors import GraphRecursionError
 
 
 class FakeGraph:
@@ -289,6 +290,25 @@ def test_agent_command_uses_a_persistent_chat_scoped_tool_thread() -> None:
     assert response == "Found local evidence."
     assert graph.config["configurable"]["thread_id"] == "tool-agent:telegram:100"
     assert graph.input["messages"][1].content == "what do I know about OpenMP"
+
+
+def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:
+    class LoopingToolGraph:
+        def invoke(self, input, config):
+            raise GraphRecursionError("tool loop did not terminate")
+
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        tool_agent_application=StewardToolAgentApplication(LoopingToolGraph()),
+    )
+
+    response = application.handle(make_event(text="/agent find all CS3210 notes"))
+
+    assert response == (
+        "I stopped the tool workflow before it could loop further. "
+        "No write was performed; please narrow the request and try again."
+    )
 
 
 def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path: Path) -> None:

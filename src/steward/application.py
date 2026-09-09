@@ -30,6 +30,8 @@ from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import IntakeAnalysisMode, ProvisionalIntake, ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.errors import GraphRecursionError
+from steward.answer.gateway import ModelGatewayError
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
@@ -289,18 +291,26 @@ class StewardToolAgentApplication:
             return None
         if not separator or not question.strip():
             return "Use /agent followed by a question that may need Steward's read-only tools."
-        result = self._graph.invoke(
-            {
-                "messages": [
-                    SystemMessage(
-                        "You are Steward. Use only supplied allowlisted read-only tools when needed. "
-                        "Never claim a tool result you did not receive; answer as soon as the result is sufficient."
-                    ),
-                    HumanMessage(question.strip()),
-                ]
-            },
-            {"configurable": {"thread_id": f"tool-agent:{event.platform}:{event.chat_id}"}, "recursion_limit": 16},
-        )
+        try:
+            result = self._graph.invoke(
+                {
+                    "messages": [
+                        SystemMessage(
+                            "You are Steward. Use only supplied allowlisted read-only tools when needed. "
+                            "Never claim a tool result you did not receive; answer as soon as the result is sufficient."
+                        ),
+                        HumanMessage(question.strip()),
+                    ]
+                },
+                {"configurable": {"thread_id": f"tool-agent:{event.platform}:{event.chat_id}"}, "recursion_limit": 16},
+            )
+        except GraphRecursionError:
+            return (
+                "I stopped the tool workflow before it could loop further. "
+                "No write was performed; please narrow the request and try again."
+            )
+        except ModelGatewayError:
+            return "The configured model is temporarily unavailable. Please retry later or use a local model."
         messages = result.get("messages")
         if not isinstance(messages, list) or not messages:
             return "The tool agent returned no final response."

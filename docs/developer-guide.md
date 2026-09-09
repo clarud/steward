@@ -900,6 +900,10 @@ LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
 then returns its result to the next model turn. `steward agent QUESTION` uses
 this graph with a persistent thread ID and an eight-step recursion cap.
 
+The Telegram `/agent` boundary also catches a `GraphRecursionError` from this
+loop and returns a clear, non-mutating failure message. It does not treat a
+limit breach as a reason to retry the update or perform another tool call.
+
 `OllamaToolCallingModel` provides the same narrow graph-facing interface for a
 local model. It sends the conversation and the allowlisted JSON tool schemas to
 Ollama's `/api/chat` endpoint. Ollama returns requested function names and
