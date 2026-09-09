@@ -2835,7 +2835,7 @@ class StewardEventApplication:
                 return natural_review
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
-            if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
+            if normalized.startswith(("remind me to ", "remember to ", "todo:", "task:", "deadline:")) or self._is_time_bound_commitment(normalized):
                 return self._task_application.propose(event.text or "", chat_id=event.chat_id)
         if self._calendar_application is not None:
             calendar_response = self._calendar_application.handle_command(event)
@@ -2989,6 +2989,18 @@ class StewardEventApplication:
                 title=proposal.title, icon=proposal.icon,
             )
         return f"{saved}\n\n{proposal}" if proposal is not None else saved
+
+    @staticmethod
+    def _is_time_bound_commitment(text: str) -> bool:
+        """Recognize only explicit personal commitments, never a broad intent guess.
+
+        A task remains a proposal, but this narrow predicate avoids treating a
+        learning statement such as ``I need to understand TLBs`` as a task.
+        """
+
+        commitment_prefixes = ("i need to ", "i should ", "don't let me forget to ")
+        time_signals = (" by ", " before ", " due ", " tomorrow", " today", " tonight")
+        return text.startswith(commitment_prefixes) and any(signal in text for signal in time_signals)
 
     @staticmethod
     def _search_terms(text: str, *, natural_language: bool = False) -> str:

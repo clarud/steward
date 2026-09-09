@@ -20,6 +20,12 @@ def test_task_service_accepts_deadline_prefix_and_due_language() -> None:
     )
 
 
+def test_task_service_accepts_a_plain_personal_commitment_prefix() -> None:
+    assert TaskService.parse_proposal("I need to submit CS3210 lab by Friday") == (
+        "submit CS3210 lab", "by Friday"
+    )
+
+
 def test_task_service_accepts_only_explicit_offset_aware_deadlines() -> None:
     title, due_hint, due_at = TaskService.parse_proposal_with_due_at(
         "deadline: submit CS3210 lab --due-at 2026-09-18T23:59:00+08:00"

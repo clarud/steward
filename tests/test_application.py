@@ -916,6 +916,22 @@ def test_deadline_phrase_creates_a_reviewable_task_proposal(tmp_path: Path) -> N
     assert tasks.list_open() == ()
 
 
+def test_time_bound_personal_commitment_creates_a_reviewable_task_proposal(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        task_application=StewardTaskApplication(tasks, proposals, activity),
+    )
+
+    response = application.handle(make_event(text="I need to submit CS3210 lab by Friday"))
+
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Save task: submit CS3210 lab"
+    assert "Due cue: by Friday" in response.text
+    assert tasks.list_open() == ()
+
+
 def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)

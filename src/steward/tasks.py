@@ -40,7 +40,12 @@ class TaskService:
     def parse_proposal(text: str) -> tuple[str, str | None]:
         """Keep a due phrase visible instead of guessing a date or timezone."""
         normalized = " ".join(text.split())
-        normalized = re.sub(r"^(?:remind me to|task:|todo:|deadline:)\s*", "", normalized, flags=re.I)
+        normalized = re.sub(
+            r"^(?:remind me to|remember to|don't let me forget to|i need to|i should|task:|todo:|deadline:)\s*",
+            "",
+            normalized,
+            flags=re.I,
+        )
         if not normalized:
             raise ValueError("Tell me the task you want Steward to propose.")
         match = re.search(r"\s+((?:by|before|on|due)\s+.+)$", normalized, flags=re.I)
