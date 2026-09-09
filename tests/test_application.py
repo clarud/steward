@@ -544,8 +544,12 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
         records, fragments, ActionProposalRepository(database), ActivityService(database)
     )
 
+    listing = application.handle_command(make_event(text="/records"))
     detail = application.handle_command(make_event(text=f"/record travel {record.id}"))
 
+    assert isinstance(listing, PresentedReply)
+    assert listing.title == "Saved records"
+    assert listing.actions[0].command == f"/record travel {record.id}"
     assert isinstance(detail, PresentedReply)
     assert "flight: SQ638 (source fragment 1)" in detail.text
     assert "arrival: Tokyo (source fragment 1)" in detail.text

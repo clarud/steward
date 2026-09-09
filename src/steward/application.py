@@ -919,7 +919,7 @@ class StewardRecordApplication:
             icon="✈️" if record_type == "travel" else "🧾" if record_type == "receipt" else "🛡️",
         )
 
-    def _list_records(self) -> str:
+    def _list_records(self) -> str | PresentedReply:
         lines: list[str] = []
         lines.extend(
             f"Travel {record.id}: {record.flight_number or '(flight unknown)'} "
@@ -934,7 +934,22 @@ class StewardRecordApplication:
             f"Warranty {record.id}: {record.product_name or '(product unknown)'}"
             for record in self._records.list_warranty_records()
         )
-        return "Saved records:\n" + "\n".join(lines) if lines else "No saved records."
+        if not lines:
+            return "No saved records."
+        record_links = [
+            ("travel", record.id or 0) for record in self._records.list_travel_records()
+        ] + [
+            ("receipt", record.id or 0) for record in self._records.list_receipt_records()
+        ] + [
+            ("warranty", record.id or 0) for record in self._records.list_warranty_records()
+        ]
+        visible = record_links[:8]
+        return PresentedReply(
+            "\n".join(lines[:8]),
+            tuple(ReplyAction(f"Open {kind} {identifier}", f"/record {kind} {identifier}") for kind, identifier in visible),
+            title="Saved records",
+            icon="🗂️",
+        )
 
 
 class StewardTaskApplication:
