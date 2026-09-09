@@ -470,6 +470,21 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     assert tasks.list_open() == ()
 
 
+def test_deterministic_natural_task_phrase_creates_the_same_reviewable_proposal(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        task_application=StewardTaskApplication(tasks, proposals, activity),
+    )
+
+    response = application.handle(make_event(text="remind me to compare OpenMP scheduling before Tuesday"))
+
+    assert isinstance(response, PresentedReply)
+    assert "Task proposal 1" in response.text
+    assert tasks.list_open() == ()
+
+
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

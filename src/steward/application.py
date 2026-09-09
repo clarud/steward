@@ -461,8 +461,11 @@ class StewardTaskApplication:
             return None
         if not separator:
             return "Use /propose_task followed by what you need to do."
+        return self.propose(argument)
+
+    def propose(self, text: str) -> str | PresentedReply:
         try:
-            title, due_hint = self._tasks.parse_proposal(argument)
+            title, due_hint = self._tasks.parse_proposal(text)
         except ValueError as error:
             return str(error)
         payload = {"title": title, "due_hint": due_hint or ""}
@@ -1557,6 +1560,10 @@ class StewardEventApplication:
         self._calendar_application = calendar_application
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
+        if self._task_application is not None:
+            normalized = (event.text or "").strip().casefold()
+            if normalized.startswith(("remind me to ", "todo:", "task:")):
+                return self._task_application.propose(event.text or "")
         if self._calendar_application is not None:
             calendar_response = self._calendar_application.handle_command(event)
             if calendar_response is not None:
