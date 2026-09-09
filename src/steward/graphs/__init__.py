@@ -8,6 +8,7 @@ from steward.graphs.organization_approval import build_organization_approval_gra
 from steward.graphs.tool_agent import ToolAgentState, build_tool_agent_graph
 from steward.graphs.gemini_tools import GeminiToolCallingModel
 from steward.graphs.ollama_tools import OllamaToolCallingModel
+from steward.graphs.openai_compatible_tools import OpenAICompatibleToolCallingModel
 
 __all__ = [
     "RetrievalAnswerState",
@@ -17,4 +18,5 @@ __all__ = [
     "build_tool_agent_graph",
     "GeminiToolCallingModel",
     "OllamaToolCallingModel",
+    "OpenAICompatibleToolCallingModel",
 ]

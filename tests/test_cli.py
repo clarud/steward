@@ -10,7 +10,7 @@ from steward.cli import (
     main,
 )
 from steward.config import Settings
-from steward.graphs import OllamaToolCallingModel
+from steward.graphs import OllamaToolCallingModel, OpenAICompatibleToolCallingModel
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.records import RecordService, TravelRecord
@@ -179,6 +179,8 @@ def test_cli_selects_the_local_ollama_tool_adapter() -> None:
             log_level="INFO",
             model_provider="local",
             openai_model=None,
+            soclaas_model=None,
+            soclaas_base_url=None,
             gemini_model=None,
             local_model="qwen3",
             local_model_url="http://127.0.0.1:11434",
@@ -186,6 +188,26 @@ def test_cli_selects_the_local_ollama_tool_adapter() -> None:
     )
 
     assert isinstance(adapter, OllamaToolCallingModel)
+
+
+def test_cli_selects_soclaas_tool_adapter(monkeypatch) -> None:
+    monkeypatch.setenv("STEWARD_SOCLAAS_API_KEY", "test-key")
+    adapter = _tool_calling_model_from_settings(
+        Settings(
+            data_dir=Path(".steward"),
+            inbox_dir=Path("vault/inbox"),
+            log_level="INFO",
+            model_provider="soclaas",
+            openai_model=None,
+            soclaas_model="llama3.1:8b",
+            soclaas_base_url="https://gateway.example/v1",
+            gemini_model=None,
+            local_model=None,
+            local_model_url="http://127.0.0.1:11434",
+        )
+    )
+
+    assert isinstance(adapter, OpenAICompatibleToolCallingModel)
 
 
 def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:

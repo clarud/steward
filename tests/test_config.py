@@ -10,6 +10,8 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("STEWARD_LOG_LEVEL", raising=False)
     monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
     monkeypatch.delenv("STEWARD_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_SOCLAAS_MODEL", raising=False)
+    monkeypatch.delenv("STEWARD_SOCLAAS_BASE_URL", raising=False)
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL_URL", raising=False)
@@ -21,6 +23,8 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         log_level="INFO",
         model_provider="gemini",
         openai_model=None,
+        soclaas_model=None,
+        soclaas_base_url=None,
         gemini_model=None,
         local_model=None,
         local_model_url="http://127.0.0.1:11434",
@@ -50,6 +54,18 @@ def test_settings_accept_local_model_provider(monkeypatch: pytest.MonkeyPatch) -
 
     assert settings.model_provider == "local"
     assert settings.local_model == "llama3.2"
+
+
+def test_settings_accept_soclaas_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEWARD_MODEL_PROVIDER", "soclaas")
+    monkeypatch.setenv("SOCLAAS_MODEL", "llama3.1:8b")
+    monkeypatch.setenv("SOCLAAS_BASE_URL", "https://gateway.example/v1")
+
+    settings = Settings.from_environment()
+
+    assert settings.model_provider == "soclaas"
+    assert settings.soclaas_model == "llama3.1:8b"
+    assert settings.soclaas_base_url == "https://gateway.example/v1"
 
 
 def test_settings_parse_a_telegram_chat_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:

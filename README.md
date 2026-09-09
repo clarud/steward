@@ -127,8 +127,8 @@ steward ask "What do I know about address translation?"
 
 ## Ask with read-only tools
 
-`steward agent` is Steward's first tool-calling loop. Gemini or a configured
-local Ollama model can decide whether to search or read local Steward data.
+`steward agent` is Steward's first tool-calling loop. Gemini, a configured
+local Ollama model, or NUS SoCLaaS can decide whether to search or read local Steward data.
 LangGraph executes supplied read-only tools plus narrowly defined proposal-only
 tools, then returns their results to the same model before it answers.
 
@@ -160,6 +160,22 @@ Tool support is a model capability, not a guarantee of reliable planning. A
 small local model may answer directly, repeat a lookup, or emit invalid
 tool-like text; Steward executes only valid calls to its allowlisted tools and
 enforces its tool-call budget regardless of provider.
+
+SoCLaaS is an external, school-hosted OpenAI-compatible provider. Obtain its
+base URL, key, and a permitted model ID from its portal, then keep them only in
+your private `.env` file:
+
+```text
+STEWARD_MODEL_PROVIDER=soclaas
+SOCLAAS_API_KEY=...
+SOCLAAS_BASE_URL=https://soclaas-api.comp.nus.edu.sg/v1
+SOCLAAS_MODEL=...
+```
+
+It can power both `steward ask` and `steward agent`. The latter sends function
+schemas to SoCLaaS, but calls only Steward's local allowlisted tools through
+LangGraph. Because SoCLaaS is remote, sources restricted to a local model are
+not sent to it.
 
 Use `--thread-id` to continue a tool-agent conversation through the local
 LangGraph checkpoint store:

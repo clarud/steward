@@ -21,7 +21,7 @@ class ModelGatewayError(RuntimeError):
 class OpenAIModelGateway:
     """OpenAI Responses API gateway, isolated from Steward's domain services."""
 
-    def __init__(self, *, api_key: str, model: str) -> None:
+    def __init__(self, *, api_key: str, model: str, base_url: str | None = None) -> None:
         if not api_key.strip():
             raise ValueError("An OpenAI API key is required.")
         if not model.strip():
@@ -30,7 +30,7 @@ class OpenAIModelGateway:
         # The import is local so non-answering commands do not require this SDK.
         from openai import OpenAI
 
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
         self._model = model
 
     def generate(self, *, instructions: str, input_text: str) -> str:

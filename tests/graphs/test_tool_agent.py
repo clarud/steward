@@ -3,7 +3,12 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
 
-from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
+from steward.graphs import (
+    GeminiToolCallingModel,
+    OllamaToolCallingModel,
+    OpenAICompatibleToolCallingModel,
+    build_tool_agent_graph,
+)
 from steward.answer.gateway import ModelGatewayError
 from steward.tools import ToolDefinition, ToolPolicy, ToolRisk
 
@@ -205,6 +210,65 @@ def test_ollama_tool_adapter_sends_schemas_and_converts_tool_calls() -> None:
     assert result.tool_calls[0]["name"] == "search_sources"
     assert result.tool_calls[0]["args"] == {"query": "TLB"}
     assert result.tool_calls[0]["id"].startswith("ollama-")
+
+
+def test_openai_compatible_tool_adapter_sends_client_executed_tools() -> None:
+    recorded: dict[str, object] = {}
+
+    class Function:
+        name = "search_sources"
+        arguments = '{"query": "TLB"}'
+
+    class ToolCall:
+        id = "call-1"
+        function = Function()
+
+    class Completion:
+        choices = [type("Choice", (), {"message": type("Message", (), {"content": "", "tool_calls": [ToolCall()]})()})()]
+
+    class Completions:
+        @staticmethod
+        def create(**kwargs):
+            recorded.update(kwargs)
+            return Completion()
+
+    class Client:
+        chat = type("Chat", (), {"completions": Completions()})()
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources by query."""
+        return query
+
+    adapter = OpenAICompatibleToolCallingModel(
+        api_key="test", model="llama3.1:8b", base_url="https://gateway.example/v1", client=Client()
+    ).bind_tools([search_sources])
+    result = adapter.invoke([HumanMessage("Find TLB notes")])
+
+    assert recorded["model"] == "llama3.1:8b"
+    assert recorded["messages"] == [{"role": "user", "content": "Find TLB notes"}]
+    assert recorded["tools"][0]["function"]["name"] == "search_sources"
+    assert result.tool_calls == [{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1", "type": "tool_call"}]
+
+
+def test_openai_compatible_tool_adapter_replays_tool_messages() -> None:
+    messages = OpenAICompatibleToolCallingModel._messages(
+        [
+            AIMessage("", tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}]),
+            ToolMessage("result", name="search_sources", tool_call_id="call-1"),
+        ]
+    )
+
+    assert messages == [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call-1", "type": "function", "function": {"name": "search_sources", "arguments": '{"query": "TLB"}'}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": "result"},
+    ]
 
 
 def test_ollama_tool_adapter_replays_tool_calls_and_results() -> None:

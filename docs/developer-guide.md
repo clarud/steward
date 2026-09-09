@@ -415,10 +415,13 @@ $env:STEWARD_GEMINI_MODEL = "your-selected-model"
 steward ask "What do I know about address translation?"
 ```
 
-`GEMINI_API_KEY` and `OPENAI_API_KEY` are intentionally not part of the logged
+`GEMINI_API_KEY`, `OPENAI_API_KEY`, and `SOCLAAS_API_KEY` are intentionally not part of the logged
 `Settings` dataclass. `STEWARD_MODEL_PROVIDER` defaults to `gemini`; use
 `STEWARD_MODEL_PROVIDER=openai` with `STEWARD_OPENAI_MODEL` to use the OpenAI
-gateway instead. The selected provider's model setting is optional until
+gateway instead. `STEWARD_MODEL_PROVIDER=soclaas` configures NUS SoCLaaS with
+`SOCLAAS_MODEL` and `SOCLAAS_BASE_URL`; its API key stays in
+`SOCLAAS_API_KEY`. The `STEWARD_SOCLAAS_*` aliases are also accepted. SoCLaaS uses OpenAI-compatible responses for normal
+answers and client-executed function calls for the agent loop. The selected provider's model setting is optional until
 `steward ask` is used.
 
 ## LangGraph orchestration

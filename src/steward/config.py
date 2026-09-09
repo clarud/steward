@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
-VALID_MODEL_PROVIDERS = frozenset({"gemini", "local", "openai"})
+VALID_MODEL_PROVIDERS = frozenset({"gemini", "local", "openai", "soclaas"})
 
 
 def load_environment_file() -> None:
@@ -26,6 +26,8 @@ class Settings:
     log_level: str
     model_provider: str
     openai_model: str | None
+    soclaas_model: str | None
+    soclaas_base_url: str | None
     gemini_model: str | None
     local_model: str | None
     local_model_url: str
@@ -39,6 +41,10 @@ class Settings:
         log_level = os.environ.get("STEWARD_LOG_LEVEL", "INFO").upper()
         model_provider = os.environ.get("STEWARD_MODEL_PROVIDER", "gemini").casefold()
         openai_model = os.environ.get("STEWARD_OPENAI_MODEL")
+        # Accept the official SoCLaaS variable names as well as Steward's
+        # namespaced aliases.  The latter wins when both are present.
+        soclaas_model = os.environ.get("STEWARD_SOCLAAS_MODEL") or os.environ.get("SOCLAAS_MODEL")
+        soclaas_base_url = os.environ.get("STEWARD_SOCLAAS_BASE_URL") or os.environ.get("SOCLAAS_BASE_URL")
         gemini_model = os.environ.get("STEWARD_GEMINI_MODEL")
         local_model = os.environ.get("STEWARD_LOCAL_MODEL")
         local_model_url = os.environ.get("STEWARD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
@@ -66,6 +72,8 @@ class Settings:
             log_level=log_level,
             model_provider=model_provider,
             openai_model=openai_model,
+            soclaas_model=soclaas_model,
+            soclaas_base_url=soclaas_base_url,
             gemini_model=gemini_model,
             local_model=local_model,
             local_model_url=local_model_url,

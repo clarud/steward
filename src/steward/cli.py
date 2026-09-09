@@ -34,7 +34,12 @@ from steward.answer import (
 )
 from steward.extraction import DocumentExtractionError, MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph, build_retrieval_answer_graph
-from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
+from steward.graphs import (
+    GeminiToolCallingModel,
+    OllamaToolCallingModel,
+    OpenAICompatibleToolCallingModel,
+    build_tool_agent_graph,
+)
 from steward.logging import configure_logging
 from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
@@ -403,6 +408,18 @@ def _model_gateway_from_settings(
             return None
         return GeminiModelGateway(api_key=api_key, model=settings.gemini_model)
 
+    if settings.model_provider == "soclaas":
+        api_key = os.environ.get("STEWARD_SOCLAAS_API_KEY") or os.environ.get("SOCLAAS_API_KEY")
+        if not api_key or not settings.soclaas_model or not settings.soclaas_base_url:
+            print(
+                "Set SOCLAAS_API_KEY, SOCLAAS_MODEL, and SOCLAAS_BASE_URL "
+                f"before using `steward {command}`."
+            )
+            return None
+        return OpenAIModelGateway(
+            api_key=api_key, model=settings.soclaas_model, base_url=settings.soclaas_base_url
+        )
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key or not settings.openai_model:
         print(
@@ -448,7 +465,19 @@ def _tool_calling_model_from_settings(settings: Settings):
             return None
         return GeminiToolCallingModel(api_key=api_key, model=settings.gemini_model)
 
-    print("`steward agent` currently supports the configured Gemini or local Ollama provider only.")
+    if settings.model_provider == "soclaas":
+        api_key = os.environ.get("STEWARD_SOCLAAS_API_KEY") or os.environ.get("SOCLAAS_API_KEY")
+        if not api_key or not settings.soclaas_model or not settings.soclaas_base_url:
+            print(
+                "Set SOCLAAS_API_KEY, SOCLAAS_MODEL, and SOCLAAS_BASE_URL "
+                "before using `steward agent`."
+            )
+            return None
+        return OpenAICompatibleToolCallingModel(
+            api_key=api_key, model=settings.soclaas_model, base_url=settings.soclaas_base_url
+        )
+
+    print("`steward agent` currently supports Gemini, local Ollama, or SoCLaaS.")
     return None
 
 
