@@ -1,7 +1,12 @@
 from pathlib import Path
 import sqlite3
 import pytest
-from steward.knowledge import Claim, EnrichmentOperation, KnowledgeService
+from steward.knowledge import (
+    Claim,
+    EnrichmentOperation,
+    KnowledgeEnrichmentProposalRepository,
+    KnowledgeService,
+)
 from steward.knowledge_ai import ModelAssistedKnowledgeService
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceType
@@ -34,6 +39,33 @@ def test_enrichment_proposal_is_derived_and_does_not_change_claim(tmp_path: Path
     claim=Claim(1, 1, "TLB caches translations.", datetime(2026, 9, 8, tzinfo=UTC))
     proposal=service.compare_evidence(claim,fragment_id=2,evidence_text="A TLB caches translations and speeds up lookup.")
     assert proposal.operation.value == "confirm" and claim.text == "TLB caches translations."
+
+
+def test_enrichment_proposal_is_durable_and_requires_one_explicit_review(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    timestamp = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "b" * 64, SourceType.MARKDOWN, 0, timestamp, timestamp, timestamp)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "TLBs may cache translations.", "lines 1-1"),))
+    )[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    derived = knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text)
+    repository = KnowledgeEnrichmentProposalRepository(database)
+
+    stored = repository.add(derived)
+    reviewed = repository.review(stored.id, "accepted")
+
+    assert stored.status == "pending"
+    assert reviewed.status == "accepted"
+    assert reviewed.claim_id == claim.id
+    assert reviewed.fragment_id == fragment.id
+    assert repository.add(derived).id == stored.id
+    with pytest.raises(ValueError, match="already reviewed"):
+        repository.review(stored.id, "rejected")
 
 
 def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:

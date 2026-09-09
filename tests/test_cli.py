@@ -291,7 +291,15 @@ def test_cli_proposes_deterministic_knowledge_enrichment(tmp_path: Path, monkeyp
 
     main(["propose-knowledge-enrichment", str(claim.id), str(fragment.id)])
 
-    assert capsys.readouterr().out.startswith("qualify\tclaim=1\tfragment=1\t")
+    assert capsys.readouterr().out.startswith("Knowledge enrichment proposal 1 pending: qualify\tclaim=1\tfragment=1\t")
+
+    main(["knowledge-enrichment-proposals"])
+
+    assert capsys.readouterr().out.startswith("1\tpending\tqualify\tclaim=1\tfragment=1\t")
+
+    main(["review-knowledge-enrichment", "1", "accepted"])
+
+    assert capsys.readouterr().out == "Knowledge enrichment proposal 1 accepted.\n"
 
 
 def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:

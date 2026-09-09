@@ -374,12 +374,16 @@ steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml -
 
 ## Propose knowledge enrichment
 
-Compare one existing claim with one source fragment without changing canonical
-knowledge. Add `--model-assisted` to use your configured model; only that one
-fragment is supplied, and invalid model JSON falls back to deterministic logic.
+Compare one existing claim with one source fragment without changing the claim.
+The result becomes a durable, evidence-backed proposal that you explicitly
+accept or reject. Add `--model-assisted` to use your configured model; only
+that one fragment is supplied, and invalid model JSON falls back to deterministic
+logic.
 
 ```powershell
 steward propose-knowledge-enrichment CLAIM_ID FRAGMENT_ID --model-assisted
+steward knowledge-enrichment-proposals
+steward review-knowledge-enrichment 1 accepted
 ```
 
 ## Set source privacy before model use

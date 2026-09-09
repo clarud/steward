@@ -18,6 +18,9 @@ class ActivityType(StrEnum):
     ACTION_ACCEPTED = "action_accepted"
     ACTION_REJECTED = "action_rejected"
     CALENDAR_EVENT_CREATED = "calendar_event_created"
+    KNOWLEDGE_ENRICHMENT_PROPOSED = "knowledge_enrichment_proposed"
+    KNOWLEDGE_ENRICHMENT_ACCEPTED = "knowledge_enrichment_accepted"
+    KNOWLEDGE_ENRICHMENT_REJECTED = "knowledge_enrichment_rejected"
 
 @dataclass(frozen=True, slots=True)
 class ActivityEvent:

@@ -87,7 +87,7 @@ from steward.web_ui import LocalRecordBrowser, LocalSourceBrowser, run_local_ui
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
 from steward.privacy import PrivacyRule, PrivacyService
-from steward.knowledge import KnowledgeService
+from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.knowledge_ai import ModelAssistedKnowledgeService
 from steward.tools import (
     ACTION_PROPOSAL_TOOL_DEFINITIONS,
@@ -274,6 +274,16 @@ def build_parser() -> argparse.ArgumentParser:
     enrichment_parser.add_argument("claim_id", type=int)
     enrichment_parser.add_argument("fragment_id", type=int)
     enrichment_parser.add_argument("--model-assisted", action="store_true")
+    subcommands.add_parser(
+        "knowledge-enrichment-proposals",
+        help="List durable, evidence-backed knowledge enrichment proposals",
+    )
+    review_enrichment_parser = subcommands.add_parser(
+        "review-knowledge-enrichment",
+        help="Accept or reject one knowledge enrichment proposal without rewriting a claim",
+    )
+    review_enrichment_parser.add_argument("proposal_id", type=int)
+    review_enrichment_parser.add_argument("status", choices=("accepted", "rejected"))
     privacy_parser = subcommands.add_parser("set-source-privacy", help="Set a source's model privacy rule")
     privacy_parser.add_argument("source_id", type=int)
     privacy_parser.add_argument("rule", choices=[rule.value for rule in PrivacyRule])
@@ -1357,9 +1367,41 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         return
 
-    if arguments.command == "propose-knowledge-enrichment":
+    if arguments.command in {
+        "propose-knowledge-enrichment",
+        "knowledge-enrichment-proposals",
+        "review-knowledge-enrichment",
+    }:
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
+        repository = KnowledgeEnrichmentProposalRepository(database_path)
+        activity = ActivityService(database_path)
+        if arguments.command == "knowledge-enrichment-proposals":
+            proposals = repository.list_all()
+            if not proposals:
+                print("No knowledge enrichment proposals.")
+                return
+            for proposal in proposals:
+                print(
+                    f"{proposal.id}\t{proposal.status}\t{proposal.operation.value}\t"
+                    f"claim={proposal.claim_id}\tfragment={proposal.fragment_id}\t{proposal.rationale}"
+                )
+            return
+        if arguments.command == "review-knowledge-enrichment":
+            try:
+                proposal = repository.review(arguments.proposal_id, arguments.status)
+            except ValueError as error:
+                print(str(error))
+                return
+            activity.record(
+                ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED
+                if proposal.status == "accepted"
+                else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED,
+                object_id=str(proposal.id),
+                details=f"{proposal.operation.value}: {proposal.rationale}",
+            )
+            print(f"Knowledge enrichment proposal {proposal.id} {proposal.status}.")
+            return
         knowledge = KnowledgeService(database_path)
         claim = knowledge.get_claim(arguments.claim_id)
         fragment = SourceFragmentRepository(database_path).get(arguments.fragment_id)
@@ -1387,7 +1429,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             proposal = knowledge.compare_evidence(
                 claim, fragment_id=fragment.id or 0, evidence_text=fragment.text
             )
-        print(f"{proposal.operation.value}\tclaim={proposal.claim_id}\tfragment={proposal.fragment_id}\t{proposal.rationale}")
+        stored = repository.add(proposal)
+        activity.record(
+            ActivityType.KNOWLEDGE_ENRICHMENT_PROPOSED,
+            object_id=str(stored.id),
+            details=f"{stored.operation.value}: {stored.rationale}",
+        )
+        print(
+            f"Knowledge enrichment proposal {stored.id} pending: {stored.operation.value}\t"
+            f"claim={stored.claim_id}\tfragment={stored.fragment_id}\t{stored.rationale}"
+        )
         return
 
     if arguments.command in {"set-source-privacy", "source-privacy"}:

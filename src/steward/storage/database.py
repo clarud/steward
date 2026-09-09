@@ -35,6 +35,7 @@ RECEIPT_RECORDS_SCHEMA_VERSION = 26
 RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION = 27
 WARRANTY_RECORDS_SCHEMA_VERSION = 28
 WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
+KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -272,6 +273,22 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """CREATE TABLE warranty_record_evidence (warranty_record_id INTEGER NOT NULL REFERENCES warranty_records(id) ON DELETE CASCADE,
             field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
             PRIMARY KEY (warranty_record_id, field_name))""",
+    ),
+    (
+        KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION,
+        """
+        CREATE TABLE knowledge_enrichment_proposals (
+            id INTEGER PRIMARY KEY,
+            claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+            fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            operation TEXT NOT NULL CHECK (operation IN ('confirm', 'extend', 'refine', 'qualify', 'contradict')),
+            rationale TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE (claim_id, fragment_id, operation, rationale)
+        )
+        """,
     ),
 )
 
