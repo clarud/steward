@@ -1252,16 +1252,17 @@ behavior easy to edit and inspect in code review.
   model-assisted existing-workspace proposal on Telegram capture when the
   source permits the configured model. The model sees source fragments and
   known workspace IDs, never constructs a path, and deterministic validation
-  rejects invalid output. Telegram resumes strong move proposals after an explicit
-  `accept` or `reject` reply, but it has no richer natural-language approval
-  understanding yet.
+  rejects invalid output. Telegram supports explicit `yes`/`no` decisions and
+  a durable **Change workspace** step that accepts an existing workspace name,
+  then redraws a fresh approval card. It still does not infer a filesystem path
+  or move an original without visible approval.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
   not a general airline-document parser; Calendar events require a travel
   record plus explicit proposal approval or an explicit CLI write command.
-- Receipt records are the next record family. `propose-receipt-record` and
-  `create-receipt-record` recognize a conservative labeled shape (merchant,
-  total, currency, purchase date, and receipt number). They are not a general
-  receipt understanding system and do not infer unlabeled totals.
+- Receipt records recognize a conservative labeled shape (merchant, total,
+  currency, purchase date, and receipt number), retain field-level provenance,
+  and are created only after review. They are not a general receipt
+  understanding system and do not infer unlabeled totals.
 - Warranty records use `propose-warranty-record`, `create-warranty-record`,
   and `warranty-records`. They retain source-fragment evidence for a labeled
   product, provider, warranty number, or coverage-end timestamp. They do not
