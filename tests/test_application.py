@@ -1877,7 +1877,7 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert "workspace Steward" in paused.text
     assert str(tmp_path) not in paused.text
     assert [action.command for action in paused.actions] == [
-        "/organization_accept 1", "/organization_keep_inbox 1", "/organization_reject 1"
+        "/organization_accept 1", "/organization_context 1", "/organization_keep_inbox 1", "/organization_reject 1"
     ]
     assert not (tmp_path / "vault" / "projects" / "Steward").exists()
 
@@ -2114,14 +2114,19 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
             proposals, checkpointer=InMemorySaver(), review_proposal=approval.review
         ),
         source_repository=sources,
+        contexts=ReviewContextRepository(database_path),
     )
 
     response = app.begin(make_event(text="/save unrelated"), CaptureResult(source, duplicate=False))
 
     assert isinstance(response, PresentedReply)
     assert "original stays in Inbox" in response.text
+    assert any(action.label == "Change workspace" for action in response.actions)
     assert proposals.get(1).status == "pending"
-    revised = app.handle_decision(make_event(text="/organization_context 1 CS3210 lecture notes"))
+    prompt = app.handle_decision(make_event(text="/organization_context 1"))
+    assert isinstance(prompt, PresentedReply)
+    assert prompt.title == "Change workspace"
+    revised = app.handle_followup(make_event(text="CS3210 lecture notes"))
     assert isinstance(revised, PresentedReply)
     assert revised.title == "Organize unrelated.md"
     assert "Suggested destination" in revised.text
@@ -2207,19 +2212,23 @@ def test_context_revised_organization_proposal_survives_a_restart(tmp_path: Path
         proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
         build_organization_approval_graph(proposals, checkpointer=SqliteSaver(first_connection), review_proposal=approval.review),
         source_repository=sources,
+        contexts=ReviewContextRepository(database),
     )
 
     first.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
-    revised = first.handle_decision(make_event(text="/organization_context 1 CS3210"))
-    assert isinstance(revised, PresentedReply)
+    prompt = first.handle_decision(make_event(text="/organization_context 1"))
+    assert isinstance(prompt, PresentedReply)
     first_connection.close()
     restarted_connection = sqlite3.connect(checkpoints, check_same_thread=False)
     restarted = StewardOrganizationApprovalApplication(
         proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
         build_organization_approval_graph(proposals, checkpointer=SqliteSaver(restarted_connection), review_proposal=approval.review),
         source_repository=sources,
+        contexts=ReviewContextRepository(database),
     )
 
+    revised = restarted.handle_followup(make_event(text="CS3210"))
+    assert isinstance(revised, PresentedReply)
     assert restarted.handle_decision(make_event(text="/organization_accept 2")) == "Moved unrelated.md to CS3210."
     restarted_connection.close()
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()

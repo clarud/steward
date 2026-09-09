@@ -1898,6 +1898,7 @@ class StewardOrganizationApprovalApplication:
         proposal_builder: Callable[[Source, list[Workspace]], OrganizationProposal] | None = None,
         source_repository: SourceRepository | None = None,
         inbox_dir: Path | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._proposals = proposal_repository
         self._workspaces = workspace_repository
@@ -1907,6 +1908,7 @@ class StewardOrganizationApprovalApplication:
         self._proposal_builder = proposal_builder
         self._sources = source_repository
         self._inbox_dir = inbox_dir.resolve() if inbox_dir is not None else None
+        self._contexts = contexts
 
     def begin(self, event: IncomingEvent, result: CaptureResult) -> str | PresentedReply | None:
         """Persist a proposal and pause its graph before any file mutation."""
@@ -1982,6 +1984,7 @@ class StewardOrganizationApprovalApplication:
                 "Reply with a workspace name if you want to guide this suggestion.",
                 (
                     ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
+                    ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
                     ReplyAction("Reject", f"/organization_reject {proposal_id}"),
                 ),
                 title=f"Organize {filename}", icon="📁",
@@ -1999,6 +2002,7 @@ class StewardOrganizationApprovalApplication:
             "Reply with a workspace name to change this suggestion.",
             (
                 ReplyAction("Accept", f"/organization_accept {proposal_id}"),
+                ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
                 ReplyAction("Keep in Inbox", f"/organization_keep_inbox {proposal_id}"),
                 ReplyAction("Reject", f"/organization_reject {proposal_id}"),
             ),
@@ -2019,9 +2023,21 @@ class StewardOrganizationApprovalApplication:
         command = command.casefold()
         if command == "/organization_context":
             proposal_identifier, separator, guidance = argument.partition(" ")
-            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not guidance.strip():
+            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id:
                 return (
                     f"Use /organization_context {pending.proposal_id} followed by an existing workspace name."
+                )
+            if not separator or not guidance.strip():
+                if self._contexts is None:
+                    return (
+                        f"Use /organization_context {pending.proposal_id} followed by an existing workspace name."
+                    )
+                self._contexts.set(event.platform, event.chat_id, "organization_context", pending.proposal_id)
+                return PresentedReply(
+                    "Tell me the existing workspace this source belongs to. I will show a revised proposal; "
+                    "nothing moves yet.",
+                    title="Change workspace",
+                    icon="💬",
                 )
             return self._revise_with_context(event, pending, guidance)
         if command == "/organization_new_workspace":
@@ -2091,6 +2107,26 @@ class StewardOrganizationApprovalApplication:
             workspace.name if workspace is not None else "the selected destination"
         )
         return f"Moved {filename} to {target}."
+
+    def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Use the next ordinary message as a requested workspace correction.
+
+        The durable context stores only the pending proposal ID. The source,
+        workspace lookup, proposal revision, and later file mutation remain in
+        the existing deterministic approval boundary.
+        """
+
+        if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "organization_context":
+            return None
+        pending = self._threads.get_pending(event.platform, event.chat_id)
+        if pending is None or pending.proposal_id != context.identifier:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That organization review is no longer pending. Send /pending to see current reviews."
+        self._contexts.clear(event.platform, event.chat_id)
+        return self._revise_with_context(event, pending, (event.text or "").strip())
 
     def list_proposals(self) -> str:
         """Show bounded, path-free organization history for Telegram review."""
@@ -3036,6 +3072,9 @@ class StewardEventApplication:
             if action_response is not None:
                 return action_response
         if self._organization_approval_application is not None:
+            organization_followup = self._organization_approval_application.handle_followup(event)
+            if organization_followup is not None:
+                return organization_followup
             decision_response = self._organization_approval_application.handle_decision(event)
             if decision_response is not None:
                 return decision_response
