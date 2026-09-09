@@ -154,6 +154,9 @@ def test_help_explains_read_boundaries_and_reviewable_writes() -> None:
     assert "/propose_task TEXT" in help_text
     assert "/research QUESTION" in help_text
     assert "/approve_action ID" in help_text
+    assert "/intake_accept ID" in help_text
+    assert "/integrations" in help_text
+    assert "/propose_unregister_source SOURCE_ID" in help_text
     assert "review-required writes" in help_text.casefold()
 
 
