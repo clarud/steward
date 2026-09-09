@@ -50,6 +50,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.
+- Send `deadline: submit CS3210 lab due Friday` without a command. Verify the
+  review card preserves `due Friday` as a cue and does not invent a date or
+  timezone.
 - Accept it, inspect `/tasks`, then use `/complete_task ID` twice. The second
   response should say it is already completed, not create another audit event.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,

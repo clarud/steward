@@ -110,6 +110,7 @@ class StewardReadApplication:
             "/calendar_search [terms], /calendar_get ID — current Google Calendar\n\n"
             "Explicit actions (they create a review or a selected import):\n"
             "/propose_task TEXT, /complete_task ID\n"
+            "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /research QUESTION\n"
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
