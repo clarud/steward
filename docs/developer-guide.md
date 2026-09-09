@@ -904,6 +904,12 @@ ID, and returns a review command. `ToolPolicy` labels it `SAFE_WRITE` because
 the proposal is a durable local mutation, but it is not a remote Calendar
 write. The model never receives a callable `create_calendar_event` tool.
 
+`StewardActionProposalApplication` recognizes this action type before its
+workspace-specific reviewer. Its Telegram `/approve_action ID` path obtains a
+Calendar writer from a lazy factory only after the human accepts. Thus starting
+the Telegram process, listing proposals, rejecting one, or a model requesting
+one never starts OAuth or contacts Google.
+
 Phase 24 adds the narrower `CalendarWriteService` rather than allowing callers
 to insert arbitrary Google API payloads. It accepts a persisted `TravelRecord`
 with departure and arrival times, constructs a titled event, and requests the

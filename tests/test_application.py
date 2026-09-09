@@ -12,6 +12,8 @@ from steward.application import (
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
+from steward.calendar import CalendarEventProposalService
+from steward.records import RecordService, TravelRecord
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.organization import (
@@ -291,6 +293,33 @@ def test_telegram_action_review_requires_an_explicit_numeric_command(tmp_path: P
     assert app.handle_command(make_event(text="/approve_action@steward_bot please")) == (
         "Use /approve_action followed by a numeric proposal ID."
     )
+
+
+def test_telegram_calendar_proposal_never_falls_through_to_workspace_review(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source_path = tmp_path / "flight.pdf"; source_path.write_bytes(b"pdf")
+    source = SourceRepository(database_path).add(
+        Source(None, source_path, "a" * 64, SourceType.PDF, 3, now, now, now)
+    )
+    record = RecordService(database_path).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", now, now.replace(hour=2), None)
+    )
+    repository = ActionProposalRepository(database_path)
+    calendar_proposals = CalendarEventProposalService(
+        repository, RecordService(database_path), ActivityService(database_path)
+    )
+    proposal = calendar_proposals.propose_travel_event(record.id or 0)
+    app = StewardActionProposalApplication(
+        repository,
+        ActionProposalService(repository, WorkspaceRepository(database_path), ActivityService(database_path)),
+        calendar_proposals,
+    )
+
+    response = app.handle_command(make_event(text=f"/approve_action {proposal.id}"))
+
+    assert response == "Calendar authorization is required to accept this proposal."
+    assert repository.get(proposal.id or 0).status == "pending"
 
 
 def test_telegram_can_explicitly_import_one_drive_file() -> None:

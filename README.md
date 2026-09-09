@@ -215,6 +215,8 @@ steward calendar-review-travel-event 1 accepted
 With `steward agent --include-calendar`, the model can create this same pending
 proposal only when you explicitly ask to add a saved travel record. It receives
 neither a direct Calendar write tool nor OAuth credentials as a tool argument.
+Allowlisted Telegram chats can also review it with `/approve_action ID` or
+`/reject_action ID`; OAuth is still invoked only after acceptance.
 
 ## Add and inspect source-backed travel references
 

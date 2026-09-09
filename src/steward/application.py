@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, Protocol, TypedDict
+from typing import Callable, NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
 from steward.capture import CaptureResult, InboxCaptureService
@@ -17,6 +17,7 @@ from steward.organization import (
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
+from steward.calendar import CalendarEventProposalService, CalendarWriteService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -245,10 +246,16 @@ class StewardActionProposalApplication:
     """
 
     def __init__(
-        self, repository: ActionProposalRepository, service: ActionProposalService
+        self,
+        repository: ActionProposalRepository,
+        service: ActionProposalService,
+        calendar_proposals: CalendarEventProposalService | None = None,
+        calendar_writer_factory: Callable[[], CalendarWriteService] | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
+        self._calendar_proposals = calendar_proposals
+        self._calendar_writer_factory = calendar_writer_factory
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -272,6 +279,16 @@ class StewardActionProposalApplication:
             return f"Use {command} followed by a numeric proposal ID."
         proposal_id = int(argument.strip())
         decision = "accepted" if command == "/approve_action" else "rejected"
+        proposal = self._repository.get(proposal_id)
+        if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
+            if self._calendar_proposals is None:
+                return "Calendar proposal review is not configured on this Steward process."
+            try:
+                writer = self._calendar_writer_factory() if decision == "accepted" and self._calendar_writer_factory else None
+                reviewed = self._calendar_proposals.review(proposal_id, decision, writer)
+            except ValueError as error:
+                return str(error)
+            return f"Calendar proposal {reviewed.id} {reviewed.status}."
         try:
             proposal, workspace = self._service.review(proposal_id, decision)
         except ValueError as error:

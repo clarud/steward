@@ -425,6 +425,28 @@ def _drive_inbox_importer(
     return _ConfiguredDriveInboxImporter(settings, capture_service)
 
 
+def _calendar_writer_factory(settings: Settings, database_path: Path):
+    """Delay Calendar OAuth until an authorized human accepts a proposal."""
+
+    def create_writer() -> CalendarWriteService:
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before writing Calendar.")
+        return CalendarWriteService(
+            CalendarService(
+                authorize_google_calendar(
+                    Path(configured),
+                    settings.data_dir / "config" / "google-calendar-token.json",
+                    scopes=(GOOGLE_CALENDAR_EVENTS_SCOPE,),
+                )
+            ),
+            database_path,
+            ActivityService(database_path),
+        )
+
+    return create_writer
+
+
 def _build_question_graph(
     settings: Settings, model_gateway: ModelGateway, *, limit: int
 ):
@@ -811,6 +833,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                     WorkspaceRepository(database_path),
                     activity,
                 ),
+                CalendarEventProposalService(
+                    ActionProposalRepository(database_path),
+                    RecordService(database_path),
+                    activity,
+                ),
+                _calendar_writer_factory(settings, database_path),
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
