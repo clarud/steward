@@ -483,6 +483,7 @@ steward ask "What do I know about address translation?"
 ## Documentation
 
 - `docs/developer-guide.md` — implementation, data flow, limitations, and next steps
+- `docs/telegram-primary-interface-plan.md` — plan for making Telegram the complete primary interface
 
 - `docs/product.md` — product intent
 - `docs/architecture.md` — architectural boundaries
