@@ -32,6 +32,7 @@ from steward.application import (
     StewardCalendarApplication,
     StewardTaskApplication,
     StewardResearchApplication,
+    StewardCuratedNoteApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -1236,6 +1237,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 fragment_repository=fragments,
                 activity_service=activity,
                 task_service=TaskService(database_path),
+                capture_service=capture_service,
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
@@ -1271,6 +1273,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             research_application=StewardResearchApplication(
                 lambda: _research_provider_from_settings(settings, "auto"),
                 ResearchRetentionService(capture_service),
+            ),
+            curated_note_application=StewardCuratedNoteApplication(
+                ActionProposalRepository(database_path), activity
             ),
             knowledge_application=StewardKnowledgeApplication(
                 KnowledgeService(database_path), fragments,

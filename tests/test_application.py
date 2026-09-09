@@ -21,6 +21,7 @@ from steward.application import (
     StewardCalendarApplication,
     StewardTaskApplication,
     StewardResearchApplication,
+    StewardCuratedNoteApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -509,6 +510,28 @@ def test_telegram_research_is_ephemeral_until_the_user_explicitly_retains_it(tmp
     assert SourceRepository(database).list_all() == []
     retained = application.handle(make_event(text="/research_retain What is a TLB?"))
     assert "Retained external research note" in retained
+    assert len(SourceRepository(database).list_all()) == 1
+
+
+def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, capture_service=capture,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/propose_note A TLB caches recent address translations."))
+
+    assert isinstance(preview, PresentedReply)
+    assert SourceRepository(database).list_all() == []
+    saved = application.handle(make_event(text="/approve_action 1"))
+    assert "Saved curated note to Inbox" in saved
     assert len(SourceRepository(database).list_all()) == 1
 
 
