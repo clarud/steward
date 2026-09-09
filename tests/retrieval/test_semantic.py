@@ -134,6 +134,19 @@ def test_semantic_index_replaces_vectors_when_source_fragments_are_replaced(
     assert source_embedding_count == 1
 
 
+def test_semantic_index_clear_removes_only_rebuildable_vectors(tmp_path: Path) -> None:
+    database_path, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+
+    removed = semantic_index.clear()
+
+    with sqlite3.connect(database_path) as connection:
+        remaining = connection.execute("SELECT COUNT(*) FROM source_fragment_embeddings").fetchone()[0]
+    assert removed == 2
+    assert remaining == 0
+    assert source_repository.list_active()
+    assert fragment_repository.list_for_source(1)
+
+
 def test_semantic_search_excludes_fragments_of_missing_originals(tmp_path: Path) -> None:
     _, source_repository, _, semantic_index = _build_indexed_vault(tmp_path)
     virtual_memory = next(

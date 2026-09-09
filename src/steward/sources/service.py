@@ -178,3 +178,18 @@ class SourceService:
         if self._semantic_index is not None:
             self._semantic_index.replace_for_source(fragments)
         return fragments
+
+    def rebuild_semantic_index(self) -> int:
+        """Regenerate vectors from current fragments without reparsing originals."""
+
+        if self._semantic_index is None:
+            raise ValueError("A semantic index is required to rebuild vectors.")
+        self._semantic_index.clear()
+        indexed = 0
+        for source in self._source_repository.list_active():
+            fragments = self._fragment_repository.list_for_source(source.id or 0)
+            if not fragments:
+                continue
+            self._semantic_index.replace_for_source(fragments)
+            indexed += len(fragments)
+        return indexed

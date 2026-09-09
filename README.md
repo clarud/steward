@@ -356,6 +356,13 @@ text. Rebuild a specific source explicitly instead:
 steward reextract SOURCE_ID
 ```
 
+To change or repair only the rebuildable local vector index, without reparsing
+or modifying originals, run:
+
+```powershell
+steward rebuild-semantic-index
+```
+
 ## Evaluate retrieval against your own vault
 
 Keep a small YAML file outside Git for personal expected results, then measure

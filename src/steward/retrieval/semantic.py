@@ -86,6 +86,9 @@ class SemanticIndex(Protocol):
     ) -> tuple[SemanticFragmentHit, ...]:
         """Return the fragments most semantically similar to a query."""
 
+    def clear(self) -> int:
+        """Remove only rebuildable vectors for this embedding model."""
+
 
 class SQLiteSemanticIndex:
     """A transparent local semantic index suitable for Steward's first vectors.
@@ -211,6 +214,16 @@ class SQLiteSemanticIndex:
             for row in rows
         ]
         return tuple(sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit])
+
+    def clear(self) -> int:
+        """Remove this provider's derived vectors without touching source fragments."""
+
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM source_fragment_embeddings WHERE model_name = ?",
+                (self._embedding_provider.model_name,),
+            )
+        return cursor.rowcount
 
 
 @dataclass(frozen=True, slots=True)

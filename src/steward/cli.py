@@ -192,6 +192,10 @@ def build_parser() -> argparse.ArgumentParser:
         "reextract", help="Explicitly rebuild one source's derived text and semantic vectors"
     )
     reextract_parser.add_argument("source_id", type=int)
+    subcommands.add_parser(
+        "rebuild-semantic-index",
+        help="Regenerate local derived vectors from existing extracted fragments",
+    )
     evaluation_parser = subcommands.add_parser(
         "evaluate-retrieval", help="Measure lexical retrieval against human-authored expected results"
     )
@@ -679,6 +683,24 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(str(error))
             return
         print(f"Re-extracted source {arguments.source_id}: {len(fragments)} fragment(s).")
+        return
+
+    if arguments.command == "rebuild-semantic-index":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            provider = SentenceTransformerEmbeddingProvider()
+            service = SourceService(
+                SourceRepository(database_path),
+                SourceFragmentRepository(database_path),
+                MarkdownExtractor(),
+                semantic_index=SQLiteSemanticIndex(database_path, provider),
+            )
+            count = service.rebuild_semantic_index()
+        except OSError as error:
+            print(f"Could not load the local embedding model: {error}")
+            return
+        print(f"Rebuilt {count} semantic vectors from existing fragments.")
         return
 
     if arguments.command == "download-embedding-model":
