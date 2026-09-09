@@ -554,6 +554,14 @@ class _ConfiguredDriveInboxImporter:
         )
         return DriveInboxImportService(drive, self._capture_service).import_file(file_id)
 
+    def search(self, query: str):
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before searching Drive.")
+        return GoogleDriveService(
+            authorize_google_drive(Path(configured), self._settings.data_dir / "config" / "google-drive-token.json")
+        ).search(query)
+
 
 def _drive_inbox_importer(
     settings: Settings, capture_service: InboxCaptureService
@@ -582,6 +590,14 @@ class _ConfiguredGmailInboxImporter:
             )
         )
         return GmailInboxImportService(gmail, self._capture_service).import_message(message_id)
+
+    def search(self, query: str):
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before searching Gmail.")
+        return GmailService(
+            authorize_gmail(Path(configured), self._settings.data_dir / "config" / "gmail-token.json")
+        ).search(query)
 
 
 def _gmail_inbox_importer(

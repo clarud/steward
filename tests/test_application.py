@@ -942,6 +942,19 @@ def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
     )
 
 
+def test_telegram_drive_search_offers_explicit_individual_imports() -> None:
+    class Importer:
+        def search(self, query):
+            assert query == "parallel"
+            return (type("DriveFile", (), {"id": "file-42", "name": "Parallel Notes.pdf"})(),)
+
+    response = StewardDriveImportApplication(Importer()).handle_command(make_event(text="/drive_search parallel"))
+
+    assert isinstance(response, PresentedReply)
+    assert "file-42: Parallel Notes.pdf" in response.text
+    assert response.actions[0].command == "/drive_import file-42"
+
+
 def test_telegram_can_explicitly_import_one_gmail_message() -> None:
     class Importer:
         def import_message(self, message_id: str) -> CaptureResult:
@@ -956,3 +969,16 @@ def test_telegram_can_explicitly_import_one_gmail_message() -> None:
     assert application.handle_command(make_event(text="/gmail_import")) == (
         "Use /gmail_import followed by one Gmail message ID."
     )
+
+
+def test_telegram_gmail_search_offers_explicit_individual_imports() -> None:
+    class Importer:
+        def search(self, query):
+            assert query == "OpenMP"
+            return (type("GmailMessage", (), {"id": "mail-42", "subject": "OpenMP assignment"})(),)
+
+    response = StewardGmailImportApplication(Importer()).handle_command(make_event(text="/gmail_search OpenMP"))
+
+    assert isinstance(response, PresentedReply)
+    assert "mail-42: OpenMP assignment" in response.text
+    assert response.actions[0].command == "/gmail_import mail-42"

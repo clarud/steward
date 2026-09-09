@@ -841,6 +841,8 @@ class StewardDriveImportApplication:
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
+        if command == "/drive_search":
+            return self._search(argument)
         if command != "/drive_import":
             return None
         file_id = argument.strip()
@@ -858,6 +860,21 @@ class StewardDriveImportApplication:
         status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
         return f"{status}: {result.source.path}"
 
+    def _search(self, query: str) -> str | PresentedReply:
+        if self._importer is None or not hasattr(self._importer, "search"):
+            return "Drive search is not configured on this Steward process. Authorize Drive locally first."
+        try:
+            results = self._importer.search(query.strip())
+        except (OSError, ValueError) as error:
+            return f"Drive search failed: {error}"
+        if not results:
+            return "No Drive files matched."
+        visible = results[:5]
+        return PresentedReply(
+            "Drive files (metadata only):\n" + "\n".join(f"{item.id}: {item.name}" for item in visible),
+            tuple(ReplyAction(f"Import {item.name[:32]}", f"/drive_import {item.id}") for item in visible),
+        )
+
 
 class GmailInboxImporter(Protocol):
     """Narrow boundary used by a transport command to import one Gmail ID."""
@@ -874,6 +891,8 @@ class StewardGmailImportApplication:
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
+        if command == "/gmail_search":
+            return self._search(argument)
         if command != "/gmail_import":
             return None
         message_id = argument.strip()
@@ -890,6 +909,21 @@ class StewardGmailImportApplication:
             return f"Gmail import failed: {error}"
         status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
         return f"{status}: {result.source.path}"
+
+    def _search(self, query: str) -> str | PresentedReply:
+        if self._importer is None or not hasattr(self._importer, "search"):
+            return "Gmail search is not configured on this Steward process. Authorize Gmail locally first."
+        try:
+            results = self._importer.search(query.strip())
+        except (OSError, ValueError) as error:
+            return f"Gmail search failed: {error}"
+        if not results:
+            return "No Gmail messages matched."
+        visible = results[:5]
+        return PresentedReply(
+            "Gmail messages (metadata only):\n" + "\n".join(f"{item.id}: {item.subject}" for item in visible),
+            tuple(ReplyAction(f"Import {item.subject[:32]}", f"/gmail_import {item.id}") for item in visible),
+        )
 
 
 class OrganizationApprovalGraph(Protocol):
