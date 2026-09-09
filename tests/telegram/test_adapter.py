@@ -94,6 +94,7 @@ def test_normalize_telegram_update_preserves_reply_relationship() -> None:
         reply_to_id="7",
         timestamp=datetime(2026, 9, 7, tzinfo=UTC),
         text="What is a TLB?",
+        reply_text="What is a TLB?",
     )
 
 

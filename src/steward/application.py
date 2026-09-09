@@ -111,7 +111,7 @@ class StewardReadApplication:
             "Explicit actions (they create a review or a selected import):\n"
             "/propose_task TEXT, /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
-            "/propose_note TEXT, /research QUESTION\n"
+            "/propose_note TEXT, /curate (reply to a discussion message), /research QUESTION\n"
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
             "/propose_warranty_record SOURCE_ID\n"
@@ -600,7 +600,7 @@ class StewardResearchApplication:
 
 
 class StewardCuratedNoteApplication:
-    """Stage an explicitly supplied note before it becomes a canonical source."""
+    """Stage explicitly selected content before it becomes a canonical source."""
 
     CREATE_CURATED_NOTE = "create_curated_note"
 
@@ -611,19 +611,26 @@ class StewardCuratedNoteApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, text = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command != "/propose_note":
+        if command not in {"/propose_note", "/curate"}:
             return None
-        note = text.strip()
-        if not separator or not note:
+        if command == "/curate":
+            note = (event.reply_text or "").strip()
+            origin = "user-selected Telegram reply"
+            if not note:
+                return "Reply to a text discussion message with /curate to stage it as a curated note."
+        else:
+            note = text.strip()
+            origin = "user-supplied note"
+        if command == "/propose_note" and (not separator or not note):
             return "Use /propose_note followed by the curated note you want to retain."
-        payload = {"text": note}
+        payload = {"text": note, "origin": origin}
         pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
         if pending is None:
             pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
-            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details="Create curated Inbox note")
+            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create curated Inbox note from {origin}")
         preview = note if len(note) <= 500 else note[:497] + "..."
         return PresentedReply(
-            f"Curated note proposal {pending.id}:\n{preview}\n\nIt has not been saved.",
+            f"Curated note proposal {pending.id} ({origin}):\n{preview}\n\nIt has not been saved.",
             (ReplyAction("Save note", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
         )
 
@@ -1469,11 +1476,13 @@ class StewardActionProposalApplication:
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return f"Curated note proposal {proposal.id} rejected."
+        origin = proposal.payload.get("origin", "user-supplied note")
+        text = f"# Curated note\n\nOrigin: {origin}\n\n{proposal.payload['text']}\n"
         result = self._capture.capture_text(
             IncomingEvent(
                 id=f"curated-note:{proposal_id}", platform="curated_note", chat_id=event.chat_id,
                 message_id=str(proposal_id), reply_to_id=event.reply_to_id, timestamp=event.timestamp,
-                text=proposal.payload["text"], attachments=(),
+                text=text, attachments=(),
             )
         )
         self._repository.set_status(proposal_id, decision)

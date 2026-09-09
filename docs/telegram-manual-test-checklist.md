@@ -81,6 +81,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep as Inbox note** only when you want a labeled note containing the
   provider answer and external URLs.
+- Reply to a text discussion message with `/curate`. Verify the staged note
+  identifies its origin as a user-selected Telegram reply, is not saved before
+  approval, and becomes a labeled Inbox Markdown note only after approval.
 
 ## Failure and recovery checks
 

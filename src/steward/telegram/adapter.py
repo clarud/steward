@@ -46,6 +46,11 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
         if message.reply_to_message is not None
         else None
     )
+    reply_text = (
+        message.reply_to_message.text or message.reply_to_message.caption
+        if message.reply_to_message is not None
+        else None
+    )
     return IncomingEvent(
         id=f"telegram:{update.update_id}",
         platform="telegram",
@@ -55,6 +60,7 @@ def normalize_telegram_update(update: Update) -> IncomingEvent:
         timestamp=message.date,
         text=message.text or message.caption,
         attachments=_attachment_names(message),
+        reply_text=reply_text,
     )
 
 
@@ -297,6 +303,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("research", adapter.handle_update))
     application.add_handler(CommandHandler("research_retain", adapter.handle_update))
     application.add_handler(CommandHandler("propose_note", adapter.handle_update))
+    application.add_handler(CommandHandler("curate", adapter.handle_update))
     application.add_handler(CommandHandler("propose_link_source", adapter.handle_update))
     application.add_handler(CommandHandler("integrations", adapter.handle_update))
     application.add_handler(CommandHandler("propose_travel_record", adapter.handle_update))

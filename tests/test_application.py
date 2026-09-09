@@ -67,7 +67,7 @@ class FakeGraph:
         return {"answer": "A TLB caches address translations. [F1]"}
 
 
-def make_event(*, text: str | None) -> IncomingEvent:
+def make_event(*, text: str | None, reply_text: str | None = None) -> IncomingEvent:
     return IncomingEvent(
         id="telegram:42",
         platform="telegram",
@@ -76,6 +76,7 @@ def make_event(*, text: str | None) -> IncomingEvent:
         reply_to_id=None,
         timestamp=datetime(2026, 9, 7, tzinfo=UTC),
         text=text,
+        reply_text=reply_text,
     )
 
 
@@ -686,6 +687,45 @@ def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(t
     saved = application.handle(make_event(text="/approve_action 1"))
     assert "Saved curated note to Inbox" in saved
     assert len(SourceRepository(database).list_all()) == 1
+
+
+def test_telegram_can_stage_a_replied_to_discussion_as_a_curated_note(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, capture_service=capture,
+        ),
+    )
+
+    preview = application.handle(
+        make_event(text="/curate", reply_text="A TLB caches recently used address translations.")
+    )
+
+    assert isinstance(preview, PresentedReply)
+    assert "user-selected Telegram reply" in preview.text
+    assert SourceRepository(database).list_all() == []
+    assert "Saved curated note to Inbox" in application.handle(make_event(text="/approve_action 1"))
+    source = SourceRepository(database).list_all()[0]
+    assert "Origin: user-selected Telegram reply" in source.path.read_text(encoding="utf-8")
+
+
+def test_curate_requires_a_replied_to_text_message(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(
+            ActionProposalRepository(database), ActivityService(database)
+        ),
+    )
+
+    assert application.handle(make_event(text="/curate")) == (
+        "Reply to a text discussion message with /curate to stage it as a curated note."
+    )
 
 
 def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path: Path) -> None:
