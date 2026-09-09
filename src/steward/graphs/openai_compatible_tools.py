@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
 from steward.answer.gateway import ModelGatewayError
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleToolCallingModel:
@@ -46,6 +50,9 @@ class OpenAICompatibleToolCallingModel:
         try:
             response = self._client.chat.completions.create(**payload)
         except Exception as error:
+            logger.warning(
+                "OpenAI-compatible tool request failed (%s): %s", type(error).__name__, error
+            )
             raise ModelGatewayError("The OpenAI-compatible tool-agent request could not be completed.") from error
 
         choices = getattr(response, "choices", ())
@@ -62,6 +69,7 @@ class OpenAICompatibleToolCallingModel:
             )
         return AIMessage(content=text)
 
+
     @staticmethod
     def _tool_schema(tool: BaseTool) -> dict[str, Any]:
         schema = tool.args_schema.model_json_schema()
@@ -77,6 +85,7 @@ class OpenAICompatibleToolCallingModel:
                 },
             },
         }
+
 
     @staticmethod
     def _messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:

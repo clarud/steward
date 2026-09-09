@@ -4,7 +4,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 
 ## Current status
 
-Phases 0–34 are implemented as a local foundation. Steward can capture text,
+Steward is a working local foundation. It can capture text,
 Markdown, plain text, DOCX, HTML, images with optional local OCR, and PDFs with native-text-first local OCR fallback into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
@@ -12,8 +12,9 @@ with persistent per-chat LangGraph state. The human approval and external
 action layers are still intentionally narrow. It can now also run an explicit
 Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
 workspaces, and activity.
-Every model-callable tool now declares its risk and approval requirements;
-only read-only tools are currently exposed to the agent.
+Every model-callable tool declares its risk and approval requirements. The
+agent can read local data and create only narrowly scoped, reviewable local
+proposals; it cannot directly perform a destructive or external write.
 Google Calendar can now be connected through local OAuth for current read-only
 event search and lookup.
 Travel records can be created as idempotent, audited Calendar events after

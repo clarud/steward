@@ -491,7 +491,7 @@ def _tool_calling_model_from_settings(settings: Settings):
             )
             return None
         return OpenAICompatibleToolCallingModel(
-            api_key=api_key, model=settings.soclaas_model, base_url=settings.soclaas_base_url
+            api_key=api_key, model=settings.soclaas_model, base_url=settings.soclaas_base_url,
         )
 
     print("`steward agent` currently supports Gemini, local Ollama, or SoCLaaS.")
@@ -1241,14 +1241,17 @@ def main(argv: Sequence[str] | None = None) -> None:
                 return
             client_secrets = Path(configured)
         token_path = settings.data_dir / "config" / "google-calendar-token.json"
-        calendar = CalendarService(authorize_google_calendar(client_secrets, token_path))
-        if arguments.command == "calendar-search":
-            events = calendar.search(arguments.query, time_min=arguments.after, time_max=arguments.before, limit=arguments.limit)
-            for event in events:
+        try:
+            calendar = CalendarService(authorize_google_calendar(client_secrets, token_path))
+            if arguments.command == "calendar-search":
+                events = calendar.search(arguments.query, time_min=arguments.after, time_max=arguments.before, limit=arguments.limit)
+                for event in events:
+                    print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
+            else:
+                event = calendar.get_event(arguments.event_id)
                 print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
-        else:
-            event = calendar.get_event(arguments.event_id)
-            print(f"{event.id}\t{event.start}\t{event.end}\t{event.summary}")
+        except Exception as error:
+            print(f"Calendar is temporarily unavailable: {error}")
         return
 
     if arguments.command == "calendar-create-travel-event":
