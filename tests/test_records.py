@@ -134,3 +134,25 @@ def test_travel_record_reference_rejects_unproven_or_malformed_values(tmp_path: 
         service.add_reference(1, "Booking URL!", "https://example.com", 1)
     with pytest.raises(ValueError, match="Reference value"):
         service.add_reference(1, "booking_url", " ", 1)
+
+
+def test_travel_reference_requires_evidence_from_the_record_source_and_text(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    time = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, time, time, time))
+    other = sources.add(Source(None, tmp_path / "other.pdf", "b" * 64, SourceType.PDF, 0, time, time, time))
+    fragments = SourceFragmentRepository(database)
+    supported = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Booking: https://example.com/ABC", "page 1"),
+    )))[0]
+    unrelated = fragments.replace_for_source(ExtractionResult(other.id or 0, (
+        SourceFragment(None, other.id or 0, None, 0, "Other: https://example.com/ABC", "page 1"),
+    )))[0]
+    service = RecordService(database)
+    record = service.create_travel_record(TravelRecord(None, source.id or 0, "SQ638", None, None, None, None, None))
+
+    with pytest.raises(ValueError, match="belong"):
+        service.add_reference(record.id or 0, "booking_url", "https://example.com/ABC", unrelated.id or 0)
+    with pytest.raises(ValueError, match="appear"):
+        service.add_reference(record.id or 0, "booking_url", "https://example.com/NOPE", supported.id or 0)

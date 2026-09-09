@@ -131,6 +131,7 @@ class StewardReadApplication:
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
             "/propose_warranty_record SOURCE_ID\n"
+            "/travel_references RECORD_ID, /propose_travel_reference RECORD_ID TYPE FRAGMENT_ID VALUE\n"
             "/correct_travel_record RECORD_ID FIELD VALUE\n"
             "/correct_receipt_record RECORD_ID FIELD VALUE\n"
             "/correct_warranty_record RECORD_ID FIELD VALUE\n"
@@ -376,6 +377,7 @@ class StewardRecordApplication:
     CORRECT_TRAVEL_RECORD = "correct_travel_record"
     CORRECT_RECEIPT_RECORD = "correct_receipt_record"
     CORRECT_WARRANTY_RECORD = "correct_warranty_record"
+    ADD_TRAVEL_REFERENCE = "add_travel_record_reference"
 
     def __init__(
         self,
@@ -394,6 +396,10 @@ class StewardRecordApplication:
         command = command.partition("@")[0]
         if command == "/records":
             return self._list_records()
+        if command == "/travel_references":
+            return self._travel_references(separator, argument)
+        if command == "/propose_travel_reference":
+            return self._propose_travel_reference(separator, argument)
         if command in {"/propose_receipt_record", "/propose_warranty_record"}:
             return self._propose_document_record(command, separator, argument)
         if command in {"/correct_travel_record", "/correct_receipt_record", "/correct_warranty_record"}:
@@ -440,6 +446,62 @@ class StewardRecordApplication:
             f"Proposal {pending.id}: no travel record has been saved.",
             (
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
+                ReplyAction("Reject", f"/reject_action {pending.id}"),
+            ),
+        )
+
+    def _travel_references(self, separator: str, argument: str) -> str:
+        if not separator or not argument.strip().isdigit():
+            return "Use /travel_references followed by a numeric travel record ID."
+        record_id = int(argument.strip())
+        if self._records.get_travel_record(record_id) is None:
+            return f"Travel record {record_id} was not found."
+        references = self._records.list_references(record_id)
+        if not references:
+            return f"Travel record {record_id} has no additional source-backed references."
+        return f"Travel record {record_id} references:\n" + "\n".join(
+            f"{reference.id}: {reference.reference_type} = {reference.value} (fragment {reference.fragment_id})"
+            for reference in references
+        )
+
+    def _propose_travel_reference(self, separator: str, argument: str) -> str | PresentedReply:
+        """Stage an evidence-grounded reference rather than writing from chat."""
+        parts = argument.split(maxsplit=3)
+        if not separator or len(parts) != 4 or not parts[0].isdigit() or not parts[2].isdigit():
+            return (
+                "Use /propose_travel_reference followed by record ID, reference type, "
+                "fragment ID, and the exact value from that fragment."
+            )
+        record_id, reference_type, fragment_id_text, value = parts
+        fragment_id = int(fragment_id_text)
+        record = self._records.get_travel_record(int(record_id))
+        if record is None:
+            return f"Travel record {record_id} was not found."
+        fragment = self._fragments.get(fragment_id)
+        if fragment is None:
+            return f"Fragment {fragment_id} was not found."
+        if fragment.source_id != record.source_id:
+            return "Reference evidence must belong to the travel record's source."
+        payload = {
+            "record_id": record_id,
+            "reference_type": reference_type,
+            "fragment_id": fragment_id_text,
+            "value": value,
+        }
+        pending = self._proposals.find_pending(self.ADD_TRAVEL_REFERENCE, payload)
+        if pending is None:
+            pending = self._proposals.add(self.ADD_TRAVEL_REFERENCE, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(pending.id),
+                details=f"Add travel reference for record {record_id} from fragment {fragment_id}",
+            )
+        return PresentedReply(
+            f"Travel reference proposal {pending.id}: {reference_type} = {value} "
+            f"for travel record {record_id}, supported by fragment {fragment_id}.\n\n"
+            "The record remains unchanged until approval.",
+            (
+                ReplyAction("Add reference", f"/approve_action {pending.id}"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
         )
@@ -1657,6 +1719,8 @@ class StewardActionProposalApplication:
             return self._review_record_correction(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
             return self._review_travel_record(proposal_id, decision)
+        if proposal is not None and proposal.action_type == StewardRecordApplication.ADD_TRAVEL_REFERENCE:
+            return self._review_travel_reference(proposal_id, decision)
         if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
             if self._calendar_proposals is None:
                 return "Calendar proposal review is not configured on this Steward process."
@@ -1901,6 +1965,43 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Travel-record proposal {proposal.id} rejected."
+
+    def _review_travel_reference(self, proposal_id: int, decision: str) -> str:
+        if self._records is None:
+            return "Travel-reference review is not configured on this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Travel-reference proposal was not found."
+        if proposal.status == decision:
+            return f"Travel-reference proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Travel-reference proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Travel-reference proposal {proposal.id} rejected."
+        try:
+            reference = self._records.add_reference(
+                int(proposal.payload["record_id"]),
+                proposal.payload["reference_type"],
+                proposal.payload["value"],
+                int(proposal.payload["fragment_id"]),
+            )
+        except ValueError as error:
+            return str(error)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.TRAVEL_REFERENCE_ADDED,
+                object_id=str(reference.id),
+                details=f"record:{reference.travel_record_id} fragment:{reference.fragment_id}",
+            )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return (
+            f"Travel reference {reference.id} added to record {reference.travel_record_id}: "
+            f"{reference.reference_type} (fragment {reference.fragment_id})."
+        )
 
     def _review_document_record(self, proposal_id: int, decision: str) -> str:
         if self._records is None or self._fragments is None:

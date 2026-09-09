@@ -325,6 +325,8 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("propose_travel_record", adapter.handle_update))
     application.add_handler(CommandHandler("propose_receipt_record", adapter.handle_update))
     application.add_handler(CommandHandler("propose_warranty_record", adapter.handle_update))
+    application.add_handler(CommandHandler("travel_references", adapter.handle_update))
+    application.add_handler(CommandHandler("propose_travel_reference", adapter.handle_update))
     application.add_handler(CommandHandler("correct_travel_record", adapter.handle_update))
     application.add_handler(CommandHandler("correct_receipt_record", adapter.handle_update))
     application.add_handler(CommandHandler("correct_warranty_record", adapter.handle_update))

@@ -922,6 +922,44 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     assert source_path.is_file()
 
 
+def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "trip.md"; source_path.write_text("Booking: https://example.com/ABC", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 32, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Booking: https://example.com/ABC", "lines 1-1"),
+    )))[0]
+    records = RecordService(database)
+    record = records.create_travel_record(TravelRecord(None, source.id or 0, "SQ638", None, None, None, None, None))
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, fragments, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, activity_service=activity,
+        ),
+    )
+
+    preview = application.handle(make_event(text=(
+        f"/propose_travel_reference {record.id} booking_url {fragment.id} https://example.com/ABC"
+    )))
+
+    assert isinstance(preview, PresentedReply)
+    assert "record remains unchanged" in preview.text
+    assert records.list_references(record.id or 0) == ()
+    assert application.handle(make_event(text="/approve_action 1")) == (
+        "Travel reference 1 added to record 1: booking_url (fragment 1)."
+    )
+    assert "booking_url = https://example.com/ABC (fragment 1)" in application.handle(
+        make_event(text=f"/travel_references {record.id}")
+    )
+    assert activity.list_recent()[1].event_type is ActivityType.TRAVEL_REFERENCE_ADDED
+
+
 def test_telegram_reextract_is_reviewed_and_preserves_the_original(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

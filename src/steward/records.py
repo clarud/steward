@@ -315,6 +315,20 @@ class RecordService:
             raise ValueError("Reference value must not be empty.")
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            record_row = connection.execute(
+                "SELECT source_id FROM travel_records WHERE id = ?", (record_id,)
+            ).fetchone()
+            if record_row is None:
+                raise ValueError(f"Travel record {record_id} was not found.")
+            fragment_row = connection.execute(
+                "SELECT source_id, text FROM source_fragments WHERE id = ?", (fragment_id,)
+            ).fetchone()
+            if fragment_row is None:
+                raise ValueError(f"Fragment {fragment_id} was not found.")
+            if int(fragment_row[0]) != int(record_row[0]):
+                raise ValueError("Reference evidence must belong to the travel record's source.")
+            if normalized_value.casefold() not in str(fragment_row[1]).casefold():
+                raise ValueError("Reference value must appear in its supporting fragment.")
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO travel_record_references "
                 "(travel_record_id, reference_type, value, fragment_id) VALUES (?, ?, ?, ?)",
@@ -334,6 +348,24 @@ class RecordService:
                     raise RuntimeError("Travel record reference was not persisted.")
                 return TravelRecordReference(int(row[0]), record_id, normalized_type, normalized_value, int(row[1]))
         return TravelRecordReference(reference_id, record_id, normalized_type, normalized_value, fragment_id)
+
+    def get_travel_record(self, record_id: int) -> TravelRecord | None:
+        """Return one travel record without exposing the database to callers."""
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference "
+                "FROM travel_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return TravelRecord(
+            int(row[0]), int(row[1]), str(row[2]) if row[2] else None,
+            str(row[3]) if row[3] else None, str(row[4]) if row[4] else None,
+            datetime.fromisoformat(str(row[5])) if row[5] else None,
+            datetime.fromisoformat(str(row[6])) if row[6] else None,
+            str(row[7]) if row[7] else None,
+        )
 
     def list_references(self, record_id: int) -> tuple[TravelRecordReference, ...]:
         with sqlite3.connect(self._database_path) as connection:

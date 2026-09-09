@@ -76,6 +76,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
+- For a saved travel record, use `/propose_travel_reference RECORD_ID TYPE
+  FRAGMENT_ID VALUE` with an exact value that appears in the record's source
+  fragment. Verify it stays pending until approval and `/travel_references
+  RECORD_ID` shows the saved reference and fragment ID afterward.
 
 ## External systems and privacy
 
