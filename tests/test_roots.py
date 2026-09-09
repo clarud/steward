@@ -30,3 +30,15 @@ def test_source_root_persists_only_exclusions_beneath_its_authorized_path(tmp_pa
     assert SourceRootRepository(database_path).get_by_name("School") == root
     with pytest.raises(ValueError, match="beneath"):
         SourceRootRepository(database_path).add("Bad", root_path, exclusions=(tmp_path,))
+
+
+def test_source_root_can_be_disabled_without_removing_its_authorization(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    root_path = tmp_path / "notes"; root_path.mkdir()
+    repository = SourceRootRepository(database_path)
+    repository.add("School", root_path)
+
+    disabled = repository.set_enabled("School", False)
+
+    assert disabled.enabled is False
+    assert repository.get_by_name("School") == disabled

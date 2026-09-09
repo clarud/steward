@@ -55,6 +55,16 @@ class SourceRootRepository:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
+    def set_enabled(self, name: str, enabled: bool) -> SourceRoot:
+        root = self.get_by_name(name)
+        if root is None:
+            raise ValueError(f"No locally authorized source root named {name!r}.")
+        if root.enabled == enabled:
+            return root
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("UPDATE source_roots SET enabled = ? WHERE id = ?", (int(enabled), root.id))
+        return SourceRoot(root.id, root.name, root.path, enabled, root.created_at, root.exclusions)
+
     @staticmethod
     def _normalize_exclusions(root: Path, exclusions: tuple[Path, ...]) -> tuple[Path, ...]:
         normalized: list[Path] = []

@@ -235,6 +235,9 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("roots", help="List locally authorized source roots")
     scan_root_parser = subcommands.add_parser("scan-root", help="Scan one locally authorized source root")
     scan_root_parser.add_argument("name", help="Authorized source-root name")
+    for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
+        root_toggle = subcommands.add_parser(command, help=help_text)
+        root_toggle.add_argument("name", help="Authorized source-root name")
     unregister_source_parser = subcommands.add_parser(
         "unregister-source",
         help="Remove a source from Steward's registry without deleting its original file",
@@ -731,6 +734,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        return
+
+    if arguments.command in {"enable-root", "disable-root"}:
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        enabled = arguments.command == "enable-root"
+        try:
+            root = SourceRootRepository(database_path).set_enabled(arguments.name, enabled)
+        except ValueError as error:
+            print(str(error))
+            return
+        print(f"Source root {root.name!r} is now {'enabled' if root.enabled else 'disabled'}.")
         return
 
     if arguments.command == "watch":

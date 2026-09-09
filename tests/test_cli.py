@@ -66,6 +66,17 @@ def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, mo
     assert sources.get_by_path((generated / "output.md").resolve()) is None
 
 
+def test_cli_can_disable_a_root_before_scan(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    main(["add-root", "School", str(vault)]); capsys.readouterr()
+
+    main(["disable-root", "School"])
+    assert capsys.readouterr().out == "Source root 'School' is now disabled.\n"
+    main(["scan-root", "School"])
+    assert capsys.readouterr().out == "Source root 'School' is disabled.\n"
+
+
 def test_cli_reextract_reports_a_missing_source_without_loading_a_model(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
 
