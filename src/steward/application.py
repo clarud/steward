@@ -254,6 +254,8 @@ class StewardRecordApplication:
     """Render evidence-backed record reads and extraction previews for Telegram."""
 
     CREATE_TRAVEL_RECORD = "create_travel_record"
+    CREATE_RECEIPT_RECORD = "create_receipt_record"
+    CREATE_WARRANTY_RECORD = "create_warranty_record"
 
     def __init__(
         self,
@@ -272,6 +274,8 @@ class StewardRecordApplication:
         command = command.partition("@")[0]
         if command == "/records":
             return self._list_records()
+        if command in {"/propose_receipt_record", "/propose_warranty_record"}:
+            return self._propose_document_record(command, separator, argument)
         if command != "/propose_travel_record":
             return None
         if not separator or not argument.strip().isdigit():
@@ -316,6 +320,37 @@ class StewardRecordApplication:
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
+        )
+
+    def _propose_document_record(self, command: str, separator: str, argument: str) -> str | PresentedReply:
+        label = "receipt" if command == "/propose_receipt_record" else "warranty"
+        action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
+        if not separator or not argument.strip().isdigit():
+            return f"Use {command} followed by a numeric source ID."
+        source_id = int(argument.strip())
+        fragments = self._fragments.list_for_source(source_id)
+        if not fragments:
+            return f"Source {source_id} has no extracted text to interpret as a {label} record."
+        proposal = (
+            self._records.propose_receipt_record(source_id, [(item.id or 0, item.text) for item in fragments])
+            if label == "receipt"
+            else self._records.propose_warranty_record(source_id, [(item.id or 0, item.text) for item in fragments])
+        )
+        if not proposal.field_evidence:
+            return f"Source {source_id} did not yield evidenced {label} fields."
+        fields = [
+            f"{field}: {getattr(proposal.record, field)} (fragment {fragment_id})"
+            for field, fragment_id in proposal.field_evidence.items()
+            if getattr(proposal.record, field) is not None
+        ]
+        pending = self._proposals.find_pending(action_type, {"source_id": str(source_id)})
+        if pending is None:
+            pending = self._proposals.add(action_type, {"source_id": str(source_id)})
+            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create {label} record from source {source_id}")
+        return PresentedReply(
+            f"{label.title()} record preview from source {source_id}:\n" + "\n".join(fields)
+            + f"\n\nProposal {pending.id}: no {label} record has been saved.",
+            (ReplyAction("Accept record", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
         )
 
     def _list_records(self) -> str:
@@ -1024,6 +1059,11 @@ class StewardActionProposalApplication:
         proposal = self._repository.get(proposal_id)
         if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
             return self._review_task(proposal_id, decision)
+        if proposal is not None and proposal.action_type in {
+            StewardRecordApplication.CREATE_RECEIPT_RECORD,
+            StewardRecordApplication.CREATE_WARRANTY_RECORD,
+        }:
+            return self._review_document_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
             return self._review_travel_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
@@ -1096,6 +1136,40 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Travel-record proposal {proposal.id} rejected."
+
+    def _review_document_record(self, proposal_id: int, decision: str) -> str:
+        if self._records is None or self._fragments is None:
+            return "Record review is not configured on this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Action proposal was not found."
+        label = "receipt" if proposal.action_type == StewardRecordApplication.CREATE_RECEIPT_RECORD else "warranty"
+        if proposal.status == decision:
+            return f"{label.title()} proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"{label.title()} proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"{label.title()} proposal {proposal.id} rejected."
+        source_id = int(proposal.payload["source_id"])
+        fragments = [(item.id or 0, item.text) for item in self._fragments.list_for_source(source_id)]
+        extracted = (
+            self._records.propose_receipt_record(source_id, fragments)
+            if label == "receipt" else self._records.propose_warranty_record(source_id, fragments)
+        )
+        try:
+            record = (
+                self._records.create_receipt_from_proposal(extracted)
+                if label == "receipt" else self._records.create_warranty_from_proposal(extracted)
+            )
+        except ValueError as error:
+            return str(error)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"{label.title()} record {record.id} created from source {source_id}."
 
     def propose_workspace(self, name: str) -> str:
         """Create a durable workspace proposal without creating the workspace."""

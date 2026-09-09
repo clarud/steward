@@ -409,6 +409,61 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     assert tasks.list_open()[0].due_hint == "before Tuesday"
 
 
+def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "receipt.md"; source_path.write_text("receipt", encoding="utf-8")
+    source = SourceRepository(database).add(
+        Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 7, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0,
+            "Merchant: Campus Cafe\nTotal: SGD 12.50\nReceipt Number: R-42", "lines 1-3"),
+    )))
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); records = RecordService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, fragments, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, fragment_repository=fragments, activity_service=activity,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/propose_receipt_record 1"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "Campus Cafe" in preview.text and "fragment 1" in preview.text
+    assert records.list_receipt_records() == []
+    assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 created from source 1."
+    assert records.list_receipt_records()[0].merchant == "Campus Cafe"
+
+
+def test_telegram_warranty_preview_can_be_rejected_without_persisting(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "warranty.md"; source_path.write_text("warranty", encoding="utf-8")
+    source = SourceRepository(database).add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 8, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Product: Laptop\nProvider: Example Corp", "lines 1-2"),
+    )))
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); records = RecordService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, fragments, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, fragment_repository=fragments, activity_service=activity,
+        ),
+    )
+
+    assert isinstance(application.handle(make_event(text="/propose_warranty_record 1")), PresentedReply)
+    assert application.handle(make_event(text="/reject_action 1")) == "Warranty proposal 1 rejected."
+    assert records.list_warranty_records() == []
+
+
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
