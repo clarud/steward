@@ -31,6 +31,7 @@ from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
+from steward.telegram import TelegramUpdateDeliveryRepository
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -97,6 +98,7 @@ class StewardReadApplication:
             "/search TERMS — local lexical search\n"
             "/workspaces — current workspaces\n"
             "/activity [term] — recent audit events\n\n"
+            "Admin diagnostics: /deliveries, /delivery_history, /dead_letters\n\n"
             "Writes remain reviewable: /save preserves text, and /approve_action "
             "or /reject_action reviews a pending proposal."
         )
@@ -460,6 +462,49 @@ class StewardPrivacyApplication:
             return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
         self._privacy.set_rule(source_id, rule)
         return f"Source {source_id} privacy rule set to {rule.value}."
+
+
+class StewardOperationsApplication:
+    """Expose metadata-only Telegram delivery diagnostics to the owner chat.
+
+    This intentionally permits inspection only. Replaying a delivery can repeat
+    application work, so retry stays local until it has an explicit,
+    idempotent approval workflow.
+    """
+
+    _LIMIT = 10
+
+    def __init__(self, deliveries: TelegramUpdateDeliveryRepository) -> None:
+        self._deliveries = deliveries
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
+        if command == "/deliveries":
+            deliveries = self._deliveries.list_recent(limit=self._LIMIT)
+            if not deliveries:
+                return "No local Telegram delivery records."
+            return "Recent Telegram deliveries (metadata only):\n" + "\n".join(
+                f"{delivery.update_id}: {delivery.status}"
+                f" (claimed {delivery.claimed_at.isoformat()})"
+                for delivery in deliveries
+            )
+        if command == "/delivery_history":
+            history = self._deliveries.list_history(limit=self._LIMIT)
+            if not history:
+                return "No local Telegram delivery history."
+            return "Recent Telegram delivery history (metadata only):\n" + "\n".join(
+                f"{entry.update_id}: {entry.event_type} ({entry.occurred_at.isoformat()})"
+                for entry in history
+            )
+        if command == "/dead_letters":
+            dead_letters = self._deliveries.list_dead_letters(limit=self._LIMIT)
+            if not dead_letters:
+                return "No terminal Telegram delivery failures."
+            return "Telegram dead letters (metadata only; retry locally after review):\n" + "\n".join(
+                f"{letter.update_id}: {letter.attempts} failed attempts ({letter.failed_at.isoformat()})"
+                for letter in dead_letters
+            )
+        return None
 
 
 class QuestionGraph(Protocol):
@@ -985,6 +1030,7 @@ class StewardEventApplication:
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
+        operations_application: StewardOperationsApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -1000,8 +1046,13 @@ class StewardEventApplication:
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._privacy_application = privacy_application
+        self._operations_application = operations_application
 
-    def handle(self, event: IncomingEvent) -> str:
+    def handle(self, event: IncomingEvent) -> str | PresentedReply:
+        if self._operations_application is not None:
+            operations_response = self._operations_application.handle_command(event)
+            if operations_response is not None:
+                return operations_response
         if self._privacy_application is not None:
             privacy_response = self._privacy_application.handle_command(event)
             if privacy_response is not None:

@@ -298,6 +298,9 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("roots", adapter.handle_update))
     application.add_handler(CommandHandler("privacy", adapter.handle_update))
     application.add_handler(CommandHandler("set_privacy", adapter.handle_update))
+    application.add_handler(CommandHandler("deliveries", adapter.handle_update))
+    application.add_handler(CommandHandler("delivery_history", adapter.handle_update))
+    application.add_handler(CommandHandler("dead_letters", adapter.handle_update))
     application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
     application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
     application.add_handler(CommandHandler("intake_accept", adapter.handle_update))
@@ -307,6 +310,7 @@ def run_telegram_polling(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,
         delivery_repository=delivery_repository,
+        callback_repository=callback_repository,
     )
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))

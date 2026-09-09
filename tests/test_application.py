@@ -17,6 +17,7 @@ from steward.application import (
     StewardKnowledgeApplication,
     StewardRootsApplication,
     StewardPrivacyApplication,
+    StewardOperationsApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -43,6 +44,7 @@ from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyService
+from steward.telegram import TelegramUpdateDeliveryRepository
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -327,6 +329,25 @@ def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) ->
 
     assert changed == "Source 1 privacy rule set to local_model_only."
     assert inspected == "Source 1 privacy rule: local_model_only"
+
+
+def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    deliveries = TelegramUpdateDeliveryRepository(database_path)
+    assert deliveries.claim("telegram:123")
+    deliveries.mark_delivered("telegram:123")
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        operations_application=StewardOperationsApplication(deliveries),
+    )
+
+    recent = application.handle(make_event(text="/deliveries"))
+    history = application.handle(make_event(text="/delivery_history"))
+    dead_letters = application.handle(make_event(text="/dead_letters"))
+
+    assert "telegram:123: delivered" in recent
+    assert "telegram:123: delivered" in history
+    assert dead_letters == "No terminal Telegram delivery failures."
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
