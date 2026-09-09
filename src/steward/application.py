@@ -2201,19 +2201,24 @@ class StewardActionProposalApplication:
         self._source_service = source_service
         self._semantic_index_rebuilder = semantic_index_rebuilder
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
         if text == "/action_proposals":
             pending = [proposal for proposal in self._repository.list_all() if proposal.status == "pending"]
             if not pending:
                 return "There are no pending action proposals."
-            lines = ["Pending action proposals:"]
-            for proposal in pending:
-                lines.append(
-                    f"{proposal.id}: {proposal.action_type} {proposal.payload}\n"
-                    f"Reply /approve_action {proposal.id} or /reject_action {proposal.id}."
+            visible = pending[:8]
+            lines = ["Choose an action to see its effect before deciding."]
+            actions: list[ReplyAction] = []
+            for index, proposal in enumerate(visible, start=1):
+                title, _ = StewardReviewInboxApplication._action_summary(
+                    proposal.action_type, proposal.payload
                 )
-            return "\n\n".join(lines)
+                lines.append(f"{index}. {title}")
+                actions.append(ReplyAction(f"Review {index}", f"/review action {proposal.id}"))
+            return PresentedReply(
+                "\n".join(lines), tuple(actions), title="Pending actions", icon="⏳"
+            )
 
         command, separator, argument = text.partition(" ")
         command = command.partition("@")[0]
@@ -2306,11 +2311,18 @@ class StewardActionProposalApplication:
         except ValueError as error:
             return str(error)
         if workspace is not None:
-            return (
-                f"Action proposal {proposal.id} accepted. "
-                f"Workspace {workspace.id}: {workspace.name} is available."
+            return PresentedReply(
+                f"{workspace.name} is now available for organizing and retrieving your material.",
+                (ReplyAction("Workspaces", "/workspaces"), ReplyAction("Home", "/home")),
+                title="Workspace created",
+                icon="📁",
             )
-        return f"Action proposal {proposal.id} {proposal.status}."
+        return PresentedReply(
+            "The requested action was applied." if proposal.status == "accepted" else "The requested action was not applied.",
+            (ReplyAction("Pending", "/pending"), ReplyAction("Home", "/home")),
+            title="Action complete" if proposal.status == "accepted" else "Action declined",
+            icon="✅" if proposal.status == "accepted" else "↩️",
+        )
 
     def _review_task(self, proposal_id: int, decision: str) -> str:
         if self._tasks is None:

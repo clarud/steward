@@ -2211,10 +2211,13 @@ def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_p
     listed = app.handle(make_event(text="/action_proposals"))
     accepted = app.handle(make_event(text=f"/approve_action {proposal.id}"))
 
-    assert f"{proposal.id}: create_workspace" in listed
-    assert accepted == (
-        f"Action proposal {proposal.id} accepted. Workspace 1: Compiler Project is available."
-    )
+    assert isinstance(listed, PresentedReply)
+    assert listed.title == "Pending actions"
+    assert "Create workspace Compiler Project" in listed.text
+    assert listed.actions[0].command == f"/review action {proposal.id}"
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Workspace created"
+    assert "Compiler Project is now available" in accepted.text
     assert WorkspaceRepository(database_path).list_all()[0].name == "Compiler Project"
 
 
