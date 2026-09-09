@@ -1318,15 +1318,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"
         sources = SourceRepository(database_path)
         activity = ActivityService(database_path)
+        fragments = SourceFragmentRepository(database_path)
+        source_service = SourceService(sources, fragments, MarkdownExtractor())
         tasks = TaskService(database_path)
         task_reminders = TaskReminderService(database_path, tasks, activity)
         capture_service = InboxCaptureService(
             settings.inbox_dir,
             sources,
-            SourceFragmentRepository(database_path),
+            fragments,
             activity,
         )
-        fragments = SourceFragmentRepository(database_path)
         deterministic_organization = OrganizationService()
         model_organization = ModelAssistedOrganizationService(model_gateway, fallback=deterministic_organization)
         privacy = PrivacyService(database_path)
@@ -1401,6 +1402,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 workspace_repository=WorkspaceRepository(database_path),
                 source_repository=sources,
                 delivery_repository=TelegramUpdateDeliveryRepository(database_path),
+                source_service=source_service,
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)

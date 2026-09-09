@@ -19,6 +19,7 @@ from steward.organization import (
     OrganizationService,
 )
 from steward.sources import Source
+from steward.sources.service import SourceService
 from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
@@ -126,6 +127,7 @@ class StewardReadApplication:
             "/calendar_travel RECORD_ID, /calendar_task TASK_ID\n"
             "/drive_search QUERY, /gmail_search QUERY\n"
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
+            "/propose_reextract SOURCE_ID â€” refresh derived text after review\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
             "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE.\n\n"
@@ -1485,6 +1487,8 @@ class StewardActionProposalApplication:
     cannot become a write operation.
     """
 
+    REEXTRACT_SOURCE = "reextract_source"
+
     def __init__(
         self,
         repository: ActionProposalRepository,
@@ -1500,6 +1504,7 @@ class StewardActionProposalApplication:
         workspace_repository: WorkspaceRepository | None = None,
         source_repository: SourceRepository | None = None,
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
+        source_service: SourceService | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -1514,6 +1519,7 @@ class StewardActionProposalApplication:
         self._workspaces = workspace_repository
         self._sources = source_repository
         self._delivery_repository = delivery_repository
+        self._source_service = source_service
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -1564,6 +1570,8 @@ class StewardActionProposalApplication:
             )
         if command == "/create_workspace":
             return self.propose_workspace(argument)
+        if command == "/propose_reextract":
+            return self.propose_reextract(argument)
         if command not in {"/approve_action", "/reject_action"}:
             return None
         if not separator or not argument.strip().isdigit():
@@ -1575,6 +1583,8 @@ class StewardActionProposalApplication:
             return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
             return self._review_delivery_recovery(proposal_id, decision)
+        if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
+            return self._review_reextract(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
@@ -1673,6 +1683,54 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.TELEGRAM_DELIVERY_RECOVERED, object_id=update_id, details="Approved Telegram recovery; no message was replayed.")
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Reopened {update_id} for a future genuine Telegram redelivery. No message was replayed."
+
+    def _review_reextract(self, proposal_id: int, decision: str) -> str:
+        """Refresh derived text after a review without changing canonical input.
+
+        This deliberately has a narrow payload: a registered source ID.  The
+        Telegram caller cannot supply a path, parser option, or arbitrary
+        filesystem target.
+        """
+        if self._source_service is None:
+            return "Source re-extraction is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Re-extraction proposal was not found."
+        if proposal.status == decision:
+            return f"Re-extraction proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Re-extraction proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(
+                    ActivityType.ACTION_REJECTED,
+                    object_id=str(proposal_id),
+                    details=proposal.action_type,
+                )
+            return f"Re-extraction proposal {proposal.id} rejected."
+        try:
+            fragments = self._source_service.reextract_source(int(proposal.payload["source_id"]))
+        except (OSError, UnicodeDecodeError, ValueError) as error:
+            # Preserve the pending proposal for a deliberate retry after the
+            # local file or extractor problem is repaired.
+            return f"Could not refresh derived text: {error}"
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.SOURCE_REEXTRACTED,
+                object_id=proposal.payload["source_id"],
+                details=f"fragments:{len(fragments)}",
+            )
+            self._activity.record(
+                ActivityType.ACTION_ACCEPTED,
+                object_id=str(proposal_id),
+                details=proposal.action_type,
+            )
+        return (
+            f"Refreshed derived text for source {proposal.payload['source_id']}: "
+            f"{len(fragments)} fragments. Original unchanged."
+        )
 
     def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str:
         if self._capture is None:
@@ -1834,6 +1892,35 @@ class StewardActionProposalApplication:
         return (
             f"Workspace proposal {proposal.id}: create '{proposal.payload['name']}'. "
             f"Review with /approve_action {proposal.id} or /reject_action {proposal.id}."
+        )
+
+    def propose_reextract(self, source_id_text: str) -> str | PresentedReply:
+        """Stage a narrow, review-required derived-data refresh."""
+        if self._source_service is None or self._sources is None:
+            return "Source re-extraction is not configured for this Steward process."
+        if not source_id_text.strip().isdigit():
+            return "Use /propose_reextract followed by a numeric source ID."
+        source_id = int(source_id_text.strip())
+        source = self._sources.get_by_id(source_id)
+        if source is None:
+            return f"Source {source_id} was not found."
+        payload = {"source_id": str(source_id)}
+        proposal = self._repository.find_pending(self.REEXTRACT_SOURCE, payload)
+        if proposal is None:
+            proposal = self._repository.add(self.REEXTRACT_SOURCE, payload)
+            if self._activity is not None:
+                self._activity.record(
+                    ActivityType.ACTION_PROPOSED,
+                    object_id=str(proposal.id),
+                    details=f"Re-extract derived text for source:{source_id}",
+                )
+        return PresentedReply(
+            f"Re-extraction proposal {proposal.id} is pending for source {source_id}. "
+            "This refreshes derived text only; the original file will not change.",
+            (
+                ReplyAction("Refresh derived text", f"/approve_action {proposal.id}"),
+                ReplyAction("Reject", f"/reject_action {proposal.id}"),
+            ),
         )
 
 

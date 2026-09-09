@@ -22,6 +22,7 @@ class ActivityType(StrEnum):
     ORGANIZATION_REJECTED = "organization_rejected"
     SOURCE_MOVED = "source_moved"
     SOURCE_MOVE_UNDONE = "source_move_undone"
+    SOURCE_REEXTRACTED = "source_reextracted"
     ACTION_PROPOSED = "action_proposed"
     ACTION_ACCEPTED = "action_accepted"
     ACTION_REJECTED = "action_rejected"

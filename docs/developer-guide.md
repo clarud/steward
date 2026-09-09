@@ -694,6 +694,14 @@ after installing OCR, improving an extractor, or repairing derived fragments.
 It replaces only rebuildable fragments and their local semantic vectors; it
 never changes the original file or source identity.
 
+Telegram exposes the same capability only as `/propose_reextract SOURCE_ID`.
+It stores a narrow proposal containing the registered source ID, shows an
+approval card, and then calls `SourceService.reextract_source()` only after the
+owner accepts. Telegram never accepts a path, parser argument, or arbitrary
+filesystem target. Extraction failure leaves the proposal pending so that the
+user can repair the local condition and deliberately retry; success records
+`SOURCE_REEXTRACTED` plus the approval audit event.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by

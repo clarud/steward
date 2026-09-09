@@ -40,9 +40,10 @@ from steward.organization import (
 )
 from steward.actions import FileMutationService
 from steward.activity import ActivityService, ActivityType
-from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
+from steward.extraction import ExtractionResult, MarkdownExtractor, SourceFragment, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph
 from steward.sources import Source, SourceRepository, SourceType
+from steward.sources.service import SourceService
 from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.retrieval import LexicalSearchService
@@ -861,6 +862,73 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     assert "No file will move" in preview.text
     assert application.handle(make_event(text="/approve_action 1")) == "Source 1 linked to workspace 1. No file moved."
     assert source_path.is_file()
+
+
+def test_telegram_reextract_is_reviewed_and_preserves_the_original(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "notes.md"
+    original = "# TLB\n\nA TLB caches translations.\n"
+    source_path.write_text(original, encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(
+        Source(None, source_path, "a" * 64, SourceType.MARKDOWN, len(original), now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "stale", "lines 1-1"),))
+    )
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals,
+            ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity,
+            source_repository=sources,
+            source_service=SourceService(sources, fragments, MarkdownExtractor()),
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/propose_reextract {source.id}"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "original file will not change" in preview.text
+    assert fragments.list_for_source(source.id or 0)[0].text == "stale"
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert accepted == "Refreshed derived text for source 1: 1 fragments. Original unchanged."
+    assert source_path.read_text(encoding="utf-8") == original
+    assert "A TLB caches translations." in fragments.list_for_source(source.id or 0)[0].text
+    assert proposals.get(1).status == "accepted"
+    assert activity.list_recent()[1].event_type is ActivityType.SOURCE_REEXTRACTED
+
+
+def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    sources = SourceRepository(database)
+    application = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity,
+        source_repository=sources,
+        source_service=SourceService(sources, SourceFragmentRepository(database), MarkdownExtractor()),
+    )
+
+    assert application.handle_command(make_event(text="/propose_reextract 99")) == "Source 99 was not found."
+    proposal = proposals.add(application.REEXTRACT_SOURCE, {"source_id": "99"})
+
+    assert application.handle_command(make_event(text=f"/approve_action {proposal.id}")) == (
+        "Could not refresh derived text: Source 99 was not found."
+    )
+    assert proposals.get(proposal.id or 0).status == "pending"
 
 
 def test_telegram_integration_status_reveals_only_local_readiness(tmp_path: Path, monkeypatch) -> None:

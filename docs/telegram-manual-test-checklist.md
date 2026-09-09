@@ -86,6 +86,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   from a button and verify exactly one Inbox source is created.
 - Set `/set_privacy SOURCE_ID no_model` and inspect `/privacy SOURCE_ID`.
   Confirm restricted source content is not sent to a cloud-backed model.
+- Choose a harmless Markdown source with a known ID and send
+  `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
+  approval, accepting refreshes its fragments, and the original file remains
+  byte-for-byte unchanged.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.
