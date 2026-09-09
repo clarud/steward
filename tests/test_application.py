@@ -22,6 +22,7 @@ from steward.application import (
     StewardTaskApplication,
     StewardResearchApplication,
     StewardCuratedNoteApplication,
+    StewardWorkspaceLinkApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -41,7 +42,7 @@ from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentR
 from steward.graphs import build_organization_approval_graph
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
-from steward.workspaces import WorkspaceRepository
+from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.retrieval import LexicalSearchService
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
@@ -543,6 +544,31 @@ def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(t
     saved = application.handle(make_event(text="/approve_action 1"))
     assert "Saved curated note to Inbox" in saved
     assert len(SourceRepository(database).list_all()) == 1
+
+
+def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "note.md"; source_path.write_text("# Note", encoding="utf-8")
+    sources = SourceRepository(database)
+    sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 6, now, now, now))
+    activity = ActivityService(database); workspaces = WorkspaceRepository(database)
+    workspace = WorkspaceService(workspaces, activity).create("CS3210")
+    proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        workspace_link_application=StewardWorkspaceLinkApplication(proposals, workspaces, sources, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, workspaces, activity), activity_service=activity,
+            workspace_repository=workspaces, source_repository=sources,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/propose_link_source 1 1"))
+    assert isinstance(preview, PresentedReply)
+    assert "No file will move" in preview.text
+    assert application.handle(make_event(text="/approve_action 1")) == "Source 1 linked to workspace 1. No file moved."
+    assert source_path.is_file()
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

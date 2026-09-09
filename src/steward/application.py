@@ -451,6 +451,43 @@ class StewardTaskApplication:
         )
 
 
+class StewardWorkspaceLinkApplication:
+    """Create reviewable semantic workspace links without moving originals."""
+
+    LINK_SOURCE = "link_source_to_workspace"
+
+    def __init__(self, proposals: ActionProposalRepository, workspaces: WorkspaceRepository, sources: SourceRepository, activity: ActivityService) -> None:
+        self._proposals = proposals
+        self._workspaces = workspaces
+        self._sources = sources
+        self._activity = activity
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command != "/propose_link_source":
+            return None
+        parts = argument.split()
+        if not separator or len(parts) != 2 or not all(part.isdigit() for part in parts):
+            return "Use /propose_link_source followed by a workspace ID and source ID."
+        workspace_id, source_id = (int(part) for part in parts)
+        workspace = next((item for item in self._workspaces.list_all() if item.id == workspace_id), None)
+        source = self._sources.get_by_id(source_id)
+        if workspace is None:
+            return f"Workspace {workspace_id} was not found."
+        if source is None:
+            return f"Source {source_id} was not found."
+        payload = {"workspace_id": str(workspace_id), "source_id": str(source_id)}
+        pending = self._proposals.find_pending(self.LINK_SOURCE, payload)
+        if pending is None:
+            pending = self._proposals.add(self.LINK_SOURCE, payload)
+            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Link source {source_id} to workspace {workspace_id}")
+        return PresentedReply(
+            f"Link proposal {pending.id}: relate source {source_id} ({source.path.name}) to workspace {workspace_id} ({workspace.name}).\n\nNo file will move.",
+            (ReplyAction("Link", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+        )
+
+
 class StewardResearchApplication:
     """Offer explicit, ephemeral web research and separately reviewed retention."""
 
@@ -1147,6 +1184,8 @@ class StewardActionProposalApplication:
         activity_service: ActivityService | None = None,
         task_service: TaskService | None = None,
         capture_service: InboxCaptureService | None = None,
+        workspace_repository: WorkspaceRepository | None = None,
+        source_repository: SourceRepository | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -1157,6 +1196,8 @@ class StewardActionProposalApplication:
         self._activity = activity_service
         self._tasks = task_service
         self._capture = capture_service
+        self._workspaces = workspace_repository
+        self._sources = source_repository
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -1204,6 +1245,8 @@ class StewardActionProposalApplication:
             return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
+            return self._review_workspace_link(proposal_id, decision)
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
@@ -1280,6 +1323,32 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         state = "Already saved" if result.duplicate else "Saved"
         return f"{state} curated note to Inbox: {result.source.path}"
+
+    def _review_workspace_link(self, proposal_id: int, decision: str) -> str:
+        if self._workspaces is None or self._sources is None:
+            return "Workspace linking is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Link proposal was not found."
+        if proposal.status == decision:
+            return f"Link proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Link proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Link proposal {proposal.id} rejected."
+        workspace_id = int(proposal.payload["workspace_id"])
+        source_id = int(proposal.payload["source_id"])
+        if not any(item.id == workspace_id for item in self._workspaces.list_all()) or self._sources.get_by_id(source_id) is None:
+            return "The workspace or source is no longer available; the link was not created."
+        self._workspaces.link_source(workspace_id, source_id)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.SOURCE_LINKED_TO_WORKSPACE, object_id=str(source_id), details=f"workspace:{workspace_id}")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Source {source_id} linked to workspace {workspace_id}. No file moved."
 
     def _review_travel_record(self, proposal_id: int, decision: str) -> str:
         if self._records is None or self._fragments is None:
@@ -1379,6 +1448,7 @@ class StewardEventApplication:
         task_application: StewardTaskApplication | None = None,
         research_application: StewardResearchApplication | None = None,
         curated_note_application: StewardCuratedNoteApplication | None = None,
+        workspace_link_application: StewardWorkspaceLinkApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
@@ -1399,6 +1469,7 @@ class StewardEventApplication:
         self._task_application = task_application
         self._research_application = research_application
         self._curated_note_application = curated_note_application
+        self._workspace_link_application = workspace_link_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._privacy_application = privacy_application
@@ -1442,6 +1513,10 @@ class StewardEventApplication:
             note_response = self._curated_note_application.handle_command(event)
             if note_response is not None:
                 return note_response
+        if self._workspace_link_application is not None:
+            link_response = self._workspace_link_application.handle_command(event)
+            if link_response is not None:
+                return link_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:
