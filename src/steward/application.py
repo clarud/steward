@@ -28,6 +28,7 @@ from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
 from steward.records import RecordService
+from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -328,6 +329,83 @@ class StewardRecordApplication:
             for record in self._records.list_warranty_records()
         )
         return "Saved records:\n" + "\n".join(lines) if lines else "No saved records."
+
+
+class StewardKnowledgeApplication:
+    """Expose canonical knowledge inspection and evidence proposals in Telegram."""
+
+    def __init__(
+        self,
+        knowledge: KnowledgeService,
+        fragments: SourceFragmentRepository,
+        proposals: KnowledgeEnrichmentProposalRepository,
+        activity: ActivityService,
+    ) -> None:
+        self._knowledge = knowledge
+        self._fragments = fragments
+        self._proposals = proposals
+        self._activity = activity
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/knowledge":
+            if not separator or not argument.strip():
+                return "Use /knowledge followed by a concept name or alias."
+            concept = self._knowledge.find(argument.strip())
+            if concept is None:
+                return f"No canonical concept matches {argument.strip()!r}."
+            claims = self._knowledge.list_claims(concept.id or 0)
+            lines = [f"Concept {concept.id}: {concept.name}"]
+            lines.extend(f"Claim {claim.id}: {claim.text}" for claim in claims)
+            return "\n".join(lines)
+        if command == "/knowledge_proposals":
+            pending = [proposal for proposal in self._proposals.list_all() if proposal.status == "pending"]
+            if not pending:
+                return "No pending knowledge enrichment proposals."
+            return "Pending knowledge proposals:\n" + "\n".join(
+                f"{proposal.id}: {proposal.operation.value} claim {proposal.claim_id} "
+                f"with fragment {proposal.fragment_id}" for proposal in pending
+            )
+        if command == "/propose_enrichment":
+            parts = argument.split()
+            if not separator or len(parts) != 2 or not all(part.isdigit() for part in parts):
+                return "Use /propose_enrichment followed by a claim ID and fragment ID."
+            claim = self._knowledge.get_claim(int(parts[0]))
+            fragment = self._fragments.get(int(parts[1]))
+            if claim is None:
+                return f"Claim {parts[0]} was not found."
+            if fragment is None:
+                return f"Fragment {parts[1]} was not found."
+            stored = self._proposals.add(
+                self._knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text)
+            )
+            self._activity.record(
+                ActivityType.KNOWLEDGE_ENRICHMENT_PROPOSED,
+                object_id=str(stored.id), details=f"{stored.operation.value}: {stored.rationale}",
+            )
+            return PresentedReply(
+                f"Knowledge proposal {stored.id}: {stored.operation.value.upper()} claim {stored.claim_id} "
+                f"using fragment {stored.fragment_id}.\n{stored.rationale}",
+                (
+                    ReplyAction("Accept", f"/review_enrichment {stored.id} accepted"),
+                    ReplyAction("Reject", f"/review_enrichment {stored.id} rejected"),
+                ),
+            )
+        if command == "/review_enrichment":
+            parts = argument.split()
+            if not separator or len(parts) != 2 or not parts[0].isdigit() or parts[1] not in {"accepted", "rejected"}:
+                return "Use /review_enrichment followed by a proposal ID and accepted or rejected."
+            try:
+                proposal = self._proposals.review(int(parts[0]), parts[1])
+            except ValueError as error:
+                return str(error)
+            self._activity.record(
+                ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED if proposal.status == "accepted" else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED,
+                object_id=str(proposal.id), details=f"{proposal.operation.value}: {proposal.rationale}",
+            )
+            return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."
+        return None
 
 
 class QuestionGraph(Protocol):
@@ -850,6 +928,7 @@ class StewardEventApplication:
         provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
         tool_agent_application: StewardToolAgentApplication | None = None,
         record_application: StewardRecordApplication | None = None,
+        knowledge_application: StewardKnowledgeApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -862,8 +941,13 @@ class StewardEventApplication:
         self._provisional_intake_application = provisional_intake_application
         self._tool_agent_application = tool_agent_application
         self._record_application = record_application
+        self._knowledge_application = knowledge_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._knowledge_application is not None:
+            knowledge_response = self._knowledge_application.handle_command(event)
+            if knowledge_response is not None:
+                return knowledge_response
         if self._record_application is not None:
             record_response = self._record_application.handle_command(event)
             if record_response is not None:

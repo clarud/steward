@@ -25,6 +25,7 @@ from steward.application import (
     StewardProvisionalIntakeApplication,
     StewardToolAgentApplication,
     StewardRecordApplication,
+    StewardKnowledgeApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -1149,6 +1150,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             tool_agent_application=tool_agent_application,
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
+            ),
+            knowledge_application=StewardKnowledgeApplication(
+                KnowledgeService(database_path), fragments,
+                KnowledgeEnrichmentProposalRepository(database_path), activity,
             ),
         )
         run_telegram_polling(

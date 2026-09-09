@@ -14,6 +14,7 @@ from steward.application import (
     StewardProvisionalIntakeApplication,
     StewardToolAgentApplication,
     StewardRecordApplication,
+    StewardKnowledgeApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -37,6 +38,7 @@ from steward.workspaces import WorkspaceRepository
 from steward.retrieval import LexicalSearchService
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -256,6 +258,38 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
 
     assert accepted == "Travel record 1 created from source 1."
     assert records.list_travel_records()[0].flight_number == "SQ638"
+
+
+def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    source_path = tmp_path / "note.md"; source_path.write_text("note", encoding="utf-8")
+    source = SourceRepository(database_path).add(
+        Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 4, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database_path)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0,
+            "A TLB caches recently used address translations.", "lines 1-1"),))
+    )
+    knowledge = KnowledgeService(database_path)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "A TLB caches address translations.", [1])
+    activity = ActivityService(database_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=StewardKnowledgeApplication(
+            knowledge, fragments, KnowledgeEnrichmentProposalRepository(database_path), activity
+        ),
+    )
+
+    preview = application.handle(make_event(text="/propose_enrichment 1 1"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "CONFIRM claim 1" in preview.text
+    assert preview.actions[0].command == "/review_enrichment 1 accepted"
+    accepted = application.handle(make_event(text="/review_enrichment 1 accepted"))
+    assert accepted == "Knowledge enrichment proposal 1 accepted."
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
