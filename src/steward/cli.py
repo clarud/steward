@@ -717,6 +717,19 @@ def _build_question_graph(
     )
 
 
+def _print_scan_database_error(operation: str, error: sqlite3.Error) -> None:
+    """Give local operators an actionable scan failure without hiding safety facts."""
+    message = str(error).casefold()
+    if "locked" in message or "busy" in message:
+        print(
+            f"{operation} stopped: the local Steward database is busy. "
+            "Wait for the other local Steward operation to finish, then retry. "
+            "Original files were not changed."
+        )
+        return
+    print(f"{operation} stopped because the local Steward database reported an error: {error}")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run a Steward command."""
     _configure_console_encoding()
@@ -760,12 +773,16 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if arguments.command == "scan":
         database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        result = SourceService(
-            source_repository=SourceRepository(database_path),
-            fragment_repository=SourceFragmentRepository(database_path),
-            markdown_extractor=MarkdownExtractor(),
-        ).scan_source_root(arguments.root)
+        try:
+            initialize_database(database_path)
+            result = SourceService(
+                source_repository=SourceRepository(database_path),
+                fragment_repository=SourceFragmentRepository(database_path),
+                markdown_extractor=MarkdownExtractor(),
+            ).scan_source_root(arguments.root)
+        except sqlite3.Error as error:
+            _print_scan_database_error("Scan", error)
+            return
         print(
             "Scan complete: "
             f"new={result.new} updated={result.updated} "
@@ -775,22 +792,26 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if arguments.command == "scan-root":
         database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        root = SourceRootRepository(database_path).get_by_name(arguments.name)
-        if root is None:
-            print(f"No locally authorized source root named {arguments.name!r}.")
+        try:
+            initialize_database(database_path)
+            root = SourceRootRepository(database_path).get_by_name(arguments.name)
+            if root is None:
+                print(f"No locally authorized source root named {arguments.name!r}.")
+                return
+            if not root.enabled:
+                print(f"Source root {root.name!r} is disabled.")
+                return
+            if not root.path.is_dir():
+                print(f"Source root {root.name!r} is unavailable: {root.path}")
+                return
+            result = SourceService(
+                source_repository=SourceRepository(database_path),
+                fragment_repository=SourceFragmentRepository(database_path),
+                markdown_extractor=MarkdownExtractor(),
+            ).scan_source_root(root.path, exclusions=root.exclusions)
+        except sqlite3.Error as error:
+            _print_scan_database_error("Root scan", error)
             return
-        if not root.enabled:
-            print(f"Source root {root.name!r} is disabled.")
-            return
-        if not root.path.is_dir():
-            print(f"Source root {root.name!r} is unavailable: {root.path}")
-            return
-        result = SourceService(
-            source_repository=SourceRepository(database_path),
-            fragment_repository=SourceFragmentRepository(database_path),
-            markdown_extractor=MarkdownExtractor(),
-        ).scan_source_root(root.path, exclusions=root.exclusions)
         print(
             f"Scan complete for {root.name}: "
             f"new={result.new} updated={result.updated} "

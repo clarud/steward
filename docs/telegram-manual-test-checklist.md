@@ -94,6 +94,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   failure message and that source files remain unchanged.
 - Disconnect a mapped/network root if you use one; `/roots` should report it as
   missing and `scan-root` should fail without changing unrelated sources.
+- Do not run a second scan while another local Steward process is writing its
+  database. If SQLite reports that it is busy, `steward scan` and
+  `steward scan-root NAME` should stop with a retry instruction, not a Python
+  traceback. The original files must remain unchanged.
 - Inspect `/deliveries`, `/delivery_history`, and `/dead_letters`. Confirm they
   contain identifiers/status/timestamps only, never message text.
 - For a test-only terminal failure, inspect it locally with

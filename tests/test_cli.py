@@ -87,6 +87,37 @@ def test_cli_scan_registers_markdown_sources(
     assert [fragment.heading for fragment in fragments] == ["Note"]
 
 
+def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_originals(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    note = vault / "note.md"; note.write_text("# Note", encoding="utf-8")
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["add-root", "School", str(vault)])
+    capsys.readouterr()
+
+    def database_is_locked(_: Path) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr("steward.cli.initialize_database", database_is_locked)
+
+    main(["scan", str(vault)])
+    scan_output = capsys.readouterr().out
+    main(["scan-root", "School"])
+    root_output = capsys.readouterr().out
+
+    assert scan_output == (
+        "Scan stopped: the local Steward database is busy. Wait for the other local Steward operation to finish, "
+        "then retry. Original files were not changed.\n"
+    )
+    assert root_output == (
+        "Root scan stopped: the local Steward database is busy. Wait for the other local Steward operation to finish, "
+        "then retry. Original files were not changed.\n"
+    )
+    assert note.read_text(encoding="utf-8") == "# Note"
+
+
 def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"; vault.mkdir()
     (vault / "note.md").write_text("# Note", encoding="utf-8")
