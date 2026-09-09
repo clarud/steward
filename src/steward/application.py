@@ -1102,7 +1102,12 @@ class StewardIntegrationStatusApplication:
             for name, token in states.items()
         )
         lines.append("Authorize or change OAuth settings only on the local machine.")
-        return "\n".join(lines)
+        return PresentedReply(
+            "\n".join(lines),
+            (ReplyAction("Home", "/home"),),
+            title="Integration status",
+            icon="🔐",
+        )
 
 
 class StewardResearchApplication:

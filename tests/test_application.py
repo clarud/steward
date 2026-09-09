@@ -1597,10 +1597,12 @@ def test_telegram_integration_status_reveals_only_local_readiness(tmp_path: Path
 
     response = application.handle(make_event(text="/integrations"))
 
-    assert "OAuth client: configured locally" in response
-    assert "Calendar: local token present" in response
-    assert "Drive: needs local browser authorization" in response
-    assert "secret token" not in response and "client.json" not in response
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Integration status"
+    assert "OAuth client: configured locally" in response.text
+    assert "Calendar: local token present" in response.text
+    assert "Drive: needs local browser authorization" in response.text
+    assert "secret token" not in response.text and "client.json" not in response.text
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
