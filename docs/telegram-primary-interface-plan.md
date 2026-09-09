@@ -489,24 +489,252 @@ Extend structured traces to include safe identifiers for incoming Telegram
 event, route, proposal, tool, policy decision, callback, and final outcome.
 Never log full sensitive source text or credentials.
 
+## Prioritized delivery goals
+
+The plan is deliberately divided into goals with independently useful outcomes.
+Do not start a later goal merely because it is interesting; complete its stated
+verification gate first. Every goal preserves `docs/invariants.md`, keeps
+domain logic outside Telegram, and includes a diff/learning review before the
+next goal begins.
+
+### Goal 0 — Restore production-source integrity
+
+**Why first:** Telegram retrieval has already surfaced repository test fixtures
+as personal knowledge. No assistant behavior is trustworthy until production
+and test state are separated.
+
+Implement:
+
+- remove fixture registrations from the current production registry without
+  deleting fixture files;
+- make test database and data-root selection explicit and isolated;
+- prevent configured source roots from including the Steward repository, test
+  fixtures, `.steward/`, caches, and generated output by default;
+- add a safe inspection/pruning path for accidentally registered sources.
+
+Done when:
+
+- a real Telegram answer cannot cite test fixtures;
+- test execution cannot mutate the production `.steward/` database;
+- existing user vault sources remain intact and searchable;
+- regression tests cover source-root exclusion and cleanup behavior.
+
+### Goal 1 — Telegram interaction and routing foundation
+
+**User outcome:** Telegram becomes understandable instead of returning “I do
+not yet know how to safely handle that request.”
+
+Implement:
+
+- `/help` and `/status` with owner-safe, secret-free information;
+- routing for ordinary questions without requiring `?`;
+- deterministic command routing before any model classification;
+- basic Inbox, source, workspace, activity, and search read interactions;
+- reusable result formatting, pagination, callback identifiers, and callback
+  validation.
+
+Done when:
+
+```text
+what is in my inbox
+organize my inbox
+create a workspace for jobs
+find my CS3210 notes on OpenMP
+show my recent activity
+```
+
+all receive a useful routed response or a safe clarification. Tests cover text,
+caption, reply, duplicate update, expired callback, unauthorized chat, and
+restart.
+
+### Goal 2 — Provisional Telegram intake and guided routing
+
+**User outcome:** You can send a document, image, link, or substantial thought
+without remembering `/save`; Steward analyzes it provisionally and you decide
+what becomes durable.
+
+Implement:
+
+- attachment and substantial-text intake classification;
+- temporary download/extraction lifecycle and cleanup on discard;
+- `Save`, `Ask first`, `Add context`, `Keep in Inbox`, and `Do not keep`
+  interactions;
+- local-only/external-model/no-model analysis choices for sensitive material;
+- proposal revision after the user provides context, such as course, project,
+  purpose, or privacy preference;
+- Activity events for intake, proposal revision, acceptance, rejection, and
+  discard.
+
+Done when a user can send a CS3210 PDF, résumé, flight detail, task-like text,
+or sudden thought and see a correct, reviewable next-step proposal. Tests cover
+accepted, rejected, uncertain, private, malformed, oversized, duplicate, and
+restart-during-review paths.
+
+### Goal 3 — Workspaces and organization review in Telegram
+
+**User outcome:** Material can be safely connected to ongoing work without
+automatic incorrect moves.
+
+Implement:
+
+- workspace listing/creation proposal, source linking, and Inbox inspection;
+- organization proposal cards with evidence, target root/path, and rationale;
+- durable accept/reject/edit/context-supplement flows;
+- explicit handling for “new workspace likely” versus “leave in Inbox.”
+
+Done when `Organize my inbox` produces the same safe pending proposal state as
+the CLI, survives process restart, and logs every decision. A user must be able
+to understand exactly what file movement would occur before approving it.
+
+### Goal 4 — Telegram read tools and safe agent access
+
+**User outcome:** Telegram can use the same information capabilities as
+`steward agent` without exposing unsafe powers.
+
+Implement:
+
+- model/provider-neutral Telegram path to the existing tool-agent graph;
+- read tools for sources, knowledge, records, workspaces, activity, and
+  Calendar reads where configured;
+- tool-call traces, budgets, validation, provider-failure responses, and source
+  privacy filtering;
+- safe proposal-only tools for workspace, knowledge, and Calendar actions.
+
+Done when a Telegram request can demonstrably follow:
+
+```text
+message → model → allowlisted local tool → validated result → model → reply
+```
+
+with no raw filesystem, shell, token, or unrestricted external-tool access.
+Test each model adapter, invalid arguments, tool loops, privacy denial, and
+tool-policy denial.
+
+### Goal 5 — Tasks, records, deadlines, and Calendar proposals
+
+**User outcome:** Steward can turn natural commitments and documents into
+reviewable life/work objects rather than losing them in chat.
+
+Implement:
+
+- a deliberately small `Task`/reminder domain before treating every commitment
+  as a Calendar event;
+- travel, receipt, warranty, task, deadline, and decision extraction proposals;
+- Telegram field review and correction;
+- Calendar search, duplicate detection, event proposal, approval, and write;
+- reminders/Calendar actions only after explicit user review.
+
+Done when “remind me to compare OpenMP scheduling before Tuesday” creates a
+reviewable task/reminder proposal, and an itinerary can produce a reviewed
+TravelRecord plus non-duplicating Calendar proposal. Test field provenance,
+time zones, duplicate events, OAuth failure, rejection, and restart.
+
+### Goal 6 — Curated knowledge conversations and research retention
+
+**User outcome:** You can learn through discussion, correct or extend your
+understanding, and deliberately preserve the best curated result.
+
+Implement:
+
+- conversation-to-curated-note proposal;
+- local evidence, external research, and model reasoning kept distinguishable;
+- claim/evidence comparison and enrichment review cards;
+- retained research sources entering normal capture/organization flows;
+- explicit editing before a generated note becomes a durable source.
+
+Done when a discussion about TLBs can produce a user-reviewed note with
+traceable local/external evidence, and external research is discarded unless
+you choose to retain it. Test unsupported claims, conflicting sources, privacy
+rules, retain/discard, and provenance links.
+
+### Goal 7 — Multi-root vault management and operational reliability
+
+**User outcome:** Steward can safely operate over existing folders across the
+machine and remain dependable as a daily service.
+
+Implement:
+
+- `SourceRoot` persistence, local root authorization, exclusions, scan status,
+  root health, and root/workspace distinction;
+- Telegram-visible root status and a local handoff for root selection;
+- file watching/debouncing where justified, with hashes authoritative;
+- Windows start-at-login/service guidance, health reporting, log rotation,
+  backup/restore, and SQLite snapshot procedures;
+- fault-injection tests for missing/moved roots, process kill, SQLite lock,
+  provider outage, corrupt derived index, and Telegram outage.
+
+Done when multiple existing folders can be registered and scanned in place,
+their sources remain distinct and searchable, excluded directories cannot leak
+into production retrieval, and recovery procedures are documented and tested.
+
+### Goal 8 — Explicit external imports and administration
+
+**User outcome:** Drive/Gmail imports, privacy controls, operational status,
+and maintenance tasks are available from Telegram without giving the bot broad
+machine authority.
+
+Implement:
+
+- explicit Drive/Gmail search-result selection and import;
+- local OAuth handoff and status reporting;
+- source privacy inspection/change flows;
+- delivery history/dead-letter inspection and confirmed retry;
+- admin-only reindex, model download, watcher/UI status, and evaluation
+  controls.
+
+Done when each action is authorized by chat/user, explains its effect, emits
+Activity, and has tests for OAuth/configuration failure, unauthorized access,
+duplicate import, and confirmation refusal.
+
+### Goal 9 — End-to-end evaluation and daily-use hardening
+
+**User outcome:** Steward is dependable enough to use as the main personal
+interface, rather than merely a collection of working demos.
+
+Implement:
+
+- end-to-end Telegram evaluation cases for every completed goal;
+- retrieval, extraction, routing, proposal, tool, Calendar, and privacy
+  evaluation sets using realistic but non-sensitive fixtures;
+- a manual test checklist for your real vault and Telegram bot;
+- measurement of failed routing, false organization confidence, tool-loop
+  exhaustion, extraction mistakes, and user rejection reasons;
+- prioritized fixes from actual daily use.
+
+Done when every Telegram feature has normal, failure, restart, duplicate, and
+privacy test coverage proportionate to its risk, and the product can be used
+for a sustained trial without unexplained loss or unsafe mutation.
+
+## Program-wide test matrix
+
+Every implementation goal contributes to this matrix:
+
+| Concern | Required evidence |
+| --- | --- |
+| Domain behavior | unit tests of the underlying service without Telegram or LangGraph |
+| Transport behavior | normalized update, command/caption/reply parsing, response rendering |
+| Persistence | SQLite state is correct before/after restart and duplicate delivery |
+| Safety | privacy, root boundary, authorization, policy, confirmation, and audit tests |
+| Model behavior | deterministic fake-adapter tests plus provider integration tests when authorized |
+| External APIs | adapter contract tests, failure handling, and a separately authorized live smoke test |
+| User experience | manual Telegram checklist with expected messages/cards and recovery paths |
+
 ## Delivery order
 
-Build in small, independently testable slices:
+Goals run in this order:
 
-1. Interaction foundation: `/help`, `/status`, cards, pagination, callback
-   validation.
-2. Intent routing: no-punctuation questions, Inbox inspection, source search.
-3. Provisional attachment/text intake and guided routing proposals.
-4. Workspaces and organization proposals/reviews.
-5. Knowledge proposal/review flows.
-6. Records and field-review flows.
-7. Calendar read, then proposal/review/write flows.
-8. Research retention, Drive import, and Gmail import.
-9. Privacy settings and administrative operations.
-10. Reliability/evaluation pass across all Telegram flows.
-
-Each slice must preserve the invariants in `docs/invariants.md`, include unit
-and integration tests, and be reviewed before the next slice begins.
+```text
+0 integrity
+→ 1 routing foundation
+→ 2 provisional intake
+→ 3 organization
+→ 4 tool agent
+→ 5 tasks/records/calendar
+→ 6 curated knowledge/research
+→ 7 roots/reliability
+→ 8 imports/administration
+→ 9 hardening
+```
 
 ## Explicitly local-only or browser-handoff operations
 
