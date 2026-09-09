@@ -34,6 +34,7 @@ from steward.application import (
     StewardResearchApplication,
     StewardCuratedNoteApplication,
     StewardWorkspaceLinkApplication,
+    StewardIntegrationStatusApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -1283,6 +1284,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             workspace_link_application=StewardWorkspaceLinkApplication(
                 ActionProposalRepository(database_path), WorkspaceRepository(database_path), sources, activity
             ),
+            integration_status_application=StewardIntegrationStatusApplication(settings.data_dir),
             knowledge_application=StewardKnowledgeApplication(
                 KnowledgeService(database_path), fragments,
                 KnowledgeEnrichmentProposalRepository(database_path), activity,

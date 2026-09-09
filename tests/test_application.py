@@ -23,6 +23,7 @@ from steward.application import (
     StewardResearchApplication,
     StewardCuratedNoteApplication,
     StewardWorkspaceLinkApplication,
+    StewardIntegrationStatusApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -569,6 +570,23 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     assert "No file will move" in preview.text
     assert application.handle(make_event(text="/approve_action 1")) == "Source 1 linked to workspace 1. No file moved."
     assert source_path.is_file()
+
+
+def test_telegram_integration_status_reveals_only_local_readiness(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", "C:/private/client.json")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "google-calendar-token.json").write_text("secret token", encoding="utf-8")
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        integration_status_application=StewardIntegrationStatusApplication(tmp_path),
+    )
+
+    response = application.handle(make_event(text="/integrations"))
+
+    assert "OAuth client: configured locally" in response
+    assert "Calendar: local token present" in response
+    assert "Drive: needs local browser authorization" in response
+    assert "secret token" not in response and "client.json" not in response
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

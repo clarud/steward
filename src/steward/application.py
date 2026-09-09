@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Callable, NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
@@ -486,6 +487,33 @@ class StewardWorkspaceLinkApplication:
             f"Link proposal {pending.id}: relate source {source_id} ({source.path.name}) to workspace {workspace_id} ({workspace.name}).\n\nNo file will move.",
             (ReplyAction("Link", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
         )
+
+
+class StewardIntegrationStatusApplication:
+    """Report local integration readiness without reading OAuth secrets in chat."""
+
+    def __init__(self, data_dir: Path) -> None:
+        self._data_dir = data_dir
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
+        if command != "/integrations":
+            return None
+        configured = bool(os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS"))
+        config_state = "configured locally" if configured else "client secrets not configured"
+        token_dir = self._data_dir / "config"
+        states = {
+            "Calendar": token_dir / "google-calendar-token.json",
+            "Drive": token_dir / "google-drive-token.json",
+            "Gmail": token_dir / "gmail-token.json",
+        }
+        lines = ["Google integration status (metadata only):", f"OAuth client: {config_state}"]
+        lines.extend(
+            f"{name}: {'local token present' if token.is_file() else 'needs local browser authorization'}"
+            for name, token in states.items()
+        )
+        lines.append("Authorize or change OAuth settings only on the local machine.")
+        return "\n".join(lines)
 
 
 class StewardResearchApplication:
@@ -1449,6 +1477,7 @@ class StewardEventApplication:
         research_application: StewardResearchApplication | None = None,
         curated_note_application: StewardCuratedNoteApplication | None = None,
         workspace_link_application: StewardWorkspaceLinkApplication | None = None,
+        integration_status_application: StewardIntegrationStatusApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
@@ -1470,6 +1499,7 @@ class StewardEventApplication:
         self._research_application = research_application
         self._curated_note_application = curated_note_application
         self._workspace_link_application = workspace_link_application
+        self._integration_status_application = integration_status_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._privacy_application = privacy_application
@@ -1517,6 +1547,10 @@ class StewardEventApplication:
             link_response = self._workspace_link_application.handle_command(event)
             if link_response is not None:
                 return link_response
+        if self._integration_status_application is not None:
+            integration_response = self._integration_status_application.handle_command(event)
+            if integration_response is not None:
+                return integration_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:
