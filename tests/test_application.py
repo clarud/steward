@@ -950,6 +950,7 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
         task_application=StewardTaskApplication(tasks, proposals, activity),
         action_proposal_application=StewardActionProposalApplication(
             proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            CalendarEventProposalService(proposals, RecordService(database), activity, tasks),
             activity_service=activity, task_service=tasks,
         ),
     )
@@ -963,6 +964,7 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task saved"
+    assert accepted.actions[0].command == "/calendar_task 1"
     assert tasks.get(1).due_at == datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
 
 
