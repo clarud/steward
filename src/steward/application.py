@@ -1433,8 +1433,18 @@ class StewardRootsApplication:
         roots = self._roots.list_all()
         if not roots:
             return "No locally authorized source roots. Add one from the local CLI or setup UI."
+        lines = []
+        for root in roots:
+            if root.health == "available":
+                lines.append(f"{root.name}: available")
+            elif root.health == "missing":
+                lines.append(
+                    f"{root.name}: missing — reconnect or restore it locally, then run `steward scan-root \"{root.name}\"`."
+                )
+            else:
+                lines.append(f"{root.name}: disabled — enable it locally before scanning.")
         return PresentedReply(
-            "\n".join(f"{root.name}: {root.health}" for root in roots),
+            "\n".join(lines),
             (ReplyAction("Home", "/home"),),
             title="Authorized source roots",
             icon="🗂️",

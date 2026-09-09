@@ -784,7 +784,15 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     roots.set_enabled("School", False)
     disabled = application.handle(make_event(text="/roots"))
     assert isinstance(disabled, PresentedReply)
-    assert disabled.text == "School: disabled"
+    assert disabled.text == "School: disabled — enable it locally before scanning."
+
+    roots.set_enabled("School", True)
+    root_path.rmdir()
+    missing = application.handle(make_event(text="/roots"))
+    assert isinstance(missing, PresentedReply)
+    assert "School: missing" in missing.text
+    assert 'steward scan-root "School"' in missing.text
+    assert str(root_path) not in missing.text
 
 
 def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) -> None:
