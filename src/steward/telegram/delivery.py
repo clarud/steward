@@ -219,3 +219,17 @@ class TelegramUpdateDeliveryRepository:
                 (limit,),
             ).fetchall()
         return tuple(TelegramDeadLetter(str(row[0]), int(row[1]), datetime.fromisoformat(str(row[2]))) for row in rows)
+
+    def get_dead_letter(self, update_id: str) -> TelegramDeadLetter | None:
+        """Return terminal metadata for one update, never its original body."""
+
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT update_id, attempts, failed_at FROM telegram_delivery_dead_letters WHERE update_id = ?",
+                (update_id,),
+            ).fetchone()
+        return (
+            TelegramDeadLetter(str(row[0]), int(row[1]), datetime.fromisoformat(str(row[2])))
+            if row is not None
+            else None
+        )

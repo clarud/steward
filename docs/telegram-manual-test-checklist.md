@@ -91,6 +91,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   `steward telegram-recover-dead-letter telegram:UPDATE_ID --confirm` only if
   Telegram can genuinely deliver that update again. This resets the retry
   budget; it never replays unavailable message content.
+- In Telegram, `/recover_dead_letter telegram:UPDATE_ID` must first show a
+  review card. Approve it only for a test update that Telegram can genuinely
+  redeliver; rejection leaves the dead letter terminal.
 - Run the automated suite after a manual session:
 
   ```powershell

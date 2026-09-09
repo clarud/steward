@@ -123,7 +123,8 @@ class StewardReadApplication:
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
-            "Admin diagnostics: /deliveries, /delivery_history, /dead_letters"
+            "Admin diagnostics: /deliveries, /delivery_history, /dead_letters\n"
+            "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"
         )
 
     def status(self) -> str:
@@ -256,7 +257,7 @@ class StewardToolAgentApplication:
     def __init__(self, graph: ToolAgentGraph) -> None:
         self._graph = graph
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, question = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command != "/agent":
@@ -791,17 +792,20 @@ class StewardCalendarApplication:
 
 
 class StewardOperationsApplication:
-    """Expose metadata-only Telegram delivery diagnostics to the owner chat.
-
-    This intentionally permits inspection only. Replaying a delivery can repeat
-    application work, so retry stays local until it has an explicit,
-    idempotent approval workflow.
-    """
+    """Expose delivery diagnostics and reviewable recovery to the owner chat."""
 
     _LIMIT = 10
+    RECOVER_DELIVERY = "recover_telegram_delivery"
 
-    def __init__(self, deliveries: TelegramUpdateDeliveryRepository) -> None:
+    def __init__(
+        self,
+        deliveries: TelegramUpdateDeliveryRepository,
+        proposals: ActionProposalRepository | None = None,
+        activity: ActivityService | None = None,
+    ) -> None:
         self._deliveries = deliveries
+        self._proposals = proposals
+        self._activity = activity
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
@@ -829,6 +833,34 @@ class StewardOperationsApplication:
             return "Telegram dead letters (metadata only; retry locally after review):\n" + "\n".join(
                 f"{letter.update_id}: {letter.attempts} failed attempts ({letter.failed_at.isoformat()})"
                 for letter in dead_letters
+            )
+        if command == "/recover_dead_letter":
+            update_id = (event.text or "").strip().partition(" ")[2].strip()
+            if not update_id or " " in update_id:
+                return "Use /recover_dead_letter followed by one Telegram update ID."
+            if self._proposals is None or self._activity is None:
+                return "Telegram delivery recovery is not configured for this Steward process."
+            dead_letter = self._deliveries.get_dead_letter(update_id)
+            if dead_letter is None:
+                return f"Telegram update {update_id!r} is not a dead letter."
+            payload = {"update_id": update_id}
+            pending = self._proposals.find_pending(self.RECOVER_DELIVERY, payload)
+            if pending is None:
+                pending = self._proposals.add(self.RECOVER_DELIVERY, payload)
+                self._activity.record(
+                    ActivityType.ACTION_PROPOSED,
+                    object_id=str(pending.id),
+                    details=f"Recover Telegram delivery retry budget: {update_id}",
+                )
+            return PresentedReply(
+                f"Delivery recovery proposal {pending.id}: reopen {update_id} after "
+                f"{dead_letter.attempts} failed attempt(s).\n\n"
+                "This does not replay a message. It only allows a future genuine Telegram redelivery "
+                "to receive a fresh retry budget.",
+                (
+                    ReplyAction("Reopen retry budget", f"/approve_action {pending.id}"),
+                    ReplyAction("Keep terminal", f"/reject_action {pending.id}"),
+                ),
             )
         return None
 
@@ -1257,6 +1289,7 @@ class StewardActionProposalApplication:
         capture_service: InboxCaptureService | None = None,
         workspace_repository: WorkspaceRepository | None = None,
         source_repository: SourceRepository | None = None,
+        delivery_repository: TelegramUpdateDeliveryRepository | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -1269,6 +1302,7 @@ class StewardActionProposalApplication:
         self._capture = capture_service
         self._workspaces = workspace_repository
         self._sources = source_repository
+        self._delivery_repository = delivery_repository
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -1314,6 +1348,8 @@ class StewardActionProposalApplication:
         proposal = self._repository.get(proposal_id)
         if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
             return self._review_task(proposal_id, decision)
+        if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
+            return self._review_delivery_recovery(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
@@ -1377,6 +1413,32 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Task {task.id} created: {task.title}."
+
+    def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:
+        if self._delivery_repository is None:
+            return "Telegram delivery recovery is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Delivery recovery proposal was not found."
+        if proposal.status == decision:
+            return f"Delivery recovery proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Delivery recovery proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Delivery recovery proposal {proposal.id} rejected."
+        update_id = proposal.payload["update_id"]
+        try:
+            self._delivery_repository.reopen_dead_letter(update_id)
+        except ValueError as error:
+            return str(error)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.TELEGRAM_DELIVERY_RECOVERED, object_id=update_id, details="Approved Telegram recovery; no message was replayed.")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Reopened {update_id} for a future genuine Telegram redelivery. No message was replayed."
 
     def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str:
         if self._capture is None:

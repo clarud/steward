@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
 
@@ -444,6 +444,36 @@ def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path
     assert "telegram:123: delivered" in recent
     assert "telegram:123: delivered" in history
     assert dead_letters == "No terminal Telegram delivery failures."
+
+
+def test_telegram_delivery_recovery_requires_a_durable_approval_and_never_replays(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    activity = ActivityService(database_path)
+    proposals = ActionProposalRepository(database_path)
+    deliveries = TelegramUpdateDeliveryRepository(database_path, max_attempts=1)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    assert deliveries.claim("telegram:recover", now=now)
+    deliveries.release("telegram:recover", now=now)
+    assert deliveries.claim("telegram:recover", now=now + timedelta(seconds=15)) is False
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        operations_application=StewardOperationsApplication(deliveries, proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database_path), activity),
+            activity_service=activity, delivery_repository=deliveries,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/recover_dead_letter telegram:recover"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "does not replay a message" in preview.text
+    assert deliveries.get_dead_letter("telegram:recover") is not None
+    assert application.handle(make_event(text="/approve_action 1")) == (
+        "Reopened telegram:recover for a future genuine Telegram redelivery. No message was replayed."
+    )
+    assert deliveries.get_dead_letter("telegram:recover") is None
+    assert activity.list_recent()[1].event_type == ActivityType.TELEGRAM_DELIVERY_RECOVERED
 
 
 def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:

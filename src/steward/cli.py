@@ -1306,6 +1306,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 capture_service=capture_service,
                 workspace_repository=WorkspaceRepository(database_path),
                 source_repository=sources,
+                delivery_repository=TelegramUpdateDeliveryRepository(database_path),
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)
@@ -1356,7 +1357,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
             privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources),
             operations_application=StewardOperationsApplication(
-                TelegramUpdateDeliveryRepository(database_path)
+                TelegramUpdateDeliveryRepository(database_path),
+                ActionProposalRepository(database_path),
+                activity,
             ),
             calendar_application=StewardCalendarApplication(_calendar_reader_factory(settings)),
         )

@@ -699,10 +699,10 @@ can only reopen an update for a genuine Telegram redelivery while recording an
 audit event and a new retry budget. It cannot rerun an unavailable original
 payload locally.
 
-The current local `telegram-recover-dead-letter UPDATE_ID --confirm` command
-implements this boundary. It resets only a retry budget, records Activity, and
-cannot replay an unavailable message. A future Telegram admin confirmation
-flow must preserve that same no-replay guarantee.
+The local `telegram-recover-dead-letter UPDATE_ID --confirm` command and the
+Telegram `/recover_dead_letter UPDATE_ID` review card implement this boundary.
+They reset only a retry budget, record Activity, and cannot replay an
+unavailable message.
 
 ### Goal 9 — End-to-end evaluation and daily-use hardening
 
