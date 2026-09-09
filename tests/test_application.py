@@ -1939,7 +1939,9 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
         provisional_intake_application=provisional,
         organization_approval_application=organization,
     )
-    original = tmp_path / "CS3210 OpenMP notes.md"
+    # The filename deliberately does not name the workspace: the user's staged
+    # context, not an incidental filename match, must shape this proposal.
+    original = tmp_path / "lecture-notes.md"
     original.write_text("# OpenMP\n\nScheduling notes.", encoding="utf-8")
     upload = IncomingEvent(
         "telegram:901", "telegram", "100", "901", None,
@@ -1954,17 +1956,21 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
     selected = application.handle(make_event(text="/intake_analysis 1 local"))
     assert isinstance(selected, PresentedReply)
     assert "local" in selected.text
+    contextualized = application.handle(make_event(text="/intake_context 1 These are for CS3210."))
+    assert isinstance(contextualized, PresentedReply)
+    assert "CS3210" in contextualized.text
     paused = application.handle(make_event(text="/intake_accept 1"))
     assert isinstance(paused, PresentedReply)
     assert "Suggested destination" in paused.text
-    assert paused.title == "Organize telegram-100-901-CS3210-OpenMP-notes.md"
+    assert "Your added context selected the existing workspace 'CS3210'." in paused.text
+    assert paused.title == "Organize telegram-100-901-lecture-notes.md"
     source = sources.get_by_id(1)
     assert source is not None and source.path.parent == inbox
     assert privacy.rule_for(1) is PrivacyRule.LOCAL_MODEL_ONLY
 
     accepted = application.handle(make_event(text="/organization_accept 1"))
 
-    assert accepted == "Moved telegram-100-901-CS3210-OpenMP-notes.md to CS3210."
+    assert accepted == "Moved telegram-100-901-lecture-notes.md to CS3210."
     assert not source.path.exists()
     assert (tmp_path / "vault" / "projects" / "CS3210" / source.path.name).is_file()
     assert proposals.get(1).status == "accepted"

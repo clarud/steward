@@ -142,6 +142,22 @@ class ProvisionalIntakeRepository:
                 (intake_id, guidance, summary, datetime.now(UTC).isoformat()),
             )
 
+    def latest_guidance(self, intake_id: int) -> str | None:
+        """Return the latest user routing guidance for one staged item.
+
+        Revisions remain an audit trail. This accessor intentionally returns
+        only the most recent guidance because it is the user's current
+        instruction for the next proposal, not a replacement for the source.
+        """
+
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT guidance FROM provisional_intake_revisions "
+                "WHERE intake_id = ? ORDER BY id DESC LIMIT 1",
+                (intake_id,),
+            ).fetchone()
+        return str(row[0]) if row is not None else None
+
     def set_classification(self, intake_id: int, category: str, summary: str) -> None:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute(
@@ -267,6 +283,11 @@ class ProvisionalIntakeService:
         """Read one staged intake for a transport-level next-step decision."""
 
         return self._repository.get(intake_id)
+
+    def guidance_for(self, intake_id: int) -> str | None:
+        """Read the latest explicit guidance without changing intake state."""
+
+        return self._repository.latest_guidance(intake_id)
 
     def discard(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
         intake = self._pending_for_chat(intake_id, chat_id)

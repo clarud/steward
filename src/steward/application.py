@@ -1709,11 +1709,13 @@ class StewardProvisionalIntakeApplication:
             return str(error)
         return f"Discarded provisional intake {intake.id}; its staged copy was removed."
 
-    def pending_category_for_acceptance(self, event: IncomingEvent) -> tuple[str, str] | None:
-        """Return the pending intake classification before accepting its original.
+    def pending_category_for_acceptance(self, event: IncomingEvent) -> tuple[str, str, str | None] | None:
+        """Return pending classification and routing guidance before acceptance.
 
         The method is intentionally read-only.  It lets the application select
-        a next review card after capture without trusting callback text.
+        a next review card after capture without trusting callback text. The
+        explicit guidance is retained separately from the mutable summary, so
+        it can influence a proposal after the original enters Inbox.
         """
 
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -1722,7 +1724,7 @@ class StewardProvisionalIntakeApplication:
         intake = self._service.get(int(argument.strip()))
         if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
             return None
-        return intake.category, intake.original_name
+        return intake.category, intake.original_name, self._service.guidance_for(intake.id or 0)
 
     def handle_followup(self, event: IncomingEvent) -> PresentedReply | str | None:
         """Attach the next ordinary message to an explicitly requested intake context."""
@@ -1909,6 +1911,24 @@ class StewardOrganizationApprovalApplication:
     def begin(self, event: IncomingEvent, result: CaptureResult) -> str | PresentedReply | None:
         """Persist a proposal and pause its graph before any file mutation."""
 
+        return self._begin(event, result)
+
+    def begin_with_context(
+        self, event: IncomingEvent, result: CaptureResult, guidance: str
+    ) -> str | PresentedReply | None:
+        """Use explicit intake guidance to refine a still-reviewable proposal.
+
+        Guidance can select only an existing workspace. It never moves a file
+        or permits a chat-supplied path; those remain explicit review actions.
+        """
+
+        return self._begin(event, result, guidance=guidance)
+
+    def _begin(
+        self, event: IncomingEvent, result: CaptureResult, *, guidance: str | None = None
+    ) -> str | PresentedReply | None:
+        """Build one organization proposal, preserving the pending-review guard."""
+
         if result.duplicate:
             return None
         pending = self._threads.get_pending(event.platform, event.chat_id)
@@ -1919,9 +1939,13 @@ class StewardOrganizationApprovalApplication:
             )
         workspaces = self._workspaces.list_all()
         proposal = (
-            self._proposal_builder(result.source, workspaces)
-            if self._proposal_builder is not None
-            else OrganizationService().propose(result.source, workspaces)
+            OrganizationService().propose_with_context(result.source, workspaces, guidance)
+            if guidance
+            else (
+                self._proposal_builder(result.source, workspaces)
+                if self._proposal_builder is not None
+                else OrganizationService().propose(result.source, workspaces)
+            )
         )
         return self._start_proposal(event, proposal)
 
@@ -3082,7 +3106,7 @@ class StewardEventApplication:
         event: IncomingEvent,
         result: CaptureResult,
         *,
-        intake_classification: tuple[str, str] | None = None,
+        intake_classification: tuple[str, str, str | None] | None = None,
     ) -> str | PresentedReply:
         saved = self._capture_application.format_result(result)
         if (
@@ -3101,7 +3125,12 @@ class StewardEventApplication:
                 )
         if self._organization_approval_application is None:
             return saved
-        proposal = self._organization_approval_application.begin(event, result)
+        guidance = intake_classification[2] if intake_classification is not None else None
+        proposal = (
+            self._organization_approval_application.begin_with_context(event, result, guidance)
+            if guidance
+            else self._organization_approval_application.begin(event, result)
+        )
         if isinstance(proposal, PresentedReply):
             return PresentedReply(
                 f"{saved}\n\n{proposal.text}", proposal.actions,
