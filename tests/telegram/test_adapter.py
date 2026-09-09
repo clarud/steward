@@ -158,6 +158,27 @@ def test_adapter_rejects_an_unknown_or_expired_callback(tmp_path) -> None:
     assert message.replies == ["This Steward action is invalid or has expired. Send /help."]
 
 
+def test_adapter_ignores_a_delivered_duplicate_callback(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    callbacks = TelegramCallbackRepository(database_path)
+    token = callbacks.create("100", "/approve_action 1").token
+    deliveries = TelegramUpdateDeliveryRepository(database_path)
+    handler = FakeEventHandler()
+    adapter = TelegramAdapter(
+        handler, callback_repository=callbacks, delivery_repository=deliveries
+    )
+
+    first_message = FakeCallbackMessage()
+    asyncio.run(adapter.handle_callback(FakeCallbackUpdate(first_message, token), None))  # type: ignore[arg-type]
+    duplicate_message = FakeCallbackMessage()
+    asyncio.run(adapter.handle_callback(FakeCallbackUpdate(duplicate_message, token), None))  # type: ignore[arg-type]
+
+    assert [event.text for event in handler.events] == ["/approve_action 1"]
+    assert first_message.replies == ["A TLB caches address translations. [F1]"]
+    assert duplicate_message.replies == []
+
+
 def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

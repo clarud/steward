@@ -33,6 +33,8 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   “How does that relate to TLBs?” Verify citations point to test-vault sources.
 - Send the same update twice only if you can safely reproduce it; verify a
   duplicate does not create duplicate capture/proposal state.
+- If Telegram visibly retries a review-button callback, verify it does not
+  accept/reject the proposal twice or send a second confirmation.
 
 ## Capture, review, and restart
 
