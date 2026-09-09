@@ -1490,7 +1490,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             knowledge_application=StewardKnowledgeApplication(
                 KnowledgeService(database_path), fragments,
                 KnowledgeEnrichmentProposalRepository(database_path), activity,
-                KnowledgeConnector(database_path),
+                KnowledgeConnector(database_path), sources,
             ),
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
             privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources, activity),

@@ -503,6 +503,40 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert accepted == "Knowledge enrichment proposal 1 accepted."
 
 
+def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "contradiction.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, "TLB", 0, "TLBs do not cache translations.", "lines 4-4"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=StewardKnowledgeApplication(
+            knowledge, fragments, KnowledgeEnrichmentProposalRepository(database), ActivityService(database),
+            source_repository=SourceRepository(database),
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/propose_enrichment {claim.id} {fragment.id}"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "CONTRADICT" in preview.text
+    assert "Existing claim 1: TLBs cache translations." in preview.text
+    assert "contradiction.md" in preview.text and "TLBs do not cache translations." in preview.text
+    assert "does not rewrite the existing claim" in preview.text
+    assert application.handle(make_event(text="/review_enrichment 1 accepted")) == (
+        "Knowledge contradiction proposal 1 accepted. Existing claim unchanged."
+    )
+    assert knowledge.get_claim(claim.id or 0) == claim
+
+
 def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

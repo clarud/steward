@@ -115,6 +115,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   Verify that the returned model draft is marked as local-model synthesis and
   remains unsaved until approval. Use `external` only when you deliberately
   authorize sending that reply to the configured external model.
+- Create a harmless contradiction enrichment proposal and verify the card shows
+  both the canonical claim and source-fragment evidence. Accepting it must log
+  the review while leaving the canonical claim text unchanged.
 
 ## Failure and recovery checks
 

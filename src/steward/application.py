@@ -34,7 +34,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGateway, ModelGatewayError
 from steward.records import RecordService
-from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
+from steward.knowledge import (
+    EnrichmentOperation,
+    KnowledgeEnrichmentProposalRepository,
+    KnowledgeService,
+    StoredKnowledgeEnrichmentProposal,
+)
 from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
@@ -128,7 +133,7 @@ class StewardReadApplication:
             "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /curate (reply to a discussion message), /curate_synthesize [local|external], /research QUESTION\n"
-            "/knowledge NAME, /connect_knowledge — inspect evidence-backed concepts\n"
+            "/knowledge NAME, /connect_knowledge, /knowledge_proposal ID — inspect evidence-backed concepts\n"
             "For a staged attachment/note: /intake_analysis ID external|local|none before saving\n"
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
@@ -927,12 +932,14 @@ class StewardKnowledgeApplication:
         proposals: KnowledgeEnrichmentProposalRepository,
         activity: ActivityService,
         connector: KnowledgeConnector | None = None,
+        source_repository: SourceRepository | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._fragments = fragments
         self._proposals = proposals
         self._activity = activity
         self._connector = connector
+        self._sources = source_repository
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -968,6 +975,13 @@ class StewardKnowledgeApplication:
                 f"{proposal.id}: {proposal.operation.value} claim {proposal.claim_id} "
                 f"with fragment {proposal.fragment_id}" for proposal in pending
             )
+        if command == "/knowledge_proposal":
+            if not separator or not argument.strip().isdigit():
+                return "Use /knowledge_proposal followed by a numeric proposal ID."
+            proposal = self._proposals.get(int(argument.strip()))
+            if proposal is None:
+                return f"Knowledge proposal {argument.strip()} was not found."
+            return self._render_enrichment(proposal)
         if command == "/propose_enrichment":
             parts = argument.split()
             if not separator or len(parts) != 2 or not all(part.isdigit() for part in parts):
@@ -986,8 +1000,7 @@ class StewardKnowledgeApplication:
                 object_id=str(stored.id), details=f"{stored.operation.value}: {stored.rationale}",
             )
             return PresentedReply(
-                f"Knowledge proposal {stored.id}: {stored.operation.value.upper()} claim {stored.claim_id} "
-                f"using fragment {stored.fragment_id}.\n{stored.rationale}",
+                self._render_enrichment(stored),
                 (
                     ReplyAction("Accept", f"/review_enrichment {stored.id} accepted"),
                     ReplyAction("Reject", f"/review_enrichment {stored.id} rejected"),
@@ -1005,8 +1018,34 @@ class StewardKnowledgeApplication:
                 ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED if proposal.status == "accepted" else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED,
                 object_id=str(proposal.id), details=f"{proposal.operation.value}: {proposal.rationale}",
             )
+            if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
+                return f"Knowledge contradiction proposal {proposal.id} accepted. Existing claim unchanged."
             return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."
         return None
+
+    def _render_enrichment(self, proposal: StoredKnowledgeEnrichmentProposal) -> str:
+        """Render both sides of an evidence review without creating a synthesis."""
+        claim = self._knowledge.get_claim(proposal.claim_id)
+        fragment = self._fragments.get(proposal.fragment_id)
+        claim_text = claim.text if claim is not None else "(claim is no longer available)"
+        if fragment is None:
+            evidence = "(supporting fragment is no longer available)"
+            provenance = ""
+        else:
+            source = self._sources.get_by_id(fragment.source_id) if self._sources is not None else None
+            provenance = f" from {source.path.name}" if source is not None else ""
+            evidence = fragment.text[:600]
+        operation = proposal.operation
+        warning = (
+            "\n\nPotential contradiction: accepting records your review only; it does not rewrite the existing claim."
+            if operation is EnrichmentOperation.CONTRADICT else ""
+        )
+        return (
+            f"Knowledge proposal {proposal.id}: {operation.value.upper()} claim {proposal.claim_id}\n"
+            f"Existing claim {proposal.claim_id}: {claim_text}\n"
+            f"Evidence fragment {proposal.fragment_id}{provenance}: {evidence}\n"
+            f"Rationale: {proposal.rationale}{warning}"
+        )
 
 
 class StewardRootsApplication:
