@@ -990,6 +990,14 @@ class StewardKnowledgeApplication:
             proposal = self._proposals.get(int(argument.strip()))
             if proposal is None:
                 return f"Knowledge proposal {argument.strip()} was not found."
+            if proposal.status == "pending":
+                return PresentedReply(
+                    self._render_enrichment(proposal),
+                    (
+                        ReplyAction("Accept", f"/review_enrichment {proposal.id} accepted"),
+                        ReplyAction("Reject", f"/review_enrichment {proposal.id} rejected"),
+                    ),
+                )
             return self._render_enrichment(proposal)
         if command == "/propose_enrichment":
             parts = argument.split()

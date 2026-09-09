@@ -135,6 +135,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Create a harmless contradiction enrichment proposal and verify the card shows
   both the canonical claim and source-fragment evidence. Accepting it must log
   the review while leaving the canonical claim text unchanged.
+- Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
+  same evidence plus **Accept** and **Reject** buttons, rather than requiring a
+  manually typed review command.
 
 ## Failure and recovery checks
 

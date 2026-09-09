@@ -542,6 +542,9 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert isinstance(preview, PresentedReply)
     assert "CONFIRM claim 1" in preview.text
     assert preview.actions[0].command == "/review_enrichment 1 accepted"
+    reopened = application.handle(make_event(text="/knowledge_proposal 1"))
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.actions[0].command == "/review_enrichment 1 accepted"
     accepted = application.handle(make_event(text="/review_enrichment 1 accepted"))
     assert accepted == "Knowledge enrichment proposal 1 accepted."
 
