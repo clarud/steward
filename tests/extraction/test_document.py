@@ -3,7 +3,7 @@ from pathlib import Path
 
 from subprocess import CompletedProcess
 
-from steward.extraction import DocxExtractor, HtmlExtractor, ImageOcrExtractor, PdfExtractor, PlainTextExtractor
+from steward.extraction import DocxExtractor, EmailExtractor, HtmlExtractor, ImageOcrExtractor, PdfExtractor, PlainTextExtractor
 from steward.sources import Source, SourceType
 
 
@@ -103,4 +103,21 @@ def test_image_ocr_extractor_uses_local_tesseract_and_keeps_image_provenance(tmp
     assert captured["arguments"] == ["tesseract", str(path), "stdout"]
     assert [(fragment.text, fragment.location) for fragment in result.fragments] == [
         ("Booking reference: ABC123", "image OCR")
+    ]
+
+
+def test_email_extractor_reads_text_parts_but_not_attachments(tmp_path: Path) -> None:
+    path = tmp_path / "flight.eml"
+    path.write_bytes(
+        b"Subject: Flight update\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n"
+        b"--x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nYour SQ638 flight changed.\r\n"
+        b"--x\r\nContent-Type: text/plain\r\nContent-Disposition: attachment; filename=booking.txt\r\n\r\nSecret attachment\r\n--x--\r\n"
+    )
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = Source(1, path, "a" * 64, SourceType.PLAIN_TEXT, path.stat().st_size, now, now, now)
+
+    result = EmailExtractor().extract(source)
+
+    assert [(fragment.heading, fragment.text, fragment.location) for fragment in result.fragments] == [
+        ("Flight update", "Your SQ638 flight changed.", "email text part 1")
     ]

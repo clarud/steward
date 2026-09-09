@@ -627,6 +627,11 @@ imports mail.
 allowlisted Telegram adapter and uses a lazy OAuth boundary: bot startup and
 ordinary messages do not inspect Gmail or trigger browser authorization.
 
+Raw `.eml` sources use `EmailExtractor` rather than the generic plain-text
+extractor. Python's standard-library MIME parser selects readable `text/plain`
+or `text/html` parts, skips declared attachments, records the email subject and
+part ordinal as provenance, and keeps the original RFC 822 file untouched.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by

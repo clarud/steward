@@ -190,7 +190,9 @@ steward gmail-import GMAIL_MESSAGE_ID
 
 An allowlisted Telegram chat can perform the same explicit action with
 `/gmail_import GMAIL_MESSAGE_ID`. It downloads only that raw message into
-Inbox; it does not search, send, or automatically sync mail.
+Inbox; Steward extracts readable non-attachment email text locally while
+retaining the raw message as the canonical original. It does not search, send,
+or automatically sync mail.
 
 Use Calendar reads in the tool agent only when requested explicitly:
 

@@ -3,6 +3,7 @@
 from steward.extraction.markdown import MarkdownExtractor
 from steward.extraction.document import (
     DocxExtractor,
+    EmailExtractor,
     DocumentExtractionError,
     DocumentExtractor,
     ExtractionService,
@@ -31,6 +32,7 @@ __all__ = [
     "ImageOcrExtractor",
     "PdfExtractor",
     "DocxExtractor",
+    "EmailExtractor",
     "PlainTextExtractor",
     "SourceFragment",
     "SourceFragmentRepository",

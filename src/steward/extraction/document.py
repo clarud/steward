@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from email import policy
+from email.parser import BytesParser
 from subprocess import CalledProcessError, TimeoutExpired, run
 from typing import Protocol
 from zipfile import BadZipFile
@@ -98,6 +100,51 @@ class PlainTextExtractor:
         text = source.path.read_text(encoding="utf-8").strip()
         fragments = () if not text else (SourceFragment(None, source.id, None, 0, text, "entire file"),)
         return ExtractionResult(source.id, fragments)
+
+
+class EmailExtractor:
+    """Extract readable non-attachment message parts from a raw RFC 822 original."""
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.path.suffix.casefold() != ".eml":
+            raise ValueError("EmailExtractor requires an .eml Source.")
+        try:
+            message = BytesParser(policy=policy.default).parsebytes(source.path.read_bytes())
+        except (OSError, ValueError) as error:
+            raise DocumentExtractionError(f"Could not read email {source.path}.") from error
+        subject = str(message.get("subject") or "(no subject)").strip()
+        fragments = []
+        text_part_number = 0
+        for part in message.walk():
+            if part.is_multipart() or part.get_content_disposition() == "attachment":
+                continue
+            content_type = part.get_content_type()
+            if content_type not in {"text/plain", "text/html"}:
+                continue
+            try:
+                text = part.get_content()
+            except (LookupError, UnicodeError, ValueError) as error:
+                raise DocumentExtractionError(f"Could not decode email {source.path}.") from error
+            if not isinstance(text, str):
+                continue
+            if content_type == "text/html":
+                parser = _HeadingHtmlParser()
+                parser.feed(text)
+                parser.close()
+                text = "\n\n".join(section for _, section in parser.finish())
+            normalized = text.strip()
+            if not normalized:
+                continue
+            text_part_number += 1
+            fragments.append(
+                SourceFragment(
+                    None, source.id, subject, len(fragments), normalized,
+                    f"email text part {text_part_number}",
+                )
+            )
+        return ExtractionResult(source.id, tuple(fragments))
 
 
 class PdfExtractor:
@@ -217,7 +264,9 @@ class ExtractionService:
         }
 
     def extract_and_store(self, source: Source) -> ExtractionResult | None:
-        extractor = self._extractors.get(source.source_type)
+        extractor: DocumentExtractor | None = (
+            EmailExtractor() if source.path.suffix.casefold() == ".eml" else self._extractors.get(source.source_type)
+        )
         if extractor is None:
             return None
         result = extractor.extract(source)
