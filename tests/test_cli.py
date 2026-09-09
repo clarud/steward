@@ -119,7 +119,7 @@ def test_cli_evaluates_retrieval_cases_against_an_indexed_vault(tmp_path: Path, 
 
     main(["evaluate-retrieval", str(vault), str(cases)])
 
-    assert capsys.readouterr().out == "Cases: 1\nRecall@5: 100.0%\nMRR: 1.000\n"
+    assert capsys.readouterr().out == "Mode: lexical\nCases: 1\nRecall@5: 100.0%\nMRR: 1.000\n"
 
 
 def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:

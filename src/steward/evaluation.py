@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import yaml
 
-from steward.retrieval import LexicalSearchService
+
+
+class EvaluatedSearchService(Protocol):
+    def search(self, query: str, *, limit: int = 5) -> tuple[object, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +61,7 @@ def load_retrieval_cases(path: Path) -> tuple[RetrievalCase, ...]:
 
 
 def evaluate_lexical_retrieval(
-    service: LexicalSearchService,
+    service: EvaluatedSearchService,
     cases: tuple[RetrievalCase, ...],
     vault_root: Path,
 ) -> RetrievalEvaluation:

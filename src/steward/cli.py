@@ -187,6 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluation_parser.add_argument("root", type=Path, help="The already indexed vault root")
     evaluation_parser.add_argument("cases", type=Path, help="YAML cases with query and expected source/heading")
+    evaluation_parser.add_argument("--mode", choices=("lexical", "hybrid"), default="lexical")
     subcommands.add_parser(
         "download-embedding-model",
         help="Download Steward's local embedding model for semantic search",
@@ -610,10 +611,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
         try:
+            sources = SourceRepository(database_path)
+            fragments = SourceFragmentRepository(database_path)
+            lexical = LexicalSearchService(sources, fragments)
+            service = (
+                HybridRetriever(
+                    lexical,
+                    SemanticSearchService(
+                        sources, SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider())
+                    ),
+                )
+                if arguments.mode == "hybrid"
+                else lexical
+            )
             evaluation = evaluate_lexical_retrieval(
-                LexicalSearchService(
-                    SourceRepository(database_path), SourceFragmentRepository(database_path)
-                ),
+                service,
                 load_retrieval_cases(arguments.cases),
                 arguments.root,
             )
@@ -621,7 +633,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Invalid retrieval evaluation: {error}")
             return
         print(
-            f"Cases: {evaluation.case_count}\n"
+            f"Mode: {arguments.mode}\nCases: {evaluation.case_count}\n"
             f"Recall@5: {evaluation.recall_at_5:.1%}\n"
             f"MRR: {evaluation.mean_reciprocal_rank:.3f}"
         )

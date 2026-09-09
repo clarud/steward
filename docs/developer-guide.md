@@ -1052,7 +1052,8 @@ external agent-observability platform.
 ## Evaluation framework
 
 `steward evaluate-retrieval VAULT CASES.yaml` promotes the lexical evaluation
-fixture into a local acceptance tool. A case is a user-written query plus an
+fixture into a local acceptance tool. `--mode hybrid` evaluates the same cases
+against the local hybrid retriever. A case is a user-written query plus an
 expected source path (relative to that vault) and heading. It reports Recall@5,
 mean reciprocal rank, and every miss rather than hiding failures behind a
 single aggregate. It reads the existing SQLite index and never sends vault text

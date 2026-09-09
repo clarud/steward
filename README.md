@@ -323,6 +323,13 @@ cases:
 steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml
 ```
 
+Compare the same cases against local hybrid retrieval after running `steward
+index`:
+
+```powershell
+steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml --mode hybrid
+```
+
 ## Propose knowledge enrichment
 
 Compare one existing claim with one source fragment without changing canonical
