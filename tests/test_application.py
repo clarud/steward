@@ -10,6 +10,7 @@ from steward.application import (
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
+    StewardReadApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -24,11 +25,13 @@ from steward.organization import (
     OrganizationProposalRepository,
 )
 from steward.actions import FileMutationService
-from steward.activity import ActivityService
+from steward.activity import ActivityService, ActivityType
+from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository
+from steward.retrieval import LexicalSearchService
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -115,6 +118,66 @@ def test_event_application_routes_a_question() -> None:
         make_event(text="What is a TLB?")
     )
     assert "TLB" in response
+
+
+def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    inbox = tmp_path / "vault" / "inbox"
+    inbox.mkdir(parents=True)
+    source_path = inbox / "openmp.md"
+    source_path.write_text("OpenMP notes", encoding="utf-8")
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database_path)
+    source = sources.add(
+        Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 11, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database_path)
+    fragments.replace_for_source(
+        ExtractionResult(
+            source.id or 0,
+            (SourceFragment(None, source.id or 0, "OpenMP", 0, "OpenMP scheduling notes", "lines 1-1"),),
+        )
+    )
+    activity = ActivityService(database_path)
+    activity.record(ActivityType.SOURCE_CAPTURED, object_id=str(source.id), details="Inbox capture")
+    workspaces = WorkspaceRepository(database_path)
+    reads = StewardReadApplication(
+        sources,
+        fragments,
+        LexicalSearchService(sources, fragments),
+        workspaces,
+        activity,
+        inbox,
+    )
+    actions = StewardActionProposalApplication(
+        ActionProposalRepository(database_path),
+        ActionProposalService(ActionProposalRepository(database_path), workspaces, activity),
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=actions,
+        read_application=reads,
+    )
+
+    assert "openmp.md" in application.handle(make_event(text="/inbox"))
+    assert "Search results" in application.handle(make_event(text="/search OpenMP"))
+    assert "Recent activity" in application.handle(make_event(text="/activity"))
+    assert "Broad Inbox organization proposals" in application.handle(
+        make_event(text="organize my inbox")
+    )
+    assert "Workspace proposal 1" in application.handle(
+        make_event(text="create a workspace for jobs")
+    )
+
+
+def test_event_application_gives_helpful_unknown_response() -> None:
+    response = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})())
+    ).handle(make_event(text="please do a mysterious thing"))
+
+    assert "Try /help" in response
 
 
 def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:

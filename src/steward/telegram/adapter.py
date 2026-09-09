@@ -214,10 +214,19 @@ def run_telegram_polling(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
     )
     application.add_handler(CommandHandler("action_proposals", adapter.handle_update))
+    application.add_handler(CommandHandler("create_workspace", adapter.handle_update))
     application.add_handler(CommandHandler("approve_action", adapter.handle_update))
     application.add_handler(CommandHandler("reject_action", adapter.handle_update))
     application.add_handler(CommandHandler("drive_import", adapter.handle_update))
     application.add_handler(CommandHandler("gmail_import", adapter.handle_update))
+    application.add_handler(CommandHandler("help", adapter.handle_update))
+    application.add_handler(CommandHandler("status", adapter.handle_update))
+    application.add_handler(CommandHandler("inbox", adapter.handle_update))
+    application.add_handler(CommandHandler("sources", adapter.handle_update))
+    application.add_handler(CommandHandler("source", adapter.handle_update))
+    application.add_handler(CommandHandler("workspaces", adapter.handle_update))
+    application.add_handler(CommandHandler("activity", adapter.handle_update))
+    application.add_handler(CommandHandler("search", adapter.handle_update))
     capture_adapter = TelegramAdapter(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,

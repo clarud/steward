@@ -21,6 +21,7 @@ from steward.application import (
     StewardEventApplication,
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
+    StewardReadApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -1089,6 +1090,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             gmail_import_application=StewardGmailImportApplication(
                 _gmail_inbox_importer(settings, capture_service)
+            ),
+            read_application=StewardReadApplication(
+                sources,
+                fragments,
+                LexicalSearchService(sources, fragments),
+                WorkspaceRepository(database_path),
+                activity,
+                settings.inbox_dir,
             ),
         )
         run_telegram_polling(
