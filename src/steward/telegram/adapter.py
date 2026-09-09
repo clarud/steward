@@ -288,6 +288,8 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("search", adapter.handle_update))
     application.add_handler(CommandHandler("organize", adapter.handle_update))
     application.add_handler(CommandHandler("agent", adapter.handle_update))
+    application.add_handler(CommandHandler("records", adapter.handle_update))
+    application.add_handler(CommandHandler("propose_travel_record", adapter.handle_update))
     application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
     application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
     application.add_handler(CommandHandler("intake_accept", adapter.handle_update))

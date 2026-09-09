@@ -13,6 +13,7 @@ from steward.application import (
     StewardReadApplication,
     StewardProvisionalIntakeApplication,
     StewardToolAgentApplication,
+    StewardRecordApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -210,6 +211,36 @@ def test_agent_command_uses_a_persistent_chat_scoped_tool_thread() -> None:
     assert response == "Found local evidence."
     assert graph.config["configurable"]["thread_id"] == "tool-agent:telegram:100"
     assert graph.input["messages"][1].content == "what do I know about OpenMP"
+
+
+def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    source_path = tmp_path / "itinerary.md"
+    source_path.write_text("itinerary", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 9, now, now, now))
+    fragments = SourceFragmentRepository(database_path)
+    fragments.replace_for_source(
+        ExtractionResult(
+            source.id or 0,
+            (SourceFragment(None, source.id or 0, None, 0,
+                "Flight SQ638\nDeparture: Singapore\nArrival: Tokyo\nBooking Reference: ABC123", "lines 1-4"),),
+        )
+    )
+    records = RecordService(database_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, fragments),
+    )
+
+    response = application.handle(make_event(text="/propose_travel_record 1"))
+
+    assert "Flight SQ638" not in response
+    assert "flight: SQ638" in response
+    assert "fragment 1" in response
+    assert records.list_travel_records() == []
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

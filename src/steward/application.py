@@ -27,6 +27,7 @@ from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
+from steward.records import RecordService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -241,6 +242,68 @@ class StewardToolAgentApplication:
         if not isinstance(messages, list) or not messages:
             return "The tool agent returned no final response."
         return str(messages[-1].content)
+
+
+class StewardRecordApplication:
+    """Render evidence-backed record reads and extraction previews for Telegram."""
+
+    def __init__(self, records: RecordService, fragments: SourceFragmentRepository) -> None:
+        self._records = records
+        self._fragments = fragments
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/records":
+            return self._list_records()
+        if command != "/propose_travel_record":
+            return None
+        if not separator or not argument.strip().isdigit():
+            return "Use /propose_travel_record followed by a numeric source ID."
+        source_id = int(argument.strip())
+        fragments = self._fragments.list_for_source(source_id)
+        if not fragments:
+            return f"Source {source_id} has no extracted text to interpret as a travel record."
+        proposal = self._records.propose_travel_record(
+            source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        if not proposal.field_evidence:
+            return f"Source {source_id} did not yield evidenced travel fields."
+        record = proposal.record
+        fields = (
+            ("flight", "flight_number", record.flight_number),
+            ("departure", "departure", record.departure),
+            ("arrival", "arrival", record.arrival),
+            ("departure time", "departure_time", record.departure_time.isoformat() if record.departure_time else None),
+            ("arrival time", "arrival_time", record.arrival_time.isoformat() if record.arrival_time else None),
+            ("booking reference", "booking_reference", record.booking_reference),
+        )
+        rendered = "\n".join(
+            f"{label}: {value} (fragment {proposal.field_evidence[field]})"
+            for label, field, value in fields
+            if value is not None and field in proposal.field_evidence
+        )
+        return (
+            f"Travel record preview from source {source_id}:\n{rendered}\n\n"
+            "This is a proposal only; no travel record has been saved."
+        )
+
+    def _list_records(self) -> str:
+        lines: list[str] = []
+        lines.extend(
+            f"Travel {record.id}: {record.flight_number or '(flight unknown)'} "
+            f"{record.departure or '?'} → {record.arrival or '?'}"
+            for record in self._records.list_travel_records()
+        )
+        lines.extend(
+            f"Receipt {record.id}: {record.merchant or '(merchant unknown)'}"
+            for record in self._records.list_receipt_records()
+        )
+        lines.extend(
+            f"Warranty {record.id}: {record.product_name or '(product unknown)'}"
+            for record in self._records.list_warranty_records()
+        )
+        return "Saved records:\n" + "\n".join(lines) if lines else "No saved records."
 
 
 class QuestionGraph(Protocol):
@@ -708,6 +771,7 @@ class StewardEventApplication:
         read_application: StewardReadApplication | None = None,
         provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
         tool_agent_application: StewardToolAgentApplication | None = None,
+        record_application: StewardRecordApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -719,8 +783,13 @@ class StewardEventApplication:
         self._read_application = read_application
         self._provisional_intake_application = provisional_intake_application
         self._tool_agent_application = tool_agent_application
+        self._record_application = record_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._record_application is not None:
+            record_response = self._record_application.handle_command(event)
+            if record_response is not None:
+                return record_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:
