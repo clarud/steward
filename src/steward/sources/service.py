@@ -13,6 +13,7 @@ from steward.extraction import (
     ExtractionService,
     DocumentExtractionError,
     MarkdownExtractor,
+    SourceFragment,
     SourceFragmentRepository,
 )
 from steward.sources.models import SourceType
@@ -151,3 +152,29 @@ class SourceService:
         if self._semantic_index is not None:
             self._semantic_index.replace_for_source(fragments)
         return outcome
+
+    def reextract_source(self, source_id: int) -> tuple[SourceFragment, ...]:
+        """Deliberately rebuild one source's derived text and optional vectors.
+
+        This is intentionally separate from a normal hash-based scan: calling
+        it explicitly is how an improved parser is applied to an unchanged
+        canonical original.
+        """
+
+        source = self._source_repository.get_by_id(source_id)
+        if source is None:
+            raise ValueError(f"Source {source_id} was not found.")
+        if source.status is not SourceStatus.ACTIVE:
+            raise ValueError(f"Source {source_id} is not active at its recorded path.")
+        if source.source_type is SourceType.MARKDOWN:
+            fragments = self._fragment_repository.replace_for_source(
+                self._markdown_extractor.extract(source)
+            )
+        else:
+            result = self._document_extraction.extract_and_store(source)
+            if result is None:
+                raise ValueError(f"Source {source_id} has no supported text extractor.")
+            fragments = self._fragment_repository.list_for_source(source_id)
+        if self._semantic_index is not None:
+            self._semantic_index.replace_for_source(fragments)
+        return fragments

@@ -48,6 +48,14 @@ def test_cli_scan_registers_markdown_sources(
     assert [fragment.heading for fragment in fragments] == ["Note"]
 
 
+def test_cli_reextract_reports_a_missing_source_without_loading_a_model(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+
+    main(["reextract", "99"])
+
+    assert capsys.readouterr().out == "Source 99 was not found.\n"
+
+
 def test_cli_sources_lists_registered_sources(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()

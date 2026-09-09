@@ -632,6 +632,12 @@ extractor. Python's standard-library MIME parser selects readable `text/plain`
 or `text/html` parts, skips declared attachments, records the email subject and
 part ordinal as provenance, and keeps the original RFC 822 file untouched.
 
+Normal scans use hashes to avoid redoing extraction. `steward reextract
+SOURCE_ID` is the explicit maintenance operation for an unchanged original
+after installing OCR, improving an extractor, or repairing derived fragments.
+It replaces only rebuildable fragments and their local semantic vectors; it
+never changes the original file or source identity.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by

@@ -32,7 +32,7 @@ from steward.answer import (
     OllamaModelGateway,
     OpenAIModelGateway,
 )
-from steward.extraction import MarkdownExtractor, SourceFragmentRepository
+from steward.extraction import DocumentExtractionError, MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph, build_retrieval_answer_graph
 from steward.graphs import GeminiToolCallingModel, OllamaToolCallingModel, build_tool_agent_graph
 from steward.logging import configure_logging
@@ -178,6 +178,10 @@ def build_parser() -> argparse.ArgumentParser:
         "index", help="Scan supported source files and build their local semantic index"
     )
     index_parser.add_argument("root", type=Path, help="Directory containing supported source files")
+    reextract_parser = subcommands.add_parser(
+        "reextract", help="Explicitly rebuild one source's derived text and semantic vectors"
+    )
+    reextract_parser.add_argument("source_id", type=int)
     evaluation_parser = subcommands.add_parser(
         "evaluate-retrieval", help="Measure lexical retrieval against human-authored expected results"
     )
@@ -566,6 +570,28 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        return
+
+    if arguments.command == "reextract":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        source_repository = SourceRepository(database_path)
+        if source_repository.get_by_id(arguments.source_id) is None:
+            print(f"Source {arguments.source_id} was not found.")
+            return
+        try:
+            fragments = SourceService(
+                source_repository=source_repository,
+                fragment_repository=SourceFragmentRepository(database_path),
+                markdown_extractor=MarkdownExtractor(),
+                semantic_index=SQLiteSemanticIndex(
+                    database_path, SentenceTransformerEmbeddingProvider()
+                ),
+            ).reextract_source(arguments.source_id)
+        except (OSError, UnicodeDecodeError, DocumentExtractionError, ValueError) as error:
+            print(str(error))
+            return
+        print(f"Re-extracted source {arguments.source_id}: {len(fragments)} fragment(s).")
         return
 
     if arguments.command == "download-embedding-model":

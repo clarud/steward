@@ -137,3 +137,19 @@ def test_source_service_does_not_repeat_unchanged_image_ocr(tmp_path: Path) -> N
     source = sources.get_by_path((vault / "receipt.png").resolve())
     assert source is not None
     assert [fragment.text for fragment in fragments.list_for_source(source.id or 0)] == ["Booking ABC123"]
+
+
+def test_source_service_reextracts_an_unchanged_source_only_when_explicitly_requested(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "vault"; vault.mkdir()
+    source_path = vault / "note.txt"; source_path.write_text("first", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+    service = SourceService(sources, fragments, MarkdownExtractor())
+    service.scan_source_root(vault)
+    source = sources.get_by_path(source_path.resolve())
+    assert source is not None
+
+    service.reextract_source(source.id or 0)
+
+    assert [fragment.text for fragment in fragments.list_for_source(source.id or 0)] == ["first"]

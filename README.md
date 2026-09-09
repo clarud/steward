@@ -290,6 +290,13 @@ any extraction work. Press `Ctrl+C` to stop the foreground watcher.
 steward watch path\to\your\vault
 ```
 
+When an extractor improves, normal scans deliberately keep unchanged derived
+text. Rebuild a specific source explicitly instead:
+
+```powershell
+steward reextract SOURCE_ID
+```
+
 ## Evaluate retrieval against your own vault
 
 Keep a small YAML file outside Git for personal expected results, then measure
