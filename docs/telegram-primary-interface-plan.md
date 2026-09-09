@@ -728,6 +728,44 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery order
 
+## Delivery status and next priorities
+
+This is a delivery program, not a claim that every item listed below already
+works. Status is deliberately conservative: a goal is only **complete** when
+its acceptance criteria and proportionate automated tests are satisfied.
+
+| Goal | Current status | What is available now | Important remaining work |
+| --- | --- | --- | --- |
+| 0. Production-source integrity | Complete | Production fixture cleanup, isolated tests, explicit source removal | Keep enforcing root exclusions as roots evolve |
+| 1. Routing foundation | Substantially complete | Commands, deterministic natural-language reads, callbacks, pagination | Broader reply/reference-resolution cases |
+| 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded | Explicit external-analysis choice and more extractor-specific review |
+| 3. Organization review | Baseline complete | Inbox review, durable organization proposal acceptance/rejection | Edit-target and emerging-workspace proposal UX |
+| 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent; direct Calendar reads | Calendar tools in the model agent and broader provider-failure evaluations |
+| 5. Tasks, records, Calendar | In progress | Travel-record proposal/review and approved Calendar-event proposal/write | Small Task/reminder domain, receipt/warranty fields, corrections, duplicate-calendar checks |
+| 6. Curated knowledge/research | In progress | Concept/claim lookup and enrichment review | Curated conversation notes, external research cards, retain/discard flow |
+| 7. Multi-root and reliability | In progress | Locally authorized roots, root health, delivery history/dead-letter diagnostics | Scanner root enforcement/exclusions, watches, backup/recovery and fault injection |
+| 8. Imports and administration | In progress | Explicit Drive/Gmail import commands, privacy controls, delivery inspection | Search/select import cards, local OAuth status, confirmed maintenance flows |
+| 9. Daily-use hardening | Not started | Unit/integration coverage has grown with each slice | Real-vault/Telegram checklist, metrics, restart/outage evaluation and sustained trial |
+
+### Priority sequence from here
+
+1. **Finish root boundaries and recovery before adding more autonomous intake.**
+   A local-first system is only trustworthy when every scan is confined to an
+   approved root and unavailable/moved roots recover predictably.
+2. **Build a small task/deadline workflow.** This closes the highest-value gap
+   in the "send Steward anything" experience without conflating tasks with
+   Calendar events.
+3. **Complete record review.** Add correction and provenance views before
+   adding new record types, then add receipt/warranty proposals.
+4. **Make curated knowledge and research deliberate.** A conversation or web
+   result becomes durable only through a visible proposed note/source and an
+   accept/discard decision.
+5. **Complete selected imports and administration.** OAuth remains local;
+   Telegram chooses individual imports but never grants broad background sync.
+6. **Run the end-to-end hardening program.** Test actual polling, restart,
+   duplicate deliveries, SQLite contention, provider failure and privacy on a
+   non-sensitive test vault before daily reliance.
+
 Goals run in this order:
 
 ```text
