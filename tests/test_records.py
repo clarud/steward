@@ -3,7 +3,7 @@ from pathlib import Path
 import sqlite3
 import pytest
 from steward.records import RecordService, TravelRecord
-from steward.records import ReceiptRecord, WarrantyRecord
+from steward.records import ReceiptRecord, ReceiptRecordProposal, WarrantyRecord, WarrantyRecordProposal
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -68,6 +68,32 @@ def test_warranty_record_proposal_persists_field_evidence(tmp_path: Path) -> Non
     assert proposal.record.warranty_number == "W-100"
     warranty = service.create_warranty_from_proposal(proposal)
     assert service.list_warranty_records() == [warranty]
+
+
+def test_receipt_and_warranty_corrections_validate_and_preserve_sources(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database); now = datetime(2026, 9, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "records.txt", "c" * 64, SourceType.PLAIN_TEXT, 0, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "records", "entire file"),))
+    )[0]
+    service = RecordService(database)
+    receipt = service.create_receipt_from_proposal(
+        ReceiptRecordProposal(ReceiptRecord(None, source.id or 0, "Corner Store", 1250, "SGD", None, "R-42"), {"merchant": fragment.id or 0})
+    )
+    warranty = service.create_warranty_from_proposal(
+        WarrantyRecordProposal(WarrantyRecord(None, source.id or 0, "Laptop", "Example", "W-1", None), {"product_name": fragment.id or 0})
+    )
+
+    corrected_receipt = service.correct_receipt_field(receipt.id or 0, "total_cents", "14.75")
+    corrected_warranty = service.correct_warranty_field(warranty.id or 0, "provider", "Example Care")
+
+    assert corrected_receipt.total_cents == 1475
+    assert corrected_receipt.source_id == source.id
+    assert corrected_warranty.provider == "Example Care"
+    with pytest.raises(ValueError, match="three-letter"):
+        service.validate_receipt_field("currency", "Singapore dollars")
+    with pytest.raises(ValueError, match="Warranty field"):
+        service.validate_warranty_field("merchant", "Example")
 
 def test_empty_travel_proposal_cannot_create_an_empty_record(tmp_path: Path) -> None:
     database = tmp_path / "db.sqlite"; initialize_database(database)

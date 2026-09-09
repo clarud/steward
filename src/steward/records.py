@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
 
@@ -101,6 +102,44 @@ class RecordService:
     def validate_travel_field(self, field: str, value: str) -> None:
         self._normalized_travel_field(field, value)
 
+    def correct_receipt_field(self, record_id: int, field: str, value: str) -> ReceiptRecord:
+        """Apply one explicit correction to a receipt without altering its source."""
+        record = next((item for item in self.list_receipt_records() if item.id == record_id), None)
+        if record is None:
+            raise ValueError(f"Receipt record {record_id} was not found.")
+        normalized = self._normalized_receipt_field(field, value)
+        stored = normalized.isoformat() if isinstance(normalized, datetime) else normalized
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(f"UPDATE receipt_records SET {field} = ? WHERE id = ?", (stored, record_id))
+        values = {
+            "merchant": record.merchant, "total_cents": record.total_cents, "currency": record.currency,
+            "purchased_at": record.purchased_at, "receipt_number": record.receipt_number,
+        }
+        values[field] = normalized
+        return ReceiptRecord(record.id, record.source_id, **values)
+
+    def validate_receipt_field(self, field: str, value: str) -> None:
+        self._normalized_receipt_field(field, value)
+
+    def correct_warranty_field(self, record_id: int, field: str, value: str) -> WarrantyRecord:
+        """Apply one explicit correction to a warranty without altering its source."""
+        record = next((item for item in self.list_warranty_records() if item.id == record_id), None)
+        if record is None:
+            raise ValueError(f"Warranty record {record_id} was not found.")
+        normalized = self._normalized_warranty_field(field, value)
+        stored = normalized.isoformat() if isinstance(normalized, datetime) else normalized
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(f"UPDATE warranty_records SET {field} = ? WHERE id = ?", (stored, record_id))
+        values = {
+            "product_name": record.product_name, "provider": record.provider,
+            "warranty_number": record.warranty_number, "coverage_ends_at": record.coverage_ends_at,
+        }
+        values[field] = normalized
+        return WarrantyRecord(record.id, record.source_id, **values)
+
+    def validate_warranty_field(self, field: str, value: str) -> None:
+        self._normalized_warranty_field(field, value)
+
     @staticmethod
     def _normalized_travel_field(field: str, value: str) -> object | None:
         allowed = {"flight_number", "departure", "arrival", "departure_time", "arrival_time", "booking_reference"}
@@ -114,6 +153,53 @@ class RecordService:
                 raise ValueError(f"{field} must be ISO-8601 with a timezone offset.") from error
             if normalized.tzinfo is None:
                 raise ValueError(f"{field} must be ISO-8601 with a timezone offset.")
+        return normalized
+
+    @staticmethod
+    def _normalized_receipt_field(field: str, value: str) -> object | None:
+        if field not in {"merchant", "total_cents", "currency", "purchased_at", "receipt_number"}:
+            raise ValueError("Receipt field must be merchant, total_cents, currency, purchased_at, or receipt_number.")
+        normalized = " ".join(value.split())
+        if not normalized:
+            return None
+        if field == "total_cents":
+            try:
+                amount = Decimal(normalized)
+            except InvalidOperation as error:
+                raise ValueError("total_cents must be a decimal amount such as 12.50.") from error
+            if amount < 0 or amount.as_tuple().exponent < -2:
+                raise ValueError("total_cents must be a non-negative amount with at most two decimal places.")
+            return int(amount * 100)
+        if field == "currency":
+            currency = normalized.upper()
+            if not re.fullmatch(r"[A-Z]{3}", currency):
+                raise ValueError("currency must be a three-letter code such as SGD.")
+            return currency
+        if field == "purchased_at":
+            try:
+                timestamp = datetime.fromisoformat(normalized)
+            except ValueError as error:
+                raise ValueError("purchased_at must be ISO-8601 with a timezone offset.") from error
+            if timestamp.tzinfo is None:
+                raise ValueError("purchased_at must be ISO-8601 with a timezone offset.")
+            return timestamp
+        return normalized
+
+    @staticmethod
+    def _normalized_warranty_field(field: str, value: str) -> object | None:
+        if field not in {"product_name", "provider", "warranty_number", "coverage_ends_at"}:
+            raise ValueError("Warranty field must be product_name, provider, warranty_number, or coverage_ends_at.")
+        normalized = " ".join(value.split())
+        if not normalized:
+            return None
+        if field == "coverage_ends_at":
+            try:
+                timestamp = datetime.fromisoformat(normalized)
+            except ValueError as error:
+                raise ValueError("coverage_ends_at must be ISO-8601 with a timezone offset.") from error
+            if timestamp.tzinfo is None:
+                raise ValueError("coverage_ends_at must be ISO-8601 with a timezone offset.")
+            return timestamp
         return normalized
 
     def propose_receipt_record(self, source_id: int, fragments: list[tuple[int, str]]) -> ReceiptRecordProposal:

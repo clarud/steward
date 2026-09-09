@@ -28,7 +28,7 @@ from steward.application import (
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.calendar import CalendarEventProposalService, CalendarService
-from steward.records import RecordService, TravelRecord
+from steward.records import ReceiptRecord, ReceiptRecordProposal, RecordService, TravelRecord
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.organization import (
@@ -326,6 +326,36 @@ def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) 
     assert records.list_travel_records()[0].arrival == "Tokyo"
     assert application.handle(make_event(text="/approve_action 1")) == "Travel record 1 corrected: arrival."
     assert records.list_travel_records()[0].arrival == "Osaka"
+
+
+def test_telegram_receipt_correction_is_reviewed_before_mutation(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "receipt.md"; source_path.write_text("receipt", encoding="utf-8")
+    source = SourceRepository(database).add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "receipt", "entire file"),))
+    )[0]
+    records = RecordService(database)
+    receipt = records.create_receipt_from_proposal(
+        ReceiptRecordProposal(ReceiptRecord(None, source.id or 0, "Campus Cafe", 500, "SGD", None, None), {"merchant": fragment.id or 0})
+    )
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, SourceFragmentRepository(database), proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, activity_service=activity,
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/correct_receipt_record {receipt.id} total_cents 12.50"))
+
+    assert isinstance(preview, PresentedReply)
+    assert records.list_receipt_records()[0].total_cents == 500
+    assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 corrected: total_cents."
+    assert records.list_receipt_records()[0].total_cents == 1250
 
 
 def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: Path) -> None:
