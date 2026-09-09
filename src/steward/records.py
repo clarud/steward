@@ -81,6 +81,41 @@ class RecordService:
             record.booking_reference,
         )
 
+    def correct_travel_field(self, record_id: int, field: str, value: str) -> TravelRecord:
+        """Apply one explicit user correction without rewriting source evidence."""
+        record = next((item for item in self.list_travel_records() if item.id == record_id), None)
+        if record is None:
+            raise ValueError(f"Travel record {record_id} was not found.")
+        normalized = self._normalized_travel_field(field, value)
+        stored = normalized.isoformat() if isinstance(normalized, datetime) else normalized
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(f"UPDATE travel_records SET {field} = ? WHERE id = ?", (stored, record_id))
+        values = {
+            "flight_number": record.flight_number, "departure": record.departure, "arrival": record.arrival,
+            "departure_time": record.departure_time, "arrival_time": record.arrival_time,
+            "booking_reference": record.booking_reference,
+        }
+        values[field] = normalized
+        return TravelRecord(record.id, record.source_id, **values)
+
+    def validate_travel_field(self, field: str, value: str) -> None:
+        self._normalized_travel_field(field, value)
+
+    @staticmethod
+    def _normalized_travel_field(field: str, value: str) -> object | None:
+        allowed = {"flight_number", "departure", "arrival", "departure_time", "arrival_time", "booking_reference"}
+        if field not in allowed:
+            raise ValueError("Travel field must be flight_number, departure, arrival, departure_time, arrival_time, or booking_reference.")
+        normalized: object | None = " ".join(value.split()) or None
+        if field in {"departure_time", "arrival_time"} and normalized is not None:
+            try:
+                normalized = datetime.fromisoformat(str(normalized))
+            except ValueError as error:
+                raise ValueError(f"{field} must be ISO-8601 with a timezone offset.") from error
+            if normalized.tzinfo is None:
+                raise ValueError(f"{field} must be ISO-8601 with a timezone offset.")
+        return normalized
+
     def propose_receipt_record(self, source_id: int, fragments: list[tuple[int, str]]) -> ReceiptRecordProposal:
         merchant = currency = receipt_number = None; total_cents = None; purchased_at = None; evidence: dict[str, int] = {}
         for fragment_id, text in fragments:

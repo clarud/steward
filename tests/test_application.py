@@ -303,6 +303,31 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
     assert records.list_travel_records()[0].flight_number == "SQ638"
 
 
+def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "trip.md"; source_path.write_text("trip", encoding="utf-8")
+    source = SourceRepository(database).add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    records = RecordService(database)
+    record = records.create_travel_record(TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", None, None, None))
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=StewardRecordApplication(records, SourceFragmentRepository(database), proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, activity_service=activity,
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/correct_travel_record {record.id} arrival Osaka"))
+
+    assert isinstance(preview, PresentedReply)
+    assert records.list_travel_records()[0].arrival == "Tokyo"
+    assert application.handle(make_event(text="/approve_action 1")) == "Travel record 1 corrected: arrival."
+    assert records.list_travel_records()[0].arrival == "Osaka"
+
+
 def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     now = datetime(2026, 9, 9, tzinfo=UTC)

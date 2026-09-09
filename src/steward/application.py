@@ -283,6 +283,7 @@ class StewardRecordApplication:
     CREATE_TRAVEL_RECORD = "create_travel_record"
     CREATE_RECEIPT_RECORD = "create_receipt_record"
     CREATE_WARRANTY_RECORD = "create_warranty_record"
+    CORRECT_TRAVEL_RECORD = "correct_travel_record"
 
     def __init__(
         self,
@@ -303,6 +304,8 @@ class StewardRecordApplication:
             return self._list_records()
         if command in {"/propose_receipt_record", "/propose_warranty_record"}:
             return self._propose_document_record(command, separator, argument)
+        if command == "/correct_travel_record":
+            return self._propose_travel_correction(separator, argument)
         if command != "/propose_travel_record":
             return None
         if not separator or not argument.strip().isdigit():
@@ -347,6 +350,28 @@ class StewardRecordApplication:
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
+        )
+
+    def _propose_travel_correction(self, separator: str, argument: str) -> str | PresentedReply:
+        record_id, field_separator, remainder = argument.strip().partition(" ")
+        field, value_separator, value = remainder.partition(" ")
+        if not separator or not record_id.isdigit() or not field_separator or not value_separator:
+            return "Use /correct_travel_record followed by record ID, field, and replacement value."
+        record = next((item for item in self._records.list_travel_records() if item.id == int(record_id)), None)
+        if record is None:
+            return f"Travel record {record_id} was not found."
+        try:
+            self._records.validate_travel_field(field, value)
+        except ValueError as error:
+            return str(error)
+        payload = {"record_id": record_id, "field": field, "value": value}
+        pending = self._proposals.find_pending(self.CORRECT_TRAVEL_RECORD, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CORRECT_TRAVEL_RECORD, payload)
+            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Correct travel record {record_id} field {field}")
+        return PresentedReply(
+            f"Travel correction proposal {pending.id}: record {record_id} {field} → {value}.\n\nThe record is unchanged until approval.",
+            (ReplyAction("Apply correction", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
         )
 
     def _propose_document_record(self, command: str, separator: str, argument: str) -> str | PresentedReply:
@@ -1280,6 +1305,8 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
         }:
             return self._review_document_record(proposal_id, decision)
+        if proposal is not None and proposal.action_type == StewardRecordApplication.CORRECT_TRAVEL_RECORD:
+            return self._review_travel_correction(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
             return self._review_travel_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
@@ -1440,6 +1467,29 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"{label.title()} record {record.id} created from source {source_id}."
+
+    def _review_travel_correction(self, proposal_id: int, decision: str) -> str:
+        if self._records is None:
+            return "Travel-record correction is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Travel correction proposal was not found."
+        if proposal.status == decision:
+            return f"Travel correction proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Travel correction proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            return f"Travel correction proposal {proposal.id} rejected."
+        try:
+            record = self._records.correct_travel_field(int(proposal.payload["record_id"]), proposal.payload["field"], proposal.payload["value"])
+        except ValueError as error:
+            return str(error)
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.RECORD_CORRECTED, object_id=str(record.id), details=f"travel:{proposal.payload['field']}")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Travel record {record.id} corrected: {proposal.payload['field']}."
 
     def propose_workspace(self, name: str) -> str:
         """Create a durable workspace proposal without creating the workspace."""

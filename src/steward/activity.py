@@ -15,6 +15,7 @@ class ActivityType(StrEnum):
     INTAKE_DISCARDED = "intake_discarded"
     WORKSPACE_CREATED = "workspace_created"
     SOURCE_LINKED_TO_WORKSPACE = "source_linked_to_workspace"
+    RECORD_CORRECTED = "record_corrected"
     ORGANIZATION_PROPOSED = "organization_proposed"
     ORGANIZATION_ACCEPTED = "organization_accepted"
     ORGANIZATION_REJECTED = "organization_rejected"
