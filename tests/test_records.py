@@ -55,6 +55,7 @@ def test_receipt_record_proposal_persists_only_evidenced_fields(tmp_path: Path) 
         evidence = connection.execute("SELECT field_name, fragment_id FROM receipt_record_evidence ORDER BY field_name").fetchall()
     assert receipt.id is not None
     assert ("total_cents", fragment.id) in evidence
+    assert service.field_evidence("receipt", receipt.id)["total_cents"] == fragment.id
     assert service.list_receipt_records() == [receipt]
 
 
@@ -67,6 +68,7 @@ def test_warranty_record_proposal_persists_field_evidence(tmp_path: Path) -> Non
     assert proposal.record.product_name == "Laptop Pro"
     assert proposal.record.warranty_number == "W-100"
     warranty = service.create_warranty_from_proposal(proposal)
+    assert service.field_evidence("warranty", warranty.id or 0)["product_name"] == fragment.id
     assert service.list_warranty_records() == [warranty]
 
 

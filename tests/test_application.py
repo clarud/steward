@@ -523,6 +523,41 @@ def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None
     )
 
 
+def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(
+        Source(None, tmp_path / "flight.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(
+        source.id or 0,
+        (SourceFragment(None, source.id or 0, None, 0, "Flight SQ638\nArrival: Tokyo", "entire file"),),
+    ))[0]
+    records = RecordService(database)
+    record = records.create_from_proposal(records.propose_travel_record(
+        source.id or 0, [(fragment.id or 0, fragment.text)]
+    ))
+    application = StewardRecordApplication(
+        records, fragments, ActionProposalRepository(database), ActivityService(database)
+    )
+
+    detail = application.handle_command(make_event(text=f"/record travel {record.id}"))
+
+    assert isinstance(detail, PresentedReply)
+    assert "flight: SQ638 (source fragment 1)" in detail.text
+    assert "arrival: Tokyo (source fragment 1)" in detail.text
+    assert detail.actions[0].command == f"/source {source.id}"
+
+    records.correct_travel_field(record.id or 0, "arrival", "Osaka")
+    corrected = application.handle_command(make_event(text=f"/record travel {record.id}"))
+
+    assert isinstance(corrected, PresentedReply)
+    assert "arrival: Osaka (not source-evidenced)" in corrected.text
+
+
 def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

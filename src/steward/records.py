@@ -82,6 +82,28 @@ class RecordService:
             record.booking_reference,
         )
 
+    def field_evidence(self, record_type: str, record_id: int) -> dict[str, int]:
+        """Return field-to-fragment provenance for one persisted record.
+
+        The table name is selected from a fixed domain mapping rather than
+        supplied by a caller, so this read-only convenience method cannot turn
+        a record type from a transport request into SQL.
+        """
+
+        table, identifier_column = {
+            "travel": ("travel_record_evidence", "travel_record_id"),
+            "receipt": ("receipt_record_evidence", "receipt_record_id"),
+            "warranty": ("warranty_record_evidence", "warranty_record_id"),
+        }.get(record_type, (None, None))
+        if table is None or identifier_column is None:
+            raise ValueError("Record type must be travel, receipt, or warranty.")
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                f"SELECT field_name, fragment_id FROM {table} WHERE {identifier_column} = ?",
+                (record_id,),
+            ).fetchall()
+        return {str(field_name): int(fragment_id) for field_name, fragment_id in rows}
+
     def correct_travel_field(self, record_id: int, field: str, value: str) -> TravelRecord:
         """Apply one explicit user correction without rewriting source evidence."""
         record = next((item for item in self.list_travel_records() if item.id == record_id), None)

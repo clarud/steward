@@ -94,6 +94,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
   `/propose_receipt_record SOURCE_ID`, and `/propose_warranty_record SOURCE_ID`.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
+- After accepting one, use `/record travel ID`, `/record receipt ID`, or
+  `/record warranty ID`. Verify each displayed current field identifies its
+  supporting source fragment when that exact value is still present there, and
+  **Open source** returns to the original. Correct a field, then reopen the
+  record: it must be labelled **not source-evidenced** instead of inheriting
+  stale extraction provenance.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
 - For a staged flight message with `Flight`, `Departure`, `Arrival`, and

@@ -659,6 +659,8 @@ class StewardRecordApplication:
         command = command.partition("@")[0]
         if command == "/records":
             return self._list_records()
+        if command == "/record":
+            return self._record_detail(separator, argument)
         if command == "/travel_references":
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
@@ -854,6 +856,67 @@ class StewardRecordApplication:
             ),
             title=f"Review {label} record",
             icon="🧾" if label == "receipt" else "🛡️",
+        )
+
+    def _record_detail(self, separator: str, argument: str) -> str | PresentedReply:
+        """Show a record's current fields alongside only valid source evidence."""
+
+        record_type, identifier_separator, identifier = argument.strip().partition(" ")
+        record_type = record_type.casefold()
+        if not separator or not identifier_separator or not identifier.isdigit():
+            return "Use /record followed by travel, receipt, or warranty and a numeric record ID."
+        records = {
+            "travel": self._records.list_travel_records,
+            "receipt": self._records.list_receipt_records,
+            "warranty": self._records.list_warranty_records,
+        }.get(record_type)
+        if records is None:
+            return "Record type must be travel, receipt, or warranty."
+        record = next((item for item in records() if item.id == int(identifier)), None)
+        if record is None:
+            return f"{record_type.title()} record {identifier} was not found."
+        if record_type == "travel":
+            fields = (
+                ("flight", "flight_number", record.flight_number),
+                ("departure", "departure", record.departure),
+                ("arrival", "arrival", record.arrival),
+                ("departure time", "departure_time", record.departure_time.isoformat() if record.departure_time else None),
+                ("arrival time", "arrival_time", record.arrival_time.isoformat() if record.arrival_time else None),
+                ("booking reference", "booking_reference", record.booking_reference),
+            )
+        elif record_type == "receipt":
+            fields = (
+                ("merchant", "merchant", record.merchant),
+                ("total", "total_cents", f"{record.total_cents / 100:.2f}" if record.total_cents is not None else None),
+                ("currency", "currency", record.currency),
+                ("purchased at", "purchased_at", record.purchased_at.isoformat() if record.purchased_at else None),
+                ("receipt number", "receipt_number", record.receipt_number),
+            )
+        else:
+            fields = (
+                ("product", "product_name", record.product_name),
+                ("provider", "provider", record.provider),
+                ("warranty number", "warranty_number", record.warranty_number),
+                ("coverage ends", "coverage_ends_at", record.coverage_ends_at.isoformat() if record.coverage_ends_at else None),
+            )
+        evidence = self._records.field_evidence(record_type, int(identifier))
+        lines: list[str] = []
+        for label, field, value in fields:
+            if value is None:
+                continue
+            fragment_id = evidence.get(field)
+            fragment = self._fragments.get(fragment_id) if fragment_id is not None else None
+            # An explicit correction can supersede an extracted field. Do not
+            # claim stale source support merely because an old evidence link
+            # remains in the audit trail.
+            supported = fragment is not None and str(value).casefold() in fragment.text.casefold()
+            provenance = f"source fragment {fragment_id}" if supported else "not source-evidenced"
+            lines.append(f"{label}: {value} ({provenance})")
+        return PresentedReply(
+            "\n".join(lines) + f"\n\nOriginal: source {record.source_id}",
+            (ReplyAction("Open source", f"/source {record.source_id}"), ReplyAction("Records", "/records")),
+            title=f"{record_type.title()} record {identifier}",
+            icon="✈️" if record_type == "travel" else "🧾" if record_type == "receipt" else "🛡️",
         )
 
     def _list_records(self) -> str:
