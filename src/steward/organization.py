@@ -8,7 +8,7 @@ from steward.actions import FileMutationService
 from steward.activity import ActivityService, ActivityType
 from steward.sources import Source
 from steward.sources import SourceRepository
-from steward.workspaces import Workspace
+from steward.workspaces import Workspace, WorkspaceRepository, WorkspaceService
 
 @dataclass(frozen=True, slots=True)
 class OrganizationProposal:
@@ -20,6 +20,7 @@ class OrganizationProposal:
     rationale: str
     confidence: float
     status: str = "pending"
+    workspace_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +75,11 @@ class OrganizationProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
                 "INSERT INTO organization_proposals "
-                "(source_id, workspace_id, suggested_path, rationale, score, status, created_at, proposal_type, confidence) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(source_id, workspace_id, suggested_path, rationale, score, status, created_at, proposal_type, confidence, workspace_name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (proposal.source_id, proposal.workspace_id, str(proposal.suggested_path) if proposal.suggested_path else None,
                  proposal.rationale, proposal.confidence, proposal.status, datetime.now(UTC).isoformat(),
-                 proposal.proposal_type, proposal.confidence),
+                 proposal.proposal_type, proposal.confidence, proposal.workspace_name),
             )
         return int(cursor.lastrowid)
     def set_status(self, proposal_id: int, status: str) -> None:
@@ -90,11 +91,12 @@ class OrganizationProposalRepository:
     def list_all(self) -> list[OrganizationProposal]:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                "SELECT id, source_id, proposal_type, workspace_id, suggested_path, rationale, confidence, status "
+                "SELECT id, source_id, proposal_type, workspace_id, suggested_path, rationale, confidence, status, workspace_name "
                 "FROM organization_proposals ORDER BY id"
             ).fetchall()
         return [OrganizationProposal(int(r[0]), int(r[1]), str(r[2]), int(r[3]) if r[3] is not None else None,
-                                     Path(str(r[4])) if r[4] else None, str(r[5]), float(r[6]), str(r[7])) for r in rows]
+                                     Path(str(r[4])) if r[4] else None, str(r[5]), float(r[6]), str(r[7]),
+                                     str(r[8]) if r[8] else None) for r in rows]
     def get(self, proposal_id: int) -> OrganizationProposal | None:
         return next((proposal for proposal in self.list_all() if proposal.id == proposal_id), None)
 
@@ -165,11 +167,13 @@ class OrganizationApprovalService:
         source_repository: SourceRepository,
         file_mutation_service: FileMutationService,
         activity_service: ActivityService,
+        workspace_repository: WorkspaceRepository | None = None,
     ) -> None:
         self._proposals = proposal_repository
         self._sources = source_repository
         self._files = file_mutation_service
         self._activity = activity_service
+        self._workspaces = workspace_repository
 
     def review(self, proposal_id: int, decision: str) -> OrganizationProposal:
         if decision not in {"accepted", "rejected"}:
@@ -183,6 +187,16 @@ class OrganizationApprovalService:
             raise ValueError(f"Proposal {proposal_id} was already {proposal.status}.")
 
         if decision == "accepted" and proposal.suggested_path is not None:
+            if proposal.proposal_type == "create_workspace_and_move":
+                if self._workspaces is None or not proposal.workspace_name:
+                    raise ValueError("New-workspace organization proposals are not configured for this Steward process.")
+                existing = next(
+                    (workspace for workspace in self._workspaces.list_all()
+                     if workspace.name.casefold() == proposal.workspace_name.casefold()),
+                    None,
+                )
+                if existing is None:
+                    WorkspaceService(self._workspaces, self._activity).create(proposal.workspace_name)
             source = self._sources.get_by_id(proposal.source_id)
             if source is None:
                 raise ValueError(f"Source {proposal.source_id} was not found.")

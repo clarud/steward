@@ -46,6 +46,7 @@ TASKS_SCHEMA_VERSION = 37
 TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
 TASK_DUE_AT_SCHEMA_VERSION = 39
 CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
+ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -406,6 +407,10 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             created_at TEXT NOT NULL
         )
         """,
+    ),
+    (
+        ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION,
+        "ALTER TABLE organization_proposals ADD COLUMN workspace_name TEXT",
     ),
 )
 

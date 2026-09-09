@@ -1251,7 +1251,8 @@ class StewardOrganizationApprovalApplication:
             return PresentedReply(
                 f"Organization proposal {proposal_id}: {proposal.rationale}\n"
                 "Suggested outcome: leave the original in Inbox.\n\n"
-                f"To refine it, use /organization_context {proposal_id} followed by an existing workspace name.",
+                f"To refine it, use /organization_context {proposal_id} followed by an existing workspace name, "
+                f"or /organization_new_workspace {proposal_id} followed by a new workspace name.",
                 (
                     ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
                     ReplyAction("Reject", f"/organization_reject {proposal_id}"),
@@ -1274,8 +1275,9 @@ class StewardOrganizationApprovalApplication:
         pending = self._threads.get_pending(event.platform, event.chat_id)
         if pending is None:
             return None
-        response = (event.text or "").strip().casefold()
+        response = (event.text or "").strip()
         command, _, argument = response.partition(" ")
+        command = command.casefold()
         if command == "/organization_context":
             proposal_identifier, separator, guidance = argument.partition(" ")
             if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not guidance.strip():
@@ -1283,13 +1285,18 @@ class StewardOrganizationApprovalApplication:
                     f"Use /organization_context {pending.proposal_id} followed by an existing workspace name."
                 )
             return self._revise_with_context(event, pending, guidance)
+        if command == "/organization_new_workspace":
+            proposal_identifier, separator, workspace_name = argument.partition(" ")
+            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not workspace_name.strip():
+                return f"Use /organization_new_workspace {pending.proposal_id} followed by a new workspace name."
+            return self._revise_with_new_workspace(event, pending, workspace_name)
         if command == "/organization_accept" and argument.isdigit() and int(argument) == pending.proposal_id:
             decision = "accepted"
         elif command == "/organization_reject" and argument.isdigit() and int(argument) == pending.proposal_id:
             decision = "rejected"
-        elif response in {"accept", "accepted"}:
+        elif response.casefold() in {"accept", "accepted"}:
             decision = "accepted"
-        elif response in {"reject", "rejected"}:
+        elif response.casefold() in {"reject", "rejected"}:
             decision = "rejected"
         else:
             return (
@@ -1329,6 +1336,40 @@ class StewardOrganizationApprovalApplication:
                 "Your context did not name exactly one existing workspace, so the source remains in Inbox. "
                 "Create or choose a workspace explicitly, then organize again."
             )
+        return self._start_proposal(event, proposal)
+
+    def _revise_with_new_workspace(
+        self, event: IncomingEvent, pending: PendingOrganizationApproval, workspace_name: str
+    ) -> str | PresentedReply:
+        if self._sources is None:
+            return "New-workspace organization proposals are not configured for this Steward process."
+        normalized_name = " ".join(workspace_name.split())
+        if not normalized_name:
+            return "A new workspace name must not be empty."
+        if any(workspace.name.casefold() == normalized_name.casefold() for workspace in self._workspaces.list_all()):
+            return f"Workspace {normalized_name!r} already exists. Use /organization_context instead."
+        previous = self._proposals.get(pending.proposal_id)
+        source = self._sources.get_by_id(previous.source_id) if previous is not None else None
+        if source is None:
+            return "The source for this organization proposal was not found."
+        vault_root = source.path.parent.parent if source.path.parent.name.casefold() == "inbox" else source.path.parent
+        proposal = OrganizationProposal(
+            None,
+            source.id or 0,
+            "create_workspace_and_move",
+            None,
+            vault_root / "projects" / normalized_name / source.path.name,
+            f"You requested a new workspace named '{normalized_name}'.",
+            1.0,
+            workspace_name=normalized_name,
+        )
+        self._proposals.set_status(pending.proposal_id, "rejected")
+        self._threads.finish(event.platform, event.chat_id, "rejected")
+        self._activity.record(
+            ActivityType.ORGANIZATION_REJECTED,
+            object_id=str(pending.proposal_id),
+            details="Superseded after user requested a new workspace.",
+        )
         return self._start_proposal(event, proposal)
 
     def begin_inbox_review(self, event: IncomingEvent) -> str | PresentedReply:

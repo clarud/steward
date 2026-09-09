@@ -1283,6 +1283,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             sources,
             FileMutationService(sources, activity),
             activity,
+            WorkspaceRepository(database_path),
         )
         approval_connection = sqlite3.connect(
             settings.data_dir / "checkpoints.db", check_same_thread=False
@@ -1890,6 +1891,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 SourceRepository(database_path),
                 FileMutationService(SourceRepository(database_path), activity),
                 activity,
+                WorkspaceRepository(database_path),
             )
             approval.review(arguments.proposal_id, arguments.status)
             print(f"Proposal {arguments.proposal_id} {arguments.status}.")

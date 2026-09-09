@@ -331,6 +331,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
     application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
     application.add_handler(CommandHandler("organization_context", adapter.handle_update))
+    application.add_handler(CommandHandler("organization_new_workspace", adapter.handle_update))
     application.add_handler(CommandHandler("intake_accept", adapter.handle_update))
     application.add_handler(CommandHandler("intake_discard", adapter.handle_update))
     application.add_handler(CommandHandler("intake_context", adapter.handle_update))

@@ -1106,7 +1106,7 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     workspaces = WorkspaceRepository(database_path)
     workspaces.create("CS3210")
     approval = OrganizationApprovalService(
-        proposals, sources, FileMutationService(sources, activity), activity
+        proposals, sources, FileMutationService(sources, activity), activity, workspaces
     )
     app = StewardOrganizationApprovalApplication(
         proposals,
@@ -1131,6 +1131,32 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     accepted = app.handle_decision(make_event(text="/organization_accept 2"))
     assert accepted == "Proposal 2 accepted."
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
+
+
+def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    path = inbox / "distributed-systems.md"; path.write_text("note", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, path, "e" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    workspaces = WorkspaceRepository(database); proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
+    approval = OrganizationApprovalService(proposals, sources, FileMutationService(sources, activity), activity, workspaces)
+    app = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(proposals, checkpointer=InMemorySaver(), review_proposal=approval.review),
+        source_repository=sources,
+    )
+
+    app.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+    revised = app.handle_decision(make_event(text="/organization_new_workspace 1 Distributed Systems"))
+
+    assert isinstance(revised, PresentedReply)
+    assert proposals.get(2).workspace_name == "Distributed Systems"
+    assert WorkspaceRepository(database).list_all() == []
+    assert app.handle_decision(make_event(text="/organization_accept 2")) == "Proposal 2 accepted."
+    assert [workspace.name for workspace in WorkspaceRepository(database).list_all()] == ["Distributed Systems"]
+    assert (tmp_path / "vault" / "projects" / "Distributed Systems" / "distributed-systems.md").is_file()
 
 
 def test_context_revised_organization_proposal_survives_a_restart(tmp_path: Path) -> None:

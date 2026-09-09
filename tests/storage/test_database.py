@@ -36,6 +36,7 @@ from steward.storage.database import (
     TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION,
     TASK_DUE_AT_SCHEMA_VERSION,
     CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION,
+    ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -100,6 +101,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION,
             TASK_DUE_AT_SCHEMA_VERSION,
             CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION,
+            ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -126,7 +128,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == 40
+    assert migration_count == 41
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:
