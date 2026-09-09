@@ -1158,6 +1158,9 @@ behavior easy to edit and inspect in code review.
   and `warranty-records`. They retain source-fragment evidence for a labeled
   product, provider, warranty number, or coverage-end timestamp. They do not
   infer warranty duration or eligibility from marketing language.
+- The read-only agent tool `search_records` now returns travel, receipt, and
+  warranty result shapes, marked with `record_type`. It performs no mutation
+  and applies the source privacy policy before a result can reach a cloud model.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.

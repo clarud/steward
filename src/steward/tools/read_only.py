@@ -121,7 +121,7 @@ class ReadOnlyToolService:
         )
 
     def search_records(self, query: str, limit: int = 10) -> str:
-        """Find saved travel records by flight, location, or booking reference."""
+        """Find saved travel, receipt, and warranty records by their known fields."""
         needle = query.casefold().strip()
         records = []
         for record in self._records.list_travel_records():
@@ -131,6 +131,7 @@ class ReadOnlyToolService:
             if any(needle in value.casefold() for value in values if value):
                 records.append(
                     {
+                        "record_type": "travel",
                         "id": record.id,
                         "source_id": record.source_id,
                         "flight_number": record.flight_number,
@@ -139,6 +140,39 @@ class ReadOnlyToolService:
                         "departure_time": record.departure_time.isoformat() if record.departure_time else None,
                         "arrival_time": record.arrival_time.isoformat() if record.arrival_time else None,
                         "booking_reference": record.booking_reference,
+                    }
+                )
+        for record in self._records.list_receipt_records():
+            if not self._permits_external_model(record.source_id):
+                continue
+            values = (record.merchant, record.currency, record.receipt_number)
+            if any(needle in value.casefold() for value in values if value):
+                records.append(
+                    {
+                        "record_type": "receipt",
+                        "id": record.id,
+                        "source_id": record.source_id,
+                        "merchant": record.merchant,
+                        "total_cents": record.total_cents,
+                        "currency": record.currency,
+                        "purchased_at": record.purchased_at.isoformat() if record.purchased_at else None,
+                        "receipt_number": record.receipt_number,
+                    }
+                )
+        for record in self._records.list_warranty_records():
+            if not self._permits_external_model(record.source_id):
+                continue
+            values = (record.product_name, record.provider, record.warranty_number)
+            if any(needle in value.casefold() for value in values if value):
+                records.append(
+                    {
+                        "record_type": "warranty",
+                        "id": record.id,
+                        "source_id": record.source_id,
+                        "product_name": record.product_name,
+                        "provider": record.provider,
+                        "warranty_number": record.warranty_number,
+                        "coverage_ends_at": record.coverage_ends_at.isoformat() if record.coverage_ends_at else None,
                     }
                 )
         return self._json(records[: self._limit(limit)])
@@ -211,7 +245,7 @@ def build_read_only_tools(service: ReadOnlyToolService) -> list[BaseTool]:
 
     @tool
     def search_records(query: str, limit: int = 10) -> str:
-        """Find locally saved travel records by route, flight, or booking reference."""
+        """Find locally saved travel, receipt, or warranty records by their known fields."""
         return service.search_records(query, limit)
 
     @tool

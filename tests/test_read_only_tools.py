@@ -6,7 +6,13 @@ from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
 from steward.knowledge import KnowledgeService
 from steward.privacy import PrivacyRule, PrivacyService
-from steward.records import RecordService
+from steward.records import (
+    ReceiptRecord,
+    ReceiptRecordProposal,
+    RecordService,
+    WarrantyRecord,
+    WarrantyRecordProposal,
+)
 from steward.retrieval import LexicalSearchService
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -65,6 +71,27 @@ def test_read_only_tools_expose_only_the_phase_21_safe_tool_set(tmp_path: Path) 
         "search_sources", "read_source", "search_knowledge", "search_records",
         "search_workspaces", "search_activity",
     ]
+
+
+def test_read_only_record_search_includes_receipts_and_warranties(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "records.txt", "a" * 64, SourceType.PLAIN_TEXT, 1, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "receipt and warranty", "entire file"),))
+    )[0]
+    records = RecordService(database)
+    records.create_receipt_from_proposal(
+        ReceiptRecordProposal(ReceiptRecord(None, source.id or 0, "Corner Store", 1250, "SGD", None, "R-42"), {"merchant": fragment.id or 0})
+    )
+    records.create_warranty_from_proposal(
+        WarrantyRecordProposal(WarrantyRecord(None, source.id or 0, "Laptop Pro", "Example Corp", "W-100", None), {"product_name": fragment.id or 0})
+    )
+    service = ReadOnlyToolService(sources, SourceFragmentRepository(database), LexicalSearchService(sources, SourceFragmentRepository(database)), KnowledgeService(database), records, WorkspaceRepository(database), ActivityService(database))
+
+    assert json.loads(service.search_records("corner"))[0]["record_type"] == "receipt"
+    assert json.loads(service.search_records("laptop"))[0]["record_type"] == "warranty"
 
 
 def test_read_only_tools_do_not_return_private_source_text_to_cloud_agent(tmp_path: Path) -> None:
