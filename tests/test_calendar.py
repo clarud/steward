@@ -174,3 +174,22 @@ def test_calendar_event_proposal_requires_a_separate_acceptance_before_writing(t
         ActivityType.CALENDAR_EVENT_CREATED,
         ActivityType.ACTION_PROPOSED,
     ]
+
+
+def test_calendar_event_proposal_rejects_invalid_record_times_before_creating_a_proposal(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    record = RecordService(database).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", None, None, datetime(2026, 10, 1, 9), datetime(2026, 10, 1, 17), None)
+    )
+    service = CalendarEventProposalService(
+        ActionProposalRepository(database), RecordService(database), ActivityService(database)
+    )
+
+    with pytest.raises(ValueError, match="timezone"):
+        service.propose_travel_event(record.id or 0)
+
+    assert ActionProposalRepository(database).list_all() == []

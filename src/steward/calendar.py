@@ -312,3 +312,7 @@ class CalendarEventProposalService:
     def _validate_record(record: TravelRecord) -> None:
         if record.departure_time is None or record.arrival_time is None:
             raise ValueError("Travel records need departure and arrival times for Calendar.")
+        if record.departure_time.tzinfo is None or record.arrival_time.tzinfo is None:
+            raise ValueError("Travel record times must include a timezone for Calendar.")
+        if record.departure_time >= record.arrival_time:
+            raise ValueError("Travel record departure must be before arrival for Calendar.")
