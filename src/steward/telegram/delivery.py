@@ -18,6 +18,13 @@ class TelegramDelivery:
     delivered_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class TelegramDeliveryHistoryEvent:
+    update_id: str
+    event_type: str
+    occurred_at: datetime
+
+
 class TelegramUpdateDeliveryRepository:
     """Claim one Telegram update before it reaches Steward's application layer.
 
@@ -46,12 +53,15 @@ class TelegramUpdateDeliveryRepository:
                 (update_id, claimed_at.isoformat()),
             )
             if cursor.rowcount == 1:
+                self._record_history(connection, update_id, "claimed", claimed_at)
                 return True
             cursor = connection.execute(
                 "UPDATE telegram_update_deliveries SET claimed_at = ? "
                 "WHERE update_id = ? AND status = 'processing' AND claimed_at <= ?",
                 (claimed_at.isoformat(), update_id, (claimed_at - self._lease).isoformat()),
             )
+            if cursor.rowcount == 1:
+                self._record_history(connection, update_id, "reclaimed", claimed_at)
         return cursor.rowcount == 1
 
     def mark_delivered(self, update_id: str) -> None:
@@ -64,6 +74,8 @@ class TelegramUpdateDeliveryRepository:
                 "WHERE update_id = ? AND status = 'processing'",
                 (datetime.now(UTC).isoformat(), update_id),
             )
+            if cursor.rowcount == 1:
+                self._record_history(connection, update_id, "delivered", datetime.now(UTC))
         if cursor.rowcount != 1:
             raise ValueError(f"Telegram update {update_id!r} is not being processed.")
 
@@ -71,11 +83,22 @@ class TelegramUpdateDeliveryRepository:
         """Make a failed delivery eligible for Telegram's next retry."""
 
         with sqlite3.connect(self._database_path) as connection:
-            connection.execute(
+            cursor = connection.execute(
                 "DELETE FROM telegram_update_deliveries "
                 "WHERE update_id = ? AND status = 'processing'",
                 (update_id,),
             )
+            if cursor.rowcount == 1:
+                self._record_history(connection, update_id, "released", datetime.now(UTC))
+
+    @staticmethod
+    def _record_history(
+        connection: sqlite3.Connection, update_id: str, event_type: str, occurred_at: datetime
+    ) -> None:
+        connection.execute(
+            "INSERT INTO telegram_delivery_history (update_id, event_type, occurred_at) VALUES (?, ?, ?)",
+            (update_id, event_type, occurred_at.isoformat()),
+        )
 
     def list_recent(self, *, limit: int = 20) -> tuple[TelegramDelivery, ...]:
         """Inspect recent local delivery state without retaining message content."""
@@ -90,5 +113,18 @@ class TelegramUpdateDeliveryRepository:
         return tuple(
             TelegramDelivery(str(row[0]), str(row[1]), datetime.fromisoformat(str(row[2])),
                              datetime.fromisoformat(str(row[3])) if row[3] else None)
+            for row in rows
+        )
+
+    def list_history(self, *, limit: int = 50) -> tuple[TelegramDeliveryHistoryEvent, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("Telegram delivery history limit must be between 1 and 100.")
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT update_id, event_type, occurred_at FROM telegram_delivery_history "
+                "ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return tuple(
+            TelegramDeliveryHistoryEvent(str(row[0]), str(row[1]), datetime.fromisoformat(str(row[2])))
             for row in rows
         )

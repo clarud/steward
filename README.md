@@ -391,6 +391,7 @@ Inspect metadata-only local delivery state when troubleshooting polling:
 
 ```powershell
 steward telegram-deliveries
+steward telegram-delivery-history
 ```
 
 An allowlisted Telegram chat can review pending workspace proposals created by

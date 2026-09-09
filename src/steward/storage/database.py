@@ -29,6 +29,7 @@ ORGANIZATION_APPROVAL_THREADS_SCHEMA_VERSION = 20
 ACTION_PROPOSALS_SCHEMA_VERSION = 21
 TELEGRAM_UPDATE_DELIVERIES_SCHEMA_VERSION = 22
 TRAVEL_RECORD_REFERENCES_SCHEMA_VERSION = 23
+TELEGRAM_DELIVERY_HISTORY_SCHEMA_VERSION = 24
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -221,6 +222,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             value TEXT NOT NULL,
             fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
             UNIQUE (travel_record_id, reference_type, value)
+        )
+        """,
+    ),
+    (
+        TELEGRAM_DELIVERY_HISTORY_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_delivery_history (
+            id INTEGER PRIMARY KEY,
+            update_id TEXT NOT NULL,
+            event_type TEXT NOT NULL CHECK (event_type IN ('claimed', 'reclaimed', 'released', 'delivered')),
+            occurred_at TEXT NOT NULL
         )
         """,
     ),

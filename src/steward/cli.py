@@ -242,6 +242,10 @@ def build_parser() -> argparse.ArgumentParser:
         "telegram-deliveries", help="Inspect local Telegram delivery coordination state"
     )
     telegram_deliveries.add_argument("--limit", type=int, default=20)
+    telegram_delivery_history = subcommands.add_parser(
+        "telegram-delivery-history", help="Inspect metadata-only Telegram retry history"
+    )
+    telegram_delivery_history.add_argument("--limit", type=int, default=50)
     ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
     ui_parser.add_argument("--host", default="127.0.0.1")
     ui_parser.add_argument("--port", type=int, default=8765)
@@ -951,6 +955,23 @@ def main(argv: Sequence[str] | None = None) -> None:
                 f"{delivery.update_id}\t{delivery.status}\t{delivery.claimed_at.isoformat()}\t"
                 f"{delivery.delivered_at.isoformat() if delivery.delivered_at else ''}"
             )
+        return
+
+    if arguments.command == "telegram-delivery-history":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            history = TelegramUpdateDeliveryRepository(database_path).list_history(
+                limit=arguments.limit
+            )
+        except ValueError as error:
+            print(str(error))
+            return
+        if not history:
+            print("No local Telegram delivery history.")
+            return
+        for event in history:
+            print(f"{event.update_id}\t{event.event_type}\t{event.occurred_at.isoformat()}")
         return
 
     if arguments.command == "ui":

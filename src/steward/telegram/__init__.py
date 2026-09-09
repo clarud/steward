@@ -5,7 +5,11 @@ from steward.telegram.adapter import (
     normalize_telegram_update,
     run_telegram_polling,
 )
-from steward.telegram.delivery import TelegramDelivery, TelegramUpdateDeliveryRepository
+from steward.telegram.delivery import (
+    TelegramDelivery,
+    TelegramDeliveryHistoryEvent,
+    TelegramUpdateDeliveryRepository,
+)
 from steward.events import IncomingEvent
 
 __all__ = [
@@ -13,6 +17,7 @@ __all__ = [
     "TelegramAdapter",
     "TelegramUpdateDeliveryRepository",
     "TelegramDelivery",
+    "TelegramDeliveryHistoryEvent",
     "normalize_telegram_update",
     "run_telegram_polling",
 ]

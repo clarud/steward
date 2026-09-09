@@ -207,6 +207,14 @@ def test_cli_lists_empty_telegram_delivery_state(tmp_path: Path, monkeypatch, ca
     assert capsys.readouterr().out == "No local Telegram delivery records.\n"
 
 
+def test_cli_lists_empty_telegram_delivery_history(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+
+    main(["telegram-delivery-history"])
+
+    assert capsys.readouterr().out == "No local Telegram delivery history.\n"
+
+
 def test_cli_calendar_search_explains_oauth_client_setup(monkeypatch, capsys) -> None:
     monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
     monkeypatch.delenv("STEWARD_GOOGLE_CLIENT_SECRETS", raising=False)

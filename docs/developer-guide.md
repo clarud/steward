@@ -556,6 +556,8 @@ that the Telegram Bot API does not provide.
 ID, processing/delivered status, claim time, and delivered time. It never stores
 or prints Telegram message text, but makes a stuck lease or repeated delivery
 observable during local troubleshooting.
+`telegram-delivery-history` additionally shows past claimed, reclaimed,
+released, and delivered transitions after a processing row has been released.
 
 ### Reviewable agent writes from Telegram
 
