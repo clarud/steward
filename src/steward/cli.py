@@ -225,7 +225,13 @@ def build_parser() -> argparse.ArgumentParser:
     root_add = subcommands.add_parser("add-root", help="Locally authorize an existing directory as a source root")
     root_add.add_argument("name")
     root_add.add_argument("path", type=Path)
+    root_add.add_argument(
+        "--exclude", action="append", type=Path, default=[],
+        help="Root-relative directory to exclude (repeatable)",
+    )
     subcommands.add_parser("roots", help="List locally authorized source roots")
+    scan_root_parser = subcommands.add_parser("scan-root", help="Scan one locally authorized source root")
+    scan_root_parser.add_argument("name", help="Authorized source-root name")
     unregister_source_parser = subcommands.add_parser(
         "unregister-source",
         help="Remove a source from Steward's registry without deleting its original file",
@@ -683,6 +689,31 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         return
 
+    if arguments.command == "scan-root":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        root = SourceRootRepository(database_path).get_by_name(arguments.name)
+        if root is None:
+            print(f"No locally authorized source root named {arguments.name!r}.")
+            return
+        if not root.enabled:
+            print(f"Source root {root.name!r} is disabled.")
+            return
+        if not root.path.is_dir():
+            print(f"Source root {root.name!r} is unavailable: {root.path}")
+            return
+        result = SourceService(
+            source_repository=SourceRepository(database_path),
+            fragment_repository=SourceFragmentRepository(database_path),
+            markdown_extractor=MarkdownExtractor(),
+        ).scan_source_root(root.path, exclusions=root.exclusions)
+        print(
+            f"Scan complete for {root.name}: "
+            f"new={result.new} updated={result.updated} "
+            f"unchanged={result.unchanged} missing={result.missing}"
+        )
+        return
+
     if arguments.command == "watch":
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
@@ -810,7 +841,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     if arguments.command == "add-root":
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
         try:
-            root = SourceRootRepository(database_path).add(arguments.name, arguments.path)
+            root = SourceRootRepository(database_path).add(
+                arguments.name, arguments.path, exclusions=tuple(arguments.exclude)
+            )
         except ValueError as error:
             print(str(error)); return
         print(f"Authorized source root {root.id}: {root.name}\t{root.path}")
@@ -822,7 +855,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not roots:
             print("No locally authorized source roots."); return
         for root in roots:
-            print(f"{root.id}\t{root.name}\t{'enabled' if root.enabled else 'disabled'}\t{root.path}")
+            excluded = ", ".join(str(item) for item in root.exclusions) or "none"
+            print(f"{root.id}\t{root.name}\t{'enabled' if root.enabled else 'disabled'}\t{root.path}\texcluded={excluded}")
         return
 
     if arguments.command == "unregister-source":

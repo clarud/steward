@@ -6,7 +6,12 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from steward.sources.discovery import discover_markdown_files, discover_source_files, source_type_for_path
+from steward.sources.discovery import (
+    DEFAULT_EXCLUDED_DIRECTORY_NAMES,
+    discover_markdown_files,
+    discover_source_files,
+    source_type_for_path,
+)
 from steward.sources.hashing import hash_file
 from steward.sources.models import Source, SourceStatus, SourceType
 from steward.sources.repository import SourceRepository
@@ -27,6 +32,7 @@ def scan_source_root(
     repository: SourceRepository,
     *,
     scanned_at: datetime | None = None,
+    exclusions: tuple[Path, ...] = (),
 ) -> ScanResult:
     """Register, refresh, and mark missing supported sources beneath root."""
     if scanned_at is None:
@@ -35,8 +41,9 @@ def scan_source_root(
         raise ValueError("scanned_at must be timezone-aware.")
 
     resolved_root = root.resolve()
-    discovered_paths = discover_source_files(resolved_root)
+    discovered_paths = discover_source_files(resolved_root, exclusions=exclusions)
     discovered_path_set = set(discovered_paths)
+    excluded_paths = tuple((item if item.is_absolute() else resolved_root / item).resolve() for item in exclusions)
     new_count = updated_count = unchanged_count = 0
 
     for path in discovered_paths:
@@ -86,6 +93,8 @@ def scan_source_root(
     for active_source in repository.list_active():
         if (
             active_source.path.is_relative_to(resolved_root)
+            and not any(active_source.path.is_relative_to(exclusion) for exclusion in excluded_paths)
+            and not any(parent.name in DEFAULT_EXCLUDED_DIRECTORY_NAMES for parent in active_source.path.parents)
             and active_source.source_type is not SourceType.BINARY
             and active_source.path not in discovered_path_set
         ):
@@ -111,6 +120,7 @@ def scan_markdown_root(
     repository: SourceRepository,
     *,
     scanned_at: datetime | None = None,
+    exclusions: tuple[Path, ...] = (),
 ) -> ScanResult:
     """Legacy Markdown-only registry synchronization used by focused callers."""
 
@@ -119,8 +129,9 @@ def scan_markdown_root(
     if scanned_at.tzinfo is None:
         raise ValueError("scanned_at must be timezone-aware.")
     resolved_root = root.resolve()
-    discovered_paths = discover_markdown_files(resolved_root)
+    discovered_paths = discover_markdown_files(resolved_root, exclusions=exclusions)
     discovered_path_set = set(discovered_paths)
+    excluded_paths = tuple((item if item.is_absolute() else resolved_root / item).resolve() for item in exclusions)
     new_count = updated_count = unchanged_count = 0
     for path in discovered_paths:
         stat = path.stat()
@@ -144,7 +155,7 @@ def scan_markdown_root(
             updated_count += 1
     missing_count = 0
     for active_source in repository.list_active():
-        if active_source.source_type is SourceType.MARKDOWN and active_source.path.is_relative_to(resolved_root) and active_source.path not in discovered_path_set:
+        if active_source.source_type is SourceType.MARKDOWN and active_source.path.is_relative_to(resolved_root) and not any(active_source.path.is_relative_to(exclusion) for exclusion in excluded_paths) and not any(parent.name in DEFAULT_EXCLUDED_DIRECTORY_NAMES for parent in active_source.path.parents) and active_source.path not in discovered_path_set:
             repository.update(replace(active_source, status=SourceStatus.MISSING, last_seen_at=scanned_at))
             missing_count += 1
     return ScanResult(new_count, updated_count, unchanged_count, missing_count)

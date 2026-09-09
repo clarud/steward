@@ -21,6 +21,7 @@ from steward.sources.models import Source, SourceStatus
 from steward.sources.hashing import hash_file
 from steward.sources.repository import SourceRepository
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
+from steward.sources.discovery import DEFAULT_EXCLUDED_DIRECTORY_NAMES
 
 if TYPE_CHECKING:
     from steward.retrieval.semantic import SemanticIndex
@@ -64,14 +65,15 @@ class SourceService:
 
         return result
 
-    def scan_source_root(self, root: Path) -> ScanResult:
+    def scan_source_root(self, root: Path, *, exclusions: tuple[Path, ...] = ()) -> ScanResult:
         """Synchronize and extract only new, changed, or restored vault sources."""
 
         before = self._active_content_hashes()
-        result = scan_source_root(root, self._source_repository)
+        result = scan_source_root(root, self._source_repository, exclusions=exclusions)
         resolved_root = root.resolve()
+        excluded_paths = tuple((item if item.is_absolute() else resolved_root / item).resolve() for item in exclusions)
         for source in self._source_repository.list_active():
-            if not source.path.is_relative_to(resolved_root):
+            if not source.path.is_relative_to(resolved_root) or any(source.path.is_relative_to(item) for item in excluded_paths) or any(parent.name in DEFAULT_EXCLUDED_DIRECTORY_NAMES for parent in source.path.parents):
                 continue
             if not self._needs_extraction(source, before):
                 continue

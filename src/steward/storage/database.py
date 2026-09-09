@@ -41,6 +41,7 @@ PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
 PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
 PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
 SOURCE_ROOTS_SCHEMA_VERSION = 35
+SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -355,6 +356,13 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
             created_at TEXT NOT NULL
         )
+        """,
+    ),
+    (
+        SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION,
+        """
+        ALTER TABLE source_roots
+        ADD COLUMN exclusions TEXT NOT NULL DEFAULT '[]'
         """,
     ),
 )

@@ -48,6 +48,24 @@ def test_cli_scan_registers_markdown_sources(
     assert [fragment.heading for fragment in fragments] == ["Note"]
 
 
+def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    (vault / "note.md").write_text("# Note", encoding="utf-8")
+    generated = vault / "generated"; generated.mkdir()
+    (generated / "output.md").write_text("# Output", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["add-root", "School", str(vault), "--exclude", "generated"])
+    capsys.readouterr()
+    main(["scan-root", "School"])
+
+    assert capsys.readouterr().out == "Scan complete for School: new=1 updated=0 unchanged=0 missing=0\n"
+    sources = SourceRepository(data_dir / "steward.db")
+    assert sources.get_by_path((vault / "note.md").resolve()) is not None
+    assert sources.get_by_path((generated / "output.md").resolve()) is None
+
+
 def test_cli_reextract_reports_a_missing_source_without_loading_a_model(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
 
