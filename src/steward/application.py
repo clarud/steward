@@ -1613,12 +1613,23 @@ class StewardProvisionalIntakeApplication:
 
     @staticmethod
     def should_propose_text(event: IncomingEvent) -> bool:
-        """Keep ordinary conversational messages out of durable intake by default."""
+        """Stage likely personal material, while keeping ordinary conversation ephemeral.
+
+        Staging is deliberately reversible: recognizing a flight, task, or note
+        never saves it.  Questions are resolved earlier by ``IntentResolver``.
+        """
         text = (event.text or "").strip()
+        normalized = text.casefold()
+        explicit_prefixes = ("note:", "thought:", "remember:", "deadline:", "todo:", "task:")
+        personal_signals = (
+            "flight", "itinerary", "booking", "reservation", "receipt", "invoice", "warranty",
+            "deadline", "due ", "submit ", "remind me", "to do", "todo", "task",
+        )
         return (
             len(text) >= 280
             or text.count("\n") >= 2
-            or text.casefold().startswith(("note:", "thought:", "remember:", "deadline:"))
+            or normalized.startswith(explicit_prefixes)
+            or (len(text) >= 24 and any(signal in normalized for signal in personal_signals))
         )
 
     def handle_command(self, event: IncomingEvent) -> CaptureResult | str | None:

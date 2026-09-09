@@ -1632,6 +1632,30 @@ def test_provisional_intake_collects_context_from_an_ordinary_followup(tmp_path:
     assert sources.list_all() == []
 
 
+def test_short_personal_record_text_is_staged_without_being_saved(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            )
+        ),
+    )
+
+    response = application.handle(make_event(text="My flight to Tokyo leaves on Friday evening."))
+
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Review message.md"
+    assert "Type: record" in response.text
+    assert sources.list_all() == []
+
+
 def test_provisional_intake_failure_does_not_disclose_a_local_staging_path() -> None:
     class UnavailableService:
         def accept(self, _intake_id: int, _event: IncomingEvent) -> CaptureResult:
