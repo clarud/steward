@@ -5,7 +5,9 @@ from __future__ import annotations
 from html.parser import HTMLParser
 from email import policy
 from email.parser import BytesParser
+from pathlib import Path
 from subprocess import CalledProcessError, TimeoutExpired, run
+from tempfile import TemporaryDirectory
 from typing import Protocol
 from zipfile import BadZipFile
 
@@ -147,7 +149,60 @@ class EmailExtractor:
         return ExtractionResult(source.id, tuple(fragments))
 
 
+class PdfOcrExtractor:
+    """Rasterize a scanned PDF locally, then OCR each page with Tesseract."""
+
+    def __init__(self, *, renderer_command: str = "pdftoppm", ocr_command: str = "tesseract") -> None:
+        self._renderer_command = renderer_command
+        self._ocr_command = ocr_command
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.PDF:
+            raise ValueError("PdfOcrExtractor requires a PDF Source.")
+        try:
+            with TemporaryDirectory(prefix="steward-pdf-ocr-") as temporary_directory:
+                image_prefix = Path(temporary_directory) / "page"
+                run(
+                    [self._renderer_command, "-png", "-r", "200", str(source.path), str(image_prefix)],
+                    capture_output=True,
+                    check=True,
+                    encoding="utf-8",
+                    text=True,
+                    timeout=120,
+                )
+                images = sorted(Path(temporary_directory).glob("page-*.png"))
+                if not images:
+                    raise DocumentExtractionError(f"Could not rasterize any pages from PDF {source.path}.")
+                fragments = []
+                for page_number, image_path in enumerate(images, start=1):
+                    completed = run(
+                        [self._ocr_command, str(image_path), "stdout"],
+                        capture_output=True,
+                        check=True,
+                        encoding="utf-8",
+                        text=True,
+                        timeout=60,
+                    )
+                    text = completed.stdout.strip()
+                    if text:
+                        fragments.append(
+                            SourceFragment(None, source.id, None, len(fragments), text, f"page {page_number} OCR")
+                        )
+        except (OSError, CalledProcessError, TimeoutExpired) as error:
+            raise DocumentExtractionError(
+                f"Could not OCR scanned PDF {source.path}; install local Poppler and Tesseract to enable it."
+            ) from error
+        return ExtractionResult(source.id, tuple(fragments))
+
+
 class PdfExtractor:
+    """Extract native PDF text first, then use optional local OCR for image-only PDFs."""
+
+    def __init__(self, ocr_extractor: PdfOcrExtractor | None = None) -> None:
+        self._ocr_extractor = ocr_extractor or PdfOcrExtractor()
+
     def extract(self, source: Source) -> ExtractionResult:
         if source.id is None:
             raise ValueError("Only a persisted Source can be extracted.")
@@ -161,6 +216,8 @@ class PdfExtractor:
                     fragments.append(SourceFragment(None, source.id, None, len(fragments), text, f"page {page_number}"))
         except (OSError, PyPdfError) as error:
             raise DocumentExtractionError(f"Could not read PDF {source.path}.") from error
+        if not fragments:
+            return self._ocr_extractor.extract(source)
         return ExtractionResult(source.id, tuple(fragments))
 
 

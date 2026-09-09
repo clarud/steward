@@ -3,7 +3,7 @@ from pathlib import Path
 
 from subprocess import CompletedProcess
 
-from steward.extraction import DocxExtractor, EmailExtractor, HtmlExtractor, ImageOcrExtractor, PdfExtractor, PlainTextExtractor
+from steward.extraction import DocxExtractor, EmailExtractor, HtmlExtractor, ImageOcrExtractor, PdfExtractor, PdfOcrExtractor, PlainTextExtractor
 from steward.sources import Source, SourceType
 
 
@@ -104,6 +104,39 @@ def test_image_ocr_extractor_uses_local_tesseract_and_keeps_image_provenance(tmp
     assert [(fragment.text, fragment.location) for fragment in result.fragments] == [
         ("Booking reference: ABC123", "image OCR")
     ]
+
+
+def test_pdf_extractor_uses_local_ocr_only_when_native_pdf_text_is_absent(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(b"pdf")
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = Source(1, path, "a" * 64, SourceType.PDF, path.stat().st_size, now, now, now)
+
+    class Page:
+        def extract_text(self) -> str:
+            return ""
+
+    class Reader:
+        pages = [Page()]
+
+    commands: list[list[str]] = []
+
+    def fake_run(arguments, **_kwargs):
+        commands.append(arguments)
+        if arguments[0] == "pdftoppm":
+            Path(arguments[-1] + "-1.png").write_bytes(b"image")
+            return type("Completed", (), {"stdout": ""})()
+        return type("Completed", (), {"stdout": "scanned page text"})()
+
+    monkeypatch.setattr("steward.extraction.document.PdfReader", lambda _path: Reader())
+    monkeypatch.setattr("steward.extraction.document.run", fake_run)
+
+    result = PdfExtractor(PdfOcrExtractor()).extract(source)
+
+    assert result.fragments[0].text == "scanned page text"
+    assert result.fragments[0].location == "page 1 OCR"
+    assert commands[0][:4] == ["pdftoppm", "-png", "-r", "200"]
+    assert commands[1][0] == "tesseract"
 
 
 def test_email_extractor_reads_text_parts_but_not_attachments(tmp_path: Path) -> None:

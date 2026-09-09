@@ -5,7 +5,7 @@ Steward is a local-first personal memory, knowledge, and action assistant. It pr
 ## Current status
 
 Phases 0–34 are implemented as a local foundation. Steward can capture text,
-Markdown, plain text, DOCX, HTML, images with optional local OCR, and native-text PDFs into an Inbox; extract and retrieve
+Markdown, plain text, DOCX, HTML, images with optional local OCR, and PDFs with native-text-first local OCR fallback into an Inbox; extract and retrieve
 fragments; create workspaces and organization proposals; retain activity,
 concept, claim, and travel-record provenance; and answer Telegram questions
 with persistent per-chat LangGraph state. The human approval and external
@@ -59,6 +59,10 @@ steward search "address translations"
 
 Markdown, text, CSV, PDF, DOCX, HTML, and supported image files can be scanned.
 CSV is preserved and searched through the plain-text extraction path.
+For scanned images and image-only PDFs, install local `tesseract`; scanned PDFs
+also need Poppler's `pdftoppm`. If either is absent, Steward preserves and
+registers the original but leaves its derived text empty until you install the
+tool and run `steward reextract SOURCE_ID`.
 
 For a larger vault, narrow lexical results to one project or course subtree:
 

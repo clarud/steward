@@ -1105,10 +1105,11 @@ behavior easy to edit and inspect in code review.
 
 ## Known limitations
 
-- Capture currently supports Markdown, plain text, DOCX, HTML, images, and PDFs with native text.
-  Image OCR uses a separately installed local `tesseract` executable; unavailable OCR never prevents
-  preservation of the original. The content hash prevents unchanged images from being OCRed again during
-  a normal reindex. OCR for scanned PDFs remains future work.
+- Capture supports Markdown, plain text, DOCX, HTML, images, and PDFs. PDFs use native text first;
+  an image-only PDF falls back to local OCR at 200 DPI using separately installed Poppler (`pdftoppm`)
+  and `tesseract`. Unavailable OCR never prevents preservation of the original: scanning logs the
+  extraction failure and keeps its derived text empty. The content hash prevents unchanged images or
+  scanned PDFs from being OCRed again during a normal reindex.
 - Heading-based fragments are useful but not universally optimal. Very long
   sections can create overly large fragments; very short headings can create
   too little context.
