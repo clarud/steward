@@ -56,8 +56,11 @@ def test_explicit_drive_import_downloads_then_captures_with_a_stable_event(tmp_p
             assert file_id == "drive-42"
             return DriveFile("drive-42", "Flight plan.pdf", "application/pdf", None, None, 3)
 
-        def download_to(self, file_id: str, destination) -> None:
-            assert file_id == "drive-42"
+        def import_name(self, remote: DriveFile) -> str:
+            return remote.name
+
+        def download_file_to(self, remote: DriveFile, destination) -> None:
+            assert remote.id == "drive-42"
             destination.write_bytes(b"PDF")
 
     class Capture:
@@ -78,3 +81,18 @@ def test_explicit_drive_import_downloads_then_captures_with_a_stable_event(tmp_p
     assert capture.event.id == "drive:drive-42"
     assert capture.event.platform == "drive"
     assert capture.event.attachments == ("Flight plan.pdf",)
+
+
+def test_native_drive_documents_receive_an_explicit_export_extension() -> None:
+    document = DriveFile("doc-1", "Project notes", "application/vnd.google-apps.document", None, None, None)
+    sheet = DriveFile("sheet-1", "Budget", "application/vnd.google-apps.spreadsheet", None, None, None)
+
+    assert GoogleDriveService.import_name(document) == "Project notes.txt"
+    assert GoogleDriveService.import_name(sheet) == "Budget.csv"
+
+
+def test_unsupported_native_drive_type_is_rejected_before_download(tmp_path) -> None:
+    drawing = DriveFile("drawing-1", "Architecture", "application/vnd.google-apps.drawing", None, None, None)
+
+    with pytest.raises(ValueError, match="no supported local export"):
+        GoogleDriveService(FakeDrive()).download_file_to(drawing, tmp_path / "drawing")

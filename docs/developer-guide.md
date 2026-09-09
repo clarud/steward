@@ -618,6 +618,13 @@ repeat import idempotent. There is no background sync and no model-selected
 Drive download. Telegram's oversized-upload reply merely guides the user to
 this explicit route; its adapter never handles OAuth or Drive bytes.
 
+For selected Google-native files, an original binary is not available. A Google
+Doc is therefore explicitly exported as `.txt`, a Sheet as `.csv`, and a Slide
+deck as `.pdf` before the same capture path runs. The export name makes this
+derivative visible; the Drive item stays authoritative and no background sync is
+introduced. Unsupported native types are rejected rather than downloaded with
+an ambiguous format.
+
 ### Gmail search and explicit Inbox import
 
 `GmailService` uses its own `gmail.readonly` OAuth token. `steward

@@ -13,6 +13,11 @@ from steward.events import IncomingEvent
 
 
 GOOGLE_DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+GOOGLE_NATIVE_EXPORTS = {
+    "application/vnd.google-apps.document": ("text/plain", ".txt"),
+    "application/vnd.google-apps.spreadsheet": ("text/csv", ".csv"),
+    "application/vnd.google-apps.presentation": ("application/pdf", ".pdf"),
+}
 
 
 class DriveApi(Protocol):
@@ -67,6 +72,32 @@ class GoogleDriveService:
             while not complete:
                 _, complete = downloader.next_chunk()
 
+    def download_file_to(self, remote: DriveFile, destination: Path) -> None:
+        """Download a binary original or one explicit export of a native Drive file."""
+        from googleapiclient.http import MediaIoBaseDownload
+
+        if remote.mime_type.startswith("application/vnd.google-apps.") and remote.mime_type not in GOOGLE_NATIVE_EXPORTS:
+            raise ValueError(f"Drive native type {remote.mime_type!r} has no supported local export.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        request = (
+            self._client.files().export_media(fileId=remote.id, mimeType=GOOGLE_NATIVE_EXPORTS[remote.mime_type][0])
+            if remote.mime_type in GOOGLE_NATIVE_EXPORTS
+            else self._client.files().get_media(fileId=remote.id)
+        )
+        with destination.open("wb") as output:
+            downloader = MediaIoBaseDownload(output, request)
+            complete = False
+            while not complete:
+                _, complete = downloader.next_chunk()
+
+    @staticmethod
+    def import_name(remote: DriveFile) -> str:
+        """Give explicitly exported native documents a format-bearing local name."""
+        if remote.mime_type not in GOOGLE_NATIVE_EXPORTS:
+            return remote.name
+        suffix = GOOGLE_NATIVE_EXPORTS[remote.mime_type][1]
+        return remote.name if Path(remote.name).suffix else remote.name + suffix
+
     @staticmethod
     def _from_api(item: dict[str, object]) -> DriveFile:
         identifier = item.get("id")
@@ -99,10 +130,11 @@ class DriveInboxImportService:
 
     def import_file(self, file_id: str) -> CaptureResult:
         remote = self._drive.get_file(file_id)
-        suffix = Path(remote.name).suffix
+        local_name = self._drive.import_name(remote)
+        suffix = Path(local_name).suffix
         with TemporaryDirectory() as temporary_dir:
             downloaded = Path(temporary_dir) / f"drive-download{suffix}"
-            self._drive.download_to(remote.id, downloaded)
+            self._drive.download_file_to(remote, downloaded)
             return self._capture.capture_file(
                 IncomingEvent(
                     id=f"drive:{remote.id}",
@@ -112,7 +144,7 @@ class DriveInboxImportService:
                     reply_to_id=None,
                     timestamp=datetime.now().astimezone(),
                     text=None,
-                    attachments=(remote.name,),
+                    attachments=(local_name,),
                 ),
                 downloaded,
             )

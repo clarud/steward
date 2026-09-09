@@ -40,6 +40,10 @@ labeled extracted text, then only persisted when evidence exists for a field.
 Warranty records apply the same pattern to product, provider, warranty number,
 and coverage-end information.
 
+Selected native Google Docs, Sheets, and Slides can also be imported through
+the existing `drive-import` command. Steward explicitly exports them as local
+`.txt`, `.csv`, or `.pdf` derivatives; the Drive file remains authoritative.
+
 ## Local setup
 
 Requires Python 3.12 or newer.
