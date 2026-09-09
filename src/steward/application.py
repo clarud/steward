@@ -1319,16 +1319,18 @@ class StewardRootsApplication:
     def __init__(self, roots: SourceRootRepository) -> None:
         self._roots = roots
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
         if command != "/roots":
             return None
         roots = self._roots.list_all()
         if not roots:
             return "No locally authorized source roots. Add one from the local CLI or setup UI."
-        return "Authorized source roots:\n" + "\n".join(
-            f"{root.id}: {root.name} — {root.health}"
-            for root in roots
+        return PresentedReply(
+            "\n".join(f"{root.name}: {root.health}" for root in roots),
+            (ReplyAction("Home", "/home"),),
+            title="Authorized source roots",
+            icon="🗂️",
         )
 
 
