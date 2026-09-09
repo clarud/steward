@@ -30,6 +30,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
+from steward.privacy import PrivacyRule, PrivacyService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -426,6 +427,39 @@ class StewardRootsApplication:
             f"{root.id}: {root.name} — {'available' if root.path.is_dir() else 'missing'}"
             for root in roots
         )
+
+
+class StewardPrivacyApplication:
+    """Explicit source-level model-boundary controls for an authorized chat."""
+
+    def __init__(self, privacy: PrivacyService, sources: SourceRepository) -> None:
+        self._privacy = privacy
+        self._sources = sources
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/privacy":
+            if not separator or not argument.strip().isdigit():
+                return "Use /privacy followed by a numeric source ID."
+            source_id = int(argument.strip())
+            if self._sources.get_by_id(source_id) is None:
+                return f"Source {source_id} was not found."
+            return f"Source {source_id} privacy rule: {self._privacy.rule_for(source_id).value}"
+        if command != "/set_privacy":
+            return None
+        parts = argument.split()
+        if not separator or len(parts) != 2 or not parts[0].isdigit():
+            return "Use /set_privacy followed by a source ID and privacy rule."
+        source_id = int(parts[0])
+        if self._sources.get_by_id(source_id) is None:
+            return f"Source {source_id} was not found."
+        try:
+            rule = PrivacyRule(parts[1])
+        except ValueError:
+            return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
+        self._privacy.set_rule(source_id, rule)
+        return f"Source {source_id} privacy rule set to {rule.value}."
 
 
 class QuestionGraph(Protocol):
@@ -950,6 +984,7 @@ class StewardEventApplication:
         record_application: StewardRecordApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
+        privacy_application: StewardPrivacyApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -964,8 +999,13 @@ class StewardEventApplication:
         self._record_application = record_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
+        self._privacy_application = privacy_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._privacy_application is not None:
+            privacy_response = self._privacy_application.handle_command(event)
+            if privacy_response is not None:
+                return privacy_response
         if self._roots_application is not None:
             roots_response = self._roots_application.handle_command(event)
             if roots_response is not None:

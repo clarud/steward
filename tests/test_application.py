@@ -16,6 +16,7 @@ from steward.application import (
     StewardRecordApplication,
     StewardKnowledgeApplication,
     StewardRootsApplication,
+    StewardPrivacyApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -41,6 +42,7 @@ from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.roots import SourceRootRepository
+from steward.privacy import PrivacyService
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -307,6 +309,24 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     response = application.handle(make_event(text="/roots"))
 
     assert response == "Authorized source roots:\n1: School — available"
+
+
+def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    path = tmp_path / "note.md"; path.write_text("note", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    sources.add(Source(None, path, "a" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources),
+    )
+
+    changed = application.handle(make_event(text="/set_privacy 1 local_model_only"))
+    inspected = application.handle(make_event(text="/privacy 1"))
+
+    assert changed == "Source 1 privacy rule set to local_model_only."
+    assert inspected == "Source 1 privacy rule: local_model_only"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
