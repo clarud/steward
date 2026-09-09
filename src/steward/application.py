@@ -1475,7 +1475,7 @@ class StewardQuestionApplication:
     def __init__(self, graph: QuestionGraph) -> None:
         self._graph = graph
 
-    def handle(self, event: IncomingEvent) -> str:
+    def handle(self, event: IncomingEvent) -> str | PresentedReply:
         """Return a response without knowing which external platform sent it."""
 
         if not event.text or not event.text.strip():
@@ -1488,8 +1488,8 @@ class StewardQuestionApplication:
         return self._format_response(result)
 
     @staticmethod
-    def _format_response(result: QuestionResult) -> str:
-        """Keep generated citation keys useful on a text-only transport."""
+    def _format_response(result: QuestionResult) -> str | PresentedReply:
+        """Render grounded evidence as a concise transport-neutral answer card."""
 
         citations = result.get("citations", ())
         if not citations:
@@ -1502,7 +1502,11 @@ class StewardQuestionApplication:
                 f"[{citation.key}] {citation.source_path.name}:"
                 f"{citation.location} [{heading}]"
             )
-        return f"{result['answer']}\n\nSources:\n" + "\n".join(source_lines)
+        return PresentedReply(
+            f"{result['answer']}\n\nSources:\n" + "\n".join(source_lines),
+            title="Answer from your saved material",
+            icon="🧠",
+        )
 
 
 class StewardCaptureApplication:

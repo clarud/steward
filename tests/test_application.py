@@ -123,7 +123,9 @@ def test_question_application_includes_source_details_for_citations() -> None:
         make_event(text="What is a TLB?")
     )
 
-    assert response == (
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Answer from your saved material"
+    assert response.text == (
         "A TLB caches translations. [F1]\n\n"
         "Sources:\n[F1] virtual-memory.md:lines 4-6 [TLB]"
     )
