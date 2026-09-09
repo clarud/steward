@@ -23,6 +23,7 @@ class ActivityType(StrEnum):
     ACTION_ACCEPTED = "action_accepted"
     ACTION_REJECTED = "action_rejected"
     TASK_CREATED = "task_created"
+    TASK_COMPLETED = "task_completed"
     CALENDAR_EVENT_CREATED = "calendar_event_created"
     KNOWLEDGE_ENRICHMENT_PROPOSED = "knowledge_enrichment_proposed"
     KNOWLEDGE_ENRICHMENT_ACCEPTED = "knowledge_enrichment_accepted"

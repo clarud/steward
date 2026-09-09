@@ -62,3 +62,28 @@ class TaskService:
             Task(int(row[0]), str(row[1]), str(row[2]) if row[2] else None, str(row[3]), datetime.fromisoformat(str(row[4])))
             for row in rows
         )
+
+    def complete(self, task_id: int) -> Task:
+        if task_id <= 0:
+            raise ValueError("Task ID must be positive.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, title, due_hint, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Task {task_id} was not found.")
+            task = Task(int(row[0]), str(row[1]), str(row[2]) if row[2] else None, str(row[3]), datetime.fromisoformat(str(row[4])))
+            if task.status == "completed":
+                return task
+            connection.execute("UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ?", (datetime.now(UTC).isoformat(), task_id))
+        return Task(task.id, task.title, task.due_hint, "completed", task.created_at)
+
+    def get(self, task_id: int) -> Task | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, title, due_hint, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return (
+            Task(int(row[0]), str(row[1]), str(row[2]) if row[2] else None, str(row[3]), datetime.fromisoformat(str(row[4])))
+            if row is not None else None
+        )

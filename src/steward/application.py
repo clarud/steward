@@ -406,6 +406,19 @@ class StewardTaskApplication:
                 f"{task.id}: {task.title}" + (f" ({task.due_hint})" if task.due_hint else "")
                 for task in tasks
             )
+        if command == "/complete_task":
+            if not separator or not argument.strip().isdigit():
+                return "Use /complete_task followed by a numeric task ID."
+            task_id = int(argument.strip())
+            existing = self._tasks.get(task_id)
+            if existing is not None and existing.status == "completed":
+                return f"Task {existing.id} was already completed: {existing.title}."
+            try:
+                task = self._tasks.complete(task_id)
+            except ValueError as error:
+                return str(error)
+            self._activity.record(ActivityType.TASK_COMPLETED, object_id=str(task.id), details=task.title)
+            return f"Task {task.id} completed: {task.title}."
         if command != "/propose_task":
             return None
         if not separator:

@@ -20,6 +20,10 @@ def test_task_service_creates_and_lists_open_tasks(tmp_path: Path) -> None:
 
     assert task.id == 1
     assert service.list_open() == (task,)
+    completed = service.complete(task.id or 0)
+    assert completed.status == "completed"
+    assert service.list_open() == ()
+    assert service.complete(task.id or 0).status == "completed"
 
 
 def test_task_service_requires_a_title() -> None:

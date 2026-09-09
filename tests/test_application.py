@@ -428,6 +428,8 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert accepted == "Task 1 created: compare OpenMP scheduling."
     assert tasks.list_open()[0].due_hint == "before Tuesday"
+    assert application.handle(make_event(text="/complete_task 1")) == "Task 1 completed: compare OpenMP scheduling."
+    assert tasks.list_open() == ()
 
 
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
