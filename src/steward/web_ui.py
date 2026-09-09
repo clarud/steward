@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 from steward.extraction import InvalidSearchQueryError, SourceFragment, SourceFragmentRepository
 from steward.sources import Source, SourceRepository
+from steward.records import RecordService
 
 
 class LocalSearchService(Protocol):
@@ -45,6 +46,24 @@ class LocalSourceBrowser:
         return SourceDetails(source, self._fragment_repository.list_for_source(source_id))
 
 
+class LocalRecordBrowser:
+    """Read-only view of concrete records and their authoritative source IDs."""
+
+    def __init__(self, records: RecordService) -> None:
+        self._records = records
+
+    def rows(self) -> tuple[dict[str, object], ...]:
+        rows: list[dict[str, object]] = []
+        for record in self._records.list_travel_records():
+            rows.append({"type": "Travel", "id": record.id, "source_id": record.source_id, "summary": " → ".join(part for part in (record.flight_number, record.departure, record.arrival) if part)})
+        for record in self._records.list_receipt_records():
+            amount = f"{record.total_cents / 100:.2f}" if record.total_cents is not None else ""
+            rows.append({"type": "Receipt", "id": record.id, "source_id": record.source_id, "summary": " ".join(part for part in (record.merchant, amount, record.currency) if part)})
+        for record in self._records.list_warranty_records():
+            rows.append({"type": "Warranty", "id": record.id, "source_id": record.source_id, "summary": " — ".join(part for part in (record.product_name, record.provider) if part)})
+        return tuple(rows)
+
+
 def render_search_page(
     query: str, hits: tuple[object, ...] = (), error: str | None = None, *, mode: str = "lexical"
 ) -> str:
@@ -70,7 +89,23 @@ input{{width:min(650px,80%);padding:.65rem}}button{{padding:.65rem 1rem}}article
 h1{{margin-bottom:.25rem}}.meta{{color:#5d6978;font-size:.9rem}}pre{{white-space:pre-wrap;font:inherit}}.error{{color:#a21d1d}}
 </style></head><body><h1>Steward</h1><p>Local {escape(mode)} search. No source text leaves this machine.</p>
 <form method='get'><input name='q' value='{escape(query, quote=True)}' autofocus placeholder='Search your local sources'> <button>Search</button></form>
-{error_html}<section>{result_html}</section></body></html>"""
+<p><a href='/records'>Browse records</a></p>{error_html}<section>{result_html}</section></body></html>"""
+
+
+def render_records_page(rows: tuple[dict[str, object], ...]) -> str:
+    """Render only record metadata and source registry links, never source text."""
+    items = "".join(
+        "<article><h2>" + escape(str(row["type"])) + " #" + escape(str(row["id"])) + "</h2>"
+        + "<p>" + escape(str(row["summary"]) or "No indexed summary") + "</p>"
+        + "<p class='meta'><a href='/sources/" + escape(str(row["source_id"])) + "'>View authoritative source</a></p></article>"
+        for row in rows
+    ) or "<p>No concrete records have been created yet.</p>"
+    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'><title>Records · Steward</title><style>
+body{{font:16px system-ui,sans-serif;max-width:900px;margin:3rem auto;padding:0 1rem;color:#18212f}}
+article{{border-top:1px solid #d7dce3;padding:1rem 0}}.meta{{color:#5d6978;font-size:.9rem}}a{{color:#0a5ea8}}
+</style></head><body><p><a href='/'>← Search</a></p><h1>Local records</h1>
+<p>Derived record summaries linked to their authoritative local sources.</p><section>{items}</section></body></html>"""
 
 
 def render_source_page(
@@ -127,6 +162,7 @@ def _highlight_excerpt(text: str) -> str:
 def run_local_ui(
     service: LocalSearchService,
     source_browser: LocalSourceBrowser,
+    record_browser: LocalRecordBrowser,
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
@@ -165,6 +201,8 @@ def run_local_ui(
                     self.send_error(404)
                     return
                 page = render_source_page(details, offset=offset)
+            elif parsed.path == "/records":
+                page = render_records_page(record_browser.rows())
             else:
                 self.send_error(404)
                 return

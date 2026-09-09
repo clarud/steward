@@ -660,6 +660,11 @@ intentionally contains no write controls, model calls, OAuth credentials, or
 external integrations. This gives Steward a locally inspectable UI surface
 without silently expanding its trust boundary.
 
+`/records` is a second read-only local page. It renders travel, receipt, and
+warranty metadata from `RecordService`, marks each row by record type, and links
+back to `/sources/{source_id}`. It never renders source text itself, accepts no
+write requests, and keeps the source rather than its derived record authoritative.
+
 ### Retrieval path filtering
 
 Lexical search accepts `--path-prefix PATH`. The value is resolved locally and

@@ -78,7 +78,7 @@ from steward.research import (
     ResearchService,
 )
 from steward.workspace_detection import WorkspaceDetectionService
-from steward.web_ui import LocalSourceBrowser, run_local_ui
+from steward.web_ui import LocalRecordBrowser, LocalSourceBrowser, run_local_ui
 from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
 from steward.privacy import PrivacyRule, PrivacyService
@@ -1039,6 +1039,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         run_local_ui(
             service,
             LocalSourceBrowser(sources, fragments),
+            LocalRecordBrowser(RecordService(database_path)),
             host=arguments.host,
             port=arguments.port,
             mode=arguments.mode,

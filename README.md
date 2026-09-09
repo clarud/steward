@@ -106,6 +106,8 @@ steward ui --mode hybrid
 ```
 
 Then open `http://127.0.0.1:8765`. Stop it with `Ctrl+C`.
+The search page also links to a local records view for travel, receipt, and
+warranty projections; each record links back to its authoritative source.
 
 ## Ask from local evidence
 
