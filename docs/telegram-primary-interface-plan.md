@@ -741,7 +741,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded | Explicit external-analysis choice and more extractor-specific review |
 | 3. Organization review | Baseline complete | Inbox review, durable organization proposal acceptance/rejection | Edit-target and emerging-workspace proposal UX |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent; direct Calendar reads | Calendar tools in the model agent and broader provider-failure evaluations |
-| 5. Tasks, records, Calendar | In progress | Travel-record proposal/review and approved Calendar-event proposal/write | Small Task/reminder domain, receipt/warranty fields, corrections, duplicate-calendar checks |
+| 5. Tasks, records, Calendar | In progress | Reviewable open Tasks with visible due cues, travel-record proposal/review, approved Calendar-event proposal/write | Reminder scheduling, receipt/warranty Telegram review, corrections, duplicate-calendar checks |
 | 6. Curated knowledge/research | In progress | Concept/claim lookup and enrichment review | Curated conversation notes, external research cards, retain/discard flow |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, delivery history/dead-letter diagnostics | Scanner root enforcement/exclusions, watches, backup/recovery and fault injection |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail import commands, privacy controls, delivery inspection | Search/select import cards, local OAuth status, confirmed maintenance flows |
