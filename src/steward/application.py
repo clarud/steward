@@ -654,7 +654,7 @@ class StewardRecordApplication:
         self._proposals = proposals
         self._activity = activity
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/records":
@@ -973,7 +973,7 @@ class StewardIntegrationStatusApplication:
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
         if command != "/integrations":
             return None
@@ -1397,20 +1397,25 @@ class StewardCalendarApplication:
             calendar = self._calendar_factory()
             if command == "/calendar_get":
                 event_result = calendar.get_event(argument.strip())
-                return self._format_event(event_result.id, event_result.start, event_result.end, event_result.summary)
+                return PresentedReply(
+                    f"{event_result.start} → {event_result.end}\n\n"
+                    f"Calendar ID: {event_result.id}",
+                    title=event_result.summary,
+                    icon="📅",
+                )
             events = calendar.search(argument.strip(), limit=10)
         except Exception:
             return "Calendar is temporarily unavailable. Verify local authorization, then try again."
         if not events:
             return "No current Calendar events matched."
-        return "Calendar events (current Google Calendar state):\n" + "\n".join(
-            self._format_event(item.id, item.start, item.end, item.summary) for item in events
+        lines = []
+        actions: list[ReplyAction] = []
+        for index, item in enumerate(events, start=1):
+            lines.append(f"{index}. {item.summary}\n{item.start} → {item.end}")
+            actions.append(ReplyAction(f"Open {index}", f"/calendar_get {item.id}"))
+        return PresentedReply(
+            "\n\n".join(lines), tuple(actions), title="Calendar events", icon="📅"
         )
-
-    @staticmethod
-    def _format_event(event_id: str, start: str, end: str, summary: str) -> str:
-        return f"{event_id}: {start} → {end} — {summary}"
-
 
 class StewardOperationsApplication:
     """Expose delivery diagnostics and reviewable recovery to the owner chat."""

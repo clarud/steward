@@ -837,8 +837,13 @@ def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:
     found = application.handle(make_event(text="/calendar_search Tokyo"))
     detail = application.handle(make_event(text="/calendar_get event-1"))
 
-    assert "event-1: 2026-10-01 → 2026-10-02 — Flight" in found
-    assert detail == "event-1: 2026-10-01 → 2026-10-02 — Flight"
+    assert isinstance(found, PresentedReply)
+    assert found.title == "Calendar events"
+    assert "Flight" in found.text
+    assert found.actions[0].command == "/calendar_get event-1"
+    assert isinstance(detail, PresentedReply)
+    assert detail.title == "Flight"
+    assert "Calendar ID: event-1" in detail.text
 
 
 def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None:
