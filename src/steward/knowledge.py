@@ -73,6 +73,12 @@ class KnowledgeService:
             claim_id=int(cursor.lastrowid)
             connection.executemany("INSERT INTO claim_evidence (claim_id,fragment_id) VALUES (?,?)",[(claim_id,fragment_id) for fragment_id in fragment_ids])
         return replace(claim,id=claim_id)
+    def get_claim(self, claim_id: int) -> Claim | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, concept_id, text, created_at FROM claims WHERE id = ?", (claim_id,)
+            ).fetchone()
+        return Claim(int(row[0]), int(row[1]), str(row[2]), datetime.fromisoformat(str(row[3]))) if row else None
     def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
         claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
         if {"not", "never", "false", "incorrect"} & evidence_words:

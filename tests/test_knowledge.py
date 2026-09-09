@@ -2,6 +2,7 @@ from pathlib import Path
 import sqlite3
 import pytest
 from steward.knowledge import Claim, EnrichmentOperation, KnowledgeService
+from steward.knowledge_ai import ModelAssistedKnowledgeService
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -56,3 +57,19 @@ def test_enrichment_can_propose_each_non_confirming_operation(tmp_path: Path, ev
     claim = Claim(1, 1, "TLB caches translations.", datetime(2026, 9, 8, tzinfo=UTC))
 
     assert service.compare_evidence(claim, fragment_id=2, evidence_text=evidence).operation is expected
+
+
+def test_model_assisted_enrichment_validates_a_grounded_structured_proposal() -> None:
+    class Model:
+        def generate(self, **kwargs):
+            assert "TLBs may cache" in kwargs["input_text"]
+            return '{"operation":"qualify","rationale":"The evidence limits the claim to some architectures."}'
+
+    service = KnowledgeService(Path("unused.db"))
+    claim = Claim(1, 1, "TLBs cache translations.", datetime(2026, 9, 8, tzinfo=UTC))
+    fragment = SourceFragment(2, 1, None, 0, "TLBs may cache translations depending on the architecture.", "lines 1-1")
+
+    proposal = ModelAssistedKnowledgeService(Model(), fallback=service).compare_evidence(claim, fragment)
+
+    assert proposal.operation is EnrichmentOperation.QUALIFY
+    assert proposal.rationale == "The evidence limits the claim to some architectures."

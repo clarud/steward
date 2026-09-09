@@ -1047,6 +1047,17 @@ single aggregate. It reads the existing SQLite index and never sends vault text
 to a model or changes canonical sources. Personal course cases should stay
 outside the repository unless the author explicitly wants to publish them.
 
+### Model-assisted knowledge enrichment
+
+`propose-knowledge-enrichment CLAIM_ID FRAGMENT_ID --model-assisted` gives the
+model exactly one existing claim and one selected source fragment. It can only
+classify their relationship as `confirm`, `extend`, `refine`, `qualify`, or
+`contradict`, with a short rationale. `ModelAssistedKnowledgeService` validates
+the JSON enum and rationale length; malformed or unavailable model output falls
+back to `KnowledgeService.compare_evidence()`. The result is a proposal printed
+for review, not a claim mutation. The CLI checks the source privacy rule before
+sending evidence to a cloud or local model.
+
 Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
 `retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
 fixture. `product_cases.yaml` adds reviewable cases for organization (including

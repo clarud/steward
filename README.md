@@ -306,6 +306,16 @@ cases:
 steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml
 ```
 
+## Propose knowledge enrichment
+
+Compare one existing claim with one source fragment without changing canonical
+knowledge. Add `--model-assisted` to use your configured model; only that one
+fragment is supplied, and invalid model JSON falls back to deterministic logic.
+
+```powershell
+steward propose-knowledge-enrichment CLAIM_ID FRAGMENT_ID --model-assisted
+```
+
 ## Set source privacy before model use
 
 ```powershell

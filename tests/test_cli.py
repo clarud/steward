@@ -14,6 +14,8 @@ from steward.graphs import OllamaToolCallingModel
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
 from steward.records import RecordService, TravelRecord
+from steward.knowledge import KnowledgeService
+from steward.extraction import ExtractionResult, SourceFragment
 from steward.storage import initialize_database
 
 
@@ -219,6 +221,25 @@ def test_cli_creates_a_pending_calendar_proposal_without_contacting_google(
         "Calendar proposal 1 pending for travel record 1. "
         "Review with `steward calendar-review-travel-event 1 accepted`.\n"
     )
+
+
+def test_cli_proposes_deterministic_knowledge_enrichment(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "TLBs may cache translations.", "lines 1-1"),))
+    )[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["propose-knowledge-enrichment", str(claim.id), str(fragment.id)])
+
+    assert capsys.readouterr().out.startswith("qualify\tclaim=1\tfragment=1\t")
 
 
 def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:

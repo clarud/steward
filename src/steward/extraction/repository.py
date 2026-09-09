@@ -111,6 +111,20 @@ class SourceFragmentRepository:
             for row in rows
         )
 
+    def get(self, fragment_id: int) -> SourceFragment | None:
+        """Return one fragment by stable ID for an evidence-bounded workflow."""
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, source_id, heading, ordinal, text, location FROM source_fragments WHERE id = ?",
+                (fragment_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return SourceFragment(
+            id=int(row[0]), source_id=int(row[1]), heading=str(row[2]) if row[2] is not None else None,
+            ordinal=int(row[3]), text=str(row[4]), location=str(row[5]),
+        )
+
     def search(
         self,
         query: str,

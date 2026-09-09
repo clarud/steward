@@ -81,6 +81,7 @@ from steward.knowledge_connector import KnowledgeConnector
 from steward.file_watching import run_file_watcher
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.knowledge import KnowledgeService
+from steward.knowledge_ai import ModelAssistedKnowledgeService
 from steward.tools import (
     ACTION_PROPOSAL_TOOL_DEFINITIONS,
     ActionProposalToolService,
@@ -240,6 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("workspaces", help="List workspaces")
     subcommands.add_parser("review-inbox-workspaces", help="Propose possible new workspaces from Inbox sources")
     subcommands.add_parser("connect-knowledge", help="Propose evidence-backed connections between concepts")
+    enrichment_parser = subcommands.add_parser(
+        "propose-knowledge-enrichment", help="Compare a claim with one evidence fragment without changing knowledge"
+    )
+    enrichment_parser.add_argument("claim_id", type=int)
+    enrichment_parser.add_argument("fragment_id", type=int)
+    enrichment_parser.add_argument("--model-assisted", action="store_true")
     privacy_parser = subcommands.add_parser("set-source-privacy", help="Set a source's model privacy rule")
     privacy_parser.add_argument("source_id", type=int)
     privacy_parser.add_argument("rule", choices=[rule.value for rule in PrivacyRule])
@@ -1151,6 +1158,39 @@ def main(argv: Sequence[str] | None = None) -> None:
                 f"fragments={','.join(str(fragment_id) for fragment_id in proposal.supporting_fragment_ids)}\t"
                 f"{proposal.rationale}"
             )
+        return
+
+    if arguments.command == "propose-knowledge-enrichment":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        knowledge = KnowledgeService(database_path)
+        claim = knowledge.get_claim(arguments.claim_id)
+        fragment = SourceFragmentRepository(database_path).get(arguments.fragment_id)
+        if claim is None:
+            print(f"Claim {arguments.claim_id} was not found.")
+            return
+        if fragment is None:
+            print(f"Fragment {arguments.fragment_id} was not found.")
+            return
+        if arguments.model_assisted:
+            model = _model_gateway_from_settings(settings, command="propose-knowledge-enrichment")
+            if model is None:
+                return
+            privacy = PrivacyService(database_path)
+            permitted = (
+                privacy.permits_local_model(fragment.source_id)
+                if settings.model_provider == "local"
+                else privacy.permits_external_model(fragment.source_id)
+            )
+            if not permitted:
+                print("This source's privacy policy does not permit the configured model.")
+                return
+            proposal = ModelAssistedKnowledgeService(model, fallback=knowledge).compare_evidence(claim, fragment)
+        else:
+            proposal = knowledge.compare_evidence(
+                claim, fragment_id=fragment.id or 0, evidence_text=fragment.text
+            )
+        print(f"{proposal.operation.value}\tclaim={proposal.claim_id}\tfragment={proposal.fragment_id}\t{proposal.rationale}")
         return
 
     if arguments.command in {"set-source-privacy", "source-privacy"}:
