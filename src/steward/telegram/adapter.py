@@ -364,6 +364,10 @@ def run_telegram_polling(
         callback_repository=callback_repository,
     )
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
+    # Keep this after every known command (especially /save). Unknown slash
+    # commands should receive Steward's safe help/clarification rather than
+    # being silently discarded by Telegram's command filter.
+    application.add_handler(MessageHandler(filters.COMMAND, adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))
     application.add_handler(CallbackQueryHandler(adapter.handle_callback))

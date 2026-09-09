@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+import steward.telegram.adapter as telegram_adapter
 
 from steward.events import IncomingEvent
 from steward.activity import ActivityService, ActivityType
@@ -207,6 +208,34 @@ def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())
+
+
+def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
+    class FakeApplication:
+        def __init__(self) -> None: self.handlers: list[object] = []
+        def add_handler(self, handler: object) -> None: self.handlers.append(handler)
+        def run_polling(self) -> None: pass
+
+    application = FakeApplication()
+
+    class FakeBuilder:
+        def token(self, _token: str): return self
+        def build(self) -> FakeApplication: return application
+
+    monkeypatch.setattr(telegram_adapter, "ApplicationBuilder", lambda: FakeBuilder())
+    monkeypatch.setattr(telegram_adapter, "CommandHandler", lambda command, _callback: ("command", command))
+    monkeypatch.setattr(telegram_adapter, "MessageHandler", lambda selected_filter, _callback: ("message", str(selected_filter)))
+    monkeypatch.setattr(telegram_adapter, "CallbackQueryHandler", lambda _callback: ("callback",))
+
+    run_telegram_polling("token", FakeEventHandler(), FakeEventHandler())
+
+    command_positions = [index for index, handler in enumerate(application.handlers) if handler == ("command", "save")]
+    fallback_positions = [
+        index for index, handler in enumerate(application.handlers)
+        if handler == ("message", str(telegram_adapter.filters.COMMAND))
+    ]
+    assert command_positions and fallback_positions
+    assert command_positions[0] < fallback_positions[0]
 
 
 def test_due_task_reminders_are_acknowledged_only_after_telegram_accepts_them(tmp_path: Path) -> None:

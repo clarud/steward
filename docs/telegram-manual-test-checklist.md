@@ -25,6 +25,8 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Send `/status`; verify it reports local counts and delivery health, never a
   token or message body.
 - Send `/help`; verify the listed commands are understandable.
+- Send an unknown command such as `/steward_typo`. Verify Steward replies with
+  a safe clarification/helpful next step instead of silently ignoring it.
 - Send `/sources`, `/inbox`, `/search OpenMP`, `/source 1`, `/workspaces`, and
   `/activity`; use pagination where it appears.
 - Ask a normal local question and a follow-up that uses a reference such as
