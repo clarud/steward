@@ -1958,7 +1958,22 @@ class StewardOrganizationApprovalApplication:
         if completed.get("status") != decision:
             raise RuntimeError("Organization approval did not reach a final status.")
         self._threads.finish(event.platform, event.chat_id, decision)
-        return f"Proposal {pending.proposal_id} {decision}."
+        proposal = self._proposals.get(pending.proposal_id)
+        if proposal is None:
+            return "Your organization decision was saved."
+        source = self._sources.get_by_id(proposal.source_id) if self._sources is not None else None
+        filename = source.path.name if source is not None else "the source"
+        if decision == "rejected":
+            return f"Did not organize {filename}."
+        if proposal.suggested_path is None:
+            return f"Kept {filename} in Inbox."
+        workspace = next(
+            (item for item in self._workspaces.list_all() if item.id == proposal.workspace_id), None
+        )
+        target = proposal.workspace_name or (
+            workspace.name if workspace is not None else "the selected destination"
+        )
+        return f"Moved {filename} to {target}."
 
     def list_proposals(self) -> str:
         """Show bounded, path-free organization history for Telegram review."""
