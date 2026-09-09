@@ -609,6 +609,11 @@ class StewardToolAgentApplication:
         return self._ask(question, event)
 
     def _ask(self, question: str, event: IncomingEvent) -> str | PresentedReply:
+        reply_text = (event.reply_text or "").strip()
+        if reply_text:
+            context = reply_text[:2_000]
+            suffix = "…" if len(reply_text) > len(context) else ""
+            question = f"Reply context (user-supplied): {context}{suffix}\n\nCurrent question: {question}"
         try:
             result = self._graph.invoke(
                 {

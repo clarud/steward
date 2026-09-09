@@ -468,6 +468,22 @@ def test_normal_question_prefers_the_configured_read_only_tool_agent() -> None:
     assert graph.calls == 1
 
 
+def test_tool_agent_uses_an_explicit_telegram_reply_as_bounded_context() -> None:
+    class ToolGraph:
+        def invoke(self, input, _config):
+            assert input["messages"][1].content == (
+                "Reply context (user-supplied): My CS3210 notes use OpenMP.\n\n"
+                "Current question: Explain this further."
+            )
+            return {"messages": [type("Final", (), {"content": "Explained."})()]}
+
+    response = StewardToolAgentApplication(ToolGraph()).handle_request(
+        make_event(text="Explain this further.", reply_text="My CS3210 notes use OpenMP.")
+    )
+
+    assert response == "Explained."
+
+
 def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)
