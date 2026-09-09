@@ -1376,6 +1376,40 @@ def main(argv: Sequence[str] | None = None) -> None:
         deterministic_organization = OrganizationService()
         model_organization = ModelAssistedOrganizationService(model_gateway, fallback=deterministic_organization)
         privacy = PrivacyService(database_path)
+        tool_agent_application = None
+        tool_model = _tool_calling_model_from_settings(settings)
+        if tool_model is not None:
+            tool_checkpoint_connection = sqlite3.connect(
+                settings.data_dir / "checkpoints.db", check_same_thread=False
+            )
+            tool_checkpointer = SqliteSaver(tool_checkpoint_connection)
+            tool_checkpointer.setup()
+            tool_service = ReadOnlyToolService(
+                sources,
+                fragments,
+                LexicalSearchService(sources, fragments),
+                KnowledgeService(database_path),
+                RecordService(database_path),
+                WorkspaceRepository(database_path),
+                activity,
+                privacy,
+            )
+            telegram_tools = build_read_only_tools(tool_service)
+            telegram_definitions = list(READ_ONLY_TOOL_DEFINITIONS)
+            calendar_token = settings.data_dir / "config" / "google-calendar-token.json"
+            if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") and calendar_token.is_file():
+                telegram_tools.extend(
+                    build_calendar_read_tools(CalendarReadToolService(_calendar_reader_factory(settings)))
+                )
+                telegram_definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
+            tool_agent_application = StewardToolAgentApplication(
+                build_tool_agent_graph(
+                    tool_model,
+                    telegram_tools,
+                    checkpointer=tool_checkpointer,
+                    tool_policy=ToolPolicy(telegram_definitions),
+                )
+            )
 
         def propose_captured_source_organization(source, workspaces):
             """Use a permitted model only to make an explicit organization proposal."""
