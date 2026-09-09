@@ -1629,6 +1629,7 @@ class StewardProvisionalIntakeApplication:
             len(text) >= 280
             or text.count("\n") >= 2
             or normalized.startswith(explicit_prefixes)
+            or normalized.startswith(("https://", "http://"))
             or (len(text) >= 24 and any(signal in normalized for signal in personal_signals))
         )
 

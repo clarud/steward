@@ -323,6 +323,8 @@ class ProvisionalIntakeService:
     @staticmethod
     def _classify_text(text: str) -> tuple[str, str]:
         normalized = text.casefold()
+        if normalized.startswith(("https://", "http://")):
+            return "reference", "Likely shared link or reference. No content was sent to a model."
         if any(token in normalized for token in ("deadline", "todo", "task", "remind me")):
             return "task", "Likely task or deadline. No content was sent to a model."
         if any(token in normalized for token in ("flight", "receipt", "invoice", "booking", "warranty")):

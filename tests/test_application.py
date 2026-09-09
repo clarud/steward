@@ -1696,6 +1696,30 @@ def test_short_personal_record_text_is_staged_without_being_saved(tmp_path: Path
     assert sources.list_all() == []
 
 
+def test_shared_link_is_staged_without_fetching_or_saving(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            )
+        ),
+    )
+
+    response = application.handle(make_event(text="https://example.test/useful-paper"))
+
+    assert isinstance(response, PresentedReply)
+    assert "Type: reference" in response.text
+    assert "No content was sent to a model" in response.text
+    assert sources.list_all() == []
+
+
 def test_provisional_intake_failure_does_not_disclose_a_local_staging_path() -> None:
     class UnavailableService:
         def accept(self, _intake_id: int, _event: IncomingEvent) -> CaptureResult:
