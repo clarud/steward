@@ -6,6 +6,7 @@ import pytest
 from steward.events import IncomingEvent
 from steward.storage import initialize_database
 from steward.telegram import (
+    TelegramCallbackRepository,
     TelegramAdapter,
     TelegramUpdateDeliveryRepository,
     normalize_telegram_update,
@@ -33,6 +34,29 @@ class FakeUpdate:
     def __init__(self, message: FakeMessage) -> None:
         self.update_id = 42
         self.effective_message = message
+
+
+class FakeCallbackMessage(FakeMessage):
+    async def reply_text(self, text: str, **kwargs) -> None:
+        del kwargs
+        self.replies.append(text)
+
+
+class FakeCallbackQuery:
+    def __init__(self, message: FakeCallbackMessage, data: str) -> None:
+        self.id = "callback-42"
+        self.message = message
+        self.data = data
+        self.answered = False
+
+    async def answer(self) -> None:
+        self.answered = True
+
+
+class FakeCallbackUpdate(FakeUpdate):
+    def __init__(self, message: FakeCallbackMessage, data: str) -> None:
+        super().__init__(message)
+        self.callback_query = FakeCallbackQuery(message, data)
 
 
 class FakeEventHandler:
@@ -82,6 +106,39 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
     assert handler.events[0].id == "telegram:42"
     assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_adapter_resolves_a_chat_scoped_callback_to_a_local_command(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    callbacks = TelegramCallbackRepository(database_path)
+    token = callbacks.create("100", "/inbox 2").token
+    message = FakeCallbackMessage()
+    update = FakeCallbackUpdate(message, token)
+    handler = FakeEventHandler()
+
+    asyncio.run(
+        TelegramAdapter(handler, callback_repository=callbacks).handle_callback(update, None)  # type: ignore[arg-type]
+    )
+
+    assert update.callback_query.answered is True
+    assert handler.events[0].text == "/inbox 2"
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_adapter_rejects_an_unknown_or_expired_callback(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    message = FakeCallbackMessage()
+    update = FakeCallbackUpdate(message, "not-a-local-token")
+
+    asyncio.run(
+        TelegramAdapter(
+            FakeEventHandler(), callback_repository=TelegramCallbackRepository(database_path)
+        ).handle_callback(update, None)  # type: ignore[arg-type]
+    )
+
+    assert message.replies == ["This Steward action is invalid or has expired. Send /help."]
 
 
 def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:

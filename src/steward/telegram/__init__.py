@@ -11,6 +11,7 @@ from steward.telegram.delivery import (
     TelegramDeliveryHistoryEvent,
     TelegramUpdateDeliveryRepository,
 )
+from steward.telegram.callbacks import TelegramCallback, TelegramCallbackRepository
 from steward.events import IncomingEvent
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
     "TelegramDelivery",
     "TelegramDeadLetter",
     "TelegramDeliveryHistoryEvent",
+    "TelegramCallback",
+    "TelegramCallbackRepository",
     "normalize_telegram_update",
     "run_telegram_polling",
 ]

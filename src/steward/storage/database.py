@@ -36,6 +36,7 @@ RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION = 27
 WARRANTY_RECORDS_SCHEMA_VERSION = 28
 WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
 KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
+TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -287,6 +288,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             created_at TEXT NOT NULL,
             reviewed_at TEXT,
             UNIQUE (claim_id, fragment_id, operation, rationale)
+        )
+        """,
+    ),
+    (
+        TELEGRAM_CALLBACKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_callbacks (
+            token TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL,
+            command TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )
         """,
     ),

@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from steward.events import IncomingEvent
+from steward.presentation import PresentedReply
+from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
 
 
 class IncomingEventHandler(Protocol):
     """Application boundary invoked after a platform update is normalized."""
 
-    def handle(self, event: IncomingEvent) -> str: ...
+    def handle(self, event: IncomingEvent) -> str | PresentedReply: ...
 
 
 class IncomingFileEventHandler(IncomingEventHandler, Protocol):
@@ -64,10 +67,12 @@ class TelegramAdapter:
         *,
         allowed_chat_ids: frozenset[str] = frozenset(),
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
+        callback_repository: TelegramCallbackRepository | None = None,
     ) -> None:
         self._event_handler = event_handler
         self._allowed_chat_ids = allowed_chat_ids
         self._deliveries = delivery_repository
+        self._callbacks = callback_repository
 
     async def handle_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -86,7 +91,7 @@ class TelegramAdapter:
             return
         try:
             response = await asyncio.to_thread(self._event_handler.handle, event)
-            await message.reply_text(response)
+            await self._reply(message, event, response)
         except BaseException:
             self._release(event)
             raise
@@ -159,11 +164,66 @@ class TelegramAdapter:
                 response = await asyncio.to_thread(
                     self._event_handler.handle_file, event, download_path
                 )
-            await message.reply_text(response)
+            await self._reply(message, event, response)
         except BaseException:
             self._release(event)
             raise
         self._mark_delivered(event)
+
+    async def handle_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Resolve a durable button token into its locally stored command."""
+        del context
+        query = update.callback_query
+        if query is None or query.message is None or not query.data:
+            return
+        await query.answer()
+        message = query.message
+        event = normalize_telegram_update(update)
+        if not self._is_allowed(event):
+            await message.reply_text("This Steward bot is not authorized for this chat.")
+            return
+        if self._callbacks is None:
+            await message.reply_text("This Steward action is no longer available. Send /help.")
+            return
+        callback = self._callbacks.resolve(query.data, event.chat_id)
+        if callback is None:
+            await message.reply_text("This Steward action is invalid or has expired. Send /help.")
+            return
+        callback_event = replace(
+            event,
+            id=f"telegram:callback:{query.id}",
+            text=callback.command,
+        )
+        if not self._claim(callback_event):
+            return
+        try:
+            response = await asyncio.to_thread(self._event_handler.handle, callback_event)
+            await self._reply(message, callback_event, response)
+        except BaseException:
+            self._release(callback_event)
+            raise
+        self._mark_delivered(callback_event)
+
+    async def _reply(self, message: object, event: IncomingEvent, response: object) -> None:
+        """Render a plain or interactive application reply without exposing commands."""
+        if not isinstance(response, PresentedReply):
+            await message.reply_text(str(response))  # type: ignore[attr-defined]
+            return
+        if not response.actions or self._callbacks is None:
+            await message.reply_text(response.text)  # type: ignore[attr-defined]
+            return
+        buttons = [
+            InlineKeyboardButton(
+                action.label,
+                callback_data=self._callbacks.create(event.chat_id, action.command).token,
+            )
+            for action in response.actions
+        ]
+        await message.reply_text(  # type: ignore[attr-defined]
+            response.text, reply_markup=InlineKeyboardMarkup([buttons])
+        )
 
     def _is_allowed(self, event: IncomingEvent) -> bool:
         return not self._allowed_chat_ids or event.chat_id in self._allowed_chat_ids
@@ -198,6 +258,7 @@ def run_telegram_polling(
     *,
     allowed_chat_ids: frozenset[str] = frozenset(),
     delivery_repository: TelegramUpdateDeliveryRepository | None = None,
+    callback_repository: TelegramCallbackRepository | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
 
@@ -209,6 +270,7 @@ def run_telegram_polling(
         event_handler,
         allowed_chat_ids=allowed_chat_ids,
         delivery_repository=delivery_repository,
+        callback_repository=callback_repository,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
@@ -235,4 +297,5 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))
+    application.add_handler(CallbackQueryHandler(adapter.handle_callback))
     application.run_polling()

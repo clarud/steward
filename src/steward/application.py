@@ -24,6 +24,7 @@ from steward.calendar import CalendarEventProposalService, CalendarWriteService
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
+from steward.presentation import PresentedReply, ReplyAction
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -56,7 +57,7 @@ class StewardReadApplication:
         self._activity = activity_service
         self._inbox_dir = inbox_dir.resolve()
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
         command, _, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0].casefold()
@@ -107,11 +108,11 @@ class StewardReadApplication:
             "Use /help for available Telegram interactions."
         )
 
-    def inbox(self, page: int) -> str:
+    def inbox(self, page: int) -> str | PresentedReply:
         sources = [source for source in self._sources.list_active() if self._is_inbox(source.path)]
         return self._source_list("Inbox", sources, page)
 
-    def sources(self, page: int) -> str:
+    def sources(self, page: int) -> str | PresentedReply:
         return self._source_list("Registered sources", self._sources.list_all(), page)
 
     def source(self, argument: str) -> str:
@@ -165,7 +166,9 @@ class StewardReadApplication:
             for hit in hits
         )
 
-    def _source_list(self, title: str, sources: list[Source], page: int) -> str:
+    def _source_list(
+        self, title: str, sources: list[Source], page: int
+    ) -> str | PresentedReply:
         if not sources:
             return f"{title}: none."
         start = (page - 1) * self._PAGE_SIZE
@@ -175,9 +178,14 @@ class StewardReadApplication:
         pages = (len(sources) + self._PAGE_SIZE - 1) // self._PAGE_SIZE
         lines = [f"{title} (page {page}/{pages}):"]
         lines.extend(f"{source.id}: {source.path.name} ({source.source_type.value}, {source.status.value})" for source in selected)
+        command = "/inbox" if title == "Inbox" else "/sources"
+        actions: list[ReplyAction] = []
+        if page > 1:
+            actions.append(ReplyAction("Back", f"{command} {page - 1}"))
         if page < pages:
-            lines.append(f"More: /{'inbox' if title == 'Inbox' else 'sources'} {page + 1}")
-        return "\n".join(lines)
+            actions.append(ReplyAction("Next", f"{command} {page + 1}"))
+        text = "\n".join(lines)
+        return PresentedReply(text, tuple(actions)) if actions else text
 
     @staticmethod
     def _page(argument: str) -> int:
@@ -581,8 +589,10 @@ class StewardEventApplication:
         if decision.primary_intent is Intent.ORGANIZE:
             if self._read_application is None:
                 return "Inbox organization is not configured for this Steward process."
+            inbox = self._read_application.inbox(1)
+            inbox_text = inbox.text if isinstance(inbox, PresentedReply) else inbox
             return (
-                f"{self._read_application.inbox(1)}\n\n"
+                f"{inbox_text}\n\n"
                 "I can inspect these sources now. Broad Inbox organization proposals "
                 "are the next safe workflow and will always require your approval before a move."
             )

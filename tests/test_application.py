@@ -32,6 +32,7 @@ from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository
 from steward.retrieval import LexicalSearchService
+from steward.presentation import PresentedReply
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -178,6 +179,28 @@ def test_event_application_gives_helpful_unknown_response() -> None:
     ).handle(make_event(text="please do a mysterious thing"))
 
     assert "Try /help" in response
+
+
+def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    for identifier in range(11):
+        path = tmp_path / f"note-{identifier}.md"
+        path.write_text("note", encoding="utf-8")
+        sources.add(Source(None, path, f"{identifier:064x}", SourceType.MARKDOWN, 4, now, now, now))
+    fragments = SourceFragmentRepository(database_path)
+    reads = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database_path),
+        ActivityService(database_path), tmp_path / "inbox"
+    )
+
+    response = reads.sources(1)
+
+    assert isinstance(response, PresentedReply)
+    assert response.actions[0].label == "Next"
+    assert response.actions[0].command == "/sources 2"
 
 
 def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:
