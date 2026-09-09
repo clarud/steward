@@ -1504,7 +1504,27 @@ class StewardPrivacyApplication:
         previous_rule = self._privacy.rule_for(source_id)
         if self._proposals is not None:
             payload = {"source_id": str(source_id), "rule": rule.value}
-            proposal = self._proposals.find_pending(self.SET_SOURCE_PRIVACY, payload)
+            pending_for_source = next(
+                (
+                    item for item in self._proposals.list_all()
+                    if item.status == "pending"
+                    and item.action_type == self.SET_SOURCE_PRIVACY
+                    and item.payload.get("source_id") == str(source_id)
+                ),
+                None,
+            )
+            if pending_for_source is not None and pending_for_source.payload != payload:
+                return PresentedReply(
+                    f"Source {source_id} already has a pending privacy change to "
+                    f"{pending_for_source.payload['rule']}. Review or reject that change before proposing another.",
+                    (
+                        ReplyAction("Review pending change", f"/review action {pending_for_source.id}"),
+                        ReplyAction("Home", "/home"),
+                    ),
+                    title="Privacy change pending",
+                    icon="🔒",
+                )
+            proposal = pending_for_source or self._proposals.find_pending(self.SET_SOURCE_PRIVACY, payload)
             if proposal is None:
                 proposal = self._proposals.add(self.SET_SOURCE_PRIVACY, payload)
                 if self._activity is not None:

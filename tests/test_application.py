@@ -852,6 +852,11 @@ def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_
     assert privacy.rule_for(source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
     assert proposals.get(1).status == "pending"
 
+    conflicting = application.handle(make_event(text=f"/set_privacy {source.id} local_model_only"))
+    assert isinstance(conflicting, PresentedReply)
+    assert conflicting.title == "Privacy change pending"
+    assert len(proposals.list_all()) == 1
+
     accepted = application.handle(make_event(text="/approve_action 1"))
 
     assert isinstance(accepted, PresentedReply)
