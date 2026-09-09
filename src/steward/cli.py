@@ -1072,6 +1072,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 review_proposal=approval.review,
             ),
             proposal_builder=propose_captured_source_organization,
+            source_repository=sources,
+            inbox_dir=settings.inbox_dir,
         )
         application = StewardEventApplication(
             StewardQuestionApplication(graph),

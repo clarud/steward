@@ -456,6 +456,8 @@ class StewardOrganizationApprovalApplication:
         activity_service: ActivityService,
         approval_graph: OrganizationApprovalGraph,
         proposal_builder: Callable[[Source, list[Workspace]], OrganizationProposal] | None = None,
+        source_repository: SourceRepository | None = None,
+        inbox_dir: Path | None = None,
     ) -> None:
         self._proposals = proposal_repository
         self._workspaces = workspace_repository
@@ -463,8 +465,10 @@ class StewardOrganizationApprovalApplication:
         self._activity = activity_service
         self._graph = approval_graph
         self._proposal_builder = proposal_builder
+        self._sources = source_repository
+        self._inbox_dir = inbox_dir.resolve() if inbox_dir is not None else None
 
-    def begin(self, event: IncomingEvent, result: CaptureResult) -> str | None:
+    def begin(self, event: IncomingEvent, result: CaptureResult) -> str | PresentedReply | None:
         """Persist a proposal and pause its graph before any file mutation."""
 
         if result.duplicate:
@@ -498,10 +502,14 @@ class StewardOrganizationApprovalApplication:
         if "__interrupt__" not in paused:
             raise RuntimeError("Organization approval graph did not pause for a decision.")
         destination = str(proposal.suggested_path) if proposal.suggested_path else "Inbox"
-        return (
+        return PresentedReply(
             f"Organization proposal {proposal_id}: {proposal.rationale}\n"
             f"Suggested destination: {destination}\n\n"
-            "Reply `accept` or `reject`."
+            "Accepting is the only action that may move this original file.",
+            (
+                ReplyAction("Accept", f"/organization_accept {proposal_id}"),
+                ReplyAction("Reject", f"/organization_reject {proposal_id}"),
+            ),
         )
 
     def handle_decision(self, event: IncomingEvent) -> str | None:
@@ -511,7 +519,12 @@ class StewardOrganizationApprovalApplication:
         if pending is None:
             return None
         response = (event.text or "").strip().casefold()
-        if response in {"accept", "accepted"}:
+        command, _, argument = response.partition(" ")
+        if command == "/organization_accept" and argument.isdigit() and int(argument) == pending.proposal_id:
+            decision = "accepted"
+        elif command == "/organization_reject" and argument.isdigit() and int(argument) == pending.proposal_id:
+            decision = "rejected"
+        elif response in {"accept", "accepted"}:
             decision = "accepted"
         elif response in {"reject", "rejected"}:
             decision = "rejected"
@@ -530,6 +543,34 @@ class StewardOrganizationApprovalApplication:
             raise RuntimeError("Organization approval did not reach a final status.")
         self._threads.finish(event.platform, event.chat_id, decision)
         return f"Proposal {pending.proposal_id} {decision}."
+
+    def begin_inbox_review(self, event: IncomingEvent) -> str | PresentedReply:
+        """Create one durable, approval-paused organization proposal from Inbox."""
+        if self._sources is None or self._inbox_dir is None:
+            return "Inbox organization is not configured for this Steward process."
+        inbox_sources = [
+            source for source in self._sources.list_active() if self._is_inbox(source.path)
+        ]
+        if not inbox_sources:
+            return "Your Inbox has no active registered sources to organize."
+        for source in inbox_sources:
+            response = self.begin(event, CaptureResult(source, duplicate=False))
+            response_text = response.text if isinstance(response, PresentedReply) else response
+            if response_text != "No confident organization match was found, so the source remains in Inbox.":
+                return response or "No Inbox organization proposal was created."
+        return (
+            f"I inspected {len(inbox_sources)} Inbox source(s), but found no confident "
+            "workspace match. They remain in Inbox."
+        )
+
+    def _is_inbox(self, path: Path) -> bool:
+        if self._inbox_dir is None:
+            return False
+        try:
+            path.resolve().relative_to(self._inbox_dir)
+        except ValueError:
+            return False
+        return True
 
 
 class StewardActionProposalApplication:
@@ -682,15 +723,11 @@ class StewardEventApplication:
                 return self._read_application.activity("")
             return "Tell me whether you want to inspect your Inbox, a source ID, workspaces, or activity."
         if decision.primary_intent is Intent.ORGANIZE:
-            if self._read_application is None:
-                return "Inbox organization is not configured for this Steward process."
-            inbox = self._read_application.inbox(1)
-            inbox_text = inbox.text if isinstance(inbox, PresentedReply) else inbox
-            return (
-                f"{inbox_text}\n\n"
-                "I can inspect these sources now. Broad Inbox organization proposals "
-                "are the next safe workflow and will always require your approval before a move."
-            )
+            if self._organization_approval_application is not None:
+                return self._organization_approval_application.begin_inbox_review(event)
+            if self._read_application is not None:
+                return self._read_application.inbox(1)
+            return "Inbox organization is not configured for this Steward process."
         if decision.primary_intent is Intent.CREATE_WORKSPACE:
             if self._action_proposal_application is None:
                 return "Workspace proposals are not configured for this Steward process."
@@ -735,6 +772,8 @@ class StewardEventApplication:
         if self._organization_approval_application is None:
             return saved
         proposal = self._organization_approval_application.begin(event, result)
+        if isinstance(proposal, PresentedReply):
+            return PresentedReply(f"{saved}\n\n{proposal.text}", proposal.actions)
         return f"{saved}\n\n{proposal}" if proposal is not None else saved
 
     @staticmethod

@@ -170,7 +170,7 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     assert "openmp.md" in application.handle(make_event(text="what is in my inbox"))
     assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
     assert "Search results" in application.handle(make_event(text="find my notes on OpenMP"))
-    assert "Broad Inbox organization proposals" in application.handle(
+    assert "Inbox" in application.handle(
         make_event(text="organize my inbox")
     )
     assert "Workspace proposal 1" in application.handle(
@@ -346,8 +346,11 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
 
     paused = application.handle_file(capture_event, uploaded)
 
-    assert "Organization proposal 1" in paused
-    assert "Reply `accept` or `reject`" in paused
+    assert isinstance(paused, PresentedReply)
+    assert "Organization proposal 1" in paused.text
+    assert [action.command for action in paused.actions] == [
+        "/organization_accept 1", "/organization_reject 1"
+    ]
     assert not (tmp_path / "vault" / "projects" / "Steward").exists()
 
     accepted = application.handle(
@@ -358,13 +361,50 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
             "12",
             None,
             datetime(2026, 9, 8, tzinfo=UTC),
-            "accept",
+            "/organization_accept 1",
         )
     )
 
     assert accepted == "Proposal 1 accepted."
     assert (tmp_path / "vault" / "projects" / "Steward" / "telegram-100-11-Steward-notes.md").is_file()
     assert proposals.get(1).status == "accepted"
+
+
+def test_organize_inbox_creates_one_durable_proposal_before_any_move(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    inbox = tmp_path / "vault" / "inbox"
+    inbox.mkdir(parents=True)
+    source_path = inbox / "CS3210-openmp.md"
+    source_path.write_text("notes", encoding="utf-8")
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    sources = SourceRepository(database_path)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 5, now, now, now))
+    workspaces = WorkspaceRepository(database_path)
+    workspaces.create("CS3210")
+    proposals = OrganizationProposalRepository(database_path)
+    activity = ActivityService(database_path)
+    organization = StewardOrganizationApprovalApplication(
+        proposals,
+        workspaces,
+        OrganizationApprovalThreadRepository(database_path),
+        activity,
+        type("Graph", (), {"invoke": lambda *_args, **_kwargs: {"__interrupt__": ()}})(),
+        source_repository=sources,
+        inbox_dir=inbox,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        organization_approval_application=organization,
+    )
+
+    response = application.handle(make_event(text="organize my inbox"))
+
+    assert isinstance(response, PresentedReply)
+    assert "Organization proposal 1" in response.text
+    assert proposals.get(1).source_id == source.id
+    assert source_path.is_file()
 
 
 def test_pending_telegram_approval_does_not_treat_other_text_as_a_question(tmp_path: Path) -> None:
@@ -462,7 +502,8 @@ def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(t
 
     assert captured["source"] == source
     assert captured["workspaces"] == [workspace]
-    assert "Organization proposal 1" in response
+    assert isinstance(response, PresentedReply)
+    assert "Organization proposal 1" in response.text
     assert proposals.get(1).rationale == "The extracted notes discuss CS3210."
 
 
