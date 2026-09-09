@@ -204,6 +204,18 @@ returns the existing linked event rather than creating a duplicate.
 steward calendar-create-travel-event 1
 ```
 
+For a reviewable two-step action instead, first create a durable proposal, then
+explicitly accept it. Rejecting it never contacts Google Calendar.
+
+```powershell
+steward calendar-propose-travel-event 1
+steward calendar-review-travel-event 1 accepted
+```
+
+With `steward agent --include-calendar`, the model can create this same pending
+proposal only when you explicitly ask to add a saved travel record. It receives
+neither a direct Calendar write tool nor OAuth credentials as a tool argument.
+
 ## Add and inspect source-backed travel references
 
 Keep additional booking identifiers or links traceable to an extracted source

@@ -8,6 +8,11 @@ from steward.tools.write_proposals import (
     ActionProposalToolService,
     build_action_proposal_tools,
 )
+from steward.tools.calendar_write_proposals import (
+    CALENDAR_PROPOSAL_TOOL_DEFINITIONS,
+    CalendarProposalToolService,
+    build_calendar_proposal_tools,
+)
 
 __all__ = [
     "ReadOnlyToolService",
@@ -21,4 +26,7 @@ __all__ = [
     "ACTION_PROPOSAL_TOOL_DEFINITIONS",
     "ActionProposalToolService",
     "build_action_proposal_tools",
+    "CALENDAR_PROPOSAL_TOOL_DEFINITIONS",
+    "CalendarProposalToolService",
+    "build_calendar_proposal_tools",
 ]

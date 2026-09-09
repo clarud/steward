@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 import pytest
 
 from steward.activity import ActivityService, ActivityType
-from steward.calendar import CalendarService, CalendarWriteService
+from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
+from steward.action_proposals import ActionProposalRepository
 from steward.records import RecordService, TravelRecord
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
@@ -137,3 +138,39 @@ def test_calendar_write_recovers_remote_event_after_interrupted_local_link(tmp_p
     assert not hasattr(client.events_api, "insert_kwargs")
     assert client.events_api.list_kwargs["privateExtendedProperty"] == "steward_idempotency_key=travel-record:1"
     assert [event.event_type for event in ActivityService(database).list_recent()] == [ActivityType.CALENDAR_EVENT_CREATED]
+
+
+def test_calendar_event_proposal_requires_a_separate_acceptance_before_writing(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    record = RecordService(database).create_travel_record(
+        TravelRecord(
+            None, source.id or 0, "SQ638", "Singapore", "Tokyo",
+            datetime(2026, 10, 1, 9, tzinfo=UTC),
+            datetime(2026, 10, 1, 17, tzinfo=UTC), "ABC",
+        )
+    )
+    activity = ActivityService(database)
+    proposals = CalendarEventProposalService(
+        ActionProposalRepository(database), RecordService(database), activity
+    )
+
+    pending = proposals.propose_travel_event(record.id or 0)
+
+    assert pending.status == "pending"
+    with pytest.raises(ValueError, match="authorization"):
+        proposals.review(pending.id or 0, "accepted")
+    assert ActionProposalRepository(database).get(pending.id or 0).status == "pending"
+
+    writer = CalendarWriteService(CalendarService(FakeCalendarClient()), database, activity)
+    accepted = proposals.review(pending.id or 0, "accepted", writer)
+
+    assert accepted.status == "accepted"
+    assert [event.event_type for event in activity.list_recent()] == [
+        ActivityType.ACTION_ACCEPTED,
+        ActivityType.CALENDAR_EVENT_CREATED,
+        ActivityType.ACTION_PROPOSED,
+    ]

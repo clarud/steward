@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from steward.cli import (
     _configure_console_encoding,
     _is_calendar_question,
+    _is_calendar_write_request,
     _tool_calling_model_from_settings,
     build_parser,
     main,
@@ -12,6 +13,7 @@ from steward.config import Settings
 from steward.graphs import OllamaToolCallingModel
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
+from steward.records import RecordService, TravelRecord
 from steward.storage import initialize_database
 
 
@@ -198,6 +200,27 @@ def test_cli_calendar_search_explains_oauth_client_setup(monkeypatch, capsys) ->
     )
 
 
+def test_cli_creates_a_pending_calendar_proposal_without_contacting_google(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "flight.pdf", "a" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    record = RecordService(database).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", datetime(2026, 10, 1, 9, tzinfo=UTC), datetime(2026, 10, 1, 17, tzinfo=UTC), None)
+    )
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["calendar-propose-travel-event", str(record.id)])
+
+    assert capsys.readouterr().out == (
+        "Calendar proposal 1 pending for travel record 1. "
+        "Review with `steward calendar-review-travel-event 1 accepted`.\n"
+    )
+
+
 def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
 
@@ -250,6 +273,8 @@ def test_calendar_question_routing_only_matches_unambiguous_schedule_requests() 
     assert _is_calendar_question("Do I have anything scheduled tomorrow?") is True
     assert _is_calendar_question("Explain calendar queues in operating systems") is False
     assert _is_calendar_question("What is a queueing model?") is False
+    assert _is_calendar_write_request("Put flight record 1 on my calendar") is True
+    assert _is_calendar_write_request("What is on my calendar?") is False
 
 
 def test_cli_configures_a_non_utf8_console_for_utf8(monkeypatch) -> None:

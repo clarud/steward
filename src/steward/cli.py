@@ -59,7 +59,13 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.records import RecordService
-from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
+from steward.calendar import (
+    CalendarEventProposalService,
+    CalendarService,
+    CalendarWriteService,
+    GOOGLE_CALENDAR_EVENTS_SCOPE,
+    authorize_google_calendar,
+)
 from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
 from steward.gmail import GmailService, authorize_gmail
 from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
@@ -78,10 +84,13 @@ from steward.knowledge import KnowledgeService
 from steward.tools import (
     ACTION_PROPOSAL_TOOL_DEFINITIONS,
     ActionProposalToolService,
+    CALENDAR_PROPOSAL_TOOL_DEFINITIONS,
     CalendarReadToolService,
+    CalendarProposalToolService,
     ReadOnlyToolService,
     ToolPolicy,
     build_action_proposal_tools,
+    build_calendar_proposal_tools,
     build_calendar_read_tools,
     build_read_only_tools,
 )
@@ -102,6 +111,15 @@ def _is_calendar_question(question: str) -> bool:
             r"\b(calendar|schedule[ds]?|upcoming|coming up|today|tomorrow|this week)\b",
             normalized,
         )
+    )
+
+
+def _is_calendar_write_request(question: str) -> bool:
+    """Keep schedule questions read-only unless the user asks for a concrete write."""
+
+    return bool(
+        re.search(r"\b(create|add|put|schedule)\b", question.casefold())
+        and re.search(r"\b(calendar|event|flight)\b", question.casefold())
     )
 
 
@@ -285,6 +303,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     calendar_create.add_argument("record_id", type=int)
     calendar_create.add_argument("--client-secrets", type=Path)
+    calendar_propose = subcommands.add_parser(
+        "calendar-propose-travel-event", help="Create a pending Calendar-event proposal for a travel record"
+    )
+    calendar_propose.add_argument("record_id", type=int)
+    calendar_review = subcommands.add_parser(
+        "calendar-review-travel-event", help="Accept or reject a pending Calendar-event proposal"
+    )
+    calendar_review.add_argument("proposal_id", type=int)
+    calendar_review.add_argument("status", choices=("accepted", "rejected"))
+    calendar_review.add_argument("--client-secrets", type=Path)
     drive_authorize = subcommands.add_parser("drive-authorize", help="Authorize local read-only Google Drive access")
     drive_authorize.add_argument("client_secrets", type=Path, help="Google OAuth desktop-client JSON file")
     drive_authorize.add_argument("--token-file", type=Path)
@@ -637,7 +665,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         tools.extend(build_action_proposal_tools(ActionProposalToolService(action_proposals)))
         definitions.extend(ACTION_PROPOSAL_TOOL_DEFINITIONS)
-        calendar_only = arguments.include_calendar and _is_calendar_question(arguments.question)
+        calendar_only = (
+            arguments.include_calendar
+            and _is_calendar_question(arguments.question)
+            and not _is_calendar_write_request(arguments.question)
+        )
         if arguments.include_calendar:
             client_secrets = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
             if not client_secrets:
@@ -653,6 +685,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             else:
                 tools.extend(calendar_tools)
                 definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
+                calendar_proposals = CalendarEventProposalService(
+                    ActionProposalRepository(database_path),
+                    RecordService(database_path),
+                    ActivityService(database_path),
+                )
+                tools.extend(build_calendar_proposal_tools(CalendarProposalToolService(calendar_proposals)))
+                definitions.extend(CALENDAR_PROPOSAL_TOOL_DEFINITIONS)
         graph = build_tool_agent_graph(
             tool_calling_model,
             tools,
@@ -672,7 +711,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                             "When a tool result is sufficient, answer immediately. Never repeat a tool call with "
                             "the same arguments, and do not claim a result that a tool did not provide. "
                             "If the user explicitly asks to create a workspace, use propose_create_workspace. "
-                            "It creates only a pending proposal: say that explicit approval is still required."
+                            "It creates only a pending proposal: say that explicit approval is still required. "
+                            "For an explicit request to put a saved travel record on Calendar, use "
+                            "propose_create_travel_calendar_event. It never creates the event; give the "
+                            "returned review command to the user."
                         )
                     ),
                     HumanMessage(arguments.question),
@@ -925,6 +967,60 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         event = CalendarWriteService(calendar, database_path, ActivityService(database_path)).create_travel_event(record)
         print(f"Calendar event {event.id} created or already linked.")
+        return
+
+    if arguments.command == "calendar-propose-travel-event":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            proposal = CalendarEventProposalService(
+                ActionProposalRepository(database_path),
+                RecordService(database_path),
+                ActivityService(database_path),
+            ).propose_travel_event(arguments.record_id)
+        except ValueError as error:
+            print(str(error))
+            return
+        print(
+            f"Calendar proposal {proposal.id} pending for travel record {arguments.record_id}. "
+            f"Review with `steward calendar-review-travel-event {proposal.id} accepted`."
+        )
+        return
+
+    if arguments.command == "calendar-review-travel-event":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        proposals = CalendarEventProposalService(
+            ActionProposalRepository(database_path),
+            RecordService(database_path),
+            ActivityService(database_path),
+        )
+        writer = None
+        if arguments.status == "accepted":
+            client_secrets = arguments.client_secrets or (
+                Path(os.environ["STEWARD_GOOGLE_CLIENT_SECRETS"])
+                if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") else None
+            )
+            if client_secrets is None:
+                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before writing Calendar.")
+                return
+            writer = CalendarWriteService(
+                CalendarService(
+                    authorize_google_calendar(
+                        client_secrets,
+                        settings.data_dir / "config" / "google-calendar-token.json",
+                        scopes=(GOOGLE_CALENDAR_EVENTS_SCOPE,),
+                    )
+                ),
+                database_path,
+                ActivityService(database_path),
+            )
+        try:
+            proposal = proposals.review(arguments.proposal_id, arguments.status, writer)
+        except ValueError as error:
+            print(str(error))
+            return
+        print(f"Calendar proposal {proposal.id} {proposal.status}.")
         return
 
     if arguments.command in {"create-workspace", "workspaces", "link-source"}:

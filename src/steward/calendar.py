@@ -9,7 +9,9 @@ from typing import Any, Protocol
 import sqlite3
 
 from steward.activity import ActivityService, ActivityType
+from steward.action_proposals import ActionProposal, ActionProposalRepository
 from steward.records import TravelRecord
+from steward.records import RecordService
 
 
 GOOGLE_CALENDAR_READONLY_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
@@ -232,3 +234,81 @@ class CalendarWriteService:
                 "SELECT external_event_id FROM calendar_event_links WHERE idempotency_key = ?", (key,)
             ).fetchone()
         return str(row[0]) if row else None
+
+
+class CalendarEventProposalService:
+    """Persist Calendar requests before an explicit approval can create an event."""
+
+    CREATE_TRAVEL_EVENT = "create_calendar_travel_event"
+
+    def __init__(
+        self,
+        proposals: ActionProposalRepository,
+        records: RecordService,
+        activity: ActivityService,
+    ) -> None:
+        self._proposals = proposals
+        self._records = records
+        self._activity = activity
+
+    def propose_travel_event(self, record_id: int) -> ActionProposal:
+        record = self._record(record_id)
+        self._validate_record(record)
+        payload = {"record_id": str(record_id)}
+        existing = self._proposals.find_pending(self.CREATE_TRAVEL_EVENT, payload)
+        if existing is not None:
+            return existing
+        proposal = self._proposals.add(self.CREATE_TRAVEL_EVENT, payload)
+        self._activity.record(
+            ActivityType.ACTION_PROPOSED,
+            object_id=str(proposal.id),
+            details=f"Create Calendar event for travel record {record_id}",
+        )
+        return proposal
+
+    def review(
+        self,
+        proposal_id: int,
+        decision: str,
+        calendar_writer: CalendarWriteService | None = None,
+    ) -> ActionProposal:
+        """Reject locally, or create exactly one remote event after acceptance."""
+
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("Calendar proposal decision must be accepted or rejected.")
+        proposal = self._proposal(proposal_id)
+        if proposal.status == decision:
+            return proposal
+        if proposal.status != "pending":
+            raise ValueError(f"Action proposal {proposal_id} was already {proposal.status}.")
+        if decision == "accepted":
+            if calendar_writer is None:
+                raise ValueError("Calendar authorization is required to accept this proposal.")
+            calendar_writer.create_travel_event(self._record(int(proposal.payload["record_id"])))
+        self._proposals.set_status(proposal_id, decision)
+        self._activity.record(
+            ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
+            object_id=str(proposal_id),
+            details=proposal.action_type,
+        )
+        reviewed = self._proposals.get(proposal_id)
+        if reviewed is None:
+            raise RuntimeError("Reviewed Calendar proposal disappeared.")
+        return reviewed
+
+    def _proposal(self, proposal_id: int) -> ActionProposal:
+        proposal = self._proposals.get(proposal_id)
+        if proposal is None or proposal.action_type != self.CREATE_TRAVEL_EVENT:
+            raise ValueError("Calendar event proposal was not found.")
+        return proposal
+
+    def _record(self, record_id: int) -> TravelRecord:
+        record = next((item for item in self._records.list_travel_records() if item.id == record_id), None)
+        if record is None:
+            raise ValueError(f"Travel record {record_id} was not found.")
+        return record
+
+    @staticmethod
+    def _validate_record(record: TravelRecord) -> None:
+        if record.departure_time is None or record.arrival_time is None:
+            raise ValueError("Travel records need departure and arrival times for Calendar.")

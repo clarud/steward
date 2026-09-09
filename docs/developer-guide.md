@@ -889,6 +889,21 @@ same policy registry as local tools.
 
 ## Calendar writes and idempotency
 
+`calendar-propose-travel-event RECORD_ID` adds a pending generic
+`ActionProposal`, after deterministic validation that the record exists and has
+timezone-aware departure and arrival times. `calendar-review-travel-event ID
+accepted` is the second, explicit step. Only that accepted path authorizes
+Calendar OAuth and invokes `CalendarWriteService`; rejection stays entirely
+local. This lets a future agent request the same proposal without being trusted
+to create a Calendar event itself.
+
+When calendar tools are explicitly enabled for the tool agent, its only write-
+adjacent capability is `propose_create_travel_calendar_event(record_id)`. It
+uses that exact same proposal service, accepts only a persisted travel-record
+ID, and returns a review command. `ToolPolicy` labels it `SAFE_WRITE` because
+the proposal is a durable local mutation, but it is not a remote Calendar
+write. The model never receives a callable `create_calendar_event` tool.
+
 Phase 24 adds the narrower `CalendarWriteService` rather than allowing callers
 to insert arbitrary Google API payloads. It accepts a persisted `TravelRecord`
 with departure and arrival times, constructs a titled event, and requests the
