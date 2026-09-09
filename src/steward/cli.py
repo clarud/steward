@@ -252,6 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Root-relative directory to exclude (repeatable)",
     )
     subcommands.add_parser("roots", help="List locally authorized source roots")
+    subcommands.add_parser(
+        "health", help="Report safe local runtime health without exposing paths or secrets"
+    )
     scan_root_parser = subcommands.add_parser("scan-root", help="Scan one locally authorized source root")
     scan_root_parser.add_argument("name", help="Authorized source-root name")
     for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
@@ -730,6 +733,46 @@ def _print_scan_database_error(operation: str, error: sqlite3.Error) -> None:
     print(f"{operation} stopped because the local Steward database reported an error: {error}")
 
 
+def _database_health(database_path: Path) -> str:
+    """Read a database without creating it, because health checks must be non-mutating."""
+    if not database_path.is_file():
+        return "not initialized"
+    try:
+        with sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True) as connection:
+            connection.execute("SELECT 1").fetchone()
+    except sqlite3.Error as error:
+        message = str(error).casefold()
+        return "busy" if "locked" in message or "busy" in message else "unavailable"
+    return "available"
+
+
+def _health_report(settings: Settings) -> str:
+    """Render only operator-safe local health metadata."""
+    database_path = settings.data_dir / "steward.db"
+    checkpoint_path = settings.data_dir / "checkpoints.db"
+    database_health = _database_health(database_path)
+    checkpoint_health = _database_health(checkpoint_path)
+    root_summary = "not initialized"
+    if database_health == "available":
+        try:
+            roots = SourceRootRepository(database_path).list_all()
+        except sqlite3.Error:
+            root_summary = "unavailable"
+        else:
+            available = sum(root.health == "available" for root in roots)
+            missing = sum(root.health == "missing" for root in roots)
+            disabled = sum(root.health == "disabled" for root in roots)
+            root_summary = f"{available} available, {missing} missing, {disabled} disabled"
+    telegram = "configured" if os.environ.get("STEWARD_TELEGRAM_BOT_TOKEN") else "not configured"
+    return (
+        "Steward health:\n"
+        f"Operational database: {database_health}\n"
+        f"Conversation checkpoints: {checkpoint_health}\n"
+        f"Authorized roots: {root_summary}\n"
+        f"Telegram token: {telegram}"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run a Steward command."""
     _configure_console_encoding()
@@ -737,6 +780,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     settings = Settings.from_environment()
     configure_logging(settings)
+
+    if arguments.command == "health":
+        print(_health_report(settings))
+        return
 
     if arguments.command == "backup":
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

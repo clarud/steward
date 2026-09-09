@@ -19,6 +19,7 @@ from steward.knowledge import KnowledgeService
 from steward.extraction import ExtractionResult, SourceFragment
 from steward.storage import initialize_database, snapshot_database
 from steward.activity import ActivityService, ActivityType
+from steward.roots import SourceRootRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 
 
@@ -85,6 +86,44 @@ def test_cli_scan_registers_markdown_sources(
         source.id or 0
     )
     assert [fragment.heading for fragment in fragments] == ["Note"]
+
+
+def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("STEWARD_TELEGRAM_BOT_TOKEN", raising=False)
+
+    main(["health"])
+
+    assert capsys.readouterr().out == (
+        "Steward health:\n"
+        "Operational database: not initialized\n"
+        "Conversation checkpoints: not initialized\n"
+        "Authorized roots: not initialized\n"
+        "Telegram token: not configured\n"
+    )
+    assert not (data_dir / "steward.db").exists()
+
+    database = data_dir / "steward.db"; checkpoints = data_dir / "checkpoints.db"
+    initialize_database(database); initialize_database(checkpoints)
+    available = tmp_path / "available"; available.mkdir()
+    missing = tmp_path / "missing"; missing.mkdir()
+    disabled = tmp_path / "disabled"; disabled.mkdir()
+    roots = SourceRootRepository(database)
+    roots.add("Available", available); roots.add("Missing", missing); roots.add("Disabled", disabled)
+    missing.rmdir(); roots.set_enabled("Disabled", False)
+    monkeypatch.setenv("STEWARD_TELEGRAM_BOT_TOKEN", "private-token")
+
+    main(["health"])
+
+    assert capsys.readouterr().out == (
+        "Steward health:\n"
+        "Operational database: available\n"
+        "Conversation checkpoints: available\n"
+        "Authorized roots: 1 available, 1 missing, 1 disabled\n"
+        "Telegram token: configured\n"
+    )
 
 
 def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_originals(

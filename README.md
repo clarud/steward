@@ -59,6 +59,23 @@ steward scan path\to\your\vault
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
 
+## Check local runtime health
+
+Before configuring Windows Task Scheduler or after restarting the local
+Telegram process, run this read-only check:
+
+```powershell
+steward health
+```
+
+It reports only database availability, counts of available/missing/disabled
+authorized roots, and whether a Telegram token is configured. It never prints
+paths, source text, or credentials, and it does not create a database. For a
+single-user setup, make a Task Scheduler task that starts `steward telegram`
+at logon with the project virtual environment available, restarts on failure,
+and writes no secrets into the task arguments. Run `steward health` after a
+restart before relying on the bot.
+
 ## Back up local Steward state
 
 Sources in your authorized roots are canonical and must be backed up by your
