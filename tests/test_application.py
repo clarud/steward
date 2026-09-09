@@ -193,6 +193,25 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     )
 
 
+def test_status_reports_review_and_delivery_health_without_message_content(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    actions = ActionProposalRepository(database)
+    actions.add("create_workspace", {"name": "School"})
+    deliveries = TelegramUpdateDeliveryRepository(database)
+    assert deliveries.claim("telegram:health")
+    reads = StewardReadApplication(
+        SourceRepository(database), SourceFragmentRepository(database),
+        LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+        WorkspaceRepository(database), ActivityService(database), inbox, actions, deliveries,
+    )
+
+    response = reads.status()
+
+    assert "Pending action reviews: 1" in response
+    assert "Telegram delivery: 1 processing, 0 dead letters" in response
+
+
 def test_event_application_gives_helpful_unknown_response() -> None:
     response = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})())

@@ -1235,6 +1235,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 WorkspaceRepository(database_path),
                 activity,
                 settings.inbox_dir,
+                ActionProposalRepository(database_path),
+                TelegramUpdateDeliveryRepository(database_path),
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(
                 ProvisionalIntakeService(

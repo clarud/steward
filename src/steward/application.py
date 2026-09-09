@@ -58,6 +58,8 @@ class StewardReadApplication:
         workspace_repository: WorkspaceRepository,
         activity_service: ActivityService,
         inbox_dir: Path,
+        action_proposals: ActionProposalRepository | None = None,
+        deliveries: TelegramUpdateDeliveryRepository | None = None,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -65,6 +67,8 @@ class StewardReadApplication:
         self._workspaces = workspace_repository
         self._activity = activity_service
         self._inbox_dir = inbox_dir.resolve()
+        self._action_proposals = action_proposals
+        self._deliveries = deliveries
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -109,14 +113,23 @@ class StewardReadApplication:
         active = self._sources.list_active()
         inbox_count = sum(self._is_inbox(source.path) for source in active)
         pending_activity = len(self._activity.list_recent(limit=20))
-        return (
+        lines = [
             "Steward is running locally.\n"
             f"Active sources: {len(active)}\n"
             f"Inbox sources: {inbox_count}\n"
             f"Workspaces: {len(self._workspaces.list_all())}\n"
-            f"Recent activity events shown by /activity: {pending_activity}\n"
-            "Use /help for available Telegram interactions."
-        )
+            f"Recent activity events shown by /activity: {pending_activity}"
+        ]
+        if self._action_proposals is not None:
+            pending = sum(proposal.status == "pending" for proposal in self._action_proposals.list_all())
+            lines.append(f"Pending action reviews: {pending}")
+        if self._deliveries is not None:
+            recent = self._deliveries.list_recent(limit=20)
+            processing = sum(delivery.status == "processing" for delivery in recent)
+            dead_letters = len(self._deliveries.list_dead_letters(limit=20))
+            lines.append(f"Telegram delivery: {processing} processing, {dead_letters} dead letters")
+        lines.append("Use /help for available Telegram interactions.")
+        return "\n".join(lines)
 
     def inbox(self, page: int) -> str | PresentedReply:
         sources = [source for source in self._sources.list_active() if self._is_inbox(source.path)]
