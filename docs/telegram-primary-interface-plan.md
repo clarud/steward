@@ -27,6 +27,124 @@ and consequential actions retain explicit local or human-approval boundaries.
 - Source privacy rules are checked before information is sent to an external
   model or integration.
 
+## Architecture and infrastructure direction
+
+Keep Steward as one understandable local Python application. The target is not
+a fleet of remote services:
+
+```text
+Telegram / CLI / local UI
+        ↓
+application use cases
+        ↓
+LangGraph only for stateful routing, model/tool loops, and human pause/resume
+        ↓
+ordinary domain services
+        ↓
+filesystem + SQLite + selected model/API adapters
+```
+
+The following responsibilities remain separate:
+
+- Telegram normalizes updates and renders responses; it does not own domain
+  logic or execute filesystem/API operations itself.
+- LangGraph owns shared workflow state, conditional routing, tool loops, and
+  durable human approval interruptions. It does not become the domain model.
+- Services own capture, extraction, retrieval, organization, record,
+  Calendar, privacy, and Activity behavior, and remain callable without a
+  graph or Telegram.
+- The filesystem remains the human-readable home for originals; SQLite holds
+  operational metadata, semantic links, proposals, indexes, activity, and
+  graph checkpoints.
+
+### Source-root model
+
+Evolve from implicitly scanned absolute paths to explicit approved roots:
+
+```text
+SourceRoot
+
+id
+name
+path
+enabled
+exclusions
+scan/watch settings
+allowed operations
+default workspace hints
+created_at
+```
+
+Examples:
+
+```text
+School Notes       → C:\Users\clare\Documents\School Notes
+Projects           → C:\Users\clare\Documents\Projects
+Personal Archive   → D:\Archive\Records
+Shared Inbox       → <Steward Inbox path>
+```
+
+A root is a physical-location and permission boundary, not a workspace. One
+source keeps one physical path but can link to many workspaces and concepts.
+Root selection/authorization remains a local action; Telegram can display root
+status and request a local setup handoff, but cannot browse arbitrary paths.
+
+### Local runtime requirements
+
+For a single-user Windows installation, retain the current local runtime:
+
+```text
+one persistent Steward process
+├── Python virtual environment
+├── Telegram long polling
+├── .steward/steward.db
+├── .steward/checkpoints.db
+├── .steward/logs/
+├── local shared Inbox
+└── optional Ollama and authenticated external adapters
+```
+
+Before relying on Steward daily, add:
+
+- start-at-login or Windows Task Scheduler/service-wrapper setup;
+- restart-on-failure behavior and a local/Telegram health status;
+- log rotation and safe diagnostics that exclude source text and credentials;
+- backup/restore instructions for **both** originals/roots and `.steward/`;
+- periodic SQLite backup or snapshot strategy;
+- root-specific exclusion rules, especially the Steward repository, test
+  fixtures, `.steward/`, caches, and generated output;
+- explicit handling of moved/missing roots and unavailable network drives;
+- tests for SQLite locks, interrupted capture, interrupted approval, and
+  restart recovery.
+
+Do not add microservices, a cloud database, Redis, Kubernetes, or a separate
+queue until a real single-process limitation demonstrates the need.
+
+### Telegram update delivery strategy
+
+Continue using **long polling** for the current local-first, single-user
+deployment. It is the best fit now because the local machine makes an outbound
+HTTPS request to Telegram; it does not need a public IP address, inbound port,
+TLS certificate, reverse proxy, or a hosted server.
+
+Long polling is not busy polling. The request waits at Telegram for an update
+for a configured timeout, then immediately opens the next wait. Telegram's
+`getUpdates` and webhook delivery are mutually exclusive, and Telegram stores
+unreceived updates for only up to 24 hours. Steward's local delivery table,
+deduplication, retry/backoff, and dead-letter records therefore remain
+necessary under either transport.
+
+Use webhooks later only when Steward has a stable, always-on HTTPS endpoint or
+is deliberately deployed to a server and needs lower latency/greater concurrent
+throughput. A webhook then requires a public HTTPS URL, webhook secret-token
+validation, firewall/reverse-proxy operation, monitoring, and the same
+idempotent update handling. It is not automatically more reliable for a laptop
+that may sleep or be offline.
+
+Consider a local Telegram Bot API server only if default cloud Bot API file
+limits become a demonstrated blocker. It adds its own server to operate and is
+not required for normal document intake.
+
 ## Current Telegram baseline
 
 Currently Telegram supports:
