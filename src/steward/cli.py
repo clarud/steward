@@ -1356,7 +1356,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 KnowledgeEnrichmentProposalRepository(database_path), activity,
             ),
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
-            privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources),
+            privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources, activity),
             operations_application=StewardOperationsApplication(
                 TelegramUpdateDeliveryRepository(database_path),
                 ActionProposalRepository(database_path),

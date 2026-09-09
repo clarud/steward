@@ -755,7 +755,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, and reviewable idempotent Calendar deadline markers; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Reminder scheduling and richer task/Calendar integration |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review, explicit or reply-selected curated-note proposals, ephemeral research cards with retain-to-Inbox | Conversation synthesis, external-source retention beyond a labeled note, conflict-review UX |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, and write-once local SQLite snapshots | Recovery rehearsal, start-at-login/log rotation, and fault-injection coverage |
-| 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, privacy controls, delivery inspection and status | Local OAuth status, confirmed maintenance flows |
+| 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection and status | Local OAuth status, confirmed maintenance flows |
 | 9. Daily-use hardening | Not started | Unit/integration coverage has grown with each slice | Real-vault/Telegram checklist, metrics, restart/outage evaluation and sustained trial |
 
 ### Priority sequence from here

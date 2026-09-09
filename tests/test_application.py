@@ -416,9 +416,10 @@ def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) ->
     path = tmp_path / "note.md"; path.write_text("note", encoding="utf-8")
     sources = SourceRepository(database_path)
     sources.add(Source(None, path, "a" * 64, SourceType.MARKDOWN, 4, now, now, now))
+    activity = ActivityService(database_path)
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
-        privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources),
+        privacy_application=StewardPrivacyApplication(PrivacyService(database_path), sources, activity),
     )
 
     changed = application.handle(make_event(text="/set_privacy 1 local_model_only"))
@@ -426,6 +427,8 @@ def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) ->
 
     assert changed == "Source 1 privacy rule set to local_model_only."
     assert inspected == "Source 1 privacy rule: local_model_only"
+    assert activity.list_recent()[0].event_type == ActivityType.SOURCE_PRIVACY_CHANGED
+    assert activity.list_recent()[0].object_id == "1"
 
 
 def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path: Path) -> None:

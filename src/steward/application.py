@@ -734,9 +734,15 @@ class StewardRootsApplication:
 class StewardPrivacyApplication:
     """Explicit source-level model-boundary controls for an authorized chat."""
 
-    def __init__(self, privacy: PrivacyService, sources: SourceRepository) -> None:
+    def __init__(
+        self,
+        privacy: PrivacyService,
+        sources: SourceRepository,
+        activity: ActivityService | None = None,
+    ) -> None:
         self._privacy = privacy
         self._sources = sources
+        self._activity = activity
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -760,7 +766,14 @@ class StewardPrivacyApplication:
             rule = PrivacyRule(parts[1])
         except ValueError:
             return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
+        previous_rule = self._privacy.rule_for(source_id)
         self._privacy.set_rule(source_id, rule)
+        if self._activity is not None and previous_rule != rule:
+            self._activity.record(
+                ActivityType.SOURCE_PRIVACY_CHANGED,
+                object_id=str(source_id),
+                details=f"{previous_rule.value} -> {rule.value}",
+            )
         return f"Source {source_id} privacy rule set to {rule.value}."
 
 
