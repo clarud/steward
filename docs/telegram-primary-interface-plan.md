@@ -761,6 +761,46 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |
+| 10. Telegram companion experience | In progress | Durable callbacks, selected review cards, read-only tool agent, and conversation state | Unified pending decisions, short styled cards, contextual next actions, and agent-first normal conversation |
+
+### Goal 10 — Telegram companion experience
+
+**User outcome:** Steward feels like a safe personal assistant rather than a
+remote CLI. A user can send ordinary language or material, understand what
+Steward is proposing, and complete the next safe step without memorising an
+internal command or proposal ID.
+
+Implement in these deliberately separate layers:
+
+1. **Presentation.** A Telegram-specific presenter renders escaped HTML,
+   concise cards, source-aware citations, consistent visual status markers,
+   pagination, and action labels short enough to fit on buttons. Domain
+   services continue to return facts and proposals, never Telegram markup.
+2. **Unified review inbox.** `/home` and `/pending` present pending intake,
+   organization, action, and knowledge decisions as human-readable review
+   items. Each card identifies the affected item, proposed effect, rationale,
+   evidence where available, risk, and next actions. Opaque callback tokens
+   remain chat-scoped; raw domain IDs remain an advanced fallback only.
+3. **Contextual decisions.** `what is this?`, `why?`, `yes`, `no`, and a
+   correction such as `put it in CS3210` resolve against the active review in
+   that chat. Ambiguous language may revise a proposal but never authorizes a
+   consequential action without a visible explicit confirmation.
+4. **Agent-first routing.** Normal non-command requests use the existing
+   allowlisted read-only tool loop when configured. Deterministic attachment,
+   reply-reference, active-review, and explicit command routes take priority.
+   Write-capable requests become deterministic review proposals; the model
+   never receives filesystem, shell, token, or unrestricted network access.
+5. **Progressive disclosure.** Keep a small command menu (`/home`,
+   `/pending`, `/search`, `/calendar`, `/workspaces`, `/help`). Retain the
+   wider command surface for recovery and local administration, but surface
+   normal actions through cards and buttons.
+
+Done when a user can complete capture → explain → refine → approve, search →
+inspect → follow up, and calendar/task proposal flows from Telegram without
+looking up an ID or command. Automated coverage must include escaped dynamic
+text, short button labels, callback expiry/redelivery, restart during review,
+cross-domain proposal IDs, ambiguous follow-ups, provider failure, and proof
+that no write occurs before explicit approval.
 
 ### Priority sequence from here
 

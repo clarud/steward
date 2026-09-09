@@ -29,7 +29,12 @@ from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.retrieval import HybridRetriever, LexicalSearchService, SemanticSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
-from steward.intake import IntakeAnalysisMode, ProvisionalIntake, ProvisionalIntakeService
+from steward.intake import (
+    IntakeAnalysisMode,
+    ProvisionalIntake,
+    ProvisionalIntakeRepository,
+    ProvisionalIntakeService,
+)
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGateway, ModelGatewayError
@@ -49,6 +54,171 @@ from steward.research import ResearchBundle, ResearchProvider, ResearchProviderE
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
+
+
+class StewardReviewInboxApplication:
+    """Adapt separate proposal domains into one human-facing Telegram review inbox.
+
+    This is deliberately a presentation/use-case adapter, not a replacement for
+    the underlying proposal repositories. Each existing service still owns the
+    validation and execution of its own decision.
+    """
+
+    _MAX_ITEMS = 8
+
+    def __init__(
+        self,
+        action_proposals: ActionProposalRepository,
+        organization_proposals: OrganizationProposalRepository,
+        sources: SourceRepository,
+        *,
+        intakes: ProvisionalIntakeRepository | None = None,
+        knowledge_proposals: KnowledgeEnrichmentProposalRepository | None = None,
+    ) -> None:
+        self._actions = action_proposals
+        self._organizations = organization_proposals
+        self._sources = sources
+        self._intakes = intakes
+        self._knowledge = knowledge_proposals
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, _, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0].casefold()
+        if command in {"/home", "/pending"}:
+            return self.pending(event)
+        if command != "/review":
+            return None
+        kind, separator, identifier = argument.partition(" ")
+        if not separator or not identifier.isdigit():
+            return "Choose a review from /pending."
+        return self.detail(event, kind.casefold(), int(identifier))
+
+    def pending(self, event: IncomingEvent) -> PresentedReply:
+        """Show only items this chat can safely act on, with no internal payloads."""
+
+        items = self._pending_items(event)[: self._MAX_ITEMS]
+        if not items:
+            return PresentedReply(
+                "There is nothing waiting for your decision.",
+                (ReplyAction("Search", "/search "), ReplyAction("Inbox", "/inbox")),
+                title="All caught up",
+                icon="✅",
+            )
+        lines = ["Choose an item to see what will change before deciding."]
+        actions: list[ReplyAction] = []
+        for index, (kind, identifier, summary) in enumerate(items, start=1):
+            lines.append(f"{index}. {summary}")
+            actions.append(ReplyAction(f"Review {index}", f"/review {kind} {identifier}"))
+        return PresentedReply(
+            "\n".join(lines), tuple(actions), title=f"{len(items)} decision{'s' if len(items) != 1 else ''} waiting", icon="🕒"
+        )
+
+    def detail(self, event: IncomingEvent, kind: str, identifier: int) -> str | PresentedReply:
+        """Render one complete, human-readable proposal card."""
+
+        if kind == "action":
+            proposal = self._actions.get(identifier)
+            if proposal is None or proposal.status != "pending":
+                return "That review is no longer waiting for a decision. Send /pending for the current list."
+            title, description = self._action_summary(proposal.action_type, proposal.payload)
+            return PresentedReply(
+                f"{description}\n\nNo change has been made yet.",
+                (ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")),
+                title=title,
+                icon="⚠️",
+            )
+        if kind == "organization":
+            proposal = self._organizations.get(identifier)
+            if proposal is None or proposal.status != "pending":
+                return "That organization decision is no longer waiting. Send /pending for the current list."
+            source = self._sources.get_by_id(proposal.source_id)
+            filename = source.path.name if source is not None else "the saved source"
+            target = proposal.workspace_name or (
+                f"workspace {proposal.workspace_id}" if proposal.workspace_id is not None else "Inbox"
+            )
+            effect = "The original remains in Inbox." if proposal.suggested_path is None else f"The original will move to {target}."
+            return PresentedReply(
+                f"Suggested destination: {target}\nWhy: {proposal.rationale}\nEffect: {effect}",
+                (
+                    ReplyAction("Accept", f"/organization_accept {identifier}"),
+                    ReplyAction("Inbox", f"/organization_keep_inbox {identifier}"),
+                    ReplyAction("Reject", f"/organization_reject {identifier}"),
+                ),
+                title=f"Organize {filename}", icon="📁"
+            )
+        if kind == "intake" and self._intakes is not None:
+            intake = self._intakes.get(identifier)
+            if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
+                return "That staged item is no longer waiting in this chat. Send /pending for the current list."
+            return PresentedReply(
+                f"Type: {intake.category}\nSummary: {intake.summary}\nAnalysis: {intake.analysis_mode.value}\n\nIt is staged locally and has not been saved.",
+                (
+                    ReplyAction("Save", f"/intake_accept {identifier}"),
+                    ReplyAction("Use local", f"/intake_analysis {identifier} local"),
+                    ReplyAction("Use external", f"/intake_analysis {identifier} external"),
+                    ReplyAction("Discard", f"/intake_discard {identifier}"),
+                ),
+                title=f"Review {intake.original_name}", icon="📄"
+            )
+        if kind == "knowledge" and self._knowledge is not None:
+            proposal = self._knowledge.get(identifier)
+            if proposal is None or proposal.status != "pending":
+                return "That knowledge review is no longer waiting. Send /pending for the current list."
+            return PresentedReply(
+                f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",
+                (
+                    ReplyAction("Accept", f"/review_enrichment {identifier} accepted"),
+                    ReplyAction("Reject", f"/review_enrichment {identifier} rejected"),
+                ),
+                title="Knowledge update", icon="🧠"
+            )
+        return "That review type is unavailable. Send /pending for the current list."
+
+    def _pending_items(self, event: IncomingEvent) -> list[tuple[str, int, str]]:
+        items: list[tuple[str, int, str]] = []
+        for proposal in reversed(self._actions.list_all()):
+            if proposal.status == "pending" and proposal.id is not None:
+                title, _ = self._action_summary(proposal.action_type, proposal.payload)
+                items.append(("action", proposal.id, title))
+        for proposal in reversed(self._organizations.list_all()):
+            if proposal.status == "pending" and proposal.id is not None:
+                source = self._sources.get_by_id(proposal.source_id)
+                filename = source.path.name if source is not None else "saved source"
+                items.append(("organization", proposal.id, f"Organize {filename}"))
+        if self._intakes is not None:
+            for intake in reversed(self._intakes.list_all()):
+                if intake.status == "pending" and intake.chat_id == event.chat_id and intake.id is not None:
+                    items.append(("intake", intake.id, f"Save {intake.original_name}"))
+        if self._knowledge is not None:
+            for proposal in reversed(self._knowledge.list_all()):
+                if proposal.status == "pending":
+                    items.append(("knowledge", proposal.id, "Review a knowledge update"))
+        return items
+
+    @staticmethod
+    def _action_summary(action_type: str, payload: dict[str, str]) -> tuple[str, str]:
+        """Translate known internal action types without exposing arbitrary payload JSON."""
+
+        if action_type == ActionProposalService.CREATE_WORKSPACE:
+            name = payload.get("name", "new workspace")
+            return f"Create workspace {name}", f"A new workspace named {name} will be created."
+        if action_type == StewardTaskApplication.CREATE_TASK:
+            title = payload.get("title", "task")
+            due = payload.get("due_at") or payload.get("due_hint")
+            return f"Save task: {title}", f"This task will be saved." + (f" Due: {due}." if due else "")
+        if action_type.startswith("create_calendar"):
+            return "Create calendar event", "A new event will be added to Google Calendar after approval."
+        if action_type.startswith("create_") and "record" in action_type:
+            return "Save extracted record", "A record will be created from the reviewed source evidence."
+        if action_type.startswith("correct_"):
+            return "Apply record correction", "The reviewed record fields will be corrected from source evidence."
+        if action_type == "unregister_source":
+            return "Remove source metadata", "Steward will remove local metadata; the original file will remain untouched."
+        if action_type == "reextract_source":
+            return "Refresh extracted text", "Derived text and search fragments will be rebuilt; the original stays unchanged."
+        if action_type == "rebuild_semantic_index":
+            return "Rebuild local search index", "Derived semantic search data will be rebuilt; original sources stay unchanged."
+        return "Review requested action", "Steward needs your approval before making this change."
 
 
 class StewardReadApplication:
@@ -121,6 +291,11 @@ class StewardReadApplication:
     def help_text() -> str:
         return (
             "Steward Telegram guide\n\n"
+            "Start here:\n"
+            "/home or /pending — review items that need your decision\n"
+            "/search QUESTION — search your saved material\n"
+            "/calendar_search [terms] — check your Calendar\n"
+            "/workspaces — see ongoing contexts\n\n"
             "Read-only:\n"
             "/status — local service summary\n"
             "/inbox [page] — saved Inbox sources\n"
@@ -359,7 +534,7 @@ class ToolAgentGraph(Protocol):
 
 
 class StewardToolAgentApplication:
-    """Expose an allowlisted ToolNode loop through an explicit Telegram command."""
+    """Expose an allowlisted ToolNode loop for ordinary Telegram questions."""
 
     def __init__(self, graph: ToolAgentGraph) -> None:
         self._graph = graph
@@ -371,6 +546,17 @@ class StewardToolAgentApplication:
             return None
         if not separator or not question.strip():
             return "Use /agent followed by a question that may need Steward's read-only tools."
+        return self._ask(question.strip(), event)
+
+    def handle_request(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Use tools for normal language, but never reinterpret explicit commands."""
+
+        question = (event.text or "").strip()
+        if not question or question.startswith("/"):
+            return None
+        return self._ask(question, event)
+
+    def _ask(self, question: str, event: IncomingEvent) -> str | PresentedReply:
         try:
             result = self._graph.invoke(
                 {
@@ -379,7 +565,7 @@ class StewardToolAgentApplication:
                             "You are Steward. Use only supplied allowlisted read-only tools when needed. "
                             "Never claim a tool result you did not receive; answer as soon as the result is sufficient."
                         ),
-                        HumanMessage(question.strip()),
+                        HumanMessage(question),
                     ]
                 },
                 {"configurable": {"thread_id": f"tool-agent:{event.platform}:{event.chat_id}"}, "recursion_limit": 16},
@@ -1608,16 +1794,27 @@ class StewardOrganizationApprovalApplication:
         )
         if "__interrupt__" not in paused:
             raise RuntimeError("Organization approval graph did not pause for a decision.")
+        return self._render_proposal(proposal_id, proposal)
+
+    def _render_proposal(self, proposal_id: int, proposal: OrganizationProposal) -> PresentedReply:
+        """Explain the exact source, outcome, rationale, and safe choices in one card."""
+
+        source = self._sources.get_by_id(proposal.source_id) if self._sources is not None else None
+        filename = (
+            source.path.name if source is not None
+            else proposal.suggested_path.name if proposal.suggested_path is not None
+            else "saved source"
+        )
         if proposal.suggested_path is None:
             return PresentedReply(
-                f"Organization proposal {proposal_id}: {proposal.rationale}\n"
-                "Suggested outcome: leave the original in Inbox.\n\n"
-                f"To refine it, use /organization_context {proposal_id} followed by an existing workspace name, "
-                f"or /organization_new_workspace {proposal_id} followed by a new workspace name.",
+                f"Suggested destination: Inbox\nWhy: {proposal.rationale}\n"
+                "Effect: the original stays in Inbox.\n\n"
+                "Reply with a workspace name if you want to guide this suggestion.",
                 (
                     ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
                     ReplyAction("Reject", f"/organization_reject {proposal_id}"),
                 ),
+                title=f"Organize {filename}", icon="📁",
             )
         workspace = next(
             (item for item in self._workspaces.list_all() if item.id == proposal.workspace_id), None
@@ -1627,14 +1824,15 @@ class StewardOrganizationApprovalApplication:
             if workspace is not None else f"the proposed workspace ({proposal.suggested_path.name})"
         )
         return PresentedReply(
-            f"Organization proposal {proposal_id}: {proposal.rationale}\n"
-            f"Suggested destination: {destination}\n\n"
-            "Accepting is the only action that may move this original file.",
+            f"Suggested destination: {destination}\nWhy: {proposal.rationale}\n"
+            "Effect: accepting moves the original file.\n\n"
+            "Reply with a workspace name to change this suggestion.",
             (
                 ReplyAction("Accept", f"/organization_accept {proposal_id}"),
                 ReplyAction("Keep in Inbox", f"/organization_keep_inbox {proposal_id}"),
                 ReplyAction("Reject", f"/organization_reject {proposal_id}"),
             ),
+            title=f"Organize {filename}", icon="📁",
         )
 
     def handle_decision(self, event: IncomingEvent) -> str | None:
@@ -1646,6 +1844,7 @@ class StewardOrganizationApprovalApplication:
         if pending is None:
             return None
         response = (event.text or "").strip()
+        normalized_response = response.casefold().rstrip("?!.").strip()
         command, _, argument = response.partition(" ")
         command = command.casefold()
         if command == "/organization_context":
@@ -1668,14 +1867,34 @@ class StewardOrganizationApprovalApplication:
             decision = "accepted"
         elif command == "/organization_reject" and argument.isdigit() and int(argument) == pending.proposal_id:
             decision = "rejected"
-        elif response.casefold() in {"accept", "accepted"}:
+        elif normalized_response in {"accept", "accepted"}:
             decision = "accepted"
-        elif response.casefold() in {"reject", "rejected"}:
+        elif normalized_response in {"reject", "rejected"}:
             decision = "rejected"
+        elif normalized_response in {"what is this", "what is this proposal", "why", "details", "show details"}:
+            proposal = self._proposals.get(pending.proposal_id)
+            if proposal is None:
+                return "That organization proposal is no longer available. Send /pending for the current list."
+            return self._render_proposal(pending.proposal_id, proposal)
+        elif normalized_response in {"yes", "y", "okay", "ok"}:
+            decision = "accepted"
+        elif normalized_response in {"no", "n"}:
+            decision = "rejected"
+        elif response.casefold().startswith(("put it in ", "move it to ", "put this in ")):
+            guidance = response.partition(" ")[2]
+            if response.casefold().startswith("put it in "):
+                guidance = response[len("put it in "):]
+            elif response.casefold().startswith("move it to "):
+                guidance = response[len("move it to "):]
+            else:
+                guidance = response[len("put this in "):]
+            return self._revise_with_context(event, pending, guidance)
+        elif any(workspace.name.casefold() == normalized_response for workspace in self._workspaces.list_all()):
+            return self._revise_with_context(event, pending, response)
         else:
             return (
-                f"Proposal {pending.proposal_id} is awaiting your decision. "
-                "Reply exactly `accept` or `reject`."
+                "I am waiting for your decision. Reply `yes`, `no`, `what is this?`, "
+                "or name the workspace you want."
             )
         from langgraph.types import Command
 
@@ -2439,6 +2658,7 @@ class StewardEventApplication:
         read_application: StewardReadApplication | None = None,
         provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
         tool_agent_application: StewardToolAgentApplication | None = None,
+        review_inbox_application: StewardReviewInboxApplication | None = None,
         record_application: StewardRecordApplication | None = None,
         task_application: StewardTaskApplication | None = None,
         research_application: StewardResearchApplication | None = None,
@@ -2461,6 +2681,7 @@ class StewardEventApplication:
         self._read_application = read_application
         self._provisional_intake_application = provisional_intake_application
         self._tool_agent_application = tool_agent_application
+        self._review_inbox_application = review_inbox_application
         self._record_application = record_application
         self._task_application = task_application
         self._research_application = research_application
@@ -2474,6 +2695,10 @@ class StewardEventApplication:
         self._calendar_application = calendar_application
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
+        if self._review_inbox_application is not None:
+            review_response = self._review_inbox_application.handle_command(event)
+            if review_response is not None:
+                return review_response
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
             if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
@@ -2580,6 +2805,10 @@ class StewardEventApplication:
                 self._workspace_name(event.text or "")
             )
         if decision.primary_intent is Intent.ASK:
+            if self._tool_agent_application is not None:
+                tool_response = self._tool_agent_application.handle_request(event)
+                if tool_response is not None:
+                    return tool_response
             return self._question_application.handle(event)
         if decision.primary_intent is Intent.CAPTURE:
             try:
@@ -2618,7 +2847,10 @@ class StewardEventApplication:
             return saved
         proposal = self._organization_approval_application.begin(event, result)
         if isinstance(proposal, PresentedReply):
-            return PresentedReply(f"{saved}\n\n{proposal.text}", proposal.actions)
+            return PresentedReply(
+                f"{saved}\n\n{proposal.text}", proposal.actions,
+                title=proposal.title, icon=proposal.icon,
+            )
         return f"{saved}\n\n{proposal}" if proposal is not None else saved
 
     @staticmethod

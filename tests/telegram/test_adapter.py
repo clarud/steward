@@ -31,7 +31,8 @@ class FakeMessage:
         self.photo = ()
         self.replies: list[str] = []
 
-    async def reply_text(self, text: str) -> None:
+    async def reply_text(self, text: str, **kwargs) -> None:
+        del kwargs
         self.replies.append(text)
 
 

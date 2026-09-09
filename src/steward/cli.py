@@ -22,6 +22,7 @@ from steward.application import (
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
     StewardReadApplication,
+    StewardReviewInboxApplication,
     StewardProvisionalIntakeApplication,
     StewardToolAgentApplication,
     StewardRecordApplication,
@@ -1520,6 +1521,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
             ),
             tool_agent_application=tool_agent_application,
+            review_inbox_application=StewardReviewInboxApplication(
+                ActionProposalRepository(database_path),
+                proposals,
+                sources,
+                intakes=ProvisionalIntakeRepository(database_path),
+                knowledge_proposals=KnowledgeEnrichmentProposalRepository(database_path),
+            ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
             ),

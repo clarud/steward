@@ -13,6 +13,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
+from steward.telegram.presentation import TelegramPresenter
 from steward.tasks import TaskReminderService
 from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
@@ -80,6 +81,7 @@ class TelegramAdapter:
         self._allowed_chat_ids = allowed_chat_ids
         self._deliveries = delivery_repository
         self._callbacks = callback_repository
+        self._presenter = TelegramPresenter()
 
     async def handle_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -211,22 +213,25 @@ class TelegramAdapter:
         self._mark_delivered(callback_event)
 
     async def _reply(self, message: object, event: IncomingEvent, response: object) -> None:
-        """Render a plain or interactive application reply without exposing commands."""
-        if not isinstance(response, PresentedReply):
-            await message.reply_text(str(response))  # type: ignore[attr-defined]
-            return
-        if not response.actions or self._callbacks is None:
-            await message.reply_text(response.text)  # type: ignore[attr-defined]
+        """Render escaped HTML and locally-resolved compact follow-up buttons."""
+        rendered = self._presenter.render(
+            response if isinstance(response, PresentedReply) else str(response)
+        )
+        if not rendered.rows or self._callbacks is None:
+            await message.reply_text(rendered.text, parse_mode="HTML")  # type: ignore[attr-defined]
             return
         buttons = [
-            InlineKeyboardButton(
-                action.label,
-                callback_data=self._callbacks.create(event.chat_id, action.command).token,
-            )
-            for action in response.actions
+            [
+                InlineKeyboardButton(
+                    action.label,
+                    callback_data=self._callbacks.create(event.chat_id, action.command).token,
+                )
+                for action in row
+            ]
+            for row in rendered.rows
         ]
         await message.reply_text(  # type: ignore[attr-defined]
-            response.text, reply_markup=InlineKeyboardMarkup([buttons])
+            rendered.text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
         )
 
     def _is_allowed(self, event: IncomingEvent) -> bool:
@@ -301,6 +306,9 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("gmail_import", adapter.handle_update))
     application.add_handler(CommandHandler("gmail_search", adapter.handle_update))
     application.add_handler(CommandHandler("help", adapter.handle_update))
+    application.add_handler(CommandHandler("home", adapter.handle_update))
+    application.add_handler(CommandHandler("pending", adapter.handle_update))
+    application.add_handler(CommandHandler("review", adapter.handle_update))
     application.add_handler(CommandHandler("status", adapter.handle_update))
     application.add_handler(CommandHandler("inbox", adapter.handle_update))
     application.add_handler(CommandHandler("sources", adapter.handle_update))

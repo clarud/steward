@@ -102,6 +102,18 @@ class ProvisionalIntakeRepository:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
+    def list_all(self) -> tuple[ProvisionalIntake, ...]:
+        """List staged decisions for a presentation layer; callers still scope by chat."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                FROM provisional_intakes ORDER BY id
+                """
+            ).fetchall()
+        return tuple(self._from_row(row) for row in rows)
+
     def decide(self, intake_id: int, status: str) -> ProvisionalIntake:
         if status not in {"accepted", "discarded"}:
             raise ValueError("Provisional intake status must be accepted or discarded.")

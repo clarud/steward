@@ -19,3 +19,5 @@ class PresentedReply:
 
     text: str
     actions: tuple[ReplyAction, ...] = ()
+    title: str | None = None
+    icon: str | None = None

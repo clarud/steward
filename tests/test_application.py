@@ -12,6 +12,7 @@ from steward.application import (
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
     StewardReadApplication,
+    StewardReviewInboxApplication,
     StewardProvisionalIntakeApplication,
     StewardToolAgentApplication,
     StewardRecordApplication,
@@ -413,6 +414,61 @@ def test_agent_command_uses_a_persistent_chat_scoped_tool_thread() -> None:
     assert response == "Found local evidence."
     assert graph.config["configurable"]["thread_id"] == "tool-agent:telegram:100"
     assert graph.input["messages"][1].content == "what do I know about OpenMP"
+
+
+def test_normal_question_prefers_the_configured_read_only_tool_agent() -> None:
+    class ToolGraph:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, input, config):
+            self.calls += 1
+            assert input["messages"][1].content == "What do I know about OpenMP?"
+            assert config["configurable"]["thread_id"] == "tool-agent:telegram:100"
+            return {"messages": [type("Final", (), {"content": "Found local OpenMP notes."})()]}
+
+    graph = ToolGraph()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        tool_agent_application=StewardToolAgentApplication(graph),
+    )
+
+    assert application.handle(make_event(text="What do I know about OpenMP?")) == "Found local OpenMP notes."
+    assert graph.calls == 1
+
+
+def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "vault" / "inbox" / "resume.pdf"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("resume", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.PDF, 6, now, now, now))
+    actions = ActionProposalRepository(database)
+    action = actions.add("create_workspace", {"name": "Job Search"})
+    organizations = OrganizationProposalRepository(database)
+    organization = organizations.add(
+        OrganizationProposal(None, source.id or 0, "keep_in_inbox", None, None, "No match yet.", 0.0)
+    )
+    reviews = StewardReviewInboxApplication(actions, organizations, sources)
+    event = make_event(text="/pending")
+
+    pending = reviews.handle_command(event)
+
+    assert isinstance(pending, PresentedReply)
+    assert pending.title == "2 decisions waiting"
+    assert "Create workspace Job Search" in pending.text
+    assert "Organize resume.pdf" in pending.text
+    assert {action.command for action in pending.actions} == {
+        f"/review action {action.id}", f"/review organization {organization}",
+    }
+    detail = reviews.handle_command(make_event(text=f"/review organization {organization}"))
+    assert isinstance(detail, PresentedReply)
+    assert detail.title == "Organize resume.pdf"
+    assert "No match yet." in detail.text
 
 
 def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:
@@ -1580,7 +1636,8 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     paused = application.handle_file(capture_event, uploaded)
 
     assert isinstance(paused, PresentedReply)
-    assert "Organization proposal 1" in paused.text
+    assert "Suggested destination" in paused.text
+    assert paused.title == "Organize telegram-100-11-Steward-notes.md"
     assert "workspace Steward" in paused.text
     assert str(tmp_path) not in paused.text
     assert [action.command for action in paused.actions] == [
@@ -1663,7 +1720,8 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
     assert "local" in selected.text
     paused = application.handle(make_event(text="/intake_accept 1"))
     assert isinstance(paused, PresentedReply)
-    assert "Organization proposal 1" in paused.text
+    assert "Suggested destination" in paused.text
+    assert paused.title == "Organize telegram-100-901-CS3210-OpenMP-notes.md"
     source = sources.get_by_id(1)
     assert source is not None and source.path.parent == inbox
     assert privacy.rule_for(1) is PrivacyRule.LOCAL_MODEL_ONLY
@@ -1746,7 +1804,8 @@ def test_organize_inbox_creates_one_durable_proposal_before_any_move(tmp_path: P
     response = application.handle(make_event(text="organize my inbox"))
 
     assert isinstance(response, PresentedReply)
-    assert "Organization proposal 1" in response.text
+    assert response.title == "Organize CS3210-openmp.md"
+    assert "Suggested destination" in response.text
     assert proposals.get(1).source_id == source.id
     assert source_path.is_file()
     listed = application.handle(make_event(text="/organization_proposals"))
@@ -1780,7 +1839,10 @@ def test_pending_telegram_approval_does_not_treat_other_text_as_a_question(tmp_p
 
     response = app.handle_decision(make_event(text="What is a TLB?"))
 
-    assert response == "Proposal 1 is awaiting your decision. Reply exactly `accept` or `reject`."
+    assert response == (
+        "I am waiting for your decision. Reply `yes`, `no`, `what is this?`, "
+        "or name the workspace you want."
+    )
 
 
 def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_path: Path) -> None:
@@ -1815,11 +1877,12 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     response = app.begin(make_event(text="/save unrelated"), CaptureResult(source, duplicate=False))
 
     assert isinstance(response, PresentedReply)
-    assert "leave the original in Inbox" in response.text
+    assert "original stays in Inbox" in response.text
     assert proposals.get(1).status == "pending"
     revised = app.handle_decision(make_event(text="/organization_context 1 CS3210 lecture notes"))
     assert isinstance(revised, PresentedReply)
-    assert "Organization proposal 2" in revised.text
+    assert revised.title == "Organize unrelated.md"
+    assert "Suggested destination" in revised.text
     assert proposals.get(1).status == "rejected"
     accepted = app.handle_decision(make_event(text="/organization_accept 2"))
     assert accepted == "Proposal 2 accepted."
@@ -1877,7 +1940,7 @@ def test_telegram_organization_can_replace_a_move_with_an_accepted_inbox_outcome
     assert "Suggested destination" in initial.text
     revised = application.handle_decision(make_event(text="/organization_keep_inbox 1"))
     assert isinstance(revised, PresentedReply)
-    assert "leave the original in Inbox" in revised.text
+    assert "original stays in Inbox" in revised.text
     assert proposals.get(1).status == "rejected"
     assert proposals.get(2).proposal_type == "keep_in_inbox"
     assert source_path.is_file()
@@ -1961,7 +2024,8 @@ def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(t
     assert captured["source"] == source
     assert captured["workspaces"] == [workspace]
     assert isinstance(response, PresentedReply)
-    assert "Organization proposal 1" in response.text
+    assert response.title == "Organize notes.md"
+    assert "Suggested destination" in response.text
     assert proposals.get(1).rationale == "The extracted notes discuss CS3210."
 
 
