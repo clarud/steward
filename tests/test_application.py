@@ -1547,6 +1547,80 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert proposals.get(1).status == "accepted"
 
 
+def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flow(tmp_path: Path) -> None:
+    """Exercise the Telegram-shaped path from an uploaded original to one move."""
+    database = tmp_path / ".steward" / "steward.db"
+    initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"
+    sources = SourceRepository(database)
+    activity = ActivityService(database)
+    privacy = PrivacyService(database)
+    capture_service = InboxCaptureService(inbox, sources, activity_service=activity)
+    provisional = StewardProvisionalIntakeApplication(
+        ProvisionalIntakeService(
+            tmp_path / ".steward" / "cache" / "intake",
+            ProvisionalIntakeRepository(database),
+            capture_service,
+            activity,
+            privacy,
+        )
+    )
+    workspaces = WorkspaceRepository(database)
+    workspaces.create("CS3210")
+    proposals = OrganizationProposalRepository(database)
+    approval_service = OrganizationApprovalService(
+        proposals, sources, FileMutationService(sources, activity), activity
+    )
+    organization = StewardOrganizationApprovalApplication(
+        proposals,
+        workspaces,
+        OrganizationApprovalThreadRepository(database),
+        activity,
+        build_organization_approval_graph(
+            proposals, checkpointer=InMemorySaver(), review_proposal=approval_service.review,
+        ),
+        source_repository=sources,
+        inbox_dir=inbox,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(capture_service),
+        provisional_intake_application=provisional,
+        organization_approval_application=organization,
+    )
+    original = tmp_path / "CS3210 OpenMP notes.md"
+    original.write_text("# OpenMP\n\nScheduling notes.", encoding="utf-8")
+    upload = IncomingEvent(
+        "telegram:901", "telegram", "100", "901", None,
+        datetime(2026, 9, 10, tzinfo=UTC), None, (original.name,),
+    )
+
+    staged = application.handle_file(upload, original)
+
+    assert isinstance(staged, PresentedReply)
+    assert sources.list_all() == []
+    assert original.is_file()
+    selected = application.handle(make_event(text="/intake_analysis 1 local"))
+    assert isinstance(selected, PresentedReply)
+    assert "local" in selected.text
+    paused = application.handle(make_event(text="/intake_accept 1"))
+    assert isinstance(paused, PresentedReply)
+    assert "Organization proposal 1" in paused.text
+    source = sources.get_by_id(1)
+    assert source is not None and source.path.parent == inbox
+    assert privacy.rule_for(1) is PrivacyRule.LOCAL_MODEL_ONLY
+
+    accepted = application.handle(make_event(text="/organization_accept 1"))
+
+    assert accepted == "Proposal 1 accepted."
+    assert not source.path.exists()
+    assert (tmp_path / "vault" / "projects" / "CS3210" / source.path.name).is_file()
+    assert proposals.get(1).status == "accepted"
+    assert {event.event_type for event in activity.list_recent()} >= {
+        ActivityType.SOURCE_MOVED, ActivityType.ORGANIZATION_ACCEPTED,
+    }
+
+
 def test_telegram_organization_approval_survives_a_process_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; checkpoints = tmp_path / "checkpoints.db"; initialize_database(database)
     inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)

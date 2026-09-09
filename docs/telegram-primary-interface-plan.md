@@ -760,7 +760,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with an explicit claim/evidence conflict card, explicit or reply-selected curated-note proposals, explicit local/external model synthesis of a selected reply, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Broader conflict-resolution lifecycle UX |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
-| 9. Daily-use hardening | Not started | Unit/integration coverage has grown with each slice | Real-vault/Telegram checklist, metrics, restart/outage evaluation and sustained trial |
+| 9. Daily-use hardening | In progress | Unit/integration coverage plus a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, metrics, restart/outage evaluation and sustained trial |
 
 ### Priority sequence from here
 
