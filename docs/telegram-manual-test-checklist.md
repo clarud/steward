@@ -101,6 +101,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   by a Travel Record review card, not an immediately created record. After
   accepting that record, use **Add to calendar** and verify it opens a second,
   separately approved Calendar proposal.
+- On any Travel, receipt, or warranty review card, choose **Organize Inbox**.
+  Verify Steward opens a separate organization review rather than moving the
+  original or accepting the record automatically.
 - For a saved travel record, use `/propose_travel_reference RECORD_ID TYPE
   FRAGMENT_ID VALUE` with an exact value that appears in the record's source
   fragment. Verify it stays pending until approval and `/travel_references
