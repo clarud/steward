@@ -29,6 +29,7 @@ from steward.application import (
     StewardRootsApplication,
     StewardPrivacyApplication,
     StewardOperationsApplication,
+    StewardCalendarApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -602,6 +603,22 @@ def _calendar_writer_factory(settings: Settings, database_path: Path):
         )
 
     return create_writer
+
+
+def _calendar_reader_factory(settings: Settings):
+    """Delay local Calendar authorization until a Telegram read is requested."""
+
+    def create_reader() -> CalendarService:
+        configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
+        if not configured:
+            raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before reading Calendar.")
+        return CalendarService(
+            authorize_google_calendar(
+                Path(configured), settings.data_dir / "config" / "google-calendar-token.json"
+            )
+        )
+
+    return create_reader
 
 
 def _build_question_graph(
@@ -1186,6 +1203,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             operations_application=StewardOperationsApplication(
                 TelegramUpdateDeliveryRepository(database_path)
             ),
+            calendar_application=StewardCalendarApplication(_calendar_reader_factory(settings)),
         )
         run_telegram_polling(
             token,

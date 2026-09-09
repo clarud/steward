@@ -20,7 +20,7 @@ from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
-from steward.calendar import CalendarEventProposalService, CalendarWriteService
+from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
@@ -462,6 +462,40 @@ class StewardPrivacyApplication:
             return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
         self._privacy.set_rule(source_id, rule)
         return f"Source {source_id} privacy rule set to {rule.value}."
+
+
+class StewardCalendarApplication:
+    """Read current Calendar state through a lazy, locally authorized adapter."""
+
+    def __init__(self, calendar_factory: Callable[[], CalendarService] | None) -> None:
+        self._calendar_factory = calendar_factory
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command not in {"/calendar_search", "/calendar_get"}:
+            return None
+        if self._calendar_factory is None:
+            return "Calendar is not configured locally. Complete Calendar authorization on the local machine first."
+        if command == "/calendar_get" and (not separator or not argument.strip()):
+            return "Use /calendar_get followed by a Calendar event ID."
+        try:
+            calendar = self._calendar_factory()
+            if command == "/calendar_get":
+                event_result = calendar.get_event(argument.strip())
+                return self._format_event(event_result.id, event_result.start, event_result.end, event_result.summary)
+            events = calendar.search(argument.strip(), limit=10)
+        except Exception as error:
+            return f"Calendar is temporarily unavailable: {error}"
+        if not events:
+            return "No current Calendar events matched."
+        return "Calendar events (current Google Calendar state):\n" + "\n".join(
+            self._format_event(item.id, item.start, item.end, item.summary) for item in events
+        )
+
+    @staticmethod
+    def _format_event(event_id: str, start: str, end: str, summary: str) -> str:
+        return f"{event_id}: {start} → {end} — {summary}"
 
 
 class StewardOperationsApplication:
@@ -1031,6 +1065,7 @@ class StewardEventApplication:
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
         operations_application: StewardOperationsApplication | None = None,
+        calendar_application: StewardCalendarApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -1047,8 +1082,13 @@ class StewardEventApplication:
         self._roots_application = roots_application
         self._privacy_application = privacy_application
         self._operations_application = operations_application
+        self._calendar_application = calendar_application
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
+        if self._calendar_application is not None:
+            calendar_response = self._calendar_application.handle_command(event)
+            if calendar_response is not None:
+                return calendar_response
         if self._operations_application is not None:
             operations_response = self._operations_application.handle_command(event)
             if operations_response is not None:

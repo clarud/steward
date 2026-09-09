@@ -18,10 +18,11 @@ from steward.application import (
     StewardRootsApplication,
     StewardPrivacyApplication,
     StewardOperationsApplication,
+    StewardCalendarApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
-from steward.calendar import CalendarEventProposalService
+from steward.calendar import CalendarEventProposalService, CalendarService
 from steward.records import RecordService, TravelRecord
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
@@ -348,6 +349,38 @@ def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path
     assert "telegram:123: delivered" in recent
     assert "telegram:123: delivered" in history
     assert dead_letters == "No terminal Telegram delivery failures."
+
+
+def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:
+    class Events:
+        def list(self, **kwargs):
+            assert kwargs["q"] == "Tokyo"
+            return type("Request", (), {"execute": lambda self: {"items": [{
+                "id": "event-1", "summary": "Flight", "start": {"date": "2026-10-01"},
+                "end": {"date": "2026-10-02"},
+            }]}})()
+
+        def get(self, **kwargs):
+            assert kwargs["eventId"] == "event-1"
+            return type("Request", (), {"execute": lambda self: {
+                "id": "event-1", "summary": "Flight", "start": {"date": "2026-10-01"},
+                "end": {"date": "2026-10-02"},
+            }})()
+
+    class Client:
+        def events(self):
+            return Events()
+
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        calendar_application=StewardCalendarApplication(lambda: CalendarService(Client())),
+    )
+
+    found = application.handle(make_event(text="/calendar_search Tokyo"))
+    detail = application.handle(make_event(text="/calendar_get event-1"))
+
+    assert "event-1: 2026-10-01 → 2026-10-02 — Flight" in found
+    assert detail == "event-1: 2026-10-01 → 2026-10-02 — Flight"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
