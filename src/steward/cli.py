@@ -1066,12 +1066,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 activity,
                 PrivacyService(database_path),
             )
+            telegram_tools = build_read_only_tools(tool_service)
+            telegram_definitions = list(READ_ONLY_TOOL_DEFINITIONS)
+            calendar_token = settings.data_dir / "config" / "google-calendar-token.json"
+            if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") and calendar_token.is_file():
+                telegram_tools.extend(
+                    build_calendar_read_tools(CalendarReadToolService(_calendar_reader_factory(settings)))
+                )
+                telegram_definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
             tool_agent_application = StewardToolAgentApplication(
                 build_tool_agent_graph(
                     tool_model,
-                    build_read_only_tools(tool_service),
+                    telegram_tools,
                     checkpointer=tool_checkpointer,
-                    tool_policy=ToolPolicy(list(READ_ONLY_TOOL_DEFINITIONS)),
+                    tool_policy=ToolPolicy(telegram_definitions),
                 )
             )
         tool_service = ReadOnlyToolService(

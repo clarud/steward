@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 
 from langchain_core.tools import BaseTool, tool
@@ -18,21 +19,30 @@ CALENDAR_READ_TOOL_DEFINITIONS = [
 
 
 class CalendarReadToolService:
-    def __init__(self, calendar: CalendarService) -> None:
+    def __init__(self, calendar: CalendarService | Callable[[], CalendarService]) -> None:
         self._calendar = calendar
+
+    def _service(self) -> CalendarService:
+        return self._calendar() if callable(self._calendar) else self._calendar
 
     def search(self, query: str = "", after: str | None = None, before: str | None = None, limit: int = 10) -> str:
         """Return current Calendar events, parsing ISO-8601 bounds when supplied."""
-        events = self._calendar.search(
-            query,
-            time_min=datetime.fromisoformat(after) if after else None,
-            time_max=datetime.fromisoformat(before) if before else None,
-            limit=limit,
-        )
+        try:
+            events = self._service().search(
+                query,
+                time_min=datetime.fromisoformat(after) if after else None,
+                time_max=datetime.fromisoformat(before) if before else None,
+                limit=limit,
+            )
+        except (OSError, ValueError) as error:
+            return json.dumps({"error": f"Calendar search is unavailable: {error}"})
         return json.dumps([self._event(event) for event in events])
 
     def get_event(self, event_id: str) -> str:
-        return json.dumps(self._event(self._calendar.get_event(event_id)))
+        try:
+            return json.dumps(self._event(self._service().get_event(event_id)))
+        except (OSError, ValueError) as error:
+            return json.dumps({"error": f"Calendar event lookup is unavailable: {error}"})
 
     @staticmethod
     def _event(event) -> dict[str, str | None]:

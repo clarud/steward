@@ -94,6 +94,24 @@ def test_calendar_agent_tools_are_read_only_adapters() -> None:
     assert [tool.name for tool in build_calendar_read_tools(service)] == ["calendar_search", "calendar_get_event"]
 
 
+def test_calendar_agent_tools_authorize_lazily_and_return_safe_setup_errors() -> None:
+    calls = 0
+
+    def factory() -> CalendarService:
+        nonlocal calls
+        calls += 1
+        return CalendarService(FakeCalendarClient())
+
+    service = CalendarReadToolService(factory)
+
+    assert [tool.name for tool in build_calendar_read_tools(service)] == ["calendar_search", "calendar_get_event"]
+    assert calls == 0
+    assert '"id": "event-1"' in service.search("Flight")
+    assert calls == 1
+    unavailable = CalendarReadToolService(lambda: (_ for _ in ()).throw(ValueError("local OAuth is required")))
+    assert "Calendar search is unavailable" in unavailable.search("Flight")
+
+
 def test_calendar_write_is_idempotent_and_audited(tmp_path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 8, tzinfo=UTC)
