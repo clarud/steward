@@ -17,6 +17,13 @@ class SourceRoot:
     created_at: datetime
     exclusions: tuple[Path, ...] = ()
 
+    @property
+    def health(self) -> str:
+        """Return a conservative operational state without changing authorization."""
+        if not self.enabled:
+            return "disabled"
+        return "available" if self.path.is_dir() else "missing"
+
 
 class SourceRootRepository:
     def __init__(self, database_path: Path) -> None:

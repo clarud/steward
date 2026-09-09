@@ -713,7 +713,7 @@ class StewardRootsApplication:
         if not roots:
             return "No locally authorized source roots. Add one from the local CLI or setup UI."
         return "Authorized source roots:\n" + "\n".join(
-            f"{root.id}: {root.name} — {'available' if root.path.is_dir() else 'missing'}"
+            f"{root.id}: {root.name} — {root.health}"
             for root in roots
         )
 

@@ -403,6 +403,8 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     response = application.handle(make_event(text="/roots"))
 
     assert response == "Authorized source roots:\n1: School — available"
+    roots.set_enabled("School", False)
+    assert application.handle(make_event(text="/roots")) == "Authorized source roots:\n1: School — disabled"
 
 
 def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) -> None:

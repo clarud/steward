@@ -41,4 +41,15 @@ def test_source_root_can_be_disabled_without_removing_its_authorization(tmp_path
     disabled = repository.set_enabled("School", False)
 
     assert disabled.enabled is False
+    assert disabled.health == "disabled"
     assert repository.get_by_name("School") == disabled
+
+
+def test_source_root_reports_missing_when_an_enabled_path_disappears(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    root_path = tmp_path / "notes"; root_path.mkdir()
+    root = SourceRootRepository(database_path).add("School", root_path)
+
+    root_path.rmdir()
+
+    assert root.health == "missing"

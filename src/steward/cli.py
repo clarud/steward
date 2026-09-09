@@ -939,7 +939,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print("No locally authorized source roots."); return
         for root in roots:
             excluded = ", ".join(str(item) for item in root.exclusions) or "none"
-            print(f"{root.id}\t{root.name}\t{'enabled' if root.enabled else 'disabled'}\t{root.path}\texcluded={excluded}")
+            print(f"{root.id}\t{root.name}\t{root.health}\t{root.path}\texcluded={excluded}")
         return
 
     if arguments.command == "unregister-source":
