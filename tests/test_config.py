@@ -12,6 +12,8 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("STEWARD_OPENAI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_SOCLAAS_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_SOCLAAS_BASE_URL", raising=False)
+    monkeypatch.delenv("SOCLAAS_MODEL", raising=False)
+    monkeypatch.delenv("SOCLAAS_BASE_URL", raising=False)
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL_URL", raising=False)

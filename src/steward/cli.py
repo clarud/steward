@@ -938,6 +938,27 @@ def main(argv: Sequence[str] | None = None) -> None:
             SourceFragmentRepository(database_path),
             activity,
         )
+        fragments = SourceFragmentRepository(database_path)
+        deterministic_organization = OrganizationService()
+        model_organization = ModelAssistedOrganizationService(model_gateway, fallback=deterministic_organization)
+        privacy = PrivacyService(database_path)
+
+        def propose_captured_source_organization(source, workspaces):
+            """Use a permitted model only to make an explicit organization proposal."""
+
+            source_id = source.id or 0
+            permitted = (
+                privacy.permits_local_model(source_id)
+                if settings.model_provider == "local"
+                else privacy.permits_external_model(source_id)
+            )
+            if not permitted:
+                return deterministic_organization.propose(source, workspaces)
+            return model_organization.propose(
+                source,
+                workspaces,
+                [fragment.text for fragment in fragments.list_for_source(source_id)],
+            )
         proposals = OrganizationProposalRepository(database_path)
         approval = OrganizationApprovalService(
             proposals,
@@ -960,6 +981,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 checkpointer=approval_checkpointer,
                 review_proposal=approval.review,
             ),
+            proposal_builder=propose_captured_source_organization,
         )
         application = StewardEventApplication(
             StewardQuestionApplication(graph),

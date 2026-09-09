@@ -177,6 +177,11 @@ schemas to SoCLaaS, but calls only Steward's local allowlisted tools through
 LangGraph. Because SoCLaaS is remote, sources restricted to a local model are
 not sent to it.
 
+The same privacy rule applies when Telegram captures use a configured model to
+suggest an existing workspace. Steward supplies extracted fragments and the
+current workspace list only, validates the returned workspace ID, and pauses
+for `accept` or `reject` before it moves an original file.
+
 Use `--thread-id` to continue a tool-agent conversation through the local
 LangGraph checkpoint store:
 

@@ -258,6 +258,50 @@ def test_uncertain_capture_remains_in_inbox_without_creating_a_pending_approval(
     assert threads.get_pending("telegram", "100") is None
 
 
+def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    inbox = tmp_path / "vault" / "inbox" / "notes.md"
+    inbox.parent.mkdir(parents=True)
+    inbox.write_text("parallel computing notes", encoding="utf-8")
+    source = SourceRepository(database_path).add(
+        Source(None, inbox.resolve(), "c" * 64, SourceType.MARKDOWN, 24, now, now, now)
+    )
+    workspace = WorkspaceRepository(database_path).create("CS3210")
+    captured: dict[str, object] = {}
+
+    def builder(candidate, workspaces):
+        captured["source"] = candidate
+        captured["workspaces"] = workspaces
+        return OrganizationProposal(
+            None,
+            candidate.id or 0,
+            "move_to_workspace",
+            workspace.id,
+            tmp_path / "vault" / "projects" / "CS3210" / candidate.path.name,
+            "The extracted notes discuss CS3210.",
+            0.8,
+        )
+
+    proposals = OrganizationProposalRepository(database_path)
+    app = StewardOrganizationApprovalApplication(
+        proposals,
+        WorkspaceRepository(database_path),
+        OrganizationApprovalThreadRepository(database_path),
+        ActivityService(database_path),
+        type("Graph", (), {"invoke": lambda *_args, **_kwargs: {"__interrupt__": ()}})(),
+        proposal_builder=builder,
+    )
+
+    response = app.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+
+    assert captured["source"] == source
+    assert captured["workspaces"] == [workspace]
+    assert "Organization proposal 1" in response
+    assert proposals.get(1).rationale == "The extracted notes discuss CS3210."
+
+
 def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

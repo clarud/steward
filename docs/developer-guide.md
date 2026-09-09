@@ -1152,14 +1152,18 @@ behavior easy to edit and inspect in code review.
   assuming a particular Gemini model is available to every account.
 - Telegram conversation state uses a local SQLite LangGraph checkpointer, so a
   restarted process can continue a chat thread. The adapter also has a local
-  allowlist and durable successful-update deduplication. It does not yet have a
-  dead-letter table limits repeated failures to three attempts and can be inspected with
-  `steward telegram-dead-letters`; it still has no time-based retry backoff.
+  allowlist, durable successful-update deduplication, and a metadata-only
+  dead-letter table. It limits repeated failures to three attempts, which can
+  be inspected with `steward telegram-dead-letters`; it still has no time-based
+  retry backoff.
 - Telegram captures use `/save` and the normal Bot API download ceiling. An
   oversized upload can be relayed through an explicit `/drive_import FILE_ID`
   command, but there is no self-hosted Bot API server or automatic Drive sync.
-- Organization matching has a deterministic filename fallback plus an optional
-  model-assisted existing-workspace proposal. Telegram resumes strong move proposals after an explicit
+- Organization matching has a deterministic filename fallback plus a
+  model-assisted existing-workspace proposal on Telegram capture when the
+  source permits the configured model. The model sees source fragments and
+  known workspace IDs, never constructs a path, and deterministic validation
+  rejects invalid output. Telegram resumes strong move proposals after an explicit
   `accept` or `reject` reply, but it has no richer natural-language approval
   understanding yet.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is

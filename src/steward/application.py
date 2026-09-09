@@ -11,9 +11,12 @@ from steward.events import IncomingEvent
 from steward.intent import Intent, IntentResolver
 from steward.organization import (
     OrganizationApprovalThreadRepository,
+    OrganizationProposal,
     OrganizationProposalRepository,
     OrganizationService,
 )
+from steward.sources import Source
+from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -197,12 +200,14 @@ class StewardOrganizationApprovalApplication:
         thread_repository: OrganizationApprovalThreadRepository,
         activity_service: ActivityService,
         approval_graph: OrganizationApprovalGraph,
+        proposal_builder: Callable[[Source, list[Workspace]], OrganizationProposal] | None = None,
     ) -> None:
         self._proposals = proposal_repository
         self._workspaces = workspace_repository
         self._threads = thread_repository
         self._activity = activity_service
         self._graph = approval_graph
+        self._proposal_builder = proposal_builder
 
     def begin(self, event: IncomingEvent, result: CaptureResult) -> str | None:
         """Persist a proposal and pause its graph before any file mutation."""
@@ -215,8 +220,11 @@ class StewardOrganizationApprovalApplication:
                 f"Saved to Inbox, but proposal {pending.proposal_id} is still awaiting your decision. "
                 "Reply `accept` or `reject` first."
             )
-        proposal = OrganizationService().propose(
-            result.source, self._workspaces.list_all()
+        workspaces = self._workspaces.list_all()
+        proposal = (
+            self._proposal_builder(result.source, workspaces)
+            if self._proposal_builder is not None
+            else OrganizationService().propose(result.source, workspaces)
         )
         if proposal.suggested_path is None:
             return "No confident organization match was found, so the source remains in Inbox."
