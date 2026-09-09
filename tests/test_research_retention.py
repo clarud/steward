@@ -28,7 +28,7 @@ def test_retain_research_writes_a_labeled_provenance_note_and_is_idempotent(tmp_
     content = first.source.path.read_text(encoding="utf-8")
     assert first.duplicate is False
     assert repeated.duplicate is True
-    assert "user-retained model-generated research note" in content
+    assert "user-retained external research note" in content
     assert "https://example.com/tlb" in content
     fragments = SourceFragmentRepository(database_path).list_for_source(first.source.id or 0)
     assert any("kernel invalidates" in fragment.text.casefold() for fragment in fragments)

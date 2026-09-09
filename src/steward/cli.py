@@ -70,7 +70,9 @@ from steward.drive import DriveInboxImportService, GoogleDriveService, authorize
 from steward.gmail import GmailInboxImportService, GmailService, authorize_gmail
 from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
 from steward.research import (
+    DuckDuckGoSearchProvider,
     GeminiGoogleSearchProvider,
+    ResearchProvider,
     ResearchProviderError,
     ResearchRetentionService,
     ResearchService,
@@ -228,10 +230,12 @@ def build_parser() -> argparse.ArgumentParser:
     agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
     research_parser = subcommands.add_parser("research", help="Research externally without retaining the sources")
     research_parser.add_argument("question")
+    research_parser.add_argument("--provider", choices=("auto", "gemini", "duckduckgo"), default="auto")
     retain_research_parser = subcommands.add_parser(
         "research-retain", help="Research externally and explicitly retain a provenance-labeled Inbox note"
     )
     retain_research_parser.add_argument("question")
+    retain_research_parser.add_argument("--provider", choices=("auto", "gemini", "duckduckgo"), default="auto")
     telegram_parser = subcommands.add_parser(
         "telegram", help="Run the local Telegram adapter with long polling"
     )
@@ -391,6 +395,21 @@ def _model_gateway_from_settings(
         )
         return None
     return OpenAIModelGateway(api_key=api_key, model=settings.openai_model)
+
+
+def _research_provider_from_settings(settings: Settings, provider_name: str) -> ResearchProvider | None:
+    """Select web research separately from the model used for local answers."""
+    if provider_name == "duckduckgo":
+        return DuckDuckGoSearchProvider()
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if provider_name == "gemini":
+        if not api_key or not settings.gemini_model:
+            print("Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using Gemini research.")
+            return None
+        return GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
+    if api_key and settings.gemini_model:
+        return GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
+    return DuckDuckGoSearchProvider()
 
 
 def _tool_calling_model_from_settings(settings: Settings):
@@ -829,17 +848,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if arguments.command in {"research", "research-retain"}:
-        if settings.model_provider != "gemini":
-            print(f"`steward {arguments.command}` currently supports the configured Gemini provider only.")
-            return
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key or not settings.gemini_model:
-            print(f"Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward {arguments.command}`.")
+        provider = _research_provider_from_settings(settings, arguments.provider)
+        if provider is None:
             return
         try:
-            bundle = ResearchService(
-                GeminiGoogleSearchProvider(api_key=api_key, model=settings.gemini_model)
-            ).research(arguments.question)
+            bundle = ResearchService(provider).research(arguments.question)
         except ResearchProviderError as error:
             print(f"External research is temporarily unavailable: {error}")
             return

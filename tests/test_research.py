@@ -1,6 +1,6 @@
 import pytest
 
-from steward.research import GeminiGoogleSearchProvider, ResearchBundle, ResearchProviderError, ResearchService, ResearchSource
+from steward.research import DuckDuckGoSearchProvider, GeminiGoogleSearchProvider, ResearchBundle, ResearchProviderError, ResearchService, ResearchSource
 
 
 class FakeProvider:
@@ -68,3 +68,25 @@ def test_gemini_provider_translates_external_failure() -> None:
 
     with pytest.raises(ResearchProviderError, match="temporarily unavailable"):
         GeminiGoogleSearchProvider(api_key="key", model="gemini-test", client=Client()).research("TLB")
+
+
+def test_duckduckgo_provider_returns_labeled_result_snippets() -> None:
+    html = """
+    <a class='result__a' href='https://example.com/tlb'>TLB guide</a>
+    <div class='result__snippet'>A cache for recent translations.</div>
+    """
+    bundle = DuckDuckGoSearchProvider(fetch=lambda _query: html).research("TLB")
+
+    assert bundle.provider == "duckduckgo_search"
+    assert bundle.sources == (
+        ResearchSource("TLB guide", "https://example.com/tlb", "A cache for recent translations."),
+    )
+    assert "not a synthesized reading" in bundle.answer
+
+
+def test_duckduckgo_provider_translates_network_failure() -> None:
+    def fail(_query: str) -> str:
+        raise OSError("offline")
+
+    with pytest.raises(ResearchProviderError, match="temporarily unavailable"):
+        DuckDuckGoSearchProvider(fetch=fail).research("TLB")

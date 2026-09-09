@@ -259,7 +259,11 @@ Inbox as a labeled Markdown research note, use:
 steward research-retain "How does Linux perform TLB shootdowns?"
 ```
 
-This preserves a research note, not copies of the cited webpages.
+This preserves a research note, not copies of the cited webpages. By default,
+Steward uses Gemini Google Search when its credentials are configured; otherwise
+it returns clearly labeled DuckDuckGo result snippets. Choose explicitly with
+`--provider gemini` or `--provider duckduckgo`; this choice is independent of
+the model used for local answers.
 
 ## Review potential new workspaces
 

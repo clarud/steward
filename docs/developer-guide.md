@@ -954,13 +954,19 @@ idempotency key on retry.
 
 ## Ephemeral external research
 
-Phase 25 adds `ResearchService` and `GeminiGoogleSearchProvider`. The provider
-uses Gemini's Google Search grounding only for an explicit `steward research`
-request and returns a `ResearchBundle`: question, generated answer, and unique
-web sources. Its retention status is always `ephemeral`; it does not write a
+Phase 25 adds `ResearchService` and a provider boundary. `GeminiGoogleSearchProvider`
+uses Gemini's Google Search grounding for a generated, cited answer. The key-free
+`DuckDuckGoSearchProvider` is a source-first adapter: it returns result titles,
+URLs and snippets and explicitly says it has not read the linked pages. `steward
+research --provider auto` prefers configured Gemini research and otherwise selects
+DuckDuckGo, independently of the model provider used for answers; either can be
+selected explicitly with `--provider`. Both return a `ResearchBundle` with a
+provider identity. Its retention status is always `ephemeral`; it does not write a
 `Source`, fragment, concept, claim, or embedding. A future explicit “keep those
 sources” workflow must route selected material through normal capture and
-provenance processing rather than bypassing the Source layer.
+provenance processing rather than bypassing the Source layer. This is now
+provided by `research-retain`: it captures a labeled local Markdown note whose
+provider identity and URLs preserve provenance, never copies the cited pages.
 
 ## Emerging workspace detection
 
