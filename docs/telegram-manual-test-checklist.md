@@ -90,6 +90,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
   approval, accepting refreshes its fragments, and the original file remains
   byte-for-byte unchanged.
+- With the embedding model already installed locally, send
+  `/propose_rebuild_index`. Verify that it is a review card; approval rebuilds
+  vectors from existing fragments without reading or changing original files.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.

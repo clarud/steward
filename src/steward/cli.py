@@ -1320,6 +1320,19 @@ def main(argv: Sequence[str] | None = None) -> None:
         activity = ActivityService(database_path)
         fragments = SourceFragmentRepository(database_path)
         source_service = SourceService(sources, fragments, MarkdownExtractor())
+
+        def rebuild_semantic_index() -> int:
+            """Load the already-local embedding model only after Telegram approval."""
+            semantic_service = SourceService(
+                sources,
+                fragments,
+                MarkdownExtractor(),
+                semantic_index=SQLiteSemanticIndex(
+                    database_path, SentenceTransformerEmbeddingProvider()
+                ),
+            )
+            return semantic_service.rebuild_semantic_index()
+
         tasks = TaskService(database_path)
         task_reminders = TaskReminderService(database_path, tasks, activity)
         capture_service = InboxCaptureService(
@@ -1403,6 +1416,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 source_repository=sources,
                 delivery_repository=TelegramUpdateDeliveryRepository(database_path),
                 source_service=source_service,
+                semantic_index_rebuilder=rebuild_semantic_index,
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service)

@@ -931,6 +931,58 @@ def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> No
     assert proposals.get(proposal.id or 0).status == "pending"
 
 
+def test_telegram_semantic_rebuild_is_reviewed_and_uses_no_source_paths(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    calls: list[str] = []
+    application = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity,
+        semantic_index_rebuilder=lambda: (calls.append("rebuilt") or 7),
+    )
+
+    preview = application.handle_command(make_event(text="/propose_rebuild_index"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "original files will not change" in preview.text
+    assert calls == []
+    assert application.handle_command(make_event(text="/approve_action 1")) == (
+        "Rebuilt local semantic index for 7 fragments. Original files unchanged."
+    )
+    assert calls == ["rebuilt"]
+    assert proposals.get(1).status == "accepted"
+    assert activity.list_recent()[1].event_type is ActivityType.SEMANTIC_INDEX_REBUILT
+
+
+def test_telegram_semantic_rebuild_failure_keeps_review_pending(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+
+    def unavailable() -> int:
+        raise RuntimeError("C:/private/cache/model is unavailable")
+
+    application = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity,
+        semantic_index_rebuilder=unavailable,
+    )
+    application.handle_command(make_event(text="/propose_rebuild_index"))
+
+    response = application.handle_command(make_event(text="/approve_action 1"))
+
+    assert response == (
+        "Could not rebuild the local semantic index. Verify the local embedding model, then retry the pending proposal."
+    )
+    assert "C:/private" not in response
+    assert proposals.get(1).status == "pending"
+
+
 def test_telegram_integration_status_reveals_only_local_readiness(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", "C:/private/client.json")
     (tmp_path / "config").mkdir()

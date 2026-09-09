@@ -127,7 +127,7 @@ class StewardReadApplication:
             "/calendar_travel RECORD_ID, /calendar_task TASK_ID\n"
             "/drive_search QUERY, /gmail_search QUERY\n"
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
-            "/propose_reextract SOURCE_ID â€” refresh derived text after review\n\n"
+            "/propose_reextract SOURCE_ID, /propose_rebuild_index â€” derived-data maintenance after review\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
             "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE.\n\n"
@@ -1488,6 +1488,7 @@ class StewardActionProposalApplication:
     """
 
     REEXTRACT_SOURCE = "reextract_source"
+    REBUILD_SEMANTIC_INDEX = "rebuild_semantic_index"
 
     def __init__(
         self,
@@ -1505,6 +1506,7 @@ class StewardActionProposalApplication:
         source_repository: SourceRepository | None = None,
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
         source_service: SourceService | None = None,
+        semantic_index_rebuilder: Callable[[], int] | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -1520,6 +1522,7 @@ class StewardActionProposalApplication:
         self._sources = source_repository
         self._delivery_repository = delivery_repository
         self._source_service = source_service
+        self._semantic_index_rebuilder = semantic_index_rebuilder
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         text = (event.text or "").strip()
@@ -1572,6 +1575,8 @@ class StewardActionProposalApplication:
             return self.propose_workspace(argument)
         if command == "/propose_reextract":
             return self.propose_reextract(argument)
+        if command == "/propose_rebuild_index":
+            return self.propose_rebuild_semantic_index(argument)
         if command not in {"/approve_action", "/reject_action"}:
             return None
         if not separator or not argument.strip().isdigit():
@@ -1585,6 +1590,8 @@ class StewardActionProposalApplication:
             return self._review_delivery_recovery(proposal_id, decision)
         if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
             return self._review_reextract(proposal_id, decision)
+        if proposal is not None and proposal.action_type == self.REBUILD_SEMANTIC_INDEX:
+            return self._review_rebuild_semantic_index(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
@@ -1711,10 +1718,12 @@ class StewardActionProposalApplication:
             return f"Re-extraction proposal {proposal.id} rejected."
         try:
             fragments = self._source_service.reextract_source(int(proposal.payload["source_id"]))
-        except (OSError, UnicodeDecodeError, ValueError) as error:
+        except ValueError as error:
             # Preserve the pending proposal for a deliberate retry after the
             # local file or extractor problem is repaired.
             return f"Could not refresh derived text: {error}"
+        except (OSError, UnicodeDecodeError):
+            return "Could not refresh derived text; the local source or extractor is unavailable. The proposal remains pending."
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(
@@ -1731,6 +1740,34 @@ class StewardActionProposalApplication:
             f"Refreshed derived text for source {proposal.payload['source_id']}: "
             f"{len(fragments)} fragments. Original unchanged."
         )
+
+    def _review_rebuild_semantic_index(self, proposal_id: int, decision: str) -> str:
+        """Rebuild vectors only after a deliberate, owner-visible decision."""
+        if self._semantic_index_rebuilder is None:
+            return "Semantic-index rebuilding is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Semantic-index rebuild proposal was not found."
+        if proposal.status == decision:
+            return f"Semantic-index rebuild proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Semantic-index rebuild proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Semantic-index rebuild proposal {proposal.id} rejected."
+        try:
+            indexed = self._semantic_index_rebuilder()
+        except (ImportError, OSError, RuntimeError, ValueError):
+            # Model/cache failures must not turn into filesystem or provider
+            # diagnostics in Telegram, and keep the review available to retry.
+            return "Could not rebuild the local semantic index. Verify the local embedding model, then retry the pending proposal."
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.SEMANTIC_INDEX_REBUILT, object_id=str(proposal_id), details=f"fragments:{indexed}")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Rebuilt local semantic index for {indexed} fragments. Original files unchanged."
 
     def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str:
         if self._capture is None:
@@ -1919,6 +1956,25 @@ class StewardActionProposalApplication:
             "This refreshes derived text only; the original file will not change.",
             (
                 ReplyAction("Refresh derived text", f"/approve_action {proposal.id}"),
+                ReplyAction("Reject", f"/reject_action {proposal.id}"),
+            ),
+        )
+
+    def propose_rebuild_semantic_index(self, argument: str) -> str | PresentedReply:
+        """Stage a model-costly but rebuildable local index operation."""
+        if self._semantic_index_rebuilder is None:
+            return "Semantic-index rebuilding is not configured for this Steward process."
+        if argument.strip():
+            return "Use /propose_rebuild_index without arguments."
+        proposal = self._repository.find_pending(self.REBUILD_SEMANTIC_INDEX, {})
+        if proposal is None:
+            proposal = self._repository.add(self.REBUILD_SEMANTIC_INDEX, {})
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(proposal.id), details="Rebuild local semantic index")
+        return PresentedReply(
+            f"Semantic-index rebuild proposal {proposal.id} is pending. It will regenerate local vectors from existing fragments and may take time; original files will not change.",
+            (
+                ReplyAction("Rebuild local index", f"/approve_action {proposal.id}"),
                 ReplyAction("Reject", f"/reject_action {proposal.id}"),
             ),
         )

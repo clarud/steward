@@ -702,6 +702,13 @@ filesystem target. Extraction failure leaves the proposal pending so that the
 user can repair the local condition and deliberately retry; success records
 `SOURCE_REEXTRACTED` plus the approval audit event.
 
+`/propose_rebuild_index` follows the same review boundary for the whole local
+semantic index. Its approved callable loads the already-local embedding model,
+clears and regenerates only derived vectors from persisted fragments, and never
+accepts a model name, URL, path, or download instruction from Telegram. A
+model/cache failure leaves the proposal pending and returns a secret-free retry
+message.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by

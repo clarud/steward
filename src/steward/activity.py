@@ -23,6 +23,7 @@ class ActivityType(StrEnum):
     SOURCE_MOVED = "source_moved"
     SOURCE_MOVE_UNDONE = "source_move_undone"
     SOURCE_REEXTRACTED = "source_reextracted"
+    SEMANTIC_INDEX_REBUILT = "semantic_index_rebuilt"
     ACTION_PROPOSED = "action_proposed"
     ACTION_ACCEPTED = "action_accepted"
     ACTION_REJECTED = "action_rejected"
