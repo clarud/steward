@@ -792,6 +792,50 @@ Goals run in this order:
 → 9 hardening
 ```
 
+### Active execution goals
+
+The numbered product goals describe capability areas. The following delivery
+goals turn their remaining work into small, independently testable releases.
+They are ordered by the risk of getting them wrong and by their value in daily
+Telegram use. A goal is only checked off after its automated tests, relevant
+restart/duplicate cases, and manual Telegram checklist cases pass.
+
+1. **Operational trust and root recovery (Goal 7).** Rehearse recovery from a
+   missing or moved root, an interrupted scan, a SQLite lock, a provider
+   outage, and a Telegram-delivery outage. Add a documented Windows
+   start-at-login/health procedure. The test boundary is that roots stay
+   explicit, source content is never lost, derived state can be rebuilt, and
+   an operator receives a useful, secret-free diagnosis.
+2. **Conversation-aware Telegram routing (Goals 1 and 4).** Complete
+   reply/reference-resolution cases and provider-failure behavior for the
+   allowlisted read-tool loop. The test boundary is text, caption, reply,
+   duplicate update, expired callback, unauthorised chat, invalid tool
+   arguments, tool-budget exhaustion, and restart all produce either a useful
+   answer or a safe explanation.
+3. **Intake and organization refinement (Goals 2 and 3).** Add an explicit
+   local-only/external/no-model analysis choice, extractor-specific review
+   feedback, and editable organization targets. The test boundary is that
+   accept, discard, revise, uncertain-Inbox, existing-workspace, and
+   new-workspace paths preserve originals, remain idempotent, and survive a
+   restart while awaiting a decision.
+4. **Daily commitments and records (Goal 5).** Add reminder scheduling and
+   richer task/Calendar linkage without treating every task as an event. Test
+   time zones, duplicate prevention, approval/rejection, OAuth failure,
+   Calendar outage, provenance, and restart before enabling any action.
+5. **Curated knowledge with evidence (Goal 6).** Add conversation synthesis,
+   selected external-source retention, and a conflict-review experience. Test
+   that local evidence, external evidence, and model inference remain visibly
+   distinct; no research result becomes durable without an explicit decision.
+6. **Administration and selected imports (Goal 8).** Add local OAuth status,
+   confirmed maintenance operations, and complete the select-before-import
+   Drive/Gmail flows. Test authorization, configuration failure, cancellation,
+   duplicate import, audit history, and refusal of unconfirmed maintenance.
+7. **Daily-use acceptance program (Goal 9).** Run the full automated suite,
+   a non-sensitive real-vault scan, Telegram polling/restart/duplicate tests,
+   provider-outage tests, and the manual Telegram checklist. Record observed
+   routing, extraction, organization, and tool-loop failures as the next
+   prioritized fixes.
+
 ## Explicitly local-only or browser-handoff operations
 
 Some capabilities must not become unauthenticated chat commands:
