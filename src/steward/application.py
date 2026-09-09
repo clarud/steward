@@ -96,17 +96,29 @@ class StewardReadApplication:
     @staticmethod
     def help_text() -> str:
         return (
-            "Steward commands (read-only):\n"
+            "Steward Telegram guide\n\n"
+            "Read-only:\n"
             "/status — local service summary\n"
             "/inbox [page] — saved Inbox sources\n"
             "/sources [page] — registered sources\n"
             "/source ID — one source and its extracted-text status\n"
             "/search TERMS — local lexical search\n"
             "/workspaces — current workspaces\n"
-            "/activity [term] — recent audit events\n\n"
-            "Admin diagnostics: /deliveries, /delivery_history, /dead_letters\n\n"
-            "Writes remain reviewable: /save preserves text, and /approve_action "
-            "or /reject_action reviews a pending proposal."
+            "/activity [term] — recent audit events\n"
+            "/records, /tasks, /roots — saved state\n"
+            "/calendar_search [terms], /calendar_get ID — current Google Calendar\n\n"
+            "Explicit actions (they create a review or a selected import):\n"
+            "/propose_task TEXT, /complete_task ID\n"
+            "/propose_note TEXT, /research QUESTION\n"
+            "/propose_travel_record SOURCE_ID\n"
+            "/propose_receipt_record SOURCE_ID\n"
+            "/propose_warranty_record SOURCE_ID\n"
+            "/calendar_travel RECORD_ID\n"
+            "/drive_search QUERY, /gmail_search QUERY\n"
+            "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
+            "Review-required writes use the buttons or /approve_action ID and "
+            "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
+            "Admin diagnostics: /deliveries, /delivery_history, /dead_letters"
         )
 
     def status(self) -> str:

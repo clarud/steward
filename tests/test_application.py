@@ -139,6 +139,16 @@ def test_event_application_routes_a_question() -> None:
     assert "TLB" in response
 
 
+def test_help_explains_read_boundaries_and_reviewable_writes() -> None:
+    help_text = StewardReadApplication.help_text()
+
+    assert "Read-only:" in help_text
+    assert "/propose_task TEXT" in help_text
+    assert "/research QUESTION" in help_text
+    assert "/approve_action ID" in help_text
+    assert "review-required writes" in help_text.casefold()
+
+
 def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
