@@ -12,6 +12,7 @@ from steward.application import (
     StewardQuestionApplication,
     StewardReadApplication,
     StewardProvisionalIntakeApplication,
+    StewardToolAgentApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -184,6 +185,31 @@ def test_event_application_gives_helpful_unknown_response() -> None:
     ).handle(make_event(text="please do a mysterious thing"))
 
     assert "Try /help" in response
+
+
+def test_agent_command_uses_a_persistent_chat_scoped_tool_thread() -> None:
+    class ToolGraph:
+        def __init__(self) -> None:
+            self.input = None
+            self.config = None
+
+        def invoke(self, input, config):
+            self.input = input
+            self.config = config
+            return {"messages": [type("Final", (), {"content": "Found local evidence."})()]}
+
+    graph = ToolGraph()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        tool_agent_application=StewardToolAgentApplication(graph),
+    )
+
+    response = application.handle(make_event(text="/agent what do I know about OpenMP"))
+
+    assert response == "Found local evidence."
+    assert graph.config["configurable"]["thread_id"] == "tool-agent:telegram:100"
+    assert graph.input["messages"][1].content == "what do I know about OpenMP"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

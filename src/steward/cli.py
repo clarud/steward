@@ -23,6 +23,7 @@ from steward.application import (
     StewardQuestionApplication,
     StewardReadApplication,
     StewardProvisionalIntakeApplication,
+    StewardToolAgentApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -885,6 +886,32 @@ def main(argv: Sequence[str] | None = None) -> None:
         initialize_database(database_path)
         sources = SourceRepository(database_path)
         fragments = SourceFragmentRepository(database_path)
+        tool_agent_application = None
+        tool_model = _tool_calling_model_from_settings(settings)
+        if tool_model is not None:
+            tool_checkpoint_connection = sqlite3.connect(
+                settings.data_dir / "checkpoints.db", check_same_thread=False
+            )
+            tool_checkpointer = SqliteSaver(tool_checkpoint_connection)
+            tool_checkpointer.setup()
+            tool_service = ReadOnlyToolService(
+                sources,
+                fragments,
+                LexicalSearchService(sources, fragments),
+                KnowledgeService(database_path),
+                RecordService(database_path),
+                WorkspaceRepository(database_path),
+                activity,
+                PrivacyService(database_path),
+            )
+            tool_agent_application = StewardToolAgentApplication(
+                build_tool_agent_graph(
+                    tool_model,
+                    build_read_only_tools(tool_service),
+                    checkpointer=tool_checkpointer,
+                    tool_policy=ToolPolicy(list(READ_ONLY_TOOL_DEFINITIONS)),
+                )
+            )
         tool_service = ReadOnlyToolService(
             sources,
             fragments,
@@ -1115,6 +1142,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     activity,
                 )
             ),
+            tool_agent_application=tool_agent_application,
         )
         run_telegram_polling(
             token,

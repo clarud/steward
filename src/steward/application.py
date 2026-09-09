@@ -26,6 +26,7 @@ from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import ProvisionalIntakeService
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -203,6 +204,43 @@ class StewardReadApplication:
         except ValueError:
             return False
         return True
+
+
+class ToolAgentGraph(Protocol):
+    """Minimal safe surface for the pre-built restricted tool graph."""
+
+    def invoke(self, input: dict[str, object], config: dict[str, object]) -> dict[str, object]: ...
+
+
+class StewardToolAgentApplication:
+    """Expose an allowlisted ToolNode loop through an explicit Telegram command."""
+
+    def __init__(self, graph: ToolAgentGraph) -> None:
+        self._graph = graph
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command, separator, question = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command != "/agent":
+            return None
+        if not separator or not question.strip():
+            return "Use /agent followed by a question that may need Steward's read-only tools."
+        result = self._graph.invoke(
+            {
+                "messages": [
+                    SystemMessage(
+                        "You are Steward. Use only supplied allowlisted read-only tools when needed. "
+                        "Never claim a tool result you did not receive; answer as soon as the result is sufficient."
+                    ),
+                    HumanMessage(question.strip()),
+                ]
+            },
+            {"configurable": {"thread_id": f"tool-agent:{event.platform}:{event.chat_id}"}, "recursion_limit": 16},
+        )
+        messages = result.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return "The tool agent returned no final response."
+        return str(messages[-1].content)
 
 
 class QuestionGraph(Protocol):
@@ -669,6 +707,7 @@ class StewardEventApplication:
         gmail_import_application: StewardGmailImportApplication | None = None,
         read_application: StewardReadApplication | None = None,
         provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
+        tool_agent_application: StewardToolAgentApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -679,8 +718,13 @@ class StewardEventApplication:
         self._gmail_import_application = gmail_import_application
         self._read_application = read_application
         self._provisional_intake_application = provisional_intake_application
+        self._tool_agent_application = tool_agent_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._tool_agent_application is not None:
+            tool_response = self._tool_agent_application.handle_command(event)
+            if tool_response is not None:
+                return tool_response
         if self._provisional_intake_application is not None:
             intake_response = self._provisional_intake_application.handle_command(event)
             if isinstance(intake_response, CaptureResult):
