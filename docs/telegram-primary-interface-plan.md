@@ -812,6 +812,10 @@ that no write occurs before explicit approval.
   Friday” produces a **Save task** proposal. The due phrase remains visible;
   Steward does not guess an instant, schedule a reminder, or create a Task
   until the user accepts it.
+- Accepting a staged travel item preserves its original in Inbox and opens an
+  evidence-backed Travel Record review. After that record is accepted, an
+  **Add to calendar** action creates only a separate Calendar proposal; the
+  Google Calendar write remains explicitly reviewed and duplicate-protected.
 - Choosing **Add context** switches the chat into a small, durable input step.
   The next ordinary message supplies course/project/purpose context for that
   same pending item, then Steward redraws its card. This survives a service
