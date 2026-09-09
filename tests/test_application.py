@@ -20,6 +20,7 @@ from steward.application import (
     StewardOperationsApplication,
     StewardCalendarApplication,
     StewardTaskApplication,
+    StewardResearchApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -48,6 +49,7 @@ from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskService
+from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -462,6 +464,31 @@ def test_telegram_warranty_preview_can_be_rejected_without_persisting(tmp_path: 
     assert isinstance(application.handle(make_event(text="/propose_warranty_record 1")), PresentedReply)
     assert application.handle(make_event(text="/reject_action 1")) == "Warranty proposal 1 rejected."
     assert records.list_warranty_records() == []
+
+
+def test_telegram_research_is_ephemeral_until_the_user_explicitly_retains_it(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    capture = InboxCaptureService(
+        tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), ActivityService(database)
+    )
+
+    class Provider:
+        def research(self, query: str) -> ResearchBundle:
+            assert query == "What is a TLB?"
+            return ResearchBundle(query, "A TLB caches translations.", (ResearchSource("Reference", "https://example.test/tlb"),), provider="fake")
+
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        research_application=StewardResearchApplication(lambda: Provider(), ResearchRetentionService(capture)),
+    )
+
+    preview = application.handle(make_event(text="/research What is a TLB?"))
+    assert isinstance(preview, PresentedReply)
+    assert "ephemeral, not saved" in preview.text
+    assert SourceRepository(database).list_all() == []
+    retained = application.handle(make_event(text="/research_retain What is a TLB?"))
+    assert "Retained external research note" in retained
+    assert len(SourceRepository(database).list_all()) == 1
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:

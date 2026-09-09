@@ -31,6 +31,7 @@ from steward.application import (
     StewardOperationsApplication,
     StewardCalendarApplication,
     StewardTaskApplication,
+    StewardResearchApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -1233,6 +1234,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             task_application=StewardTaskApplication(
                 TaskService(database_path), ActionProposalRepository(database_path), activity
+            ),
+            research_application=StewardResearchApplication(
+                lambda: _research_provider_from_settings(settings, "auto"),
+                ResearchRetentionService(capture_service),
             ),
             knowledge_application=StewardKnowledgeApplication(
                 KnowledgeService(database_path), fragments,

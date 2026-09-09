@@ -33,6 +33,7 @@ from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskService
+from steward.research import ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -409,6 +410,45 @@ class StewardTaskApplication:
         return PresentedReply(
             f"Task proposal {pending.id}: {title}{due_line}\n\nNo task has been saved yet.",
             (ReplyAction("Accept task", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+        )
+
+
+class StewardResearchApplication:
+    """Offer explicit, ephemeral web research and separately reviewed retention."""
+
+    def __init__(
+        self,
+        provider_factory: Callable[[], ResearchProvider | None],
+        retention: ResearchRetentionService,
+    ) -> None:
+        self._provider_factory = provider_factory
+        self._retention = retention
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, separator, query = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command not in {"/research", "/research_retain"}:
+            return None
+        if not separator or not query.strip():
+            return f"Use {command} followed by a research question."
+        provider = self._provider_factory()
+        if provider is None:
+            return "External research is not configured for this Steward process."
+        try:
+            bundle = ResearchService(provider).research(query)
+        except (ResearchProviderError, ValueError) as error:
+            return f"External research is temporarily unavailable: {error}"
+        if command == "/research_retain":
+            result = self._retention.retain(bundle)
+            state = "Already retained" if result.duplicate else "Retained"
+            return f"{state} external research note in Inbox: {result.source.path}"
+        sources = "\n".join(f"- {source.title}: {source.url}" for source in bundle.sources)
+        text = f"External research — ephemeral, not saved:\n\n{bundle.answer}"
+        if sources:
+            text += f"\n\nExternal sources:\n{sources}"
+        return PresentedReply(
+            text,
+            (ReplyAction("Keep as Inbox note", f"/research_retain {bundle.query}"),),
         )
 
 
@@ -1204,6 +1244,7 @@ class StewardEventApplication:
         tool_agent_application: StewardToolAgentApplication | None = None,
         record_application: StewardRecordApplication | None = None,
         task_application: StewardTaskApplication | None = None,
+        research_application: StewardResearchApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
@@ -1222,6 +1263,7 @@ class StewardEventApplication:
         self._tool_agent_application = tool_agent_application
         self._record_application = record_application
         self._task_application = task_application
+        self._research_application = research_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._privacy_application = privacy_application
@@ -1257,6 +1299,10 @@ class StewardEventApplication:
             task_response = self._task_application.handle_command(event)
             if task_response is not None:
                 return task_response
+        if self._research_application is not None:
+            research_response = self._research_application.handle_command(event)
+            if research_response is not None:
+                return research_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:
