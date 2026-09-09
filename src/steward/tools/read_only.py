@@ -116,7 +116,15 @@ class ReadOnlyToolService:
             {
                 "concept": None
                 if concept is None
-                else {"id": concept.id, "name": concept.name, "created_at": concept.created_at.isoformat()}
+                else {
+                    "id": concept.id,
+                    "name": concept.name,
+                    "created_at": concept.created_at.isoformat(),
+                    "claims": [
+                        {"id": claim.id, "text": claim.text, "created_at": claim.created_at.isoformat()}
+                        for claim in self._knowledge.list_claims(concept.id or 0)
+                    ],
+                }
             }
         )
 

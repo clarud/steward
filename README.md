@@ -142,6 +142,15 @@ steward action-proposals
 steward review-action-proposal 1 accepted
 ```
 
+When you explicitly ask Steward to compare an existing knowledge claim with a
+retrieved fragment, the agent may create a pending enrichment proposal. It does
+not edit the claim; review it separately:
+
+```powershell
+steward knowledge-enrichment-proposals
+steward review-knowledge-enrichment 1 accepted
+```
+
 ```powershell
 steward agent "What did I save about address translation?"
 ```

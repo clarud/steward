@@ -101,6 +101,9 @@ from steward.tools import (
     build_calendar_proposal_tools,
     build_calendar_read_tools,
     build_read_only_tools,
+    KNOWLEDGE_PROPOSAL_TOOL_DEFINITIONS,
+    KnowledgeProposalToolService,
+    build_knowledge_proposal_tools,
 )
 from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
 from steward.tools.calendar_read import CALENDAR_READ_TOOL_DEFINITIONS
@@ -842,6 +845,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         tools.extend(build_action_proposal_tools(ActionProposalToolService(action_proposals)))
         definitions.extend(ACTION_PROPOSAL_TOOL_DEFINITIONS)
+        tools.extend(
+            build_knowledge_proposal_tools(
+                KnowledgeProposalToolService(
+                    KnowledgeService(database_path),
+                    fragments,
+                    KnowledgeEnrichmentProposalRepository(database_path),
+                    ActivityService(database_path),
+                )
+            )
+        )
+        definitions.extend(KNOWLEDGE_PROPOSAL_TOOL_DEFINITIONS)
         calendar_only = (
             arguments.include_calendar
             and _is_calendar_question(arguments.question)
@@ -888,6 +902,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                             "When a tool result is sufficient, answer immediately. Never repeat a tool call with "
                             "the same arguments, and do not claim a result that a tool did not provide. "
                             "If the user explicitly asks to create a workspace, use propose_create_workspace. "
+                            "If the user explicitly asks to compare a claim with retrieved evidence or save an enrichment, "
+                            "use propose_knowledge_enrichment; it creates a pending review only. "
                             "It creates only a pending proposal: say that explicit approval is still required. "
                             "For an explicit request to put a saved travel record on Calendar, use "
                             "propose_create_travel_calendar_event. It never creates the event; give the "

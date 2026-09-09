@@ -184,6 +184,19 @@ class KnowledgeService:
                 "SELECT id, concept_id, text, created_at FROM claims WHERE id = ?", (claim_id,)
             ).fetchone()
         return Claim(int(row[0]), int(row[1]), str(row[2]), datetime.fromisoformat(str(row[3]))) if row else None
+
+    def list_claims(self, concept_id: int) -> tuple[Claim, ...]:
+        """Return canonical claims for one concept without synthesizing new knowledge."""
+
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT id, concept_id, text, created_at FROM claims WHERE concept_id = ? ORDER BY id",
+                (concept_id,),
+            ).fetchall()
+        return tuple(
+            Claim(int(row[0]), int(row[1]), str(row[2]), datetime.fromisoformat(str(row[3])))
+            for row in rows
+        )
     def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
         claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
         if {"not", "never", "false", "incorrect"} & evidence_words:

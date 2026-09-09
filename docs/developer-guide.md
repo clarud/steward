@@ -1112,6 +1112,12 @@ decision in the activity log. A contradiction is never silently added as claim
 support. The CLI checks the source privacy rule before sending evidence to a
 cloud or local model.
 
+The tool agent can also call `propose_knowledge_enrichment(claim_id,
+fragment_id)` when the user explicitly requests an evidence comparison. The
+tool uses ordinary Python to load both IDs, computes the initial relationship
+deterministically, and persists a pending proposal. It does not receive model
+text as a command, and it cannot edit claims, concepts, or evidence.
+
 Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
 `retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
 fixture. `product_cases.yaml` adds reviewable cases for organization (including

@@ -13,6 +13,11 @@ from steward.tools.calendar_write_proposals import (
     CalendarProposalToolService,
     build_calendar_proposal_tools,
 )
+from steward.tools.knowledge_write_proposals import (
+    KNOWLEDGE_PROPOSAL_TOOL_DEFINITIONS,
+    KnowledgeProposalToolService,
+    build_knowledge_proposal_tools,
+)
 
 __all__ = [
     "ReadOnlyToolService",
@@ -29,4 +34,7 @@ __all__ = [
     "CALENDAR_PROPOSAL_TOOL_DEFINITIONS",
     "CalendarProposalToolService",
     "build_calendar_proposal_tools",
+    "KNOWLEDGE_PROPOSAL_TOOL_DEFINITIONS",
+    "KnowledgeProposalToolService",
+    "build_knowledge_proposal_tools",
 ]

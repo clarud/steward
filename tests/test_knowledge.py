@@ -1,6 +1,8 @@
 from pathlib import Path
+import json
 import sqlite3
 import pytest
+from steward.activity import ActivityService
 from steward.knowledge import (
     Claim,
     EnrichmentOperation,
@@ -8,6 +10,7 @@ from steward.knowledge import (
     KnowledgeService,
 )
 from steward.knowledge_ai import ModelAssistedKnowledgeService
+from steward.tools import KnowledgeProposalToolService, build_knowledge_proposal_tools
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -105,3 +108,30 @@ def test_model_assisted_enrichment_validates_a_grounded_structured_proposal() ->
 
     assert proposal.operation is EnrichmentOperation.QUALIFY
     assert proposal.rationale == "The evidence limits the claim to some architectures."
+
+
+def test_knowledge_proposal_tool_creates_a_reviewable_item_only(tmp_path: Path) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    timestamp = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "d" * 64, SourceType.MARKDOWN, 0, timestamp, timestamp, timestamp)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "TLBs may cache translations.", "lines 1-1"),))
+    )[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    tool_service = KnowledgeProposalToolService(
+        knowledge,
+        SourceFragmentRepository(database),
+        KnowledgeEnrichmentProposalRepository(database),
+        ActivityService(database),
+    )
+
+    result = json.loads(tool_service.propose_knowledge_enrichment(claim.id or 0, fragment.id or 0))
+
+    assert [tool.name for tool in build_knowledge_proposal_tools(tool_service)] == ["propose_knowledge_enrichment"]
+    assert result["status"] == "pending"
+    assert result["claim_id"] == claim.id
+    assert knowledge.get_claim(claim.id or 0) == claim
