@@ -2338,7 +2338,10 @@ class StewardActionProposalApplication:
             return self._review_travel_record(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.ADD_TRAVEL_REFERENCE:
             return self._review_travel_reference(proposal_id, decision)
-        if proposal is not None and proposal.action_type == CalendarEventProposalService.CREATE_TRAVEL_EVENT:
+        if proposal is not None and proposal.action_type in {
+            CalendarEventProposalService.CREATE_TRAVEL_EVENT,
+            CalendarEventProposalService.CREATE_TASK_EVENT,
+        }:
             if self._calendar_proposals is None:
                 return "Calendar proposal review is not configured on this Steward process."
             try:
@@ -2346,7 +2349,19 @@ class StewardActionProposalApplication:
                 reviewed = self._calendar_proposals.review(proposal_id, decision, writer)
             except ValueError as error:
                 return str(error)
-            return f"Calendar proposal {reviewed.id} {reviewed.status}."
+            if reviewed.status == "accepted":
+                return PresentedReply(
+                    "The Calendar event was created after your approval.",
+                    (ReplyAction("Calendar", "/calendar"), ReplyAction("Home", "/home")),
+                    title="Calendar event created",
+                    icon="📅",
+                )
+            return PresentedReply(
+                "The Calendar event was not created.",
+                (ReplyAction("Home", "/home"),),
+                title="Calendar event declined",
+                icon="↩️",
+            )
         try:
             proposal, workspace = self._service.review(proposal_id, decision)
         except ValueError as error:
