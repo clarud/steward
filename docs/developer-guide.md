@@ -482,8 +482,10 @@ the model gateways still own their existing responsibilities.
 
 ## Telegram adapter
 
-Phase 7 adds a transport boundary; it does not add conversation memory or
-Telegram capture. A Telegram message moves through the system as follows:
+Telegram is still a transport boundary: it does not own retrieval, capture,
+organization, or external API logic. A normalized Telegram message moves
+through the application router, then into ordinary services or a deliberately
+small LangGraph workflow as appropriate:
 
 ```text
 Telegram Update
@@ -533,6 +535,32 @@ claim that the retrieval services are fully async.
 for this local-first version because the bot opens an outgoing connection to
 Telegram rather than requiring a public webhook server. The process remains
 running until `Ctrl+C` stops it.
+
+### Current primary-interface interactions
+
+The Telegram router intentionally distinguishes read-only inspection from
+explicit operations:
+
+- `/search`, `/source`, `/sources`, `/inbox`, `/workspaces`, `/activity`,
+  `/records`, `/tasks`, `/roots`, and Calendar reads inspect current local or
+  authoritative external state.
+- Attachments and substantial text are staged as provisional intake. Saving,
+  discarding, or adding context is explicit; an attachment is not silently
+  retained merely because it arrived in chat.
+- Tasks, curated notes, source/workspace links, records, travel corrections,
+  Calendar writes, and organization moves become durable only through a
+  pending proposal and a deterministic approval path.
+- `/research` is explicitly external and ephemeral. Keeping its result writes
+  a provenance-labeled Inbox note; it does not archive or silently promote web
+  information to canonical personal knowledge.
+- Drive/Gmail search returns metadata cards, followed by an explicit
+  single-item import. OAuth setup, source-root authorization, file watching,
+  and secrets remain local-only operations.
+
+`/help` exposes the available interaction groups and `/status`,
+`/deliveries`, `/dead_letters`, and `/integrations` provide metadata-only
+operational visibility. The full real-bot validation sequence is maintained in
+`docs/telegram-manual-test-checklist.md`.
 
 ### Durable update delivery
 
@@ -1166,9 +1194,11 @@ behavior easy to edit and inspect in code review.
   be inspected with `steward telegram-dead-letters`. Failed updates wait 15,
   then 30 seconds, then up to a five-minute capped exponential delay before a
   redelivered update can be claimed again.
-- Telegram captures use `/save` and the normal Bot API download ceiling. An
-  oversized upload can be relayed through an explicit `/drive_import FILE_ID`
-  command, but there is no self-hosted Bot API server or automatic Drive sync.
+- Telegram attachments and substantial text use provisional intake by default;
+  `/save` remains an explicit immediate-capture shortcut. The normal Bot API
+  download ceiling still applies. An oversized upload can be selected through
+  explicit Drive search/import, but there is no self-hosted Bot API server or
+  automatic Drive sync.
 - Organization matching has a deterministic filename fallback plus a
   model-assisted existing-workspace proposal on Telegram capture when the
   source permits the configured model. The model sees source fragments and
