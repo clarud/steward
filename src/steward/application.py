@@ -2380,7 +2380,7 @@ class StewardActionProposalApplication:
             icon="✅" if proposal.status == "accepted" else "↩️",
         )
 
-    def _review_task(self, proposal_id: int, decision: str) -> str:
+    def _review_task(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._tasks is None:
             return "Task creation is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -2395,7 +2395,12 @@ class StewardActionProposalApplication:
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"Discarded task: {title}."
+            return PresentedReply(
+                "The task was not saved.",
+                (ReplyAction("Home", "/home"),),
+                title="Task discarded",
+                icon="↩️",
+            )
         due_at_value = proposal.payload.get("due_at") or None
         remind_at_value = proposal.payload.get("remind_at") or None
         if remind_at_value and (self._task_reminders is None or not proposal.payload.get("chat_id")):
@@ -2415,7 +2420,15 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-        return f"Saved task: {task.title}."
+        actions = [ReplyAction("Tasks", "/tasks"), ReplyAction("Home", "/home")]
+        if self._calendar_proposals is not None and task.due_at is not None:
+            actions.insert(0, ReplyAction("Add to calendar", f"/calendar_task {task.id}"))
+        due = f"\nDue: {task.due_at.isoformat()}" if task.due_at is not None else (
+            f"\nDue cue: {task.due_hint}" if task.due_hint else ""
+        )
+        return PresentedReply(
+            f"{task.title}{due}", tuple(actions), title="Task saved", icon="✅"
+        )
 
     def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:
         if self._delivery_repository is None:
