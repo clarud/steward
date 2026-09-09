@@ -12,6 +12,12 @@ def test_task_service_preserves_a_due_phrase_without_guessing_a_time() -> None:
     )
 
 
+def test_task_service_accepts_deadline_prefix_and_due_language() -> None:
+    assert TaskService.parse_proposal("deadline: submit CS3210 lab due Friday") == (
+        "submit CS3210 lab", "due Friday"
+    )
+
+
 def test_task_service_creates_and_lists_open_tasks(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     service = TaskService(database)

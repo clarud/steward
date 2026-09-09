@@ -1581,7 +1581,7 @@ class StewardEventApplication:
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
-            if normalized.startswith(("remind me to ", "todo:", "task:")):
+            if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
                 return self._task_application.propose(event.text or "")
         if self._calendar_application is not None:
             calendar_response = self._calendar_application.handle_command(event)
