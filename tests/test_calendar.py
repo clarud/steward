@@ -110,6 +110,8 @@ def test_calendar_agent_tools_authorize_lazily_and_return_safe_setup_errors() ->
     assert calls == 1
     unavailable = CalendarReadToolService(lambda: (_ for _ in ()).throw(ValueError("local OAuth is required")))
     assert "Calendar search is unavailable" in unavailable.search("Flight")
+    provider_failure = CalendarReadToolService(lambda: (_ for _ in ()).throw(RuntimeError("provider unavailable")))
+    assert "Calendar event lookup is unavailable" in provider_failure.get_event("event-1")
 
 
 def test_calendar_write_is_idempotent_and_audited(tmp_path) -> None:
