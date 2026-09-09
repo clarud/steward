@@ -1634,6 +1634,8 @@ class StewardOrganizationApprovalApplication:
     def handle_decision(self, event: IncomingEvent) -> str | None:
         """Resume exactly this chat's paused graph for an explicit decision."""
 
+        if (event.text or "").strip().partition(" ")[0].partition("@")[0] == "/organization_proposals":
+            return self.list_proposals()
         pending = self._threads.get_pending(event.platform, event.chat_id)
         if pending is None:
             return None
@@ -1679,6 +1681,27 @@ class StewardOrganizationApprovalApplication:
             raise RuntimeError("Organization approval did not reach a final status.")
         self._threads.finish(event.platform, event.chat_id, decision)
         return f"Proposal {pending.proposal_id} {decision}."
+
+    def list_proposals(self) -> str:
+        """Show bounded, path-free organization history for Telegram review."""
+        proposals = self._proposals.list_all()[-10:]
+        if not proposals:
+            return "No organization proposals yet."
+        lines = ["Recent organization proposals:"]
+        for proposal in reversed(proposals):
+            source_name = None
+            if self._sources is not None:
+                source = self._sources.get_by_id(proposal.source_id)
+                source_name = source.path.name if source is not None else None
+            target = proposal.workspace_name or (
+                f"workspace {proposal.workspace_id}" if proposal.workspace_id is not None else "Inbox"
+            )
+            lines.append(
+                f"{proposal.id}: source {proposal.source_id}"
+                + (f" ({source_name})" if source_name else "")
+                + f" -> {target} [{proposal.status}]"
+            )
+        return "\n".join(lines)
 
     def _revise_with_context(
         self, event: IncomingEvent, pending: PendingOrganizationApproval, guidance: str

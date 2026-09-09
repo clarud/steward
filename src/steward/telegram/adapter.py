@@ -312,6 +312,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("semantic_search", adapter.handle_update))
     application.add_handler(CommandHandler("hybrid_search", adapter.handle_update))
     application.add_handler(CommandHandler("organize", adapter.handle_update))
+    application.add_handler(CommandHandler("organization_proposals", adapter.handle_update))
     application.add_handler(CommandHandler("agent", adapter.handle_update))
     application.add_handler(CommandHandler("records", adapter.handle_update))
     application.add_handler(CommandHandler("tasks", adapter.handle_update))

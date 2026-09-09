@@ -1746,6 +1746,9 @@ def test_organize_inbox_creates_one_durable_proposal_before_any_move(tmp_path: P
     assert "Organization proposal 1" in response.text
     assert proposals.get(1).source_id == source.id
     assert source_path.is_file()
+    listed = application.handle(make_event(text="/organization_proposals"))
+    assert "1: source 1 (CS3210-openmp.md) -> workspace 1 [pending]" in listed
+    assert str(tmp_path) not in listed
 
 
 def test_pending_telegram_approval_does_not_treat_other_text_as_a_question(tmp_path: Path) -> None:
