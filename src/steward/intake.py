@@ -26,6 +26,7 @@ class ProvisionalIntake:
     kind: str
     staged_path: Path
     original_name: str
+    category: str
     summary: str
     status: str
     created_at: datetime
@@ -46,13 +47,13 @@ class ProvisionalIntakeRepository:
                 """
                 INSERT INTO provisional_intakes (
                     event_id, platform, chat_id, message_id, kind, staged_path,
-                    original_name, summary, status, created_at, decided_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    original_name, category, summary, status, created_at, decided_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     intake.event_id, intake.platform, intake.chat_id, intake.message_id,
-                    intake.kind, str(intake.staged_path), intake.original_name, intake.summary,
-                    intake.status, intake.created_at.isoformat(),
+                    intake.kind, str(intake.staged_path), intake.original_name, intake.category,
+                    intake.summary, intake.status, intake.created_at.isoformat(),
                     intake.decided_at.isoformat() if intake.decided_at else None,
                 ),
             )
@@ -63,7 +64,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, summary, status, created_at, decided_at
+                       original_name, category, summary, status, created_at, decided_at
                 FROM provisional_intakes WHERE id = ?
                 """,
                 (intake_id,),
@@ -75,7 +76,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, summary, status, created_at, decided_at
+                       original_name, category, summary, status, created_at, decided_at
                 FROM provisional_intakes WHERE event_id = ?
                 """,
                 (event_id,),
@@ -110,14 +111,21 @@ class ProvisionalIntakeRepository:
                 (intake_id, guidance, summary, datetime.now(UTC).isoformat()),
             )
 
+    def set_classification(self, intake_id: int, category: str, summary: str) -> None:
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "UPDATE provisional_intakes SET category = ?, summary = ? WHERE id = ?",
+                (category, summary, intake_id),
+            )
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> ProvisionalIntake:
         return ProvisionalIntake(
             id=int(row[0]), event_id=str(row[1]), platform=str(row[2]), chat_id=str(row[3]),
             message_id=str(row[4]), kind=str(row[5]), staged_path=Path(str(row[6])),
-            original_name=str(row[7]), summary=str(row[8]), status=str(row[9]),
-            created_at=datetime.fromisoformat(str(row[10])),
-            decided_at=datetime.fromisoformat(str(row[11])) if row[11] else None,
+            original_name=str(row[7]), category=str(row[8]), summary=str(row[9]), status=str(row[10]),
+            created_at=datetime.fromisoformat(str(row[11])),
+            decided_at=datetime.fromisoformat(str(row[12])) if row[12] else None,
         )
 
 
@@ -146,12 +154,11 @@ class ProvisionalIntakeService:
         staged_path = self._staging_path(event, original_name)
         self._staging_dir.mkdir(parents=True, exist_ok=True)
         copy2(original_path, staged_path)
-        source_type = source_type_for_path(staged_path)
-        type_label = source_type.value.replace("_", " ") if source_type else "unclassified file"
+        category, summary = self._classify_file(staged_path, original_name)
         intake = self._repository.add(
             ProvisionalIntake(
                 None, event.id, event.platform, event.chat_id, event.message_id, "file",
-                staged_path, original_name, f"This appears to be a {type_label}: {original_name}",
+                staged_path, original_name, category, summary,
                 "pending", datetime.now(UTC),
             )
         )
@@ -172,8 +179,7 @@ class ProvisionalIntakeService:
         intake = self._repository.add(
             ProvisionalIntake(
                 None, event.id, event.platform, event.chat_id, event.message_id, "text",
-                staged_path, "message.md",
-                f"This appears to be a {len(text)}-character text note.", "pending",
+                staged_path, "message.md", *self._classify_text(text), "pending",
                 datetime.now(UTC),
             )
         )
@@ -214,10 +220,13 @@ class ProvisionalIntakeService:
         normalized = " ".join(guidance.split())
         if not normalized:
             raise ValueError("Tell me what this relates to after the provisional intake ID.")
-        summary = f"{intake.summary} User context: {normalized}"
+        category, base_summary = self._classify_text(normalized)
+        category = category if category != "knowledge" or intake.category == "uncertain" else intake.category
+        summary = f"{base_summary} Original assessment: {intake.summary} User context: {normalized}"
         self._repository.add_revision(intake_id, normalized, summary)
+        self._repository.set_classification(intake_id, category, summary)
         self._activity.record(ActivityType.INTAKE_REVISED, object_id=str(intake_id), details=normalized)
-        return replace(intake, summary=summary)
+        return replace(intake, category=category, summary=summary)
 
     def _pending_for_chat(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
         intake = self._repository.get(intake_id)
@@ -232,3 +241,23 @@ class ProvisionalIntakeService:
     def _staging_path(self, event: IncomingEvent, original_name: str) -> Path:
         suffix = Path(original_name).suffix
         return self._staging_dir / f"{event.platform}-{event.chat_id}-{event.message_id}{suffix}"
+
+    @staticmethod
+    def _classify_file(path: Path, original_name: str) -> tuple[str, str]:
+        name = original_name.casefold()
+        if any(term in name for term in ("flight", "itinerary", "receipt", "invoice", "warranty", "booking")):
+            return "record", f"Likely record: {original_name}. No content was sent to a model."
+        source_type = source_type_for_path(path)
+        label = source_type.value.replace("_", " ") if source_type else "unclassified file"
+        return "document", f"Likely document ({label}): {original_name}. No content was sent to a model."
+
+    @staticmethod
+    def _classify_text(text: str) -> tuple[str, str]:
+        normalized = text.casefold()
+        if any(token in normalized for token in ("deadline", "todo", "task", "remind me")):
+            return "task", "Likely task or deadline. No content was sent to a model."
+        if any(token in normalized for token in ("flight", "receipt", "invoice", "booking", "warranty")):
+            return "record", "Likely life record. No content was sent to a model."
+        if normalized.startswith(("thought:", "note:")):
+            return "thought", "Likely personal thought or note. No content was sent to a model."
+        return "knowledge", "Likely knowledge or reference note. No content was sent to a model."

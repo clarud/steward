@@ -39,6 +39,7 @@ KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
 TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
 PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
 PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
+PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -334,6 +335,13 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             summary TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION,
+        """
+        ALTER TABLE provisional_intakes
+        ADD COLUMN category TEXT NOT NULL DEFAULT 'uncertain'
         """,
     ),
 )

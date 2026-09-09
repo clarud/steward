@@ -51,6 +51,8 @@ def test_file_is_staged_without_registering_a_source_until_accepted(tmp_path: Pa
     assert intake.staged_path.is_file()
     assert sources.list_all() == []
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_PROPOSED
+    assert intake.category == "document"
+    assert "No content was sent to a model" in intake.summary
 
     saved = service.accept(intake.id or 0, event)
 
@@ -113,3 +115,21 @@ def test_context_revision_is_audited_without_saving_the_staged_file(tmp_path: Pa
     assert intake.staged_path.is_file()
     assert sources.list_all() == []
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_REVISED
+
+
+def test_text_intake_classifies_task_and_record_cues_without_a_model(tmp_path: Path) -> None:
+    service, _, _ = make_service(tmp_path)
+    task_event = IncomingEvent(
+        "telegram:task", "telegram", "100", "9", None, datetime(2026, 9, 9, tzinfo=UTC),
+        "Deadline: submit OpenMP work before Tuesday.",
+    )
+    record_event = IncomingEvent(
+        "telegram:record", "telegram", "100", "10", None, datetime(2026, 9, 9, tzinfo=UTC),
+        "Flight SQ638 booking reference ABC.",
+    )
+
+    task = service.stage_text(task_event)
+    record = service.stage_text(record_event)
+
+    assert task.category == "task"
+    assert record.category == "record"
