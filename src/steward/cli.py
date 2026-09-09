@@ -240,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
     ui_parser.add_argument("--host", default="127.0.0.1")
     ui_parser.add_argument("--port", type=int, default=8765)
+    ui_parser.add_argument("--mode", choices=("lexical", "hybrid"), default="lexical")
     workspace_parser = subcommands.add_parser("create-workspace", help="Create an explicit workspace")
     workspace_parser.add_argument("name")
     subcommands.add_parser("workspaces", help="List workspaces")
@@ -919,11 +920,20 @@ def main(argv: Sequence[str] | None = None) -> None:
     if arguments.command == "ui":
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
-        run_local_ui(
-            LexicalSearchService(SourceRepository(database_path), SourceFragmentRepository(database_path)),
-            host=arguments.host,
-            port=arguments.port,
+        sources = SourceRepository(database_path)
+        fragments = SourceFragmentRepository(database_path)
+        lexical = LexicalSearchService(sources, fragments)
+        service = (
+            HybridRetriever(
+                lexical,
+                SemanticSearchService(
+                    sources, SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider())
+                ),
+            )
+            if arguments.mode == "hybrid"
+            else lexical
         )
+        run_local_ui(service, host=arguments.host, port=arguments.port, mode=arguments.mode)
         return
 
     if arguments.command == "calendar-authorize":

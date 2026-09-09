@@ -87,6 +87,13 @@ send source text to a model or external service.
 steward ui
 ```
 
+Use local semantic plus lexical fusion when the embedding model is already
+available locally:
+
+```powershell
+steward ui --mode hybrid
+```
+
 Then open `http://127.0.0.1:8765`. Stop it with `Ctrl+C`.
 
 ## Ask from local evidence

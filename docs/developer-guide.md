@@ -643,7 +643,7 @@ never changes the original file or source identity.
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by
 default. The implementation rejects non-loopback hosts, uses the existing
-`LexicalSearchService`, escapes all query/source content before HTML rendering,
+`LexicalSearchService` by default (or `HybridRetriever` with `--mode hybrid`), escapes all query/source content before HTML rendering,
 and exposes only a search form plus source-path and fragment-location results.
 It intentionally contains no write controls, model calls, OAuth credentials, or
 external integrations. This gives Steward a locally inspectable UI surface

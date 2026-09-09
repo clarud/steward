@@ -16,5 +16,10 @@ def test_local_ui_refuses_non_loopback_hosts() -> None:
         run_local_ui(None, host="0.0.0.0")  # type: ignore[arg-type]
 
 
+def test_local_ui_rejects_unknown_retrieval_modes() -> None:
+    with pytest.raises(ValueError, match="mode"):
+        run_local_ui(None, mode="cloud")  # type: ignore[arg-type]
+
+
 def test_excerpt_highlighting_escapes_source_text_before_markup() -> None:
     assert _highlight_excerpt("<img [TLB]>") == "&lt;img <mark>TLB</mark>&gt;"
