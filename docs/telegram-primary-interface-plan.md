@@ -761,7 +761,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |
-| 10. Telegram companion experience | In progress | Durable callbacks, selected review cards, read-only tool agent, and conversation state | Unified pending decisions, short styled cards, contextual next actions, and agent-first normal conversation |
+| 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; selected review cards; contextual intake guidance; compact buttons; source and Calendar browsing; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across every review/record workflow; validate the full daily-use checklist on Telegram |
 
 ### Goal 10 — Telegram companion experience
 
@@ -785,7 +785,8 @@ Implement in these deliberately separate layers:
    correction such as `put it in CS3210` resolve against the active review in
    that chat. Ambiguous language may revise a proposal but never authorizes a
    consequential action without a visible explicit confirmation.
-4. **Agent-first routing.** Normal non-command requests use the existing
+4. **Agent-first routing.** Normal non-command read requests (including
+   “show me”, “tell me”, “list”, “summarize”, and “explain”) use the existing
    allowlisted read-only tool loop when configured. Deterministic attachment,
    reply-reference, active-review, and explicit command routes take priority.
    Write-capable requests become deterministic review proposals; the model
@@ -801,6 +802,20 @@ looking up an ID or command. Automated coverage must include escaped dynamic
 text, short button labels, callback expiry/redelivery, restart during review,
 cross-domain proposal IDs, ambiguous follow-ups, provider failure, and proof
 that no write occurs before explicit approval.
+
+### Current Goal 10 delivery notes
+
+- An attachment or substantial/personal text is first staged as a readable
+  review card. It is never saved merely because a classifier recognized a
+  flight, deadline, booking, receipt, or note.
+- Choosing **Add context** switches the chat into a small, durable input step.
+  The next ordinary message supplies course/project/purpose context for that
+  same pending item, then Steward redraws its card. This survives a service
+  restart because only the opaque pending-review reference is stored.
+- Results that invite another action should offer it directly: source and
+  Calendar lists use compact **Open 1**-style buttons; pending decisions use
+  **Review 1**-style buttons. Internal IDs remain a recovery interface, not
+  the normal user journey.
 
 ### Priority sequence from here
 
