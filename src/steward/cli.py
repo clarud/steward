@@ -1475,7 +1475,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ResearchRetentionService(capture_service),
             ),
             curated_note_application=StewardCuratedNoteApplication(
-                ActionProposalRepository(database_path), activity
+                ActionProposalRepository(database_path),
+                activity,
+                local_model=(
+                    OllamaModelGateway(model=settings.local_model, base_url=settings.local_model_url)
+                    if settings.local_model else None
+                ),
+                external_model=(model_gateway if settings.model_provider != "local" else None),
             ),
             workspace_link_application=StewardWorkspaceLinkApplication(
                 ActionProposalRepository(database_path), WorkspaceRepository(database_path), sources, activity

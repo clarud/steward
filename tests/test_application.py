@@ -915,6 +915,67 @@ def test_telegram_can_stage_a_replied_to_discussion_as_a_curated_note(tmp_path: 
     assert "Origin: user-selected Telegram reply" in source.path.read_text(encoding="utf-8")
 
 
+def test_telegram_can_synthesize_a_replied_discussion_locally_before_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), activity)
+
+    class LocalModel:
+        def __init__(self) -> None: self.calls: list[str] = []
+        def generate(self, *, instructions: str, input_text: str) -> str:
+            assert "Do not introduce new facts" in instructions
+            self.calls.append(input_text)
+            return "# TLB\n\n- Caches address translations."
+
+    local = LocalModel()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(proposals, activity, local_model=local),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, capture_service=capture,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/curate_synthesize", reply_text="A TLB caches translations."))
+
+    assert isinstance(preview, PresentedReply)
+    assert "local model" in preview.text
+    assert local.calls == ["A TLB caches translations."]
+    assert SourceRepository(database).list_all() == []
+    assert "Saved curated note to Inbox" in application.handle(make_event(text="/approve_action 1"))
+    saved = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
+    assert "Origin: model-synthesized user-selected Telegram reply (local model)" in saved
+    assert "Caches address translations" in saved
+
+
+def test_telegram_external_curate_synthesis_requires_an_explicit_choice(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+
+    class Model:
+        def __init__(self, result: str) -> None: self.result = result; self.calls = 0
+        def generate(self, *, instructions: str, input_text: str) -> str:
+            self.calls += 1
+            return self.result
+
+    local = Model("# Local")
+    external = Model("# External")
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(
+            proposals, activity, local_model=local, external_model=external,
+        ),
+    )
+
+    preview = application.handle(make_event(text="/curate_synthesize external", reply_text="A point."))
+
+    assert isinstance(preview, PresentedReply)
+    assert "external model" in preview.text
+    assert local.calls == 0 and external.calls == 1
+    assert proposals.get(1).payload["text"] == "# External"
+
+
 def test_curate_requires_a_replied_to_text_message(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     application = StewardEventApplication(

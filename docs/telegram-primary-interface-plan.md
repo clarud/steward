@@ -648,6 +648,8 @@ Implement:
 - claim/evidence comparison and enrichment review cards;
 - retained research sources entering normal capture/organization flows;
 - explicit editing before a generated note becomes a durable source.
+- a reply-selected discussion can be synthesized with the explicitly chosen
+  local or external model, but its draft remains a reviewable note proposal.
 
 Done when a discussion about TLBs can produce a user-reviewed note with
 traceable local/external evidence, and external research is discarded unless

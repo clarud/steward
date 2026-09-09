@@ -32,7 +32,7 @@ from steward.presentation import PresentedReply, ReplyAction
 from steward.intake import IntakeAnalysisMode, ProvisionalIntake, ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
-from steward.answer.gateway import ModelGatewayError
+from steward.answer.gateway import ModelGateway, ModelGatewayError
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.knowledge_connector import KnowledgeConnector
@@ -127,7 +127,7 @@ class StewardReadApplication:
             "Explicit actions (they create a review or a selected import):\n"
             "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
-            "/propose_note TEXT, /curate (reply to a discussion message), /research QUESTION\n"
+            "/propose_note TEXT, /curate (reply to a discussion message), /curate_synthesize [local|external], /research QUESTION\n"
             "/knowledge NAME, /connect_knowledge — inspect evidence-backed concepts\n"
             "For a staged attachment/note: /intake_analysis ID external|local|none before saving\n"
             "/propose_travel_record SOURCE_ID\n"
@@ -804,15 +804,26 @@ class StewardCuratedNoteApplication:
 
     CREATE_CURATED_NOTE = "create_curated_note"
 
-    def __init__(self, proposals: ActionProposalRepository, activity: ActivityService) -> None:
+    def __init__(
+        self,
+        proposals: ActionProposalRepository,
+        activity: ActivityService,
+        *,
+        local_model: ModelGateway | None = None,
+        external_model: ModelGateway | None = None,
+    ) -> None:
         self._proposals = proposals
         self._activity = activity
+        self._local_model = local_model
+        self._external_model = external_model
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, text = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/propose_note", "/curate"}:
+        if command not in {"/propose_note", "/curate", "/curate_synthesize"}:
             return None
+        if command == "/curate_synthesize":
+            return self._synthesize_reply(separator, text, event)
         if command == "/curate":
             note = (event.reply_text or "").strip()
             origin = "user-selected Telegram reply"
@@ -828,6 +839,50 @@ class StewardCuratedNoteApplication:
         if pending is None:
             pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create curated Inbox note from {origin}")
+        preview = note if len(note) <= 500 else note[:497] + "..."
+        return PresentedReply(
+            f"Curated note proposal {pending.id} ({origin}):\n{preview}\n\nIt has not been saved.",
+            (ReplyAction("Save note", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
+        )
+
+    def _synthesize_reply(
+        self, separator: str, argument: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Make a non-persisted, explicitly model-bound note candidate."""
+        source_text = (event.reply_text or "").strip()
+        if not source_text:
+            return "Reply to a text discussion message with /curate_synthesize to create a note draft."
+        mode = argument.strip().casefold() if separator else "local"
+        if mode not in {"local", "external"}:
+            return "Use /curate_synthesize by replying to a message, optionally followed by local or external."
+        model = self._local_model if mode == "local" else self._external_model
+        if model is None:
+            boundary = "local model" if mode == "local" else "external model"
+            return f"No {boundary} is configured for curated-note synthesis."
+        try:
+            note = model.generate(
+                instructions=(
+                    "Create a concise Markdown study note from only the supplied user discussion. "
+                    "Do not introduce new facts, citations, or external research. Preserve uncertainty. "
+                    "Use a short title and bullets where useful."
+                ),
+                input_text=source_text,
+            ).strip()
+        except ModelGatewayError:
+            return f"The configured {mode} model is temporarily unavailable; no note was saved."
+        if not note:
+            return f"The configured {mode} model returned no note; nothing was saved."
+        note = note[:6000]
+        origin = f"model-synthesized user-selected Telegram reply ({mode} model)"
+        payload = {"text": note, "origin": origin}
+        pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(pending.id),
+                details=f"Create curated Inbox note from {mode} model synthesis",
+            )
         preview = note if len(note) <= 500 else note[:497] + "..."
         return PresentedReply(
             f"Curated note proposal {pending.id} ({origin}):\n{preview}\n\nIt has not been saved.",
