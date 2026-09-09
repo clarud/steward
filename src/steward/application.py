@@ -35,6 +35,7 @@ from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGatewayError
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
+from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
@@ -127,6 +128,7 @@ class StewardReadApplication:
             "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /curate (reply to a discussion message), /research QUESTION\n"
+            "/knowledge NAME, /connect_knowledge — inspect evidence-backed concepts\n"
             "For a staged attachment/note: /intake_analysis ID external|local|none before saving\n"
             "/propose_travel_record SOURCE_ID\n"
             "/propose_receipt_record SOURCE_ID\n"
@@ -842,11 +844,13 @@ class StewardKnowledgeApplication:
         fragments: SourceFragmentRepository,
         proposals: KnowledgeEnrichmentProposalRepository,
         activity: ActivityService,
+        connector: KnowledgeConnector | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._fragments = fragments
         self._proposals = proposals
         self._activity = activity
+        self._connector = connector
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -861,6 +865,19 @@ class StewardKnowledgeApplication:
             lines = [f"Concept {concept.id}: {concept.name}"]
             lines.extend(f"Claim {claim.id}: {claim.text}" for claim in claims)
             return "\n".join(lines)
+        if command == "/connect_knowledge":
+            if self._connector is None:
+                return "Knowledge connection inspection is not configured for this Steward process."
+            proposals = self._connector.propose()
+            if not proposals:
+                return "No evidence-backed knowledge connections found."
+            return "Evidence-backed knowledge connections:\n" + "\n\n".join(
+                f"{proposal.left_concept_name} ↔ {proposal.right_concept_name}\n"
+                f"Evidence fragments: {', '.join(str(item) for item in proposal.supporting_fragment_ids)}\n"
+                f"{proposal.rationale}\n"
+                f"Limit: {proposal.where_analogy_breaks}"
+                for proposal in proposals[:10]
+            )
         if command == "/knowledge_proposals":
             pending = [proposal for proposal in self._proposals.list_all() if proposal.status == "pending"]
             if not pending:

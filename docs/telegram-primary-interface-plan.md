@@ -213,7 +213,7 @@ Before each implementation slice, maintain a command-to-interaction mapping:
 | capture, reextract, indexing | attachment capture, `/save`, explicit reprocess action | preserve original; confirm expensive work |
 | workspaces and source links | `/workspace`, natural language, proposal cards | creation/linking is audited; writes may require review |
 | Inbox review and organization proposals | `/inbox`, proposal cards, evidence buttons | no move until approval |
-| concepts, claims, enrichment, connectors | knowledge cards and evidence comparison | derived changes stay pending until review |
+| concepts, claims, enrichment, connectors | `/knowledge`, `/connect_knowledge`, and evidence comparison cards | derived changes stay pending until review |
 | travel, receipts, warranties, references | record cards, field-correction, and travel-reference review flow | fields retain fragment provenance |
 | Calendar read and travel-event proposal | scheduling queries, review cards | Google remains authoritative; writes require approval |
 | research and retention | research result cards and retain buttons | external evidence is ephemeral until retained |

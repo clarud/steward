@@ -50,6 +50,7 @@ from steward.retrieval import HybridSearchHit, LexicalSearchService, SemanticSea
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
+from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
@@ -500,6 +501,37 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert preview.actions[0].command == "/review_enrichment 1 accepted"
     accepted = application.handle(make_event(text="/review_enrichment 1 accepted"))
     assert accepted == "Knowledge enrichment proposal 1 accepted."
+
+
+def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "TLBs and page tables work together.", "lines 1-1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    tlb = knowledge.create_concept("TLB")
+    page_tables = knowledge.create_concept("Page Tables")
+    knowledge.create_claim(tlb.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    knowledge.create_claim(page_tables.id or 0, "Page tables map addresses.", [fragment.id or 0])
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=StewardKnowledgeApplication(
+            knowledge, fragments, KnowledgeEnrichmentProposalRepository(database), ActivityService(database),
+            KnowledgeConnector(database),
+        ),
+    )
+
+    response = application.handle(make_event(text="/connect_knowledge"))
+
+    assert "TLB ↔ Page Tables" in response
+    assert "Evidence fragments: 1" in response
+    assert "not that the concepts are interchangeable" in response
+    assert KnowledgeConnector(database).propose()[0].supporting_fragment_ids == (fragment.id,)
 
 
 def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Path) -> None:
