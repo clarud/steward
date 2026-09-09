@@ -1,0 +1,17 @@
+from pathlib import Path
+
+from steward.reviews import ReviewContextRepository
+from steward.storage import initialize_database
+
+
+def test_review_context_is_chat_scoped_and_survives_a_new_repository(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    contexts = ReviewContextRepository(database)
+
+    contexts.set("telegram", "100", "action", 7)
+
+    restored = ReviewContextRepository(database).get("telegram", "100")
+    assert restored is not None
+    assert (restored.kind, restored.identifier) == ("action", 7)
+    assert contexts.get("telegram", "200") is None

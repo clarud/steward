@@ -49,6 +49,7 @@ CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
 ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
 PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
 TASK_REMINDERS_SCHEMA_VERSION = 43
+TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -431,6 +432,19 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             remind_at TEXT NOT NULL,
             claimed_at TEXT,
             reminded_at TEXT
+        )
+        """,
+    ),
+    (
+        TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_review_context (
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            review_kind TEXT NOT NULL,
+            review_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (platform, chat_id)
         )
         """,
     ),

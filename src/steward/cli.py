@@ -38,6 +38,7 @@ from steward.application import (
     StewardIntegrationStatusApplication,
 )
 from steward.capture import InboxCaptureService
+from steward.reviews import ReviewContextRepository
 from steward.answer import (
     AnswerService,
     ContextBuilder,
@@ -1527,6 +1528,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sources,
                 intakes=ProvisionalIntakeRepository(database_path),
                 knowledge_proposals=KnowledgeEnrichmentProposalRepository(database_path),
+                contexts=ReviewContextRepository(database_path),
             ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity

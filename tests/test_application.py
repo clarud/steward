@@ -54,6 +54,7 @@ from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeSe
 from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
+from steward.reviews import ReviewContextRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
 from steward.research import ResearchBundle, ResearchProviderError, ResearchRetentionService, ResearchSource
@@ -453,7 +454,9 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     organization = organizations.add(
         OrganizationProposal(None, source.id or 0, "keep_in_inbox", None, None, "No match yet.", 0.0)
     )
-    reviews = StewardReviewInboxApplication(actions, organizations, sources)
+    reviews = StewardReviewInboxApplication(
+        actions, organizations, sources, contexts=ReviewContextRepository(database)
+    )
     event = make_event(text="/pending")
 
     pending = reviews.handle_command(event)
@@ -469,6 +472,9 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert isinstance(detail, PresentedReply)
     assert detail.title == "Organize resume.pdf"
     assert "No match yet." in detail.text
+    followup = reviews.handle_followup(make_event(text="what is this proposal?"))
+    assert isinstance(followup, PresentedReply)
+    assert followup.title == "Organize resume.pdf"
 
 
 def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:

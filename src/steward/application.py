@@ -51,6 +51,7 @@ from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
 from steward.research import ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
+from steward.reviews import ReviewContextRepository
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -74,12 +75,14 @@ class StewardReviewInboxApplication:
         *,
         intakes: ProvisionalIntakeRepository | None = None,
         knowledge_proposals: KnowledgeEnrichmentProposalRepository | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._actions = action_proposals
         self._organizations = organization_proposals
         self._sources = sources
         self._intakes = intakes
         self._knowledge = knowledge_proposals
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, _, argument = (event.text or "").strip().partition(" ")
@@ -115,6 +118,9 @@ class StewardReviewInboxApplication:
 
     def detail(self, event: IncomingEvent, kind: str, identifier: int) -> str | PresentedReply:
         """Render one complete, human-readable proposal card."""
+
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, kind, identifier)
 
         if kind == "action":
             proposal = self._actions.get(identifier)
@@ -173,6 +179,19 @@ class StewardReviewInboxApplication:
                 title="Knowledge update", icon="🧠"
             )
         return "That review type is unavailable. Send /pending for the current list."
+
+    def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Resolve an explanatory follow-up to the last explicitly opened review card."""
+
+        if self._contexts is None:
+            return None
+        text = (event.text or "").strip().casefold().rstrip("?!.")
+        if text not in {"what is this", "what is this proposal", "why", "details", "show details"}:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None:
+            return None
+        return self.detail(event, context.kind, context.identifier)
 
     def _pending_items(self, event: IncomingEvent) -> list[tuple[str, int, str]]:
         items: list[tuple[str, int, str]] = []
@@ -2699,6 +2718,9 @@ class StewardEventApplication:
             review_response = self._review_inbox_application.handle_command(event)
             if review_response is not None:
                 return review_response
+            review_followup = self._review_inbox_application.handle_followup(event)
+            if review_followup is not None:
+                return review_followup
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
             if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
