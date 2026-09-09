@@ -123,6 +123,7 @@ class StewardReadApplication:
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
+            "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE.\n\n"
             "Admin diagnostics: /deliveries, /delivery_history, /dead_letters\n"
             "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"
         )
@@ -1199,8 +1200,9 @@ class StewardOrganizationApprovalApplication:
             if self._proposal_builder is not None
             else OrganizationService().propose(result.source, workspaces)
         )
-        if proposal.suggested_path is None:
-            return "No confident organization match was found, so the source remains in Inbox."
+        return self._start_proposal(event, proposal)
+
+    def _start_proposal(self, event: IncomingEvent, proposal: OrganizationProposal) -> PresentedReply:
         proposal_id = self._proposals.add(proposal)
         self._activity.record(
             ActivityType.ORGANIZATION_PROPOSED,
@@ -1215,7 +1217,17 @@ class StewardOrganizationApprovalApplication:
         )
         if "__interrupt__" not in paused:
             raise RuntimeError("Organization approval graph did not pause for a decision.")
-        destination = str(proposal.suggested_path) if proposal.suggested_path else "Inbox"
+        if proposal.suggested_path is None:
+            return PresentedReply(
+                f"Organization proposal {proposal_id}: {proposal.rationale}\n"
+                "Suggested outcome: leave the original in Inbox.\n\n"
+                f"To refine it, use /organization_context {proposal_id} followed by an existing workspace name.",
+                (
+                    ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
+                    ReplyAction("Reject", f"/organization_reject {proposal_id}"),
+                ),
+            )
+        destination = str(proposal.suggested_path)
         return PresentedReply(
             f"Organization proposal {proposal_id}: {proposal.rationale}\n"
             f"Suggested destination: {destination}\n\n"
@@ -1234,6 +1246,13 @@ class StewardOrganizationApprovalApplication:
             return None
         response = (event.text or "").strip().casefold()
         command, _, argument = response.partition(" ")
+        if command == "/organization_context":
+            proposal_identifier, separator, guidance = argument.partition(" ")
+            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not guidance.strip():
+                return (
+                    f"Use /organization_context {pending.proposal_id} followed by an existing workspace name."
+                )
+            return self._revise_with_context(event, pending, guidance)
         if command == "/organization_accept" and argument.isdigit() and int(argument) == pending.proposal_id:
             decision = "accepted"
         elif command == "/organization_reject" and argument.isdigit() and int(argument) == pending.proposal_id:
@@ -1258,6 +1277,30 @@ class StewardOrganizationApprovalApplication:
         self._threads.finish(event.platform, event.chat_id, decision)
         return f"Proposal {pending.proposal_id} {decision}."
 
+    def _revise_with_context(
+        self, event: IncomingEvent, pending: PendingOrganizationApproval, guidance: str
+    ) -> str | PresentedReply:
+        if self._sources is None:
+            return "Organization context revision is not configured for this Steward process."
+        previous = self._proposals.get(pending.proposal_id)
+        source = self._sources.get_by_id(previous.source_id) if previous is not None else None
+        if source is None:
+            return "The source for this organization proposal was not found."
+        proposal = OrganizationService().propose_with_context(source, self._workspaces.list_all(), guidance)
+        self._proposals.set_status(pending.proposal_id, "rejected")
+        self._threads.finish(event.platform, event.chat_id, "rejected")
+        self._activity.record(
+            ActivityType.ORGANIZATION_REJECTED,
+            object_id=str(pending.proposal_id),
+            details="Superseded after user supplied organization context.",
+        )
+        if proposal.suggested_path is None:
+            return (
+                "Your context did not name exactly one existing workspace, so the source remains in Inbox. "
+                "Create or choose a workspace explicitly, then organize again."
+            )
+        return self._start_proposal(event, proposal)
+
     def begin_inbox_review(self, event: IncomingEvent) -> str | PresentedReply:
         """Create one durable, approval-paused organization proposal from Inbox."""
         if self._sources is None or self._inbox_dir is None:
@@ -1269,13 +1312,9 @@ class StewardOrganizationApprovalApplication:
             return "Your Inbox has no active registered sources to organize."
         for source in inbox_sources:
             response = self.begin(event, CaptureResult(source, duplicate=False))
-            response_text = response.text if isinstance(response, PresentedReply) else response
-            if response_text != "No confident organization match was found, so the source remains in Inbox.":
-                return response or "No Inbox organization proposal was created."
-        return (
-            f"I inspected {len(inbox_sources)} Inbox source(s), but found no confident "
-            "workspace match. They remain in Inbox."
-        )
+            if response is not None:
+                return response
+        return f"I inspected {len(inbox_sources)} Inbox source(s), but no organization proposal was created."
 
     def _is_inbox(self, path: Path) -> bool:
         if self._inbox_dir is None:

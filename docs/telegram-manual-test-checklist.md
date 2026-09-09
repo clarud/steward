@@ -45,6 +45,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Run `/organize` against Inbox material. Read the suggested destination before
   accepting; reject one proposal and accept one only when its physical move is
   correct.
+- For an uncertain Inbox proposal, send `/organization_context ID CS3210` using
+  an existing workspace name. Verify Steward supersedes the old proposal with
+  a new review card; only accepting that new card may move the original file.
 
 ## Tasks and records
 

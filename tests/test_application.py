@@ -1058,30 +1058,47 @@ def test_pending_telegram_approval_does_not_treat_other_text_as_a_question(tmp_p
     assert response == "Proposal 1 is awaiting your decision. Reply exactly `accept` or `reject`."
 
 
-def test_uncertain_capture_remains_in_inbox_without_creating_a_pending_approval(tmp_path: Path) -> None:
+def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
     now = datetime(2026, 9, 8, tzinfo=UTC)
     source_path = tmp_path / "vault" / "inbox" / "unrelated.md"; source_path.parent.mkdir(parents=True)
     source_path.write_text("note", encoding="utf-8")
-    source = SourceRepository(database_path).add(
+    sources = SourceRepository(database_path)
+    source = sources.add(
         Source(None, source_path.resolve(), "b" * 64, SourceType.MARKDOWN, 4, now, now, now)
     )
     proposals = OrganizationProposalRepository(database_path)
     threads = OrganizationApprovalThreadRepository(database_path)
+    activity = ActivityService(database_path)
+    workspaces = WorkspaceRepository(database_path)
+    workspaces.create("CS3210")
+    approval = OrganizationApprovalService(
+        proposals, sources, FileMutationService(sources, activity), activity
+    )
     app = StewardOrganizationApprovalApplication(
         proposals,
-        WorkspaceRepository(database_path),
+        workspaces,
         threads,
-        ActivityService(database_path),
-        type("Graph", (), {"invoke": lambda *_args, **_kwargs: {}})(),
+        activity,
+        build_organization_approval_graph(
+            proposals, checkpointer=InMemorySaver(), review_proposal=approval.review
+        ),
+        source_repository=sources,
     )
 
     response = app.begin(make_event(text="/save unrelated"), CaptureResult(source, duplicate=False))
 
-    assert response == "No confident organization match was found, so the source remains in Inbox."
-    assert proposals.list_all() == []
-    assert threads.get_pending("telegram", "100") is None
+    assert isinstance(response, PresentedReply)
+    assert "leave the original in Inbox" in response.text
+    assert proposals.get(1).status == "pending"
+    revised = app.handle_decision(make_event(text="/organization_context 1 CS3210 lecture notes"))
+    assert isinstance(revised, PresentedReply)
+    assert "Organization proposal 2" in revised.text
+    assert proposals.get(1).status == "rejected"
+    accepted = app.handle_decision(make_event(text="/organization_accept 2"))
+    assert accepted == "Proposal 2 accepted."
+    assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
 
 
 def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(tmp_path: Path) -> None:

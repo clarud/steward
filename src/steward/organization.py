@@ -42,6 +42,31 @@ class OrganizationService:
                 f"The source filename matches workspace '{workspace.name}'.", 1.0)
         return OrganizationProposal(None, source.id or 0, "keep_in_inbox", None, None, "No reliable workspace match; keep this source in Inbox.", 0.0)
 
+    def propose_with_context(
+        self, source: Source, workspaces: list[Workspace], guidance: str
+    ) -> OrganizationProposal:
+        """Use explicit user wording to select only an existing workspace.
+
+        Context may refine a proposal, but it never authorizes a path supplied
+        by chat text and never creates a workspace implicitly.
+        """
+
+        normalized = " ".join(guidance.split()).casefold()
+        matches = [workspace for workspace in workspaces if workspace.name.casefold() in normalized]
+        if len(matches) != 1:
+            return self.propose(source, workspaces)
+        workspace = matches[0]
+        vault_root = source.path.parent.parent if source.path.parent.name.casefold() == "inbox" else source.path.parent
+        return OrganizationProposal(
+            None,
+            source.id or 0,
+            "move_to_workspace",
+            workspace.id,
+            vault_root / "projects" / workspace.name / source.path.name,
+            f"Your added context selected the existing workspace '{workspace.name}'.",
+            1.0,
+        )
+
 
 class OrganizationProposalRepository:
     def __init__(self, database_path: Path) -> None: self._database_path = database_path
@@ -94,12 +119,19 @@ class OrganizationApprovalThreadRepository:
         if self.get_pending(platform, chat_id) is not None:
             raise ValueError("This chat already has an organization proposal awaiting review.")
         with sqlite3.connect(self._database_path) as connection:
-            connection.execute(
-                "INSERT INTO organization_approval_threads "
-                "(platform, chat_id, proposal_id, thread_id, status, created_at) "
-                "VALUES (?, ?, ?, ?, 'pending', ?)",
-                (platform, chat_id, proposal_id, thread_id, datetime.now(UTC).isoformat()),
+            created_at = datetime.now(UTC).isoformat()
+            cursor = connection.execute(
+                "UPDATE organization_approval_threads SET proposal_id = ?, thread_id = ?, status = 'pending', created_at = ? "
+                "WHERE platform = ? AND chat_id = ? AND status != 'pending'",
+                (proposal_id, thread_id, created_at, platform, chat_id),
             )
+            if cursor.rowcount == 0:
+                connection.execute(
+                    "INSERT INTO organization_approval_threads "
+                    "(platform, chat_id, proposal_id, thread_id, status, created_at) "
+                    "VALUES (?, ?, ?, ?, 'pending', ?)",
+                    (platform, chat_id, proposal_id, thread_id, created_at),
+                )
 
     def finish(self, platform: str, chat_id: str, status: str) -> None:
         if status not in {"accepted", "rejected"}:
