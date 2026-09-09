@@ -55,7 +55,7 @@ from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
-from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
+from steward.research import ResearchBundle, ResearchProviderError, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.errors import GraphRecursionError
@@ -901,6 +901,21 @@ def test_telegram_warranty_preview_can_be_rejected_without_persisting(tmp_path: 
     assert isinstance(application.handle(make_event(text="/propose_warranty_record 1")), PresentedReply)
     assert application.handle(make_event(text="/reject_action 1")) == "Warranty proposal 1 rejected."
     assert records.list_warranty_records() == []
+
+
+def test_telegram_research_failure_does_not_disclose_provider_diagnostics(tmp_path: Path) -> None:
+    class Provider:
+        def research(self, _query: str) -> ResearchBundle:
+            raise ResearchProviderError("C:/private/research-provider-token is unavailable")
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database))
+    application = StewardResearchApplication(lambda: Provider(), ResearchRetentionService(capture))
+
+    response = application.handle_command(make_event(text="/research TLB shootdowns"))
+
+    assert response == "External research is temporarily unavailable. Please retry later."
+    assert "C:/private" not in response
 
 
 def test_telegram_research_is_ephemeral_until_the_user_explicitly_retains_it(tmp_path: Path) -> None:

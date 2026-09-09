@@ -792,8 +792,8 @@ class StewardResearchApplication:
             return "External research is not configured for this Steward process."
         try:
             bundle = ResearchService(provider).research(query)
-        except (ResearchProviderError, ValueError) as error:
-            return f"External research is temporarily unavailable: {error}"
+        except (ResearchProviderError, ValueError):
+            return "External research is temporarily unavailable. Please retry later."
         if command == "/research_retain":
             result = self._retention.retain(bundle)
             state = "Already retained" if result.duplicate else "Retained"
