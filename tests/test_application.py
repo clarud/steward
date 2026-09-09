@@ -11,6 +11,7 @@ from steward.application import (
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
     StewardReadApplication,
+    StewardProvisionalIntakeApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -33,6 +34,7 @@ from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository
 from steward.retrieval import LexicalSearchService
 from steward.presentation import PresentedReply
+from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -204,6 +206,47 @@ def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Pat
     assert isinstance(response, PresentedReply)
     assert response.actions[0].label == "Next"
     assert response.actions[0].command == "/sources 2"
+
+
+def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(
+        tmp_path / "vault" / "inbox", sources, SourceFragmentRepository(database_path), activity
+    )
+    capture = StewardCaptureApplication(capture_service)
+    provisional = StewardProvisionalIntakeApplication(
+        ProvisionalIntakeService(
+            tmp_path / ".steward" / "cache" / "intake",
+            ProvisionalIntakeRepository(database_path),
+            capture_service,
+            activity,
+        )
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), capture, provisional_intake_application=provisional
+    )
+    original = tmp_path / "notes.pdf"
+    original.write_bytes(b"pdf")
+    attachment_event = IncomingEvent(
+        "telegram:attachment", "telegram", "100", "12", None,
+        datetime(2026, 9, 9, tzinfo=UTC), None, ("notes.pdf",),
+    )
+
+    proposed = application.handle_file(attachment_event, original)
+
+    assert isinstance(proposed, PresentedReply)
+    assert sources.list_all() == []
+    accepted = application.handle(
+        IncomingEvent(
+            "telegram:accept", "telegram", "100", "13", None,
+            datetime(2026, 9, 9, tzinfo=UTC), "/intake_accept 1",
+        )
+    )
+    assert "Saved to Inbox" in accepted
+    assert len(sources.list_all()) == 1
 
 
 def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:

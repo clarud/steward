@@ -25,6 +25,7 @@ from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
+from steward.intake import ProvisionalIntakeService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -296,6 +297,65 @@ class StewardCaptureApplication:
         return self._capture_service.capture_file(event, original_path)
 
 
+class StewardProvisionalIntakeApplication:
+    """Present staged attachment intake as a reviewable save-or-discard choice."""
+
+    def __init__(self, service: ProvisionalIntakeService) -> None:
+        self._service = service
+
+    def begin_file(self, event: IncomingEvent, original_path: Path) -> PresentedReply:
+        intake = self._service.stage_file(event, original_path)
+        if intake.status == "accepted":
+            return PresentedReply("This attachment was already saved.")
+        if intake.status == "discarded":
+            return PresentedReply("This attachment was previously discarded. Send it again to reconsider it.")
+        return PresentedReply(
+            f"Provisional intake {intake.id}: {intake.summary}\n\n"
+            "It is staged locally and has not been added to your Inbox.",
+            (
+                ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
+                ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
+            ),
+        )
+
+    def begin_text(self, event: IncomingEvent) -> PresentedReply:
+        intake = self._service.stage_text(event)
+        return PresentedReply(
+            f"Provisional intake {intake.id}: {intake.summary}\n\n"
+            "It is staged locally and has not been added to your Inbox.",
+            (
+                ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
+                ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
+            ),
+        )
+
+    @staticmethod
+    def should_propose_text(event: IncomingEvent) -> bool:
+        """Keep ordinary conversational messages out of durable intake by default."""
+        text = (event.text or "").strip()
+        return (
+            len(text) >= 280
+            or text.count("\n") >= 2
+            or text.casefold().startswith(("note:", "thought:", "remember:", "deadline:"))
+        )
+
+    def handle_command(self, event: IncomingEvent) -> CaptureResult | str | None:
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command not in {"/intake_accept", "/intake_discard"}:
+            return None
+        if not separator or not argument.strip().isdigit():
+            return f"Use {command} followed by a numeric provisional intake ID."
+        intake_id = int(argument.strip())
+        try:
+            if command == "/intake_accept":
+                return self._service.accept(intake_id, event)
+            intake = self._service.discard(intake_id, event.chat_id)
+        except (OSError, ValueError) as error:
+            return str(error)
+        return f"Discarded provisional intake {intake.id}; its staged copy was removed."
+
+
 class DriveInboxImporter(Protocol):
     """Narrow boundary used by a transport command to import an explicit Drive ID."""
 
@@ -550,6 +610,7 @@ class StewardEventApplication:
         drive_import_application: StewardDriveImportApplication | None = None,
         gmail_import_application: StewardGmailImportApplication | None = None,
         read_application: StewardReadApplication | None = None,
+        provisional_intake_application: StewardProvisionalIntakeApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -559,8 +620,15 @@ class StewardEventApplication:
         self._drive_import_application = drive_import_application
         self._gmail_import_application = gmail_import_application
         self._read_application = read_application
+        self._provisional_intake_application = provisional_intake_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._provisional_intake_application is not None:
+            intake_response = self._provisional_intake_application.handle_command(event)
+            if isinstance(intake_response, CaptureResult):
+                return self._capture_with_optional_proposal(event, intake_response)
+            if intake_response is not None:
+                return intake_response
         if self._read_application is not None:
             read_response = self._read_application.handle_command(event)
             if read_response is not None:
@@ -620,6 +688,12 @@ class StewardEventApplication:
             except ValueError as error:
                 return str(error)
             return self._capture_with_optional_proposal(event, result)
+        if (
+            decision.primary_intent is Intent.UNKNOWN
+            and self._provisional_intake_application is not None
+            and self._provisional_intake_application.should_propose_text(event)
+        ):
+            return self._provisional_intake_application.begin_text(event)
         return (
             "I am not sure which Steward action you want. Try /help, ask a question, "
             "or say `find ...`, `organize my inbox`, or `create a workspace for ...`."
@@ -627,7 +701,12 @@ class StewardEventApplication:
 
     def handle_file(self, event: IncomingEvent, original_path: Path) -> str:
         """Documents are deterministic capture signals after adapter validation."""
-
+        if (event.text or "").strip().startswith("/save"):
+            return self._capture_with_optional_proposal(
+                event, self._capture_application.capture_file(event, original_path)
+            )
+        if self._provisional_intake_application is not None:
+            return self._provisional_intake_application.begin_file(event, original_path)
         return self._capture_with_optional_proposal(
             event, self._capture_application.capture_file(event, original_path)
         )

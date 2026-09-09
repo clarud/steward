@@ -9,6 +9,9 @@ from pathlib import Path
 class ActivityType(StrEnum):
     SOURCE_CAPTURED = "source_captured"
     SOURCE_UNREGISTERED = "source_unregistered"
+    INTAKE_PROPOSED = "intake_proposed"
+    INTAKE_ACCEPTED = "intake_accepted"
+    INTAKE_DISCARDED = "intake_discarded"
     WORKSPACE_CREATED = "workspace_created"
     ORGANIZATION_PROPOSED = "organization_proposed"
     ORGANIZATION_ACCEPTED = "organization_accepted"

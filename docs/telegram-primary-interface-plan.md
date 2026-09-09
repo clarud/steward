@@ -151,19 +151,24 @@ Currently Telegram supports:
 
 - grounded questions and follow-up conversation state;
 - text capture through `/save <text>`;
-- document/photo capture only when `/save` is the attachment caption;
+- document/photo provisional intake by default: an attachment is staged locally
+  until `Save to Inbox` or `Do not keep`; `/save` as its caption remains the
+  explicit immediate-capture shortcut;
+- provisional capture of substantial text notes and explicit note/thought
+  prefixes, also requiring a save/discard decision;
+- `/help`, `/status`, Inbox/source/workspace/activity inspection, lexical
+  search, and safe workspace-creation proposals;
+- durable, chat-scoped pagination callbacks for source and Inbox lists;
 - selected durable proposal-review replies;
 - delivery deduplication, retries, backoff, history, and dead-letter
   inspection through the CLI.
 
 Current observed limitations to address:
 
-- ordinary requests without a trailing `?` can be classified as unknown;
 - natural-language workspace and Inbox organization requests are not routed to
-  their services;
+  a full organization-review workflow yet;
 - replying `/save` to an earlier attachment cannot capture it because the
   reply has no attachment payload;
-- production retrieval must never include test-fixture sources;
 - the CLI has many capabilities that Telegram cannot yet initiate or inspect.
 
 ## Existing-vault onboarding

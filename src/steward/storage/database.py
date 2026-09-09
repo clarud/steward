@@ -37,6 +37,7 @@ WARRANTY_RECORDS_SCHEMA_VERSION = 28
 WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
 KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
 TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
+PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -300,6 +301,25 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             command TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKES_SCHEMA_VERSION,
+        """
+        CREATE TABLE provisional_intakes (
+            id INTEGER PRIMARY KEY,
+            event_id TEXT NOT NULL UNIQUE,
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('file', 'text')),
+            staged_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'discarded')),
+            created_at TEXT NOT NULL,
+            decided_at TEXT
         )
         """,
     ),

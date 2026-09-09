@@ -140,9 +140,6 @@ class TelegramAdapter:
         if not self._is_allowed(event):
             await message.reply_text("This Steward bot is not authorized for this chat.")
             return
-        if not (message.caption or "").strip().startswith("/save"):
-            await message.reply_text("Add /save as the attachment caption to preserve it.")
-            return
         file_size = getattr(attachment, "file_size", None)
         if file_size and file_size > MAX_CLOUD_DOWNLOAD_BYTES:
             await message.reply_text(
@@ -289,6 +286,8 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("workspaces", adapter.handle_update))
     application.add_handler(CommandHandler("activity", adapter.handle_update))
     application.add_handler(CommandHandler("search", adapter.handle_update))
+    application.add_handler(CommandHandler("intake_accept", adapter.handle_update))
+    application.add_handler(CommandHandler("intake_discard", adapter.handle_update))
     capture_adapter = TelegramAdapter(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,

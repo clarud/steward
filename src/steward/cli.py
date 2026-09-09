@@ -22,6 +22,7 @@ from steward.application import (
     StewardOrganizationApprovalApplication,
     StewardQuestionApplication,
     StewardReadApplication,
+    StewardProvisionalIntakeApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.answer import (
@@ -68,6 +69,7 @@ from steward.organization_ai import ModelAssistedOrganizationService
 from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
+from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.records import RecordService
 from steward.calendar import (
     CalendarEventProposalService,
@@ -1102,6 +1104,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 WorkspaceRepository(database_path),
                 activity,
                 settings.inbox_dir,
+            ),
+            provisional_intake_application=StewardProvisionalIntakeApplication(
+                ProvisionalIntakeService(
+                    settings.data_dir / "cache" / "intake",
+                    ProvisionalIntakeRepository(database_path),
+                    capture_service,
+                    activity,
+                )
             ),
         )
         run_telegram_polling(
