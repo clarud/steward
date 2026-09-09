@@ -25,6 +25,13 @@ class TelegramDeliveryHistoryEvent:
     occurred_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class TelegramDeadLetter:
+    update_id: str
+    attempts: int
+    failed_at: datetime
+
+
 class TelegramUpdateDeliveryRepository:
     """Claim one Telegram update before it reaches Steward's application layer.
 
@@ -36,17 +43,34 @@ class TelegramUpdateDeliveryRepository:
     user's message.
     """
 
-    def __init__(self, database_path: Path, *, lease_seconds: int = 900) -> None:
+    def __init__(self, database_path: Path, *, lease_seconds: int = 900, max_attempts: int = 3) -> None:
         if lease_seconds <= 0:
             raise ValueError("Telegram delivery lease must be positive.")
+        if max_attempts <= 0:
+            raise ValueError("Telegram delivery max attempts must be positive.")
         self._database_path = database_path
         self._lease = timedelta(seconds=lease_seconds)
+        self._max_attempts = max_attempts
 
     def claim(self, update_id: str, *, now: datetime | None = None) -> bool:
         """Atomically claim an unseen or expired-processing update."""
 
         claimed_at = now or datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
+            if connection.execute(
+                "SELECT 1 FROM telegram_delivery_dead_letters WHERE update_id = ?", (update_id,)
+            ).fetchone() is not None:
+                return False
+            releases = connection.execute(
+                "SELECT COUNT(*) FROM telegram_delivery_history WHERE update_id = ? AND event_type = 'released'",
+                (update_id,),
+            ).fetchone()[0]
+            if releases >= self._max_attempts:
+                connection.execute(
+                    "INSERT OR IGNORE INTO telegram_delivery_dead_letters (update_id, attempts, failed_at) VALUES (?, ?, ?)",
+                    (update_id, releases, claimed_at.isoformat()),
+                )
+                return False
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO telegram_update_deliveries "
                 "(update_id, status, claimed_at) VALUES (?, 'processing', ?)",
@@ -128,3 +152,14 @@ class TelegramUpdateDeliveryRepository:
             TelegramDeliveryHistoryEvent(str(row[0]), str(row[1]), datetime.fromisoformat(str(row[2])))
             for row in rows
         )
+
+    def list_dead_letters(self, *, limit: int = 50) -> tuple[TelegramDeadLetter, ...]:
+        """Inspect terminal local failures without retaining a message body."""
+        if not 1 <= limit <= 100:
+            raise ValueError("Telegram dead-letter limit must be between 1 and 100.")
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT update_id, attempts, failed_at FROM telegram_delivery_dead_letters ORDER BY failed_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return tuple(TelegramDeadLetter(str(row[0]), int(row[1]), datetime.fromisoformat(str(row[2]))) for row in rows)

@@ -56,3 +56,16 @@ def test_delivery_history_retains_a_released_attempt(tmp_path: Path) -> None:
             "SELECT update_id, event_type FROM telegram_delivery_history ORDER BY id"
         ).fetchall()
     assert history == [("telegram:100", "claimed"), ("telegram:100", "released")]
+
+
+def test_delivery_moves_repeated_failures_to_metadata_only_dead_letters(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    deliveries = TelegramUpdateDeliveryRepository(database_path, max_attempts=2)
+
+    for _ in range(2):
+        assert deliveries.claim("telegram:101")
+        deliveries.release("telegram:101")
+
+    assert deliveries.claim("telegram:101") is False
+    assert deliveries.list_dead_letters()[0].update_id == "telegram:101"
+    assert deliveries.list_dead_letters()[0].attempts == 2

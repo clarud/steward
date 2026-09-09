@@ -30,6 +30,7 @@ ACTION_PROPOSALS_SCHEMA_VERSION = 21
 TELEGRAM_UPDATE_DELIVERIES_SCHEMA_VERSION = 22
 TRAVEL_RECORD_REFERENCES_SCHEMA_VERSION = 23
 TELEGRAM_DELIVERY_HISTORY_SCHEMA_VERSION = 24
+TELEGRAM_DELIVERY_DEAD_LETTER_SCHEMA_VERSION = 25
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -233,6 +234,16 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             update_id TEXT NOT NULL,
             event_type TEXT NOT NULL CHECK (event_type IN ('claimed', 'reclaimed', 'released', 'delivered')),
             occurred_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        TELEGRAM_DELIVERY_DEAD_LETTER_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_delivery_dead_letters (
+            update_id TEXT PRIMARY KEY,
+            attempts INTEGER NOT NULL CHECK (attempts > 0),
+            failed_at TEXT NOT NULL
         )
         """,
     ),
