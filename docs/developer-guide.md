@@ -554,11 +554,11 @@ that the Telegram Bot API does not provide.
 
 ### Reviewable agent writes from Telegram
 
-The initial tool agent may only create an `ActionProposal` for workspace
-creation; its tool returns a pending proposal ID and does not create the
-workspace. `ActionProposalRepository` makes the proposal durable, so reviewing
-it is resumable without restoring model state. The Telegram application handles
-only these exact commands:
+The tool agent can create a pending `ActionProposal` for workspace creation and,
+when Calendar tools are explicitly enabled, for a saved travel record's
+Calendar event. Neither tool executes the final action. `ActionProposalRepository`
+makes a proposal durable, so reviewing it is resumable without restoring model
+state. The Telegram application handles these exact commands:
 
 ```text
 /action_proposals
@@ -566,10 +566,11 @@ only these exact commands:
 /reject_action ID
 ```
 
-`StewardActionProposalApplication` validates the numeric ID and calls
-`ActionProposalService.review()`. That service performs idempotent workspace
-creation, changes the proposal status, and writes activity events. The model
-has no route to that method. This is a deliberately narrow first
+`StewardActionProposalApplication` validates the numeric ID and routes only
+recognized proposal types to their deterministic reviewer. Workspace acceptance
+performs idempotent workspace creation; Calendar acceptance invokes its
+idempotent writer only after approval. The model has no route to either final
+action. This is a deliberately narrow first
 human-in-the-loop interface: all configured allowlisted chats are trusted
 administrators, and proposals are not yet owned by an individual Telegram user.
 
@@ -878,10 +879,10 @@ Phase 22 makes the safety properties of each tool explicit in `ToolDefinition`:
 `ToolPolicy` is not prompt text. `build_tool_agent_graph()` supplies it to
 `ToolNode` through `wrap_tool_call`, where every requested tool is checked
 immediately before execution. A denied call becomes a `ToolMessage` explaining
-why it was not run; the Python callable is never invoked. The current six
-agent tools are all registered as read-only, so no approval state is needed
-yet. Future calendar and filesystem tools must receive a policy definition
-before they can be included in an agent graph.
+why it was not run; the Python callable is never invoked. Read-only tools are
+always permitted, while proposal-only local writes have narrow `SAFE_WRITE`
+definitions. No model-callable tool directly creates a Calendar event or moves
+a source; final actions remain behind deterministic approval boundaries.
 
 ## Google Calendar read boundary
 
@@ -1114,14 +1115,16 @@ behavior easy to edit and inspect in code review.
   restarted process can continue a chat thread. The adapter also has a local
   allowlist and durable successful-update deduplication. It does not yet have a
   dead-letter queue, backoff policy, or a user-visible delivery status view.
-- Telegram captures use `/save` and the normal Bot API download ceiling. There
-  is no self-hosted Bot API server or cloud-drive relay for larger files.
-- Organization matching is intentionally simple and filename-based; it is not
-  yet LLM-assisted. Telegram resumes strong move proposals after an explicit
+- Telegram captures use `/save` and the normal Bot API download ceiling. An
+  oversized upload can be relayed through an explicit `/drive_import FILE_ID`
+  command, but there is no self-hosted Bot API server or automatic Drive sync.
+- Organization matching has a deterministic filename fallback plus an optional
+  model-assisted existing-workspace proposal. Telegram resumes strong move proposals after an explicit
   `accept` or `reject` reply, but it has no richer natural-language approval
   understanding yet.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
-  not a general airline-document parser and does not yet create calendar events.
+  not a general airline-document parser; Calendar events require a travel
+  record plus explicit proposal approval or an explicit CLI write command.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.

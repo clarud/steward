@@ -108,9 +108,10 @@ local Ollama model can decide whether to search or read local Steward data.
 LangGraph executes supplied read-only tools plus narrowly defined proposal-only
 tools, then returns their results to the same model before it answers.
 
-For an explicit workspace-creation request, the agent may use its one
-proposal-only write tool. That creates a pending proposal, never the workspace
-itself. Inspect or decide it explicitly:
+For an explicit workspace-creation request, the agent may use a proposal-only
+write tool. With `--include-calendar`, it can also propose an event for a saved
+travel record. Neither proposal performs the final action itself. Inspect or
+decide it explicitly:
 
 ```powershell
 steward action-proposals
