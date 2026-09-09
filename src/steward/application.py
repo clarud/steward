@@ -455,7 +455,7 @@ class StewardReadApplication:
         filename = details.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
         return f"local file: {filename or '(name withheld)'}"
 
-    def search(self, query: str) -> str:
+    def search(self, query: str) -> str | PresentedReply:
         if not query:
             return "Use /search followed by one or more terms."
         try:
@@ -464,13 +464,9 @@ class StewardReadApplication:
             return "Those search terms are not valid. Try plain words without search operators."
         if not hits:
             return f"No local source fragments matched: {query!r}."
-        return "Search results:\n" + "\n".join(
-            f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
-            f"[{hit.fragment.heading or 'Preamble'}]\n{(hit.highlighted_text or hit.fragment.text)[:180]}"
-            for hit in hits
-        )
+        return self._search_card("Search results", query, hits)
 
-    def semantic_search(self, query: str) -> str:
+    def semantic_search(self, query: str) -> str | PresentedReply:
         """Search already-derived local vectors without involving an LLM."""
         if not query:
             return "Use /semantic_search followed by a natural-language phrase."
@@ -482,14 +478,9 @@ class StewardReadApplication:
             return "Semantic search is temporarily unavailable. Verify the local embedding model and derived index."
         if not hits:
             return f"No local semantic matches: {query!r}."
-        return "Semantic search results:\n" + "\n".join(
-            f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
-            f"[{hit.fragment.heading or 'Preamble'}] (similarity {hit.score:.2f})\n"
-            f"{hit.fragment.text[:180]}"
-            for hit in hits
-        )
+        return self._search_card("Semantic search results", query, hits, score_label="Similarity")
 
-    def hybrid_search(self, query: str) -> str:
+    def hybrid_search(self, query: str) -> str | PresentedReply:
         """Fuse local lexical and semantic rankings without a provider call."""
         if not query:
             return "Use /hybrid_search followed by a question or phrase."
@@ -501,12 +492,26 @@ class StewardReadApplication:
             return "Hybrid search is temporarily unavailable. Verify the local embedding model and derived index."
         if not hits:
             return f"No local hybrid matches: {query!r}."
-        return "Hybrid search results:\n" + "\n".join(
-            f"{hit.source.id}: {hit.source.path.name} — {hit.fragment.location} "
-            f"[{hit.fragment.heading or 'Preamble'}] (fusion {hit.score:.3f})\n"
-            f"{hit.fragment.text[:180]}"
-            for hit in hits
-        )
+        return self._search_card("Hybrid search results", query, hits, score_label="Match")
+
+    @staticmethod
+    def _search_card(
+        title: str, query: str, hits: object, *, score_label: str | None = None
+    ) -> PresentedReply:
+        """Render local retrieval as compact source cards with opaque callbacks."""
+
+        lines = [f"Results for: {query}"]
+        actions: list[ReplyAction] = []
+        for index, hit in enumerate(hits, start=1):  # type: ignore[union-attr]
+            heading = hit.fragment.heading or "Preamble"
+            excerpt = (getattr(hit, "highlighted_text", None) or hit.fragment.text).replace("\n", " ").strip()
+            score = f" · {score_label}: {hit.score:.2f}" if score_label else ""
+            lines.append(
+                f"\n{index}. {hit.source.path.name}\n{heading} · {hit.fragment.location}{score}\n“{excerpt[:180]}”"
+            )
+            if hit.source.id is not None:
+                actions.append(ReplyAction(f"Open {index}", f"/source {hit.source.id}"))
+        return PresentedReply("\n".join(lines), tuple(actions), title=title, icon="🔎")
 
     def _source_list(
         self, title: str, sources: list[Source], page: int

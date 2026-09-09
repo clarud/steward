@@ -208,14 +208,19 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     )
 
     assert "openmp.md" in application.handle(make_event(text="/inbox"))
-    assert "Search results" in application.handle(make_event(text="/search OpenMP"))
+    search = application.handle(make_event(text="/search OpenMP"))
+    assert isinstance(search, PresentedReply)
+    assert search.title == "Search results" and "openmp.md" in search.text
+    assert search.actions[0].label == "Open 1"
     assert "Recent activity" in application.handle(make_event(text="/activity"))
     source_details = application.handle(make_event(text="/source 1"))
     assert "Filename: openmp.md" in source_details
     assert str(tmp_path) not in source_details
     assert "openmp.md" in application.handle(make_event(text="what is in my inbox"))
     assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
-    assert "Search results" in application.handle(make_event(text="find my notes on OpenMP"))
+    natural_search = application.handle(make_event(text="find my notes on OpenMP"))
+    assert isinstance(natural_search, PresentedReply)
+    assert natural_search.title == "Search results"
     assert "Inbox" in application.handle(
         make_event(text="organize my inbox")
     )
@@ -257,9 +262,10 @@ def test_telegram_exposes_local_semantic_and_hybrid_search_without_a_model_call(
     semantic = reads.handle_command(make_event(text="/semantic_search CPU translation cache"))
     hybrid = reads.handle_command(make_event(text="/hybrid_search CPU translation cache"))
 
-    assert "Semantic search results" in semantic and "memory.md" in semantic
-    assert "similarity 0.91" in semantic and str(tmp_path) not in semantic
-    assert "Hybrid search results" in hybrid and "fusion 0.031" in hybrid
+    assert isinstance(semantic, PresentedReply) and isinstance(hybrid, PresentedReply)
+    assert semantic.title == "Semantic search results" and "memory.md" in semantic.text
+    assert "Similarity: 0.91" in semantic.text and str(tmp_path) not in semantic.text
+    assert hybrid.title == "Hybrid search results" and "Match: 0.03" in hybrid.text
 
 
 def test_telegram_semantic_search_has_a_safe_unavailable_response(tmp_path: Path) -> None:
