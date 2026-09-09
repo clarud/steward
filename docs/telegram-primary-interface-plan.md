@@ -805,9 +805,13 @@ that no write occurs before explicit approval.
 
 ### Current Goal 10 delivery notes
 
-- An attachment or substantial/personal text is first staged as a readable
-  review card. It is never saved merely because a classifier recognized a
-  flight, deadline, booking, receipt, or note.
+- An attachment, shared link, or substantial/personal text is first staged as
+  a readable review card. It is never saved merely because a classifier
+  recognized a flight, deadline, booking, receipt, note, or reference.
+- A clearly time-bound commitment such as “I need to submit the report by
+  Friday” produces a **Save task** proposal. The due phrase remains visible;
+  Steward does not guess an instant, schedule a reminder, or create a Task
+  until the user accepts it.
 - Choosing **Add context** switches the chat into a small, durable input step.
   The next ordinary message supplies course/project/purpose context for that
   same pending item, then Steward redraws its card. This survives a service
