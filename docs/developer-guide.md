@@ -1138,7 +1138,8 @@ behavior easy to edit and inspect in code review.
 - Telegram conversation state uses a local SQLite LangGraph checkpointer, so a
   restarted process can continue a chat thread. The adapter also has a local
   allowlist and durable successful-update deduplication. It does not yet have a
-  dead-letter queue, backoff policy, or a user-visible delivery status view.
+  dead-letter table limits repeated failures to three attempts and can be inspected with
+  `steward telegram-dead-letters`; it still has no time-based retry backoff.
 - Telegram captures use `/save` and the normal Bot API download ceiling. An
   oversized upload can be relayed through an explicit `/drive_import FILE_ID`
   command, but there is no self-hosted Bot API server or automatic Drive sync.

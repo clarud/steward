@@ -250,6 +250,10 @@ def build_parser() -> argparse.ArgumentParser:
         "telegram-delivery-history", help="Inspect metadata-only Telegram retry history"
     )
     telegram_delivery_history.add_argument("--limit", type=int, default=50)
+    telegram_dead_letters = subcommands.add_parser(
+        "telegram-dead-letters", help="Inspect terminal metadata-only Telegram delivery failures"
+    )
+    telegram_dead_letters.add_argument("--limit", type=int, default=50)
     ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
     ui_parser.add_argument("--host", default="127.0.0.1")
     ui_parser.add_argument("--port", type=int, default=8765)
@@ -985,6 +989,23 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         for event in history:
             print(f"{event.update_id}\t{event.event_type}\t{event.occurred_at.isoformat()}")
+        return
+
+    if arguments.command == "telegram-dead-letters":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            dead_letters = TelegramUpdateDeliveryRepository(database_path).list_dead_letters(
+                limit=arguments.limit
+            )
+        except ValueError as error:
+            print(str(error))
+            return
+        if not dead_letters:
+            print("No terminal Telegram delivery failures.")
+            return
+        for dead_letter in dead_letters:
+            print(f"{dead_letter.update_id}\t{dead_letter.attempts}\t{dead_letter.failed_at.isoformat()}")
         return
 
     if arguments.command == "ui":
