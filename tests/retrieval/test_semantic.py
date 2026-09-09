@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.retrieval import (
     HybridRetriever,
@@ -145,6 +147,24 @@ def test_semantic_index_clear_removes_only_rebuildable_vectors(tmp_path: Path) -
     assert remaining == 0
     assert source_repository.list_active()
     assert fragment_repository.list_for_source(1)
+
+
+def test_semantic_index_rebuild_recovers_from_corrupt_derived_vectors(tmp_path: Path) -> None:
+    database_path, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE source_fragment_embeddings SET vector_json = 'not-json'")
+
+    with pytest.raises(ValueError):
+        SemanticSearchService(source_repository, semantic_index).search("translation cache")
+
+    rebuilt = SourceService(
+        source_repository, fragment_repository, MarkdownExtractor(), semantic_index=semantic_index
+    ).rebuild_semantic_index()
+
+    assert rebuilt == 2
+    assert SemanticSearchService(source_repository, semantic_index).search("translation cache")[0].source.path.name == "virtual-memory.md"
+    assert len(source_repository.list_active()) == 2
+    assert sum(len(fragment_repository.list_for_source(source.id or 0)) for source in source_repository.list_active()) == 2
 
 
 def test_semantic_search_excludes_fragments_of_missing_originals(tmp_path: Path) -> None:
