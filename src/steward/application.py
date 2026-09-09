@@ -404,7 +404,7 @@ class StewardReadApplication:
     def sources(self, page: int) -> str | PresentedReply:
         return self._source_list("Registered sources", self._sources.list_all(), page)
 
-    def source(self, argument: str) -> str:
+    def source(self, argument: str) -> str | PresentedReply:
         try:
             source_id = int(argument)
         except ValueError:
@@ -413,10 +413,11 @@ class StewardReadApplication:
         if source is None:
             return f"Source {source_id} was not found."
         fragments = self._fragments.list_for_source(source_id)
-        return (
-            f"Source {source.id}: {source.path.name}\n"
+        return PresentedReply(
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
-            f"Filename: {source.path.name}\nExtracted fragments: {len(fragments)}"
+            f"Extracted sections: {len(fragments)}",
+            title=source.path.name,
+            icon="📄",
         )
 
     def workspaces(self) -> str:
@@ -539,16 +540,23 @@ class StewardReadApplication:
         if not selected:
             return f"{title}: page {page} is empty."
         pages = (len(sources) + self._PAGE_SIZE - 1) // self._PAGE_SIZE
-        lines = [f"{title} (page {page}/{pages}):"]
-        lines.extend(f"{source.id}: {source.path.name} ({source.source_type.value}, {source.status.value})" for source in selected)
+        lines = [f"Page {page} of {pages}"]
+        lines.extend(
+            f"{index}. {source.path.name} · {source.source_type.value} · {source.status.value}"
+            for index, source in enumerate(selected, start=1)
+        )
         command = "/inbox" if title == "Inbox" else "/sources"
         actions: list[ReplyAction] = []
+        actions.extend(
+            ReplyAction(f"Open {index}", f"/source {source.id}")
+            for index, source in enumerate(selected, start=1)
+            if source.id is not None
+        )
         if page > 1:
             actions.append(ReplyAction("Back", f"{command} {page - 1}"))
         if page < pages:
             actions.append(ReplyAction("Next", f"{command} {page + 1}"))
-        text = "\n".join(lines)
-        return PresentedReply(text, tuple(actions)) if actions else text
+        return PresentedReply("\n".join(lines), tuple(actions), title=title, icon="📚")
 
     @staticmethod
     def _page(argument: str) -> int:

@@ -207,23 +207,28 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
         read_application=reads,
     )
 
-    assert "openmp.md" in application.handle(make_event(text="/inbox"))
+    inbox_card = application.handle(make_event(text="/inbox"))
+    assert isinstance(inbox_card, PresentedReply)
+    assert inbox_card.title == "Inbox" and "openmp.md" in inbox_card.text
     search = application.handle(make_event(text="/search OpenMP"))
     assert isinstance(search, PresentedReply)
     assert search.title == "Search results" and "openmp.md" in search.text
     assert search.actions[0].label == "Open 1"
     assert "Recent activity" in application.handle(make_event(text="/activity"))
     source_details = application.handle(make_event(text="/source 1"))
-    assert "Filename: openmp.md" in source_details
-    assert str(tmp_path) not in source_details
-    assert "openmp.md" in application.handle(make_event(text="what is in my inbox"))
+    assert isinstance(source_details, PresentedReply)
+    assert source_details.title == "openmp.md"
+    assert str(tmp_path) not in source_details.text
+    natural_inbox = application.handle(make_event(text="what is in my inbox"))
+    assert isinstance(natural_inbox, PresentedReply)
+    assert "openmp.md" in natural_inbox.text
     assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
     natural_search = application.handle(make_event(text="find my notes on OpenMP"))
     assert isinstance(natural_search, PresentedReply)
     assert natural_search.title == "Search results"
-    assert "Inbox" in application.handle(
-        make_event(text="organize my inbox")
-    )
+    organize = application.handle(make_event(text="organize my inbox"))
+    assert isinstance(organize, PresentedReply)
+    assert organize.title == "Inbox"
     assert "Workspace proposal 1" in application.handle(
         make_event(text="create a workspace for jobs")
     )
@@ -1494,8 +1499,9 @@ def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Pat
     response = reads.sources(1)
 
     assert isinstance(response, PresentedReply)
-    assert response.actions[0].label == "Next"
-    assert response.actions[0].command == "/sources 2"
+    assert response.actions[0].label == "Open 1"
+    assert response.actions[-1].label == "Next"
+    assert response.actions[-1].command == "/sources 2"
 
 
 def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) -> None:
