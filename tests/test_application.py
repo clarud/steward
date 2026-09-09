@@ -484,6 +484,19 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert isinstance(followup, PresentedReply)
     assert followup.title == "Organize resume.pdf"
 
+    class QuestionMustNotRun:
+        def invoke(self, input, config=None):
+            raise AssertionError("a pending-review request must not enter retrieval")
+
+    application = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        review_inbox_application=reviews,
+    )
+    natural = application.handle(make_event(text="what are the proposals?"))
+    assert isinstance(natural, PresentedReply)
+    assert natural.title == "2 decisions waiting"
+
 
 def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:
     class LoopingToolGraph:

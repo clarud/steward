@@ -193,6 +193,22 @@ class StewardReviewInboxApplication:
             return None
         return self.detail(event, context.kind, context.identifier)
 
+    def handle_natural_request(self, event: IncomingEvent) -> PresentedReply | None:
+        """Keep common review-list requests out of the general retrieval agent."""
+
+        text = (event.text or "").strip().casefold().rstrip("?!.")
+        requests = {
+            "what are the proposals",
+            "what proposals are there",
+            "show my proposals",
+            "show pending proposals",
+            "show pending reviews",
+            "what needs my attention",
+            "what is pending",
+            "what do i need to decide",
+        }
+        return self.pending(event) if text in requests else None
+
     def _pending_items(self, event: IncomingEvent) -> list[tuple[str, int, str]]:
         items: list[tuple[str, int, str]] = []
         for proposal in reversed(self._actions.list_all()):
@@ -2730,6 +2746,9 @@ class StewardEventApplication:
             review_followup = self._review_inbox_application.handle_followup(event)
             if review_followup is not None:
                 return review_followup
+            natural_review = self._review_inbox_application.handle_natural_request(event)
+            if natural_review is not None:
+                return natural_review
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
             if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
