@@ -1632,6 +1632,46 @@ def test_provisional_intake_collects_context_from_an_ordinary_followup(tmp_path:
     assert sources.list_all() == []
 
 
+def test_provisional_intake_context_followup_survives_a_restart(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+
+    def build_application() -> StewardEventApplication:
+        provisional = StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            ),
+            contexts=ReviewContextRepository(database_path),
+        )
+        return StewardEventApplication(
+            StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+            provisional_intake_application=provisional,
+        )
+
+    original = tmp_path / "notes.pdf"
+    original.write_bytes(b"pdf")
+    first = build_application()
+    first.handle_file(
+        IncomingEvent(
+            "telegram:attachment", "telegram", "100", "12", None,
+            datetime(2026, 9, 9, tzinfo=UTC), None, ("notes.pdf",),
+        ),
+        original,
+    )
+    assert isinstance(first.handle(make_event(text="/intake_context 1")), PresentedReply)
+
+    restarted = build_application()
+    revised = restarted.handle(make_event(text="This belongs to my CS4226 network notes."))
+
+    assert isinstance(revised, PresentedReply)
+    assert "CS4226 network notes" in revised.text
+    assert sources.list_all() == []
+
+
 def test_short_personal_record_text_is_staged_without_being_saved(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
