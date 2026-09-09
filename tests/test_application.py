@@ -545,6 +545,7 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
     action_application = StewardActionProposalApplication(
         action_repository,
         ActionProposalService(action_repository, WorkspaceRepository(database_path), activity),
+        CalendarEventProposalService(action_repository, records, activity),
         record_service=records,
         fragment_repository=fragments,
         activity_service=activity,
@@ -564,7 +565,10 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
 
     accepted = application.handle(make_event(text="/approve_action 1"))
 
-    assert accepted == "Travel record 1 created from source 1."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Travel record saved"
+    assert "Calendar event still needs its own review" in accepted.text
+    assert accepted.actions[0].command == "/calendar_travel 1"
     assert records.list_travel_records()[0].flight_number == "SQ638"
 
 

@@ -2592,7 +2592,7 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Source {source_id} linked to workspace {workspace_id}. No file moved."
 
-    def _review_travel_record(self, proposal_id: int, decision: str) -> str:
+    def _review_travel_record(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._records is None or self._fragments is None:
             return "Travel-record review is not configured on this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -2615,11 +2615,25 @@ class StewardActionProposalApplication:
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"Travel record {record.id} created from source {source_id}."
+            actions = [ReplyAction("Records", "/records"), ReplyAction("Home", "/home")]
+            if self._calendar_proposals is not None:
+                actions.insert(0, ReplyAction("Add to calendar", f"/calendar_travel {record.id}"))
+            return PresentedReply(
+                "The travel details are saved with source-backed fields. "
+                "A Calendar event still needs its own review.",
+                tuple(actions),
+                title="Travel record saved",
+                icon="✈️",
+            )
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-        return f"Travel-record proposal {proposal.id} rejected."
+        return PresentedReply(
+            "The travel record was not created.",
+            (ReplyAction("Home", "/home"),),
+            title="Travel record declined",
+            icon="↩️",
+        )
 
     def _review_travel_reference(self, proposal_id: int, decision: str) -> str:
         if self._records is None:
