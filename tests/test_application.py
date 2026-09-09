@@ -180,6 +180,8 @@ def test_help_explains_read_boundaries_and_reviewable_writes() -> None:
     assert "/metrics - aggregate local decisions" in help_text
     assert "/organization_proposals" in help_text
     assert "review-required writes" in help_text.casefold()
+    assert "/record travel|receipt|warranty ID" in help_text
+    assert "/set_privacy SOURCE_ID RULE (review required)" in help_text
 
 
 def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_path: Path) -> None:
