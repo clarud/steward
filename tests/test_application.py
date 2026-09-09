@@ -95,6 +95,21 @@ def test_question_application_passes_normalized_text_to_graph() -> None:
     assert response == "A TLB caches address translations. [F1]"
 
 
+def test_question_application_includes_bounded_explicit_telegram_reply_context() -> None:
+    graph = FakeGraph()
+
+    StewardQuestionApplication(graph).handle(
+        make_event(text="How does this relate?", reply_text="A TLB caches address translations.")
+    )
+
+    assert graph.inputs == [{
+        "question": (
+            "Reply context (user-supplied): A TLB caches address translations.\n\n"
+            "Current question: How does this relate?"
+        )
+    }]
+
+
 def test_question_application_does_not_invoke_graph_for_empty_text() -> None:
     graph = FakeGraph()
 

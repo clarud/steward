@@ -1726,9 +1726,18 @@ class StewardQuestionApplication:
 
         if not event.text or not event.text.strip():
             return TEXT_QUESTION_REQUIRED
+        question = event.text.strip()
+        reply_text = (event.reply_text or "").strip()
+        if reply_text:
+            # A reply is stronger evidence of the intended referent than the
+            # latest graph turn. Keep it bounded and visibly user-supplied so
+            # it cannot masquerade as a system instruction or a source.
+            context = reply_text[:2_000]
+            suffix = "…" if len(reply_text) > len(context) else ""
+            question = f"Reply context (user-supplied): {context}{suffix}\n\nCurrent question: {question}"
 
         result = self._graph.invoke(
-            {"question": event.text},
+            {"question": question},
             {"configurable": {"thread_id": f"{event.platform}:{event.chat_id}"}},
         )
         return self._format_response(result)

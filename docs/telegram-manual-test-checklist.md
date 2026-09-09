@@ -33,6 +33,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   `/activity`; use pagination where it appears.
 - Ask a normal local question and a follow-up that uses a reference such as
   “How does that relate to TLBs?” Verify citations point to test-vault sources.
+- Reply to an earlier harmless discussion message with a normal question such
+  as `How does this relate?`. Verify Steward uses the replied-to message as
+  context, rather than treating only the immediately preceding chat turn as
+  the referent.
 - Send the same update twice only if you can safely reproduce it; verify a
   duplicate does not create duplicate capture/proposal state.
 - If Telegram visibly retries a review-button callback, verify it does not
