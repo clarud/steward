@@ -249,6 +249,38 @@ def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) 
     assert len(sources.list_all()) == 1
 
 
+def test_provisional_intake_context_command_updates_without_saving(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    provisional = StewardProvisionalIntakeApplication(
+        ProvisionalIntakeService(
+            tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+            capture_service, activity,
+        )
+    )
+    original = tmp_path / "notes.pdf"
+    original.write_bytes(b"pdf")
+    event = IncomingEvent(
+        "telegram:attachment", "telegram", "100", "12", None,
+        datetime(2026, 9, 9, tzinfo=UTC), None, ("notes.pdf",),
+    )
+    provisional.begin_file(event, original)
+
+    updated = provisional.handle_command(
+        IncomingEvent(
+            "telegram:context", "telegram", "100", "13", None,
+            datetime(2026, 9, 9, tzinfo=UTC), "/intake_context 1 CS3210 assignment",
+        )
+    )
+
+    assert isinstance(updated, PresentedReply)
+    assert "CS3210 assignment" in updated.text
+    assert sources.list_all() == []
+
+
 def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:
     class FileCapture:
         def __init__(self) -> None:

@@ -38,6 +38,7 @@ WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
 KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
 TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
 PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
+PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -320,6 +321,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'discarded')),
             created_at TEXT NOT NULL,
             decided_at TEXT
+        )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION,
+        """
+        CREATE TABLE provisional_intake_revisions (
+            id INTEGER PRIMARY KEY,
+            intake_id INTEGER NOT NULL REFERENCES provisional_intakes(id) ON DELETE CASCADE,
+            guidance TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )
         """,
     ),

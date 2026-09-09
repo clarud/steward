@@ -156,6 +156,8 @@ Currently Telegram supports:
   explicit immediate-capture shortcut;
 - provisional capture of substantial text notes and explicit note/thought
   prefixes, also requiring a save/discard decision;
+- `/intake_context ID ...` records additional user guidance and revises a
+  pending intake proposal without saving or moving the original;
 - `/help`, `/status`, Inbox/source/workspace/activity inspection, lexical
   search, and safe workspace-creation proposals;
 - durable, chat-scoped pagination callbacks for source and Inbox lists;

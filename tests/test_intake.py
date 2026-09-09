@@ -99,3 +99,17 @@ def test_text_note_is_staged_until_the_user_accepts_it(tmp_path: Path) -> None:
     assert saved.source.path.is_file()
     assert not intake.staged_path.exists()
     assert sources.get_by_id(saved.source.id or 0) == saved.source
+
+
+def test_context_revision_is_audited_without_saving_the_staged_file(tmp_path: Path) -> None:
+    service, sources, activity = make_service(tmp_path)
+    original = tmp_path / "download.pdf"
+    original.write_bytes(b"pdf bytes")
+    intake = service.stage_file(make_event(), original)
+
+    revised = service.add_context(intake.id or 0, "100", "CS3210 OpenMP assignment")
+
+    assert "CS3210 OpenMP assignment" in revised.summary
+    assert intake.staged_path.is_file()
+    assert sources.list_all() == []
+    assert activity.list_recent()[0].event_type is ActivityType.INTAKE_REVISED

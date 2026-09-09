@@ -314,6 +314,7 @@ class StewardProvisionalIntakeApplication:
             "It is staged locally and has not been added to your Inbox.",
             (
                 ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
+                ReplyAction("Add context", f"/intake_context {intake.id}"),
                 ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
             ),
         )
@@ -325,6 +326,7 @@ class StewardProvisionalIntakeApplication:
             "It is staged locally and has not been added to your Inbox.",
             (
                 ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
+                ReplyAction("Add context", f"/intake_context {intake.id}"),
                 ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
             ),
         )
@@ -342,14 +344,29 @@ class StewardProvisionalIntakeApplication:
     def handle_command(self, event: IncomingEvent) -> CaptureResult | str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/intake_accept", "/intake_discard"}:
+        if command not in {"/intake_accept", "/intake_discard", "/intake_context"}:
             return None
-        if not separator or not argument.strip().isdigit():
+        intake_identifier, context_separator, context = argument.strip().partition(" ")
+        if not separator or not intake_identifier.isdigit():
             return f"Use {command} followed by a numeric provisional intake ID."
-        intake_id = int(argument.strip())
+        intake_id = int(intake_identifier)
         try:
             if command == "/intake_accept":
                 return self._service.accept(intake_id, event)
+            if command == "/intake_context":
+                if not context_separator:
+                    return (
+                        "Use /intake_context followed by the intake ID and what it relates to. "
+                        "For example: /intake_context 4 CS3210 OpenMP assignment"
+                    )
+                intake = self._service.add_context(intake_id, event.chat_id, context)
+                return PresentedReply(
+                    f"Updated provisional intake {intake.id}: {intake.summary}",
+                    (
+                        ReplyAction("Save to Inbox", f"/intake_accept {intake.id}"),
+                        ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
+                    ),
+                )
             intake = self._service.discard(intake_id, event.chat_id)
         except (OSError, ValueError) as error:
             return str(error)

@@ -100,6 +100,16 @@ class ProvisionalIntakeRepository:
             )
         return replace(intake, status=status, decided_at=decided_at)
 
+    def add_revision(self, intake_id: int, guidance: str, summary: str) -> None:
+        """Record user-supplied routing context without changing canonical state."""
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "INSERT INTO provisional_intake_revisions (intake_id, guidance, summary, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (intake_id, guidance, summary, datetime.now(UTC).isoformat()),
+            )
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> ProvisionalIntake:
         return ProvisionalIntake(
@@ -197,6 +207,17 @@ class ProvisionalIntakeService:
         decided.staged_path.unlink(missing_ok=True)
         self._activity.record(ActivityType.INTAKE_DISCARDED, object_id=str(intake_id), details=intake.original_name)
         return decided
+
+    def add_context(self, intake_id: int, chat_id: str, guidance: str) -> ProvisionalIntake:
+        """Attach explicit user context to a pending proposal and audit the revision."""
+        intake = self._pending_for_chat(intake_id, chat_id)
+        normalized = " ".join(guidance.split())
+        if not normalized:
+            raise ValueError("Tell me what this relates to after the provisional intake ID.")
+        summary = f"{intake.summary} User context: {normalized}"
+        self._repository.add_revision(intake_id, normalized, summary)
+        self._activity.record(ActivityType.INTAKE_REVISED, object_id=str(intake_id), details=normalized)
+        return replace(intake, summary=summary)
 
     def _pending_for_chat(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
         intake = self._repository.get(intake_id)

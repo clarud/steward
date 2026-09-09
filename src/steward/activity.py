@@ -10,6 +10,7 @@ class ActivityType(StrEnum):
     SOURCE_CAPTURED = "source_captured"
     SOURCE_UNREGISTERED = "source_unregistered"
     INTAKE_PROPOSED = "intake_proposed"
+    INTAKE_REVISED = "intake_revised"
     INTAKE_ACCEPTED = "intake_accepted"
     INTAKE_DISCARDED = "intake_discarded"
     WORKSPACE_CREATED = "workspace_created"

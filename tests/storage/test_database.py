@@ -26,6 +26,7 @@ from steward.storage.database import (
     TELEGRAM_DELIVERY_DEAD_LETTER_SCHEMA_VERSION,
     TELEGRAM_CALLBACKS_SCHEMA_VERSION,
     PROVISIONAL_INTAKES_SCHEMA_VERSION,
+    PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -82,6 +83,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION,
             TELEGRAM_CALLBACKS_SCHEMA_VERSION,
             PROVISIONAL_INTAKES_SCHEMA_VERSION,
+            PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -108,4 +110,4 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == 32
+    assert migration_count == 33
