@@ -100,6 +100,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.
+- From the same research card, choose exactly one **Keep source** action.
+  Verify it creates a separate Inbox Markdown reference containing that source's
+  URL, title, query, provider, and any search-result snippet—not a downloaded
+  copy of the webpage.
 - With the local embedding model installed, compare `/search TERMS`,
   `/semantic_search QUESTION`, and `/hybrid_search QUESTION`. Verify that all
   results identify only filenames, source IDs, and derived locations; none

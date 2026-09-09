@@ -318,6 +318,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("research", adapter.handle_update))
     application.add_handler(CommandHandler("research_retain", adapter.handle_update))
     application.add_handler(CommandHandler("research_retain_token", adapter.handle_update))
+    application.add_handler(CommandHandler("research_retain_source_token", adapter.handle_update))
     application.add_handler(CommandHandler("propose_note", adapter.handle_update))
     application.add_handler(CommandHandler("curate", adapter.handle_update))
     application.add_handler(CommandHandler("curate_synthesize", adapter.handle_update))

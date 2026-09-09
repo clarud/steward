@@ -77,6 +77,28 @@ class ResearchRetentionService:
             )
         )
 
+    def retain_source(self, bundle: ResearchBundle, source: ResearchSource) -> CaptureResult:
+        """Retain one user-selected external reference, never a scraped copy.
+
+        The returned Inbox source records exactly which search result the user
+        selected. Fetching the remote page would be a separate, explicit
+        capability with its own privacy and provenance contract.
+        """
+        text = self._render_source(bundle, source)
+        fingerprint = sha256(text.encode("utf-8")).hexdigest()[:24]
+        now = datetime.now(UTC)
+        return self._capture_service.capture_text(
+            IncomingEvent(
+                id=f"research-source:{fingerprint}",
+                platform="research_source",
+                chat_id="retained",
+                message_id=fingerprint,
+                reply_to_id=None,
+                timestamp=now,
+                text=text,
+            )
+        )
+
     @staticmethod
     def _render(bundle: ResearchBundle) -> str:
         source_lines = [f"- [{source.title}]({source.url})" for source in bundle.sources]
@@ -89,6 +111,19 @@ class ResearchRetentionService:
             f"{bundle.answer}\n\n"
             "## External sources\n\n"
             f"{sources}\n"
+        )
+
+    @staticmethod
+    def _render_source(bundle: ResearchBundle, source: ResearchSource) -> str:
+        excerpt = f"\n\n## Search-result excerpt\n\n{source.excerpt}\n" if source.excerpt else ""
+        return (
+            f"# Retained external source: {source.title}\n\n"
+            "> This is a user-retained reference to an external search result, "
+            "not a downloaded copy of the linked page.\n\n"
+            f"- URL: {source.url}\n"
+            f"- Research query: {bundle.query}\n"
+            f"- Provider: `{bundle.provider}`\n"
+            f"{excerpt}"
         )
 
 

@@ -32,3 +32,22 @@ def test_retain_research_writes_a_labeled_provenance_note_and_is_idempotent(tmp_
     assert "https://example.com/tlb" in content
     fragments = SourceFragmentRepository(database_path).list_for_source(first.source.id or 0)
     assert any("kernel invalidates" in fragment.text.casefold() for fragment in fragments)
+
+
+def test_retain_selected_research_source_writes_only_a_labeled_reference(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    capture = InboxCaptureService(
+        tmp_path / "vault" / "inbox", SourceRepository(database_path), SourceFragmentRepository(database_path)
+    )
+    source = ResearchSource("Kernel docs", "https://example.com/tlb", "TLB invalidation guidance.")
+    bundle = ResearchBundle("TLB shootdowns", "A longer provider answer that should not be retained here.", (source,), provider="fake")
+    service = ResearchRetentionService(capture)
+
+    first = service.retain_source(bundle, source)
+    repeated = service.retain_source(bundle, source)
+
+    content = first.source.path.read_text(encoding="utf-8")
+    assert first.duplicate is False and repeated.duplicate is True
+    assert "user-retained reference to an external search result" in content
+    assert "https://example.com/tlb" in content and "TLB invalidation guidance." in content
+    assert "longer provider answer" not in content

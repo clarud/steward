@@ -868,6 +868,36 @@ def test_telegram_research_card_retains_the_exact_reviewed_bundle_once(tmp_path:
     )
 
 
+def test_telegram_research_card_can_retain_one_selected_source_without_the_full_answer(tmp_path: Path) -> None:
+    class Provider:
+        def research(self, query: str) -> ResearchBundle:
+            return ResearchBundle(
+                query,
+                "This complete answer is not part of the selected-source reference.",
+                (ResearchSource("Kernel docs", "https://example.com/tlb", "A TLB source snippet."),),
+                provider="fake",
+            )
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database))
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        research_application=StewardResearchApplication(lambda: Provider(), ResearchRetentionService(capture)),
+    )
+
+    preview = application.handle(make_event(text="/research TLB shootdowns"))
+
+    assert isinstance(preview, PresentedReply)
+    source_command = preview.actions[1].command
+    assert "/research_retain_source_token " in source_command
+    retained = application.handle(make_event(text=source_command))
+    content = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
+    assert "Retained selected external source" in retained
+    assert "Kernel docs" in content and "https://example.com/tlb" in content
+    assert "complete answer is not" not in content
+    assert "Already retained selected external source" in application.handle(make_event(text=source_command))
+
+
 def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database)

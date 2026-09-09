@@ -749,8 +749,21 @@ class StewardResearchApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, query = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/research", "/research_retain", "/research_retain_token"}:
+        if command not in {"/research", "/research_retain", "/research_retain_token", "/research_retain_source_token"}:
             return None
+        if command == "/research_retain_source_token":
+            token, separator, index_text = query.strip().partition(" ")
+            bundle = self._get_ephemeral_bundle(token, event.chat_id)
+            if bundle is None:
+                return "That research card is no longer available. Run /research again before retaining a source."
+            if not separator or not index_text.isdigit():
+                return "That source selection is invalid. Run /research again and choose a listed source."
+            index = int(index_text)
+            if not 1 <= index <= len(bundle.sources):
+                return "That source selection is no longer available. Run /research again."
+            result = self._retention.retain_source(bundle, bundle.sources[index - 1])
+            state = "Already retained" if result.duplicate else "Retained"
+            return f"{state} selected external source in Inbox: {result.source.path.name}"
         if command == "/research_retain_token":
             bundle = self._take_ephemeral_bundle(query.strip(), event.chat_id)
             if bundle is None:
@@ -775,10 +788,16 @@ class StewardResearchApplication:
         text = f"External research — ephemeral, not saved:\n\n{bundle.answer}"
         if sources:
             text += f"\n\nExternal sources:\n{sources}"
-        return PresentedReply(
-            text,
-            (ReplyAction("Keep this reviewed note", f"/research_retain_token {self._cache_bundle(event.chat_id, bundle)}"),),
+        token = self._cache_bundle(event.chat_id, bundle)
+        actions = [ReplyAction("Keep this reviewed note", f"/research_retain_token {token}")]
+        actions.extend(
+            ReplyAction(
+                f"Keep source {index}: {source.title[:32]}",
+                f"/research_retain_source_token {token} {index}",
+            )
+            for index, source in enumerate(bundle.sources[:8], start=1)
         )
+        return PresentedReply(text, tuple(actions))
 
     def _cache_bundle(self, chat_id: str, bundle: ResearchBundle) -> str:
         self._purge_expired()
@@ -789,6 +808,14 @@ class StewardResearchApplication:
     def _take_ephemeral_bundle(self, token: str, chat_id: str) -> ResearchBundle | None:
         self._purge_expired()
         item = self._ephemeral_bundles.pop(token, None)
+        if item is None or item[0] != chat_id:
+            return None
+        return item[2]
+
+    def _get_ephemeral_bundle(self, token: str, chat_id: str) -> ResearchBundle | None:
+        """Read a chat-bound card without consuming it, for multiple selections."""
+        self._purge_expired()
+        item = self._ephemeral_bundles.get(token)
         if item is None or item[0] != chat_id:
             return None
         return item[2]
