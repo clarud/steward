@@ -48,6 +48,7 @@ TASK_DUE_AT_SCHEMA_VERSION = 39
 CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
 ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
 PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
+TASK_REMINDERS_SCHEMA_VERSION = 43
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -419,6 +420,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         ALTER TABLE provisional_intakes
         ADD COLUMN analysis_mode TEXT NOT NULL DEFAULT 'none'
         CHECK (analysis_mode IN ('external', 'local', 'none'))
+        """,
+    ),
+    (
+        TASK_REMINDERS_SCHEMA_VERSION,
+        """
+        CREATE TABLE task_reminders (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            chat_id TEXT NOT NULL,
+            remind_at TEXT NOT NULL,
+            claimed_at TEXT,
+            reminded_at TEXT
+        )
         """,
     ),
 )

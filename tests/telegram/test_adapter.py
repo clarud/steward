@@ -1,14 +1,18 @@
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from steward.events import IncomingEvent
+from steward.activity import ActivityService, ActivityType
 from steward.storage import initialize_database
+from steward.tasks import TaskReminderService, TaskService
 from steward.telegram import (
     TelegramCallbackRepository,
     TelegramAdapter,
     TelegramUpdateDeliveryRepository,
+    deliver_due_task_reminders,
     normalize_telegram_update,
     run_telegram_polling,
 )
@@ -78,6 +82,17 @@ class FailingThenWorkingHandler(FakeEventHandler):
         if self._attempts == 1:
             raise RuntimeError("temporary application failure")
         return super().handle(event)
+
+
+class FakeBot:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.sent: list[tuple[str, str]] = []
+        self._fail = fail
+
+    async def send_message(self, *, chat_id: str, text: str) -> None:
+        if self._fail:
+            raise RuntimeError("Telegram unavailable")
+        self.sent.append((chat_id, text))
 
 
 def test_normalize_telegram_update_preserves_reply_relationship() -> None:
@@ -192,6 +207,33 @@ def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())
+
+
+def test_due_task_reminders_are_acknowledged_only_after_telegram_accepts_them(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); tasks = TaskService(database)
+    reminder_service = TaskReminderService(database, tasks, activity)
+    task = tasks.create("Submit CS3210 lab")
+    reminder_service.schedule(task.id or 0, "100", datetime(2020, 1, 1, tzinfo=UTC))
+
+    bot = FakeBot()
+
+    assert asyncio.run(deliver_due_task_reminders(bot, reminder_service)) == 1
+    assert bot.sent == [("100", "Reminder: Task 1: Submit CS3210 lab\nScheduled for: 2020-01-01T00:00:00+00:00")]
+    assert asyncio.run(deliver_due_task_reminders(bot, reminder_service)) == 0
+    assert activity.list_recent()[0].event_type is ActivityType.TASK_REMINDER_SENT
+
+
+def test_failed_task_reminder_delivery_releases_the_claim_for_retry(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); tasks = TaskService(database)
+    reminder_service = TaskReminderService(database, tasks, activity)
+    task = tasks.create("Submit CS3210 lab")
+    reminder_service.schedule(task.id or 0, "100", datetime(2020, 1, 1, tzinfo=UTC))
+
+    assert asyncio.run(deliver_due_task_reminders(FakeBot(fail=True), reminder_service)) == 0
+    retry_bot = FakeBot()
+    assert asyncio.run(deliver_due_task_reminders(retry_bot, reminder_service)) == 1
 
 
 def test_document_over_cloud_limit_is_not_downloaded() -> None:

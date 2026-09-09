@@ -37,7 +37,7 @@ from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeSe
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
-from steward.tasks import TaskService
+from steward.tasks import TaskReminderService, TaskService
 from steward.research import ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
 
 
@@ -113,7 +113,7 @@ class StewardReadApplication:
             "/records, /tasks, /roots — saved state\n"
             "/calendar_search [terms], /calendar_get ID — current Google Calendar\n\n"
             "Explicit actions (they create a review or a selected import):\n"
-            "/propose_task TEXT, /complete_task ID\n"
+            "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /curate (reply to a discussion message), /research QUESTION\n"
             "For a staged attachment/note: /intake_analysis ID external|local|none before saving\n"
@@ -475,10 +475,17 @@ class StewardTaskApplication:
 
     CREATE_TASK = "create_task"
 
-    def __init__(self, tasks: TaskService, proposals: ActionProposalRepository, activity: ActivityService) -> None:
+    def __init__(
+        self,
+        tasks: TaskService,
+        proposals: ActionProposalRepository,
+        activity: ActivityService,
+        reminders: TaskReminderService | None = None,
+    ) -> None:
         self._tasks = tasks
         self._proposals = proposals
         self._activity = activity
+        self._reminders = reminders
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -491,6 +498,12 @@ class StewardTaskApplication:
                 f"{task.id}: {task.title}"
                 + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
                 + (f" ({task.due_hint})" if task.due_hint else "")
+                + (
+                    f" (reminder {reminder.remind_at.isoformat()})"
+                    if self._reminders is not None
+                    and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
+                    else ""
+                )
                 for task in tasks
             )
         if command == "/complete_task":
@@ -510,14 +523,22 @@ class StewardTaskApplication:
             return None
         if not separator:
             return "Use /propose_task followed by what you need to do."
-        return self.propose(argument)
+        return self.propose(argument, chat_id=event.chat_id)
 
-    def propose(self, text: str) -> str | PresentedReply:
+    def propose(self, text: str, *, chat_id: str | None = None) -> str | PresentedReply:
         try:
-            title, due_hint, due_at = self._tasks.parse_proposal_with_due_at(text)
+            title, due_hint, due_at, remind_at = self._tasks.parse_proposal_with_schedule(text)
         except ValueError as error:
             return str(error)
-        payload = {"title": title, "due_hint": due_hint or "", "due_at": due_at.isoformat() if due_at else ""}
+        if remind_at is not None and (self._reminders is None or chat_id is None):
+            return "Telegram reminders are only available from an approved Telegram task proposal."
+        payload = {
+            "title": title,
+            "due_hint": due_hint or "",
+            "due_at": due_at.isoformat() if due_at else "",
+            "remind_at": remind_at.isoformat() if remind_at else "",
+            "chat_id": chat_id or "",
+        }
         pending = self._proposals.find_pending(self.CREATE_TASK, payload)
         if pending is None:
             pending = self._proposals.add(self.CREATE_TASK, payload)
@@ -525,6 +546,8 @@ class StewardTaskApplication:
         due_line = f"\nDue cue: {due_hint}" if due_hint else ""
         if due_at:
             due_line += f"\nDue at: {due_at.isoformat()}"
+        if remind_at:
+            due_line += f"\nReminder at: {remind_at.isoformat()}"
         return PresentedReply(
             f"Task proposal {pending.id}: {title}{due_line}\n\nNo task has been saved yet.",
             (ReplyAction("Accept task", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
@@ -1472,6 +1495,7 @@ class StewardActionProposalApplication:
         fragment_repository: SourceFragmentRepository | None = None,
         activity_service: ActivityService | None = None,
         task_service: TaskService | None = None,
+        task_reminder_service: TaskReminderService | None = None,
         capture_service: InboxCaptureService | None = None,
         workspace_repository: WorkspaceRepository | None = None,
         source_repository: SourceRepository | None = None,
@@ -1485,6 +1509,7 @@ class StewardActionProposalApplication:
         self._fragments = fragment_repository
         self._activity = activity_service
         self._tasks = task_service
+        self._task_reminders = task_reminder_service
         self._capture = capture_service
         self._workspaces = workspace_repository
         self._sources = source_repository
@@ -1603,11 +1628,20 @@ class StewardActionProposalApplication:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return f"Task proposal {proposal.id} rejected."
         due_at_value = proposal.payload.get("due_at") or None
+        remind_at_value = proposal.payload.get("remind_at") or None
+        if remind_at_value and (self._task_reminders is None or not proposal.payload.get("chat_id")):
+            return "Task reminder delivery is not configured for this proposal."
         task = self._tasks.create(
             proposal.payload["title"],
             proposal.payload.get("due_hint") or None,
             TaskService.parse_due_at(due_at_value) if due_at_value else None,
         )
+        if remind_at_value:
+            self._task_reminders.schedule(
+                task.id or 0,
+                proposal.payload["chat_id"],
+                TaskService.parse_due_at(remind_at_value),
+            )
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(ActivityType.TASK_CREATED, object_id=str(task.id), details=task.title)
@@ -1856,7 +1890,7 @@ class StewardEventApplication:
         if self._task_application is not None:
             normalized = (event.text or "").strip().casefold()
             if normalized.startswith(("remind me to ", "todo:", "task:", "deadline:")):
-                return self._task_application.propose(event.text or "")
+                return self._task_application.propose(event.text or "", chat_id=event.chat_id)
         if self._calendar_application is not None:
             calendar_response = self._calendar_application.handle_command(event)
             if calendar_response is not None:

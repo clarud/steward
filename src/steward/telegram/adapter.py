@@ -13,6 +13,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
+from steward.tasks import TaskReminderService
 from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
 
@@ -262,13 +263,23 @@ def run_telegram_polling(
     allowed_chat_ids: frozenset[str] = frozenset(),
     delivery_repository: TelegramUpdateDeliveryRepository | None = None,
     callback_repository: TelegramCallbackRepository | None = None,
+    task_reminders: TaskReminderService | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
 
     if not token.strip():
         raise ValueError("Telegram bot token must not be empty.")
 
-    application = ApplicationBuilder().token(token).build()
+    builder = ApplicationBuilder().token(token)
+    if task_reminders is not None:
+        async def start_reminders(application: object) -> None:
+            # Application.create_task owns cancellation during orderly polling shutdown.
+            application.create_task(  # type: ignore[attr-defined]
+                _task_reminder_loop(application, task_reminders, allowed_chat_ids),
+                name="steward-task-reminders",
+            )
+        builder = builder.post_init(start_reminders)
+    application = builder.build()
     adapter = TelegramAdapter(
         event_handler,
         allowed_chat_ids=allowed_chat_ids,
@@ -347,3 +358,40 @@ def run_telegram_polling(
     application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))
     application.add_handler(CallbackQueryHandler(adapter.handle_callback))
     application.run_polling()
+
+
+async def deliver_due_task_reminders(
+    bot: object,
+    reminders: TaskReminderService,
+    allowed_chat_ids: frozenset[str] = frozenset(),
+) -> int:
+    """Deliver claimed reminders, releasing a claim if Telegram does not accept it."""
+    delivered = 0
+    for reminder in await asyncio.to_thread(reminders.claim_due):
+        task_id = reminder.task.id or 0
+        if allowed_chat_ids and reminder.chat_id not in allowed_chat_ids:
+            await asyncio.to_thread(reminders.release, task_id)
+            continue
+        text = (
+            f"Reminder: Task {task_id}: {reminder.task.title}\n"
+            f"Scheduled for: {reminder.remind_at.isoformat()}"
+        )
+        try:
+            await bot.send_message(chat_id=reminder.chat_id, text=text)  # type: ignore[attr-defined]
+        except Exception:
+            await asyncio.to_thread(reminders.release, task_id)
+            continue
+        await asyncio.to_thread(reminders.acknowledge, task_id)
+        delivered += 1
+    return delivered
+
+
+async def _task_reminder_loop(
+    application: object,
+    reminders: TaskReminderService,
+    allowed_chat_ids: frozenset[str],
+) -> None:
+    """Poll due reminder records independently of Telegram update delivery."""
+    while True:
+        await deliver_due_task_reminders(application.bot, reminders, allowed_chat_ids)  # type: ignore[attr-defined]
+        await asyncio.sleep(60)

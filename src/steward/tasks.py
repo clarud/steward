@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from steward.activity import ActivityService, ActivityType
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +19,15 @@ class Task:
     due_at: datetime | None
     status: str
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TaskReminder:
+    """An explicitly scheduled Telegram reminder for one open task."""
+
+    task: Task
+    chat_id: str
+    remind_at: datetime
 
 
 class TaskService:
@@ -54,6 +65,22 @@ class TaskService:
             return (*TaskService.parse_proposal(text), None)
         due_at = TaskService.parse_due_at(match.group(1))
         return (*TaskService.parse_proposal(text[:match.start()]), due_at)
+
+    @staticmethod
+    def parse_proposal_with_schedule(text: str) -> tuple[str, str | None, datetime | None, datetime | None]:
+        """Parse explicit deadline/reminder instants while retaining natural-language cues.
+
+        Dates are never inferred. Both switches require an ISO-8601 offset so
+        a Telegram reminder remains unambiguous across restarts and time zones.
+        """
+        options = dict(re.findall(r"\s+--(due-at|remind-at)\s+(\S+)", text))
+        if len(options) != len(re.findall(r"\s+--(?:due-at|remind-at)\s+\S+", text)):
+            raise ValueError("Use each of --due-at and --remind-at at most once.")
+        stripped = re.sub(r"\s+--(?:due-at|remind-at)\s+\S+", "", text).strip()
+        title, due_hint = TaskService.parse_proposal(stripped)
+        due_at = TaskService.parse_due_at(options["due-at"]) if "due-at" in options else None
+        remind_at = TaskService.parse_due_at(options["remind-at"]) if "remind-at" in options else None
+        return title, due_hint, due_at, remind_at
 
     @staticmethod
     def parse_due_at(value: str) -> datetime:
@@ -129,3 +156,102 @@ class TaskService:
             str(row[4]),
             datetime.fromisoformat(str(row[5])),
         )
+
+
+class TaskReminderService:
+    """Durably coordinate explicit Telegram reminders with at-least-once delivery.
+
+    A claim is intentionally recoverable after five minutes. A process can die
+    between Telegram accepting a message and local acknowledgement, so the
+    system favors a possible duplicate reminder over silently losing one.
+    """
+
+    _CLAIM_TTL = timedelta(minutes=5)
+
+    def __init__(self, database_path: Path, tasks: TaskService, activity: ActivityService) -> None:
+        self._database_path = database_path
+        self._tasks = tasks
+        self._activity = activity
+
+    def schedule(self, task_id: int, chat_id: str, remind_at: datetime) -> TaskReminder:
+        if not chat_id.strip():
+            raise ValueError("A Telegram reminder requires an originating chat.")
+        if remind_at.tzinfo is None or remind_at.utcoffset() is None:
+            raise ValueError("A reminder time must include a UTC offset.")
+        task = self._tasks.get(task_id)
+        if task is None:
+            raise ValueError(f"Task {task_id} was not found.")
+        if task.status != "open":
+            raise ValueError(f"Task {task_id} is not open.")
+        normalized = remind_at.astimezone(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "INSERT OR REPLACE INTO task_reminders (task_id, chat_id, remind_at, claimed_at, reminded_at) "
+                "VALUES (?, ?, ?, NULL, NULL)",
+                (task_id, chat_id, normalized.isoformat()),
+            )
+        return TaskReminder(task, chat_id, normalized)
+
+    def reminder_for_task(self, task_id: int) -> TaskReminder | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT chat_id, remind_at FROM task_reminders WHERE task_id = ? AND reminded_at IS NULL",
+                (task_id,),
+            ).fetchone()
+        task = self._tasks.get(task_id)
+        if row is None or task is None:
+            return None
+        return TaskReminder(task, str(row[0]), datetime.fromisoformat(str(row[1])))
+
+    def claim_due(self, now: datetime | None = None) -> tuple[TaskReminder, ...]:
+        now = (now or datetime.now(UTC)).astimezone(UTC)
+        stale_before = now - self._CLAIM_TTL
+        claimed: list[TaskReminder] = []
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT t.id, t.title, t.due_hint, t.due_at, t.status, t.created_at,
+                       r.chat_id, r.remind_at
+                FROM task_reminders AS r
+                JOIN tasks AS t ON t.id = r.task_id
+                WHERE t.status = 'open' AND r.remind_at <= ? AND r.reminded_at IS NULL
+                  AND (r.claimed_at IS NULL OR r.claimed_at < ?)
+                ORDER BY r.remind_at, t.id
+                """,
+                (now.isoformat(), stale_before.isoformat()),
+            ).fetchall()
+            for row in rows:
+                task_id = int(row[0])
+                cursor = connection.execute(
+                    "UPDATE task_reminders SET claimed_at = ? WHERE task_id = ? AND reminded_at IS NULL "
+                    "AND (claimed_at IS NULL OR claimed_at < ?)",
+                    (now.isoformat(), task_id, stale_before.isoformat()),
+                )
+                if cursor.rowcount != 1:
+                    continue
+                task = Task(
+                    task_id, str(row[1]), str(row[2]) if row[2] else None,
+                    datetime.fromisoformat(str(row[3])) if row[3] else None,
+                    str(row[4]), datetime.fromisoformat(str(row[5])),
+                )
+                claimed.append(TaskReminder(task, str(row[6]), datetime.fromisoformat(str(row[7]))))
+        return tuple(claimed)
+
+    def acknowledge(self, task_id: int, now: datetime | None = None) -> None:
+        occurred_at = (now or datetime.now(UTC)).astimezone(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                "UPDATE task_reminders SET reminded_at = ?, claimed_at = NULL "
+                "WHERE task_id = ? AND reminded_at IS NULL",
+                (occurred_at.isoformat(), task_id),
+            )
+        if cursor.rowcount:
+            self._activity.record(ActivityType.TASK_REMINDER_SENT, object_id=str(task_id), details="Telegram reminder delivered")
+
+    def release(self, task_id: int) -> None:
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "UPDATE task_reminders SET claimed_at = NULL WHERE task_id = ? AND reminded_at IS NULL",
+                (task_id,),
+            )

@@ -555,6 +555,12 @@ explicit operations:
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
+- A Telegram task may additionally use `--remind-at` with an explicit
+  offset-aware ISO timestamp. Approval creates a separate durable reminder
+  addressed only to the originating chat. The polling process claims due
+  reminders, acknowledges them only after Telegram accepts the message, and
+  releases failed sends for a later retry; a crash can therefore produce at
+  most an at-least-once duplicate rather than silent reminder loss.
 - `/research` is explicitly external and ephemeral. Keeping its result writes
   a provenance-labeled Inbox note; it does not archive or silently promote web
   information to canonical personal knowledge.

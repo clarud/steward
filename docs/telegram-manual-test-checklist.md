@@ -60,6 +60,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   2026-09-18T23:59:00+08:00`. Verify the review card shows the normalized UTC
   instant. A timestamp without an explicit offset must be rejected rather than
   silently assigned your computer's time zone.
+- For a deliberate Telegram reminder, send `/propose_task submit CS3210 lab
+  --remind-at 2026-09-18T09:00:00+08:00`. Verify the review card shows the UTC
+  reminder instant, acceptance adds it to `/tasks`, and it is delivered only
+  to the chat that proposed it. Do not use a real past timestamp unless you
+  want the reminder to be delivered as soon as the bot is running.
 - Accept it, inspect `/tasks`, then use `/complete_task ID` twice. The second
   response should say it is already completed, not create another audit event.
 - For a task with an explicit `--due-at` value, use `/calendar_task ID`.

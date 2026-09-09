@@ -52,7 +52,7 @@ from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeSe
 from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
-from steward.tasks import TaskService
+from steward.tasks import TaskReminderService, TaskService
 from steward.research import ResearchBundle, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -638,6 +638,31 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
     assert "Due at: 2026-09-18T15:59:00+00:00" in preview.text
     assert application.handle(make_event(text="/approve_action 1")) == "Task 1 created: submit CS3210 lab."
     assert tasks.get(1).due_at == datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
+
+
+def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
+    reminders = TaskReminderService(database, tasks, activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        task_application=StewardTaskApplication(tasks, proposals, activity, reminders),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, task_service=tasks, task_reminder_service=reminders,
+        ),
+    )
+
+    preview = application.handle(
+        make_event(text="/propose_task submit CS3210 lab --remind-at 2026-09-18T09:00:00+08:00")
+    )
+
+    assert isinstance(preview, PresentedReply)
+    assert "Reminder at: 2026-09-18T01:00:00+00:00" in preview.text
+    assert application.handle(make_event(text="/approve_action 1")) == "Task 1 created: submit CS3210 lab."
+    reminder = reminders.reminder_for_task(1)
+    assert reminder is not None and reminder.chat_id == "100"
+    assert "reminder 2026-09-18T01:00:00+00:00" in application.handle(make_event(text="/tasks"))
 
 
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:

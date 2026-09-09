@@ -84,7 +84,7 @@ from steward.action_proposals import ActionProposalRepository, ActionProposalSer
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.roots import SourceRootRepository
 from steward.records import RecordService
-from steward.tasks import TaskService
+from steward.tasks import TaskReminderService, TaskService
 from steward.calendar import (
     CalendarEventProposalService,
     CalendarService,
@@ -1318,6 +1318,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"
         sources = SourceRepository(database_path)
         activity = ActivityService(database_path)
+        tasks = TaskService(database_path)
+        task_reminders = TaskReminderService(database_path, tasks, activity)
         capture_service = InboxCaptureService(
             settings.inbox_dir,
             sources,
@@ -1387,13 +1389,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ActionProposalRepository(database_path),
                     RecordService(database_path),
                     activity,
-                    TaskService(database_path),
+                    tasks,
                 ),
                 _calendar_writer_factory(settings, database_path),
                 record_service=RecordService(database_path),
                 fragment_repository=fragments,
                 activity_service=activity,
-                task_service=TaskService(database_path),
+                task_service=tasks,
+                task_reminder_service=task_reminders,
                 capture_service=capture_service,
                 workspace_repository=WorkspaceRepository(database_path),
                 source_repository=sources,
@@ -1429,7 +1432,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
             ),
             task_application=StewardTaskApplication(
-                TaskService(database_path), ActionProposalRepository(database_path), activity
+                tasks, ActionProposalRepository(database_path), activity, task_reminders
             ),
             research_application=StewardResearchApplication(
                 lambda: _research_provider_from_settings(settings, "auto"),
@@ -1462,6 +1465,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             delivery_repository=TelegramUpdateDeliveryRepository(database_path),
             callback_repository=TelegramCallbackRepository(database_path),
+            task_reminders=task_reminders,
         )
         return
 
