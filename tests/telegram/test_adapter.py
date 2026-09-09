@@ -241,6 +241,9 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     application = FakeApplication()
 
     class FakeBuilder:
+        def post_init(self, callback):
+            application.post_init = callback
+            return self
         def token(self, _token: str): return self
         def build(self) -> FakeApplication: return application
 
@@ -263,6 +266,9 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     assert command_positions and unregister_positions and fallback_positions
     assert command_positions[0] < fallback_positions[0]
     assert unregister_positions[0] < fallback_positions[0]
+    assert ("command", "home") in application.handlers
+    assert ("command", "pending") in application.handlers
+    assert ("command", "calendar") in application.handlers
 
 
 def test_due_task_reminders_are_acknowledged_only_after_telegram_accepts_them(tmp_path: Path) -> None:

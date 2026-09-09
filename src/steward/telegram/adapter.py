@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from steward.events import IncomingEvent
@@ -32,6 +33,17 @@ class IncomingFileEventHandler(IncomingEventHandler, Protocol):
 
 
 MAX_CLOUD_DOWNLOAD_BYTES = 20 * 1024 * 1024
+_LOGGER = logging.getLogger(__name__)
+_PRIMARY_COMMANDS = (
+    ("home", "review what needs your decision"),
+    ("pending", "show pending reviews"),
+    ("search", "search your saved material"),
+    ("calendar", "show current calendar events"),
+    ("inbox", "show saved Inbox items"),
+    ("workspaces", "show workspaces"),
+    ("organize", "review Inbox organization"),
+    ("help", "show more options"),
+)
 
 
 def normalize_telegram_update(update: Update) -> IncomingEvent:
@@ -276,14 +288,22 @@ def run_telegram_polling(
         raise ValueError("Telegram bot token must not be empty.")
 
     builder = ApplicationBuilder().token(token)
-    if task_reminders is not None:
-        async def start_reminders(application: object) -> None:
+
+    async def start_services(application: object) -> None:
+        """Set a small discovery menu without making Telegram startup depend on it."""
+        try:
+            await application.bot.set_my_commands(  # type: ignore[attr-defined]
+                [BotCommand(command, description) for command, description in _PRIMARY_COMMANDS]
+            )
+        except Exception:
+            _LOGGER.warning("Could not update Steward's Telegram command menu.")
+        if task_reminders is not None:
             # Application.create_task owns cancellation during orderly polling shutdown.
             application.create_task(  # type: ignore[attr-defined]
                 _task_reminder_loop(application, task_reminders, allowed_chat_ids),
                 name="steward-task-reminders",
             )
-        builder = builder.post_init(start_reminders)
+    builder = builder.post_init(start_services)
     application = builder.build()
     adapter = TelegramAdapter(
         event_handler,
@@ -317,6 +337,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("activity", adapter.handle_update))
     application.add_handler(CommandHandler("metrics", adapter.handle_update))
     application.add_handler(CommandHandler("search", adapter.handle_update))
+    application.add_handler(CommandHandler("calendar", adapter.handle_update))
     application.add_handler(CommandHandler("semantic_search", adapter.handle_update))
     application.add_handler(CommandHandler("hybrid_search", adapter.handle_update))
     application.add_handler(CommandHandler("organize", adapter.handle_update))

@@ -1338,7 +1338,7 @@ class StewardCalendarApplication:
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/calendar_search", "/calendar_get"}:
+        if command not in {"/calendar", "/calendar_search", "/calendar_get"}:
             return None
         if self._calendar_factory is None:
             return "Calendar is not configured locally. Complete Calendar authorization on the local machine first."
