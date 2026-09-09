@@ -230,12 +230,17 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     run_telegram_polling("token", FakeEventHandler(), FakeEventHandler())
 
     command_positions = [index for index, handler in enumerate(application.handlers) if handler == ("command", "save")]
+    unregister_positions = [
+        index for index, handler in enumerate(application.handlers)
+        if handler == ("command", "propose_unregister_source")
+    ]
     fallback_positions = [
         index for index, handler in enumerate(application.handlers)
         if handler == ("message", str(telegram_adapter.filters.COMMAND))
     ]
-    assert command_positions and fallback_positions
+    assert command_positions and unregister_positions and fallback_positions
     assert command_positions[0] < fallback_positions[0]
+    assert unregister_positions[0] < fallback_positions[0]
 
 
 def test_due_task_reminders_are_acknowledged_only_after_telegram_accepts_them(tmp_path: Path) -> None:

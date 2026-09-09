@@ -147,7 +147,7 @@ class StewardReadApplication:
             "/calendar_travel RECORD_ID, /calendar_task TASK_ID\n"
             "/drive_search QUERY, /gmail_search QUERY\n"
             "/privacy SOURCE_ID, /set_privacy SOURCE_ID RULE\n\n"
-            "/propose_reextract SOURCE_ID, /propose_rebuild_index â€” derived-data maintenance after review\n\n"
+            "/propose_reextract SOURCE_ID, /propose_rebuild_index, /propose_unregister_source SOURCE_ID â€” reviewed source maintenance\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
             "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE, "
@@ -1778,6 +1778,7 @@ class StewardActionProposalApplication:
 
     REEXTRACT_SOURCE = "reextract_source"
     REBUILD_SEMANTIC_INDEX = "rebuild_semantic_index"
+    UNREGISTER_SOURCE = "unregister_source"
 
     def __init__(
         self,
@@ -1866,6 +1867,8 @@ class StewardActionProposalApplication:
             return self.propose_reextract(argument)
         if command == "/propose_rebuild_index":
             return self.propose_rebuild_semantic_index(argument)
+        if command == "/propose_unregister_source":
+            return self.propose_unregister_source(argument)
         if command not in {"/approve_action", "/reject_action"}:
             return None
         if not separator or not argument.strip().isdigit():
@@ -1881,6 +1884,8 @@ class StewardActionProposalApplication:
             return self._review_reextract(proposal_id, decision)
         if proposal is not None and proposal.action_type == self.REBUILD_SEMANTIC_INDEX:
             return self._review_rebuild_semantic_index(proposal_id, decision)
+        if proposal is not None and proposal.action_type == self.UNREGISTER_SOURCE:
+            return self._review_unregister_source(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
@@ -2059,6 +2064,36 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.SEMANTIC_INDEX_REBUILT, object_id=str(proposal_id), details=f"fragments:{indexed}")
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Rebuilt local semantic index for {indexed} fragments. Original files unchanged."
+
+    def _review_unregister_source(self, proposal_id: int, decision: str) -> str:
+        """Remove only registry metadata after explicit review."""
+        if self._sources is None:
+            return "Source unregistering is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None:
+            return "Source-unregister proposal was not found."
+        if proposal.status == decision:
+            return f"Source-unregister proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Source-unregister proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return f"Source-unregister proposal {proposal.id} rejected."
+        try:
+            removed = self._sources.unregister(int(proposal.payload["source_id"]))
+        except ValueError:
+            return "That source is no longer registered. The proposal remains pending for review."
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.SOURCE_UNREGISTERED,
+                object_id=str(removed.id),
+                details="Unregistered local metadata; original file retained.",
+            )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return f"Unregistered source {removed.id} from Steward metadata. Original file unchanged."
 
     def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str:
         if self._capture is None:
@@ -2304,6 +2339,34 @@ class StewardActionProposalApplication:
             (
                 ReplyAction("Rebuild local index", f"/approve_action {proposal.id}"),
                 ReplyAction("Reject", f"/reject_action {proposal.id}"),
+            ),
+        )
+
+    def propose_unregister_source(self, source_id_text: str) -> str | PresentedReply:
+        """Stage metadata removal without accepting a filesystem target from chat."""
+        if self._sources is None:
+            return "Source unregistering is not configured for this Steward process."
+        if not source_id_text.strip().isdigit():
+            return "Use /propose_unregister_source followed by a numeric source ID."
+        source = self._sources.get_by_id(int(source_id_text.strip()))
+        if source is None:
+            return f"Source {source_id_text.strip()} was not found."
+        payload = {"source_id": str(source.id)}
+        proposal = self._repository.find_pending(self.UNREGISTER_SOURCE, payload)
+        if proposal is None:
+            proposal = self._repository.add(self.UNREGISTER_SOURCE, payload)
+            if self._activity is not None:
+                self._activity.record(
+                    ActivityType.ACTION_PROPOSED,
+                    object_id=str(proposal.id),
+                    details=f"Unregister source metadata: {source.id}",
+                )
+        return PresentedReply(
+            f"Unregister proposal {proposal.id}: remove Steward metadata for source {source.id} ({source.path.name}). "
+            "Its original file will not be deleted.",
+            (
+                ReplyAction("Unregister metadata", f"/approve_action {proposal.id}"),
+                ReplyAction("Keep registered", f"/reject_action {proposal.id}"),
             ),
         )
 

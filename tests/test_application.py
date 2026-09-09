@@ -1276,6 +1276,53 @@ def test_telegram_semantic_rebuild_failure_keeps_review_pending(tmp_path: Path) 
     assert proposals.get(1).status == "pending"
 
 
+def test_telegram_unregister_source_is_reviewed_and_preserves_the_original(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "notes.md"
+    original = "# TLB\n\nA TLB caches translations.\n"
+    source_path.write_text(original, encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(
+        Source(None, source_path, "a" * 64, SourceType.MARKDOWN, len(original), now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, original, "lines 1-3"),))
+    )
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals,
+            ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity,
+            source_repository=sources,
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/propose_unregister_source {source.id}"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "notes.md" in preview.text
+    assert str(tmp_path) not in preview.text
+    assert "will not be deleted" in preview.text
+    assert sources.get_by_id(source.id or 0) is not None
+    assert source_path.read_text(encoding="utf-8") == original
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert accepted == "Unregistered source 1 from Steward metadata. Original file unchanged."
+    assert sources.get_by_id(source.id or 0) is None
+    assert fragments.list_for_source(source.id or 0) == ()
+    assert source_path.read_text(encoding="utf-8") == original
+    assert proposals.get(1).status == "accepted"
+    assert activity.list_recent()[1].event_type is ActivityType.SOURCE_UNREGISTERED
+
+
 def test_telegram_integration_status_reveals_only_local_readiness(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", "C:/private/client.json")
     (tmp_path / "config").mkdir()

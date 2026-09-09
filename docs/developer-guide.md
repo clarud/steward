@@ -709,6 +709,13 @@ accepts a model name, URL, path, or download instruction from Telegram. A
 model/cache failure leaves the proposal pending and returns a secret-free retry
 message.
 
+`/propose_unregister_source SOURCE_ID` is the reviewed Telegram counterpart to
+the CLI's `unregister-source` command. It accepts only a registered numeric
+source ID, displays the source filename rather than its local path, and removes
+only Steward's SQLite metadata and derived rows after approval. The original
+file is deliberately retained. This is useful when a file was indexed by
+mistake; it is not a file-deletion command.
+
 ### Local search UI
 
 `steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by
