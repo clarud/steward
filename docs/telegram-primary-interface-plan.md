@@ -819,7 +819,17 @@ that no write occurs before explicit approval.
 - Choosing **Add context** switches the chat into a small, durable input step.
   The next ordinary message supplies course/project/purpose context for that
   same pending item, then Steward redraws its card. This survives a service
-  restart because only the opaque pending-review reference is stored.
+  restart because only the opaque pending-review reference is stored. Once
+  saved, that explicit context can select one existing workspace for the
+  first organization proposal; it never moves the original automatically.
+- Every organization card offers **Change workspace**. It opens the same
+  durable, chat-scoped plain-language correction step, supersedes the prior
+  proposal, and shows a new approval card before any physical move.
+- Saved records can be opened with `/record travel ID`, `/record receipt ID`,
+  or `/record warranty ID`. Each current field identifies its supporting
+  fragment only when the current value still occurs there; an explicit
+  correction is intentionally shown as not source-evidenced instead of being
+  attributed to stale extraction evidence.
 - Results that invite another action should offer it directly: source and
   Calendar lists use compact **Open 1**-style buttons; pending decisions use
   **Review 1**-style buttons. Internal IDs remain a recovery interface, not
