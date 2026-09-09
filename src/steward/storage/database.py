@@ -43,6 +43,7 @@ PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
 SOURCE_ROOTS_SCHEMA_VERSION = 35
 SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
 TASKS_SCHEMA_VERSION = 37
+TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -376,6 +377,16 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             status TEXT NOT NULL CHECK (status IN ('open', 'completed')),
             created_at TEXT NOT NULL,
             completed_at TEXT
+        )
+        """,
+    ),
+    (
+        TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_delivery_recoveries (
+            id INTEGER PRIMARY KEY,
+            update_id TEXT NOT NULL,
+            recovered_at TEXT NOT NULL
         )
         """,
     ),

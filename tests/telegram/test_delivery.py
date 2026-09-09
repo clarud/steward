@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
+import sqlite3
 
 import pytest
 
@@ -89,6 +90,32 @@ def test_delivery_waits_with_exponential_backoff_after_a_failure(tmp_path: Path)
     deliveries.release("telegram:102", now=started + timedelta(seconds=10))
     assert deliveries.claim("telegram:102", now=started + timedelta(seconds=29)) is False
     assert deliveries.claim("telegram:102", now=started + timedelta(seconds=30)) is True
+
+
+def test_reopening_a_dead_letter_resets_its_budget_for_a_future_redelivery(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    deliveries = TelegramUpdateDeliveryRepository(database_path, max_attempts=1)
+    started = datetime(2026, 9, 9, tzinfo=UTC)
+
+    assert deliveries.claim("telegram:103", now=started)
+    deliveries.release("telegram:103", now=started)
+    assert deliveries.claim("telegram:103", now=started + timedelta(seconds=15)) is False
+
+    recovered_at = started + timedelta(seconds=16)
+    deliveries.reopen_dead_letter("telegram:103", now=recovered_at)
+
+    assert deliveries.claim("telegram:103", now=recovered_at) is True
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT update_id, recovered_at FROM telegram_delivery_recoveries"
+        ).fetchall() == [("telegram:103", recovered_at.isoformat())]
+
+
+def test_reopening_non_dead_letter_is_rejected(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+
+    with pytest.raises(ValueError, match="not a dead letter"):
+        TelegramUpdateDeliveryRepository(database_path).reopen_dead_letter("telegram:104")
 
 
 def test_delivery_rejects_invalid_retry_backoff_configuration(tmp_path: Path) -> None:

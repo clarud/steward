@@ -79,8 +79,12 @@ class TelegramUpdateDeliveryRepository:
                 """
                 SELECT COUNT(*), MAX(occurred_at) FROM telegram_delivery_history
                 WHERE update_id = ? AND event_type = 'released'
+                  AND occurred_at > COALESCE(
+                      (SELECT MAX(recovered_at) FROM telegram_delivery_recoveries WHERE update_id = ?),
+                      ''
+                  )
                 """,
-                (update_id,),
+                (update_id, update_id),
             ).fetchone()
             releases = int(release_row[0])
             if releases >= self._max_attempts:
@@ -137,6 +141,26 @@ class TelegramUpdateDeliveryRepository:
             )
             if cursor.rowcount == 1:
                 self._record_history(connection, update_id, "released", now or datetime.now(UTC))
+
+    def reopen_dead_letter(self, update_id: str, *, now: datetime | None = None) -> None:
+        """Reset a terminal retry budget for a future Telegram redelivery.
+
+        This does not, and cannot, replay the original update: delivery storage
+        intentionally retains no Telegram message body. A later genuine
+        redelivery is eligible for a fresh, separately auditable retry budget.
+        """
+
+        recovered_at = now or datetime.now(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM telegram_delivery_dead_letters WHERE update_id = ?", (update_id,)
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Telegram update {update_id!r} is not a dead letter.")
+            connection.execute(
+                "INSERT INTO telegram_delivery_recoveries (update_id, recovered_at) VALUES (?, ?)",
+                (update_id, recovered_at.isoformat()),
+            )
 
     def _backoff(self, releases: int) -> timedelta:
         """Return a capped exponential delay after one or more failed attempts."""

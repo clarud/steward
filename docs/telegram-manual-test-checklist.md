@@ -82,6 +82,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   missing and `scan-root` should fail without changing unrelated sources.
 - Inspect `/deliveries`, `/delivery_history`, and `/dead_letters`. Confirm they
   contain identifiers/status/timestamps only, never message text.
+- For a test-only terminal failure, inspect it locally with
+  `steward telegram-dead-letters`, then run
+  `steward telegram-recover-dead-letter telegram:UPDATE_ID --confirm` only if
+  Telegram can genuinely deliver that update again. This resets the retry
+  budget; it never replays unavailable message content.
 - Run the automated suite after a manual session:
 
   ```powershell

@@ -319,6 +319,16 @@ def build_parser() -> argparse.ArgumentParser:
         "telegram-dead-letters", help="Inspect terminal metadata-only Telegram delivery failures"
     )
     telegram_dead_letters.add_argument("--limit", type=int, default=50)
+    telegram_recover_dead_letter = subcommands.add_parser(
+        "telegram-recover-dead-letter",
+        help="Reopen a dead-letter retry budget for a future genuine Telegram redelivery",
+    )
+    telegram_recover_dead_letter.add_argument("update_id")
+    telegram_recover_dead_letter.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Confirm that this does not replay the unavailable original message",
+    )
     ui_parser = subcommands.add_parser("ui", help="Run the localhost-only local search UI")
     ui_parser.add_argument("--host", default="127.0.0.1")
     ui_parser.add_argument("--port", type=int, default=8765)
@@ -1412,6 +1422,31 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         for dead_letter in dead_letters:
             print(f"{dead_letter.update_id}\t{dead_letter.attempts}\t{dead_letter.failed_at.isoformat()}")
+        return
+
+    if arguments.command == "telegram-recover-dead-letter":
+        if not arguments.confirm:
+            print(
+                "Refusing to reopen a Telegram dead letter without --confirm. "
+                "This only permits a future genuine Telegram redelivery; it cannot replay the original message."
+            )
+            return
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            TelegramUpdateDeliveryRepository(database_path).reopen_dead_letter(arguments.update_id)
+        except ValueError as error:
+            print(str(error))
+            return
+        ActivityService(database_path).record(
+            ActivityType.TELEGRAM_DELIVERY_RECOVERED,
+            object_id=arguments.update_id,
+            details="Retry budget reopened for a future genuine Telegram redelivery; no message was replayed.",
+        )
+        print(
+            f"Reopened {arguments.update_id} for a future genuine Telegram redelivery. "
+            "No original Telegram message was replayed."
+        )
         return
 
     if arguments.command == "ui":

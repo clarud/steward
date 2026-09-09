@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from steward.cli import (
     _configure_console_encoding,
@@ -17,6 +17,8 @@ from steward.records import RecordService, TravelRecord
 from steward.knowledge import KnowledgeService
 from steward.extraction import ExtractionResult, SourceFragment
 from steward.storage import initialize_database
+from steward.activity import ActivityService, ActivityType
+from steward.telegram import TelegramUpdateDeliveryRepository
 
 
 def test_cli_without_a_command_shows_help(capsys) -> None:
@@ -310,6 +312,33 @@ def test_cli_lists_empty_telegram_dead_letters(tmp_path: Path, monkeypatch, caps
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / ".steward"))
     main(["telegram-dead-letters"])
     assert capsys.readouterr().out == "No terminal Telegram delivery failures.\n"
+
+
+def test_cli_requires_confirmation_before_reopening_telegram_dead_letter(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / ".steward"))
+
+    main(["telegram-recover-dead-letter", "telegram:99"])
+
+    assert capsys.readouterr().out.startswith("Refusing to reopen a Telegram dead letter without --confirm.")
+
+
+def test_cli_reopens_dead_letter_with_an_audit_event(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / ".steward"
+    database_path = data_dir / "steward.db"
+    initialize_database(database_path)
+    deliveries = TelegramUpdateDeliveryRepository(database_path, max_attempts=1)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    assert deliveries.claim("telegram:99", now=now)
+    deliveries.release("telegram:99", now=now)
+    assert deliveries.claim("telegram:99", now=now + timedelta(seconds=15)) is False
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["telegram-recover-dead-letter", "telegram:99", "--confirm"])
+
+    assert capsys.readouterr().out == (
+        "Reopened telegram:99 for a future genuine Telegram redelivery. No original Telegram message was replayed.\n"
+    )
+    assert ActivityService(database_path).list_recent()[0].event_type == ActivityType.TELEGRAM_DELIVERY_RECOVERED
 
 
 def test_cli_calendar_search_explains_oauth_client_setup(monkeypatch, capsys) -> None:

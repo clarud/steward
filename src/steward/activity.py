@@ -26,6 +26,7 @@ class ActivityType(StrEnum):
     ACTION_REJECTED = "action_rejected"
     TASK_CREATED = "task_created"
     TASK_COMPLETED = "task_completed"
+    TELEGRAM_DELIVERY_RECOVERED = "telegram_delivery_recovered"
     CALENDAR_EVENT_CREATED = "calendar_event_created"
     KNOWLEDGE_ENRICHMENT_PROPOSED = "knowledge_enrichment_proposed"
     KNOWLEDGE_ENRICHMENT_ACCEPTED = "knowledge_enrichment_accepted"
