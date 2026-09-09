@@ -741,6 +741,23 @@ class StewardActionProposalApplication:
 
         command, separator, argument = text.partition(" ")
         command = command.partition("@")[0]
+        if command == "/calendar_travel":
+            if not separator or not argument.strip().isdigit():
+                return "Use /calendar_travel followed by a saved travel record ID."
+            if self._calendar_proposals is None:
+                return "Calendar proposals are not configured on this Steward process."
+            try:
+                proposal = self._calendar_proposals.propose_travel_event(int(argument.strip()))
+            except ValueError as error:
+                return str(error)
+            return PresentedReply(
+                f"Calendar proposal {proposal.id} is pending for travel record "
+                f"{proposal.payload['record_id']}. No Calendar event has been created.",
+                (
+                    ReplyAction("Create event", f"/approve_action {proposal.id}"),
+                    ReplyAction("Reject", f"/reject_action {proposal.id}"),
+                ),
+            )
         if command == "/create_workspace":
             return self.propose_workspace(argument)
         if command not in {"/approve_action", "/reject_action"}:
