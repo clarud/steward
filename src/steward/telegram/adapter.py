@@ -295,6 +295,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("knowledge_proposals", adapter.handle_update))
     application.add_handler(CommandHandler("propose_enrichment", adapter.handle_update))
     application.add_handler(CommandHandler("review_enrichment", adapter.handle_update))
+    application.add_handler(CommandHandler("roots", adapter.handle_update))
     application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
     application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
     application.add_handler(CommandHandler("intake_accept", adapter.handle_update))

@@ -29,6 +29,7 @@ from steward.intake import ProvisionalIntakeService
 from langchain_core.messages import HumanMessage, SystemMessage
 from steward.records import RecordService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
+from steward.roots import SourceRootRepository
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -406,6 +407,25 @@ class StewardKnowledgeApplication:
             )
             return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."
         return None
+
+
+class StewardRootsApplication:
+    """Report local source-root health without granting Telegram path authority."""
+
+    def __init__(self, roots: SourceRootRepository) -> None:
+        self._roots = roots
+
+    def handle_command(self, event: IncomingEvent) -> str | None:
+        command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
+        if command != "/roots":
+            return None
+        roots = self._roots.list_all()
+        if not roots:
+            return "No locally authorized source roots. Add one from the local CLI or setup UI."
+        return "Authorized source roots:\n" + "\n".join(
+            f"{root.id}: {root.name} — {'available' if root.path.is_dir() else 'missing'}"
+            for root in roots
+        )
 
 
 class QuestionGraph(Protocol):
@@ -929,6 +949,7 @@ class StewardEventApplication:
         tool_agent_application: StewardToolAgentApplication | None = None,
         record_application: StewardRecordApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
+        roots_application: StewardRootsApplication | None = None,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -942,8 +963,13 @@ class StewardEventApplication:
         self._tool_agent_application = tool_agent_application
         self._record_application = record_application
         self._knowledge_application = knowledge_application
+        self._roots_application = roots_application
 
     def handle(self, event: IncomingEvent) -> str:
+        if self._roots_application is not None:
+            roots_response = self._roots_application.handle_command(event)
+            if roots_response is not None:
+                return roots_response
         if self._knowledge_application is not None:
             knowledge_response = self._knowledge_application.handle_command(event)
             if knowledge_response is not None:

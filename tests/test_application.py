@@ -15,6 +15,7 @@ from steward.application import (
     StewardToolAgentApplication,
     StewardRecordApplication,
     StewardKnowledgeApplication,
+    StewardRootsApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
@@ -39,6 +40,7 @@ from steward.retrieval import LexicalSearchService
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
+from steward.roots import SourceRootRepository
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -290,6 +292,21 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert preview.actions[0].command == "/review_enrichment 1 accepted"
     accepted = application.handle(make_event(text="/review_enrichment 1 accepted"))
     assert accepted == "Knowledge enrichment proposal 1 accepted."
+
+
+def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    root_path = tmp_path / "notes"; root_path.mkdir()
+    roots = SourceRootRepository(database_path)
+    roots.add("School", root_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        roots_application=StewardRootsApplication(roots),
+    )
+
+    response = application.handle(make_event(text="/roots"))
+
+    assert response == "Authorized source roots:\n1: School — available"
 
 
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
