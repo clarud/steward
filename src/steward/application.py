@@ -133,6 +133,7 @@ class StewardReadApplication:
             "/activity [term] — recent audit events\n"
             "/records, /tasks, /roots — saved state\n"
             "/calendar_search [terms], /calendar_get ID — current Google Calendar\n\n"
+            "/metrics - aggregate local decisions and operational events\n"
             "Explicit actions (they create a review or a selected import):\n"
             "/action_proposals â€” pending action reviews\n"
             "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
