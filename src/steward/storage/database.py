@@ -33,6 +33,8 @@ TELEGRAM_DELIVERY_HISTORY_SCHEMA_VERSION = 24
 TELEGRAM_DELIVERY_DEAD_LETTER_SCHEMA_VERSION = 25
 RECEIPT_RECORDS_SCHEMA_VERSION = 26
 RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION = 27
+WARRANTY_RECORDS_SCHEMA_VERSION = 28
+WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -259,6 +261,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         """CREATE TABLE receipt_record_evidence (receipt_record_id INTEGER NOT NULL REFERENCES receipt_records(id) ON DELETE CASCADE,
             field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
             PRIMARY KEY (receipt_record_id, field_name))""",
+    ),
+    (
+        WARRANTY_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE warranty_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            product_name TEXT, provider TEXT, warranty_number TEXT, coverage_ends_at TEXT)""",
+    ),
+    (
+        WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE warranty_record_evidence (warranty_record_id INTEGER NOT NULL REFERENCES warranty_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (warranty_record_id, field_name))""",
     ),
 )
 

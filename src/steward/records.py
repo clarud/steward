@@ -42,6 +42,22 @@ class ReceiptRecord:
 class ReceiptRecordProposal:
     record: ReceiptRecord; field_evidence: dict[str, int]
 
+
+@dataclass(frozen=True, slots=True)
+class WarrantyRecord:
+    id: int | None
+    source_id: int
+    product_name: str | None
+    provider: str | None
+    warranty_number: str | None
+    coverage_ends_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class WarrantyRecordProposal:
+    record: WarrantyRecord
+    field_evidence: dict[str, int]
+
 class RecordService:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -93,6 +109,37 @@ class RecordService:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute("SELECT id, source_id, merchant, total_cents, currency, purchased_at, receipt_number FROM receipt_records ORDER BY id").fetchall()
         return [ReceiptRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, int(row[3]) if row[3] is not None else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None, str(row[6]) if row[6] else None) for row in rows]
+
+    def propose_warranty_record(self, source_id: int, fragments: list[tuple[int, str]]) -> WarrantyRecordProposal:
+        product = provider = warranty_number = None
+        coverage_ends_at = None
+        evidence: dict[str, int] = {}
+        for fragment_id, text in fragments:
+            if product is None and (match := re.search(r"(?:Product|Item):\s*([^\n]+)", text, re.I)):
+                product = match.group(1).strip(); evidence["product_name"] = fragment_id
+            if provider is None and (match := re.search(r"(?:Provider|Manufacturer):\s*([^\n]+)", text, re.I)):
+                provider = match.group(1).strip(); evidence["provider"] = fragment_id
+            if warranty_number is None and (match := re.search(r"(?:Warranty|Contract)(?: Number| No\.?| #)?:\s*([^\s]+)", text, re.I)):
+                warranty_number = match.group(1); evidence["warranty_number"] = fragment_id
+            if coverage_ends_at is None and (value := self._labeled_datetime("Coverage Ends", text)):
+                coverage_ends_at = value; evidence["coverage_ends_at"] = fragment_id
+        return WarrantyRecordProposal(WarrantyRecord(None, source_id, product, provider, warranty_number, coverage_ends_at), evidence)
+
+    def create_warranty_from_proposal(self, proposal: WarrantyRecordProposal) -> WarrantyRecord:
+        if not proposal.field_evidence:
+            raise ValueError("Cannot create a warranty record without extracted, evidenced fields")
+        record = proposal.record
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            cursor = connection.execute("INSERT INTO warranty_records (source_id, product_name, provider, warranty_number, coverage_ends_at) VALUES (?, ?, ?, ?, ?)", (record.source_id, record.product_name, record.provider, record.warranty_number, record.coverage_ends_at.isoformat() if record.coverage_ends_at else None))
+            record_id = int(cursor.lastrowid)
+            connection.executemany("INSERT INTO warranty_record_evidence (warranty_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
+        return WarrantyRecord(record_id, record.source_id, record.product_name, record.provider, record.warranty_number, record.coverage_ends_at)
+
+    def list_warranty_records(self) -> list[WarrantyRecord]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute("SELECT id, source_id, product_name, provider, warranty_number, coverage_ends_at FROM warranty_records ORDER BY id").fetchall()
+        return [WarrantyRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, str(row[3]) if row[3] else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None) for row in rows]
 
     def create_from_proposal(self, proposal: TravelRecordProposal) -> TravelRecord:
         """Persist an explicitly accepted proposal and its field-level evidence.

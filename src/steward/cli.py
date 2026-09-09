@@ -309,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create_receipt_parser.add_argument("source_id", type=int)
     subcommands.add_parser("receipt-records", help="List saved receipt records")
+    warranty_parser = subcommands.add_parser("propose-warranty-record", help="Interpret source fragments as a warranty record")
+    warranty_parser.add_argument("source_id", type=int)
+    create_warranty_parser = subcommands.add_parser("create-warranty-record", help="Persist an evidence-backed warranty record proposed from a source")
+    create_warranty_parser.add_argument("source_id", type=int)
+    subcommands.add_parser("warranty-records", help="List saved warranty records")
     travel_references = subcommands.add_parser(
         "travel-record-references", help="List source-backed references for a travel record"
     )
@@ -1464,6 +1469,36 @@ def main(argv: Sequence[str] | None = None) -> None:
         for record in RecordService(database_path).list_receipt_records():
             total = f"{record.total_cents / 100:.2f}" if record.total_cents is not None else ""
             print(f"{record.id}\t{record.merchant or ''}\t{total}\t{record.currency or ''}\t{record.receipt_number or ''}")
+        return
+
+    if arguments.command == "propose-warranty-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        proposal = RecordService(database_path).propose_warranty_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = proposal.record
+        print(f"product={record.product_name or ''}\tprovider={record.provider or ''}\twarranty={record.warranty_number or ''}\tevidence={proposal.field_evidence}")
+        return
+
+    if arguments.command == "create-warranty-record":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        fragments = SourceFragmentRepository(database_path).list_for_source(arguments.source_id)
+        records = RecordService(database_path)
+        proposal = records.propose_warranty_record(
+            arguments.source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
+        )
+        record = records.create_warranty_from_proposal(proposal)
+        print(f"Created warranty record {record.id} from source {record.source_id}.")
+        return
+
+    if arguments.command == "warranty-records":
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        for record in RecordService(database_path).list_warranty_records():
+            print(f"{record.id}\t{record.product_name or ''}\t{record.provider or ''}\t{record.warranty_number or ''}")
         return
 
     if arguments.command in {"travel-record-references", "add-travel-record-reference"}:

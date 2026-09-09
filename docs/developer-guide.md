@@ -1154,6 +1154,10 @@ behavior easy to edit and inspect in code review.
   `create-receipt-record` recognize a conservative labeled shape (merchant,
   total, currency, purchase date, and receipt number). They are not a general
   receipt understanding system and do not infer unlabeled totals.
+- Warranty records use `propose-warranty-record`, `create-warranty-record`,
+  and `warranty-records`. They retain source-fragment evidence for a labeled
+  product, provider, warranty number, or coverage-end timestamp. They do not
+  infer warranty duration or eligibility from marketing language.
 - The current CLI constructs services directly. As the application grows, a
   dedicated composition module or dependency-injection approach may improve
   startup composition.

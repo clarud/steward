@@ -37,6 +37,8 @@ agent safety.
 Receipt records are deterministic, evidence-backed projections over sources:
 merchant, total, currency, purchase time, and receipt number are proposed from
 labeled extracted text, then only persisted when evidence exists for a field.
+Warranty records apply the same pattern to product, provider, warranty number,
+and coverage-end information.
 
 ## Local setup
 

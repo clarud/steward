@@ -3,7 +3,7 @@ from pathlib import Path
 import sqlite3
 import pytest
 from steward.records import RecordService, TravelRecord
-from steward.records import ReceiptRecord
+from steward.records import ReceiptRecord, WarrantyRecord
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -56,6 +56,18 @@ def test_receipt_record_proposal_persists_only_evidenced_fields(tmp_path: Path) 
     assert receipt.id is not None
     assert ("total_cents", fragment.id) in evidence
     assert service.list_receipt_records() == [receipt]
+
+
+def test_warranty_record_proposal_persists_field_evidence(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database); now = datetime(2026, 9, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "warranty.txt", "b" * 64, SourceType.PLAIN_TEXT, 0, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "Product: Laptop Pro\nProvider: Example Corp\nWarranty Number: W-100\nCoverage Ends: 2028-09-09T00:00:00+08:00", "entire file"),)))[0]
+    service = RecordService(database)
+    proposal = service.propose_warranty_record(source.id or 0, [(fragment.id or 0, fragment.text)])
+    assert proposal.record.product_name == "Laptop Pro"
+    assert proposal.record.warranty_number == "W-100"
+    warranty = service.create_warranty_from_proposal(proposal)
+    assert service.list_warranty_records() == [warranty]
 
 def test_empty_travel_proposal_cannot_create_an_empty_record(tmp_path: Path) -> None:
     database = tmp_path / "db.sqlite"; initialize_database(database)
