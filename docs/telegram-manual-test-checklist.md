@@ -183,6 +183,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   Verify that the returned model draft is marked as local-model synthesis and
   remains unsaved until approval. Use `external` only when you deliberately
   authorize sending that reply to the configured external model.
+- On that curated-note card, choose **Edit**, then send replacement Markdown as
+  the next ordinary message. Verify that Steward shows a new pending review,
+  the old draft remains auditable as superseded, and only the edited draft can
+  be saved to Inbox.
 - Create a harmless contradiction enrichment proposal and verify the card shows
   both the canonical claim and source-fragment evidence. Accepting it must log
   the review while leaving the canonical claim text unchanged.

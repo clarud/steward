@@ -554,6 +554,10 @@ explicit operations:
   source's privacy rule before any model-assisted organization can run. A bare `/save` reply can select only the pending staged
   intake from that exact chat message; it reuses the original staged bytes and
   does not re-download or infer an attachment from reply text.
+- Curated note drafts are similarly non-canonical. **Edit** opens a durable,
+  chat-scoped input step; the replacement creates a new pending proposal and
+  marks the earlier draft rejected as superseded. Steward never overwrites the
+  draft that was originally shown to the user.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.

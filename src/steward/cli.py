@@ -1554,6 +1554,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     if settings.local_model else None
                 ),
                 external_model=(model_gateway if settings.model_provider != "local" else None),
+                contexts=review_contexts,
             ),
             workspace_link_application=StewardWorkspaceLinkApplication(
                 ActionProposalRepository(database_path), WorkspaceRepository(database_path), sources, activity

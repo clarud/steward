@@ -1381,6 +1381,42 @@ def test_telegram_external_curate_synthesis_requires_an_explicit_choice(tmp_path
     assert proposals.get(1).payload["text"] == "# External"
 
 
+def test_telegram_can_edit_a_curated_note_before_it_is_saved(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    sources = SourceRepository(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", sources, SourceFragmentRepository(database), activity)
+    contexts = ReviewContextRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(proposals, activity, contexts=contexts),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, capture_service=capture,
+        ),
+    )
+
+    initial = application.handle(make_event(text="/propose_note # TLB\n\nA TLB caches translations."))
+    prompt = application.handle(make_event(text="/curate_edit 1"))
+    revised = application.handle(make_event(text="# TLB\n\nA TLB caches recent address translations."))
+
+    assert isinstance(initial, PresentedReply)
+    assert any(action.label == "Edit" for action in initial.actions)
+    assert isinstance(prompt, PresentedReply)
+    assert prompt.title == "Edit curated note"
+    assert isinstance(revised, PresentedReply)
+    assert "recent address translations" in revised.text
+    assert proposals.get(1).status == "rejected"
+    assert proposals.get(2).status == "pending"
+
+    saved = application.handle(make_event(text="/approve_action 2"))
+
+    assert isinstance(saved, PresentedReply)
+    assert sources.list_all()[0].path.read_text(encoding="utf-8").endswith(
+        "A TLB caches recent address translations.\n"
+    )
+
+
 def test_curate_requires_a_replied_to_text_message(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     application = StewardEventApplication(

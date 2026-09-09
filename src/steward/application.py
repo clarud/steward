@@ -128,9 +128,12 @@ class StewardReviewInboxApplication:
             if proposal is None or proposal.status != "pending":
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
             title, description = self._action_summary(proposal.action_type, proposal.payload)
+            actions = [ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")]
+            if proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
+                actions.insert(1, ReplyAction("Edit", f"/curate_edit {identifier}"))
             return PresentedReply(
                 f"{description}\n\nNo change has been made yet.",
-                (ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")),
+                tuple(actions),
                 title=title,
                 icon="⚠️",
             )
@@ -258,6 +261,8 @@ class StewardReviewInboxApplication:
             source_id = payload.get("source_id", "source")
             rule = payload.get("rule", "selected rule")
             return f"Change privacy for source {source_id}", f"Source {source_id} will use {rule} after approval."
+        if action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
+            return "Save curated note", "Your reviewed note will be saved to Inbox. You may edit it before approval."
         return "Review requested action", "Steward needs your approval before making this change."
 
 
@@ -354,6 +359,7 @@ class StewardReadApplication:
             "/propose_task TEXT [--remind-at ISO_TIMESTAMP], /complete_task ID\n"
             "Natural task capture: `remind me to â€¦`, `todo: â€¦`, `task: â€¦`, or `deadline: â€¦`\n"
             "/propose_note TEXT, /curate (reply to a discussion message), /curate_synthesize [local|external], /research QUESTION\n"
+            "Edit a pending curated note with its **Edit** button, or `/curate_edit ID TEXT`.\n"
             "/knowledge NAME, /connect_knowledge, /knowledge_proposal ID — inspect evidence-backed concepts\n"
             "For a staged attachment/note: /intake_analysis ID external|local|none, /intake_context ID TEXT, /intake_accept ID, /intake_discard ID\n"
             "/propose_travel_record SOURCE_ID\n"
@@ -1223,17 +1229,21 @@ class StewardCuratedNoteApplication:
         *,
         local_model: ModelGateway | None = None,
         external_model: ModelGateway | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._proposals = proposals
         self._activity = activity
         self._local_model = local_model
         self._external_model = external_model
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, text = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/propose_note", "/curate", "/curate_synthesize"}:
+        if command not in {"/propose_note", "/curate", "/curate_synthesize", "/curate_edit"}:
             return None
+        if command == "/curate_edit":
+            return self._edit(separator, text, event)
         if command == "/curate_synthesize":
             return self._synthesize_reply(separator, text, event)
         if command == "/curate":
@@ -1251,10 +1261,90 @@ class StewardCuratedNoteApplication:
         if pending is None:
             pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create curated Inbox note from {origin}")
+        return self._review_card(pending)
+
+    def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Use a normal next message only after the user explicitly chose Edit."""
+
+        if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "curated_note_edit":
+            return None
+        self._contexts.clear(event.platform, event.chat_id)
+        return self._revise(context.identifier, (event.text or "").strip())
+
+    def _edit(self, separator: str, argument: str, event: IncomingEvent) -> str | PresentedReply:
+        identifier, content_separator, replacement = argument.strip().partition(" ")
+        if not separator or not identifier.isdigit():
+            return "Use /curate_edit followed by a curated-note proposal ID and replacement text."
+        if not content_separator:
+            proposal = self._pending_note(int(identifier))
+            if isinstance(proposal, str):
+                return proposal
+            if self._contexts is not None:
+                self._contexts.set(event.platform, event.chat_id, "curated_note_edit", int(identifier))
+                return PresentedReply(
+                    "Send the replacement note as your next ordinary message. It will create a new review; nothing is saved yet.",
+                    title="Edit curated note",
+                    icon="✏️",
+                )
+            return "Use /curate_edit followed by the proposal ID and replacement text. Nothing has been saved yet."
+        return self._revise(int(identifier), replacement)
+
+    def _revise(self, proposal_id: int, replacement: str) -> str | PresentedReply:
+        proposal = self._pending_note(proposal_id)
+        if isinstance(proposal, str):
+            return proposal
+        text = replacement.strip()[:6000]
+        if not text:
+            return "The replacement curated note must not be empty."
+        origin = proposal.payload.get("origin", "user-supplied note")
+        revised_origin = f"{origin}; explicitly edited by user before retention"
+        payload = {"text": text, "origin": revised_origin}
+        replacement_proposal = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
+        if replacement_proposal is None:
+            self._proposals.set_status(proposal_id, "rejected")
+            self._activity.record(
+                ActivityType.ACTION_REJECTED,
+                object_id=str(proposal_id),
+                details="Superseded by an explicit curated-note edit.",
+            )
+            replacement_proposal = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(replacement_proposal.id),
+                details=f"Create revised curated Inbox note from {revised_origin}",
+            )
+        elif proposal.id != replacement_proposal.id:
+            self._proposals.set_status(proposal_id, "rejected")
+            self._activity.record(
+                ActivityType.ACTION_REJECTED,
+                object_id=str(proposal_id),
+                details="Superseded by an existing identical curated-note revision.",
+            )
+        return self._review_card(replacement_proposal)
+
+    def _pending_note(self, proposal_id: int) -> ActionProposal | str:
+        proposal = self._proposals.get(proposal_id)
+        if proposal is None or proposal.action_type != self.CREATE_CURATED_NOTE:
+            return "That curated-note proposal was not found."
+        if proposal.status != "pending":
+            return f"Curated note proposal {proposal_id} was already {proposal.status}."
+        return proposal
+
+    @staticmethod
+    def _review_card(proposal: ActionProposal) -> PresentedReply:
+        note = proposal.payload["text"]
+        origin = proposal.payload["origin"]
         preview = note if len(note) <= 500 else note[:497] + "..."
         return PresentedReply(
-            f"Curated note proposal {pending.id} ({origin}):\n{preview}\n\nIt has not been saved.",
-            (ReplyAction("Save note", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
+            f"Curated note proposal {proposal.id} ({origin}):\n{preview}\n\nIt has not been saved.",
+            (
+                ReplyAction("Save note", f"/approve_action {proposal.id}"),
+                ReplyAction("Edit", f"/curate_edit {proposal.id}"),
+                ReplyAction("Discard", f"/reject_action {proposal.id}"),
+            ),
         )
 
     def _synthesize_reply(
@@ -1295,11 +1385,7 @@ class StewardCuratedNoteApplication:
                 object_id=str(pending.id),
                 details=f"Create curated Inbox note from {mode} model synthesis",
             )
-        preview = note if len(note) <= 500 else note[:497] + "..."
-        return PresentedReply(
-            f"Curated note proposal {pending.id} ({origin}):\n{preview}\n\nIt has not been saved.",
-            (ReplyAction("Save note", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
-        )
+        return self._review_card(pending)
 
 
 class StewardKnowledgeApplication:
@@ -3265,6 +3351,9 @@ class StewardEventApplication:
             note_response = self._curated_note_application.handle_command(event)
             if note_response is not None:
                 return note_response
+            note_followup = self._curated_note_application.handle_followup(event)
+            if note_followup is not None:
+                return note_followup
         if self._workspace_link_application is not None:
             link_response = self._workspace_link_application.handle_command(event)
             if link_response is not None:
