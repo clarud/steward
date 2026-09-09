@@ -1170,7 +1170,8 @@ def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(t
     assert isinstance(preview, PresentedReply)
     assert SourceRepository(database).list_all() == []
     saved = application.handle(make_event(text="/approve_action 1"))
-    assert "Saved curated note to Inbox" in saved
+    assert isinstance(saved, PresentedReply)
+    assert saved.title == "Curated note saved"
     assert len(SourceRepository(database).list_all()) == 1
 
 
@@ -1194,7 +1195,9 @@ def test_telegram_can_stage_a_replied_to_discussion_as_a_curated_note(tmp_path: 
     assert isinstance(preview, PresentedReply)
     assert "user-selected Telegram reply" in preview.text
     assert SourceRepository(database).list_all() == []
-    assert "Saved curated note to Inbox" in application.handle(make_event(text="/approve_action 1"))
+    saved = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(saved, PresentedReply)
+    assert saved.title == "Curated note saved"
     source = SourceRepository(database).list_all()[0]
     assert "Origin: user-selected Telegram reply" in source.path.read_text(encoding="utf-8")
 
@@ -1227,7 +1230,9 @@ def test_telegram_can_synthesize_a_replied_discussion_locally_before_review(tmp_
     assert "local model" in preview.text
     assert local.calls == ["A TLB caches translations."]
     assert SourceRepository(database).list_all() == []
-    assert "Saved curated note to Inbox" in application.handle(make_event(text="/approve_action 1"))
+    saved = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(saved, PresentedReply)
+    assert saved.title == "Curated note saved"
     saved = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
     assert "Origin: model-synthesized user-selected Telegram reply (local model)" in saved
     assert "Caches address translations" in saved

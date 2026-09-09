@@ -2569,7 +2569,7 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Unregistered source {removed.id} from Steward metadata. Original file unchanged."
 
-    def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str:
+    def _review_curated_note(self, proposal_id: int, decision: str, event: IncomingEvent) -> str | PresentedReply:
         if self._capture is None:
             return "Curated-note capture is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -2583,7 +2583,12 @@ class StewardActionProposalApplication:
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"Curated note proposal {proposal.id} rejected."
+            return PresentedReply(
+                "The curated note was not saved.",
+                (ReplyAction("Home", "/home"),),
+                title="Curated note declined",
+                icon="↩️",
+            )
         origin = proposal.payload.get("origin", "user-supplied note")
         text = f"# Curated note\n\nOrigin: {origin}\n\n{proposal.payload['text']}\n"
         result = self._capture.capture_text(
@@ -2596,8 +2601,13 @@ class StewardActionProposalApplication:
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-        state = "Already saved" if result.duplicate else "Saved"
-        return f"{state} curated note to Inbox: {result.source.path.name}"
+        state = "already exists in Inbox" if result.duplicate else "was saved to Inbox"
+        return PresentedReply(
+            f"The curated note {state}.",
+            (ReplyAction("Inbox", "/inbox"), ReplyAction("Home", "/home")),
+            title="Curated note saved",
+            icon="🧠",
+        )
 
     def _review_workspace_link(self, proposal_id: int, decision: str) -> str:
         if self._workspaces is None or self._sources is None:
