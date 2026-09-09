@@ -670,6 +670,38 @@ def test_telegram_research_is_ephemeral_until_the_user_explicitly_retains_it(tmp
     assert len(SourceRepository(database).list_all()) == 1
 
 
+def test_telegram_research_card_retains_the_exact_reviewed_bundle_once(tmp_path: Path) -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def research(self, query: str) -> ResearchBundle:
+            self.calls += 1
+            return ResearchBundle(query, f"answer version {self.calls}", (ResearchSource("Example", "https://example.com"),))
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), activity)
+    provider = Provider()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        research_application=StewardResearchApplication(lambda: provider, ResearchRetentionService(capture)),
+    )
+
+    preview = application.handle(make_event(text="/research What is a TLB?"))
+    assert isinstance(preview, PresentedReply)
+    token_command = preview.actions[0].command
+    retained = application.handle(make_event(text=token_command))
+
+    assert provider.calls == 1
+    assert "Retained the reviewed external research note" in retained
+    note = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
+    assert "answer version 1" in note
+    assert application.handle(make_event(text=token_command)) == (
+        "That research card is no longer available. Run /research again before retaining it."
+    )
+
+
 def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database)

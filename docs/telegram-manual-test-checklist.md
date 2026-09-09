@@ -82,8 +82,8 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Set `/set_privacy SOURCE_ID no_model` and inspect `/privacy SOURCE_ID`.
   Confirm restricted source content is not sent to a cloud-backed model.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
-  **Keep as Inbox note** only when you want a labeled note containing the
-  provider answer and external URLs.
+  **Keep this reviewed note** only when you want that exact labeled card,
+  including its provider answer and external URLs, retained in Inbox.
 - Reply to a text discussion message with `/curate`. Verify the staged note
   identifies its origin as a user-selected Telegram reply, is not saved before
   approval, and becomes a labeled Inbox Markdown note only after approval.

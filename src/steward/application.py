@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Callable, NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
@@ -34,7 +36,7 @@ from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskService
-from steward.research import ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
+from steward.research import ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
 
 
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
@@ -564,6 +566,8 @@ class StewardIntegrationStatusApplication:
 class StewardResearchApplication:
     """Offer explicit, ephemeral web research and separately reviewed retention."""
 
+    _CACHE_TTL = timedelta(minutes=30)
+
     def __init__(
         self,
         provider_factory: Callable[[], ResearchProvider | None],
@@ -571,12 +575,20 @@ class StewardResearchApplication:
     ) -> None:
         self._provider_factory = provider_factory
         self._retention = retention
+        self._ephemeral_bundles: dict[str, tuple[str, datetime, ResearchBundle]] = {}
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, query = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/research", "/research_retain"}:
+        if command not in {"/research", "/research_retain", "/research_retain_token"}:
             return None
+        if command == "/research_retain_token":
+            bundle = self._take_ephemeral_bundle(query.strip(), event.chat_id)
+            if bundle is None:
+                return "That research card is no longer available. Run /research again before retaining it."
+            result = self._retention.retain(bundle)
+            state = "Already retained" if result.duplicate else "Retained"
+            return f"{state} the reviewed external research note in Inbox: {result.source.path}"
         if not separator or not query.strip():
             return f"Use {command} followed by a research question."
         provider = self._provider_factory()
@@ -596,8 +608,26 @@ class StewardResearchApplication:
             text += f"\n\nExternal sources:\n{sources}"
         return PresentedReply(
             text,
-            (ReplyAction("Keep as Inbox note", f"/research_retain {bundle.query}"),),
+            (ReplyAction("Keep this reviewed note", f"/research_retain_token {self._cache_bundle(event.chat_id, bundle)}"),),
         )
+
+    def _cache_bundle(self, chat_id: str, bundle: ResearchBundle) -> str:
+        self._purge_expired()
+        token = secrets.token_urlsafe(12)
+        self._ephemeral_bundles[token] = (chat_id, datetime.now(UTC) + self._CACHE_TTL, bundle)
+        return token
+
+    def _take_ephemeral_bundle(self, token: str, chat_id: str) -> ResearchBundle | None:
+        self._purge_expired()
+        item = self._ephemeral_bundles.pop(token, None)
+        if item is None or item[0] != chat_id:
+            return None
+        return item[2]
+
+    def _purge_expired(self) -> None:
+        now = datetime.now(UTC)
+        for token in [key for key, (_, expires_at, _) in self._ephemeral_bundles.items() if expires_at <= now]:
+            del self._ephemeral_bundles[token]
 
 
 class StewardCuratedNoteApplication:
