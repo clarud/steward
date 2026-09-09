@@ -41,6 +41,7 @@ _PRIMARY_COMMANDS = (
     ("search", "search your saved material"),
     ("calendar", "show current calendar events"),
     ("tasks", "show open tasks"),
+    ("records", "show saved records"),
     ("inbox", "show saved Inbox items"),
     ("workspaces", "show workspaces"),
     ("organize", "review Inbox organization"),

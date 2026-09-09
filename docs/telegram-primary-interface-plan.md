@@ -792,7 +792,7 @@ Implement in these deliberately separate layers:
    Write-capable requests become deterministic review proposals; the model
    never receives filesystem, shell, token, or unrestricted network access.
 5. **Progressive disclosure.** Keep a small command menu (`/home`,
-   `/pending`, `/search`, `/calendar`, `/tasks`, `/workspaces`, `/help`). Retain the
+   `/pending`, `/search`, `/calendar`, `/tasks`, `/records`, `/workspaces`, `/help`). Retain the
    wider command surface for recovery and local administration, but surface
    normal actions through cards and buttons.
 
