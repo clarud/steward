@@ -6,6 +6,8 @@ import pytest
 import steward.telegram.adapter as telegram_adapter
 
 from steward.events import IncomingEvent
+from steward.presentation import PresentedReply, ReplyAction
+from steward.reviews import ReviewContextRepository
 from steward.activity import ActivityService, ActivityType
 from steward.storage import initialize_database
 from steward.tasks import TaskReminderService, TaskService
@@ -124,6 +126,28 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
     assert handler.events[0].id == "telegram:42"
     assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(tmp_path) -> None:
+    class ProposalHandler(FakeEventHandler):
+        def handle(self, event: IncomingEvent) -> PresentedReply:
+            self.events.append(event)
+            return PresentedReply(
+                "No task has been saved yet.",
+                (ReplyAction("Accept", "/approve_action 9"), ReplyAction("Reject", "/reject_action 9")),
+                title="Save task: Compare OpenMP schedules",
+            )
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    message = FakeMessage()
+
+    asyncio.run(TelegramAdapter(ProposalHandler(), review_contexts=contexts).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    remembered = contexts.get("telegram", "100")
+    assert remembered is not None
+    assert (remembered.kind, remembered.identifier) == ("action", 9)
 
 
 def test_adapter_resolves_a_chat_scoped_callback_to_a_local_command(tmp_path) -> None:

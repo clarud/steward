@@ -15,6 +15,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
 from steward.telegram.presentation import TelegramPresenter
+from steward.reviews import ReviewContextRepository
 from steward.tasks import TaskReminderService
 from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
@@ -88,11 +89,13 @@ class TelegramAdapter:
         allowed_chat_ids: frozenset[str] = frozenset(),
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
         callback_repository: TelegramCallbackRepository | None = None,
+        review_contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._event_handler = event_handler
         self._allowed_chat_ids = allowed_chat_ids
         self._deliveries = delivery_repository
         self._callbacks = callback_repository
+        self._review_contexts = review_contexts
         self._presenter = TelegramPresenter()
 
     async def handle_update(
@@ -226,6 +229,8 @@ class TelegramAdapter:
 
     async def _reply(self, message: object, event: IncomingEvent, response: object) -> None:
         """Render escaped HTML and locally-resolved compact follow-up buttons."""
+        if isinstance(response, PresentedReply):
+            self._remember_review(event, response)
         rendered = self._presenter.render(
             response if isinstance(response, PresentedReply) else str(response)
         )
@@ -245,6 +250,29 @@ class TelegramAdapter:
         await message.reply_text(  # type: ignore[attr-defined]
             rendered.text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
         )
+
+    def _remember_review(self, event: IncomingEvent, response: PresentedReply) -> None:
+        """Associate a displayed approval card with this chat, never with its text."""
+        if self._review_contexts is None:
+            return
+        for action in response.actions:
+            command, _, argument = action.command.partition(" ")
+            parts = argument.split()
+            if command == "/approve_action" and parts and parts[0].isdigit():
+                self._review_contexts.set(event.platform, event.chat_id, "action", int(parts[0]))
+                return
+            if command == "/organization_accept" and parts and parts[0].isdigit():
+                self._review_contexts.set(event.platform, event.chat_id, "organization", int(parts[0]))
+                return
+            if command == "/intake_accept" and parts and parts[0].isdigit():
+                self._review_contexts.set(event.platform, event.chat_id, "intake", int(parts[0]))
+                return
+            if command == "/review_enrichment" and parts and parts[0].isdigit():
+                self._review_contexts.set(event.platform, event.chat_id, "knowledge", int(parts[0]))
+                return
+            if command == "/review" and len(parts) == 2 and parts[1].isdigit():
+                self._review_contexts.set(event.platform, event.chat_id, parts[0], int(parts[1]))
+                return
 
     def _is_allowed(self, event: IncomingEvent) -> bool:
         return not self._allowed_chat_ids or event.chat_id in self._allowed_chat_ids
@@ -280,6 +308,7 @@ def run_telegram_polling(
     allowed_chat_ids: frozenset[str] = frozenset(),
     delivery_repository: TelegramUpdateDeliveryRepository | None = None,
     callback_repository: TelegramCallbackRepository | None = None,
+    review_contexts: ReviewContextRepository | None = None,
     task_reminders: TaskReminderService | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
@@ -310,6 +339,7 @@ def run_telegram_polling(
         allowed_chat_ids=allowed_chat_ids,
         delivery_repository=delivery_repository,
         callback_repository=callback_repository,
+        review_contexts=review_contexts,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
@@ -395,6 +425,7 @@ def run_telegram_polling(
         allowed_chat_ids=allowed_chat_ids,
         delivery_repository=delivery_repository,
         callback_repository=callback_repository,
+        review_contexts=review_contexts,
     )
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     # Keep this after every known command (especially /save). Unknown slash

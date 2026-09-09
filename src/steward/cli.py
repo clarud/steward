@@ -1430,6 +1430,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 [fragment.text for fragment in fragments.list_for_source(source_id)],
             )
         proposals = OrganizationProposalRepository(database_path)
+        review_contexts = ReviewContextRepository(database_path)
         approval = OrganizationApprovalService(
             proposals,
             sources,
@@ -1528,7 +1529,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sources,
                 intakes=ProvisionalIntakeRepository(database_path),
                 knowledge_proposals=KnowledgeEnrichmentProposalRepository(database_path),
-                contexts=ReviewContextRepository(database_path),
+                contexts=review_contexts,
             ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity
@@ -1574,6 +1575,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             delivery_repository=TelegramUpdateDeliveryRepository(database_path),
             callback_repository=TelegramCallbackRepository(database_path),
+            review_contexts=review_contexts,
             task_reminders=task_reminders,
         )
         return
