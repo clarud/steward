@@ -93,6 +93,36 @@ def build_tool_agent_graph(
                     )
                 ]
             }
+        previous_calls = {
+            (
+                call["name"],
+                json.dumps(call.get("args", {}), sort_keys=True, separators=(",", ":"), default=str),
+            )
+            for message in state["messages"][last_request_index + 1 :]
+            if isinstance(message, AIMessage)
+            for call in message.tool_calls
+        }
+        requested_calls = {
+            (
+                call["name"],
+                json.dumps(call.get("args", {}), sort_keys=True, separators=(",", ":"), default=str),
+            )
+            for call in response.tool_calls
+        }
+        if requested_calls and requested_calls.issubset(previous_calls):
+            # Repeating an identical local lookup cannot add evidence. Some
+            # smaller models do this after receiving a valid empty result, so
+            # stop with a useful recovery message instead of wasting the whole
+            # tool budget and eventually surfacing a graph recursion error.
+            trace("tool_agent.repeated_tool_request", tool_names=sorted(call[0] for call in requested_calls))
+            return {
+                "messages": [
+                    AIMessage(
+                        "I already completed that same local lookup and it did not produce a new result. "
+                        "Please name a different topic, source, or time range."
+                    )
+                ]
+            }
         return {"messages": [response]}
 
     def route_after_model(state: ToolAgentState) -> Literal["tools", "end"]:

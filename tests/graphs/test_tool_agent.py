@@ -66,13 +66,17 @@ def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
         return query
 
     class LoopingModel:
+        def __init__(self):
+            self.calls = 0
+
         def bind_tools(self, _tools):
             return self
 
         def invoke(self, _messages):
+            self.calls += 1
             return AIMessage(
                 "",
-                tool_calls=[{"name": "search_sources", "args": {"query": "again"}, "id": "loop"}],
+                tool_calls=[{"name": "search_sources", "args": {"query": f"again {self.calls}"}, "id": "loop"}],
             )
 
     result = build_tool_agent_graph(LoopingModel(), [search_sources], max_tool_calls=2).invoke(
@@ -80,6 +84,33 @@ def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
     )
 
     assert "tool-call limit" in result["messages"][-1].content
+
+
+def test_tool_agent_stops_before_repeating_an_identical_lookup() -> None:
+    calls = []
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        calls.append(query)
+        return "[]"
+
+    class RepeatingModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, _messages):
+            return AIMessage(
+                "",
+                tool_calls=[{"name": "search_sources", "args": {"query": "missing notes"}, "id": "repeat"}],
+            )
+
+    result = build_tool_agent_graph(RepeatingModel(), [search_sources], max_tool_calls=4).invoke(
+        {"messages": [HumanMessage("Find missing notes")]}
+    )
+
+    assert calls == ["missing notes"]
+    assert "already completed that same local lookup" in result["messages"][-1].content
 
 
 def test_tool_agent_does_not_execute_an_oversized_single_tool_call_batch() -> None:
