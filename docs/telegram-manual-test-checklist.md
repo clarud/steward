@@ -93,6 +93,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   Google Calendar directly.
 - Use `/drive_search QUERY` or `/gmail_search QUERY`; import exactly one result
   from a button and verify exactly one Inbox source is created.
+- With a deliberately unavailable test authorization, verify Drive/Gmail
+  search or import returns a retry-oriented message without a local token path,
+  client-secret filename, or provider diagnostic.
 - Set `/set_privacy SOURCE_ID no_model` and inspect `/privacy SOURCE_ID`.
   Confirm restricted source content is not sent to a cloud-backed model.
 - Choose a harmless Markdown source with a known ID and send

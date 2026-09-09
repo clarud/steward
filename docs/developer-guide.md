@@ -683,6 +683,11 @@ imports mail.
 allowlisted Telegram adapter and uses a lazy OAuth boundary: bot startup and
 ordinary messages do not inspect Gmail or trigger browser authorization.
 
+Telegram treats Drive/Gmail adapter failures as safe operational failures. It
+does not echo provider exception strings, because those can include local token
+paths or other machine diagnostics. The reply tells the owner to verify local
+authorization and retry; detailed diagnosis stays in the local runtime.
+
 Raw `.eml` sources use `EmailExtractor` rather than the generic plain-text
 extractor. Python's standard-library MIME parser selects readable `text/plain`
 or `text/html` parts, skips declared attachments, records the email subject and

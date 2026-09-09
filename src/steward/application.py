@@ -1450,8 +1450,8 @@ class StewardDriveImportApplication:
             )
         try:
             result = self._importer.import_file(file_id)
-        except (OSError, ValueError) as error:
-            return f"Drive import failed: {error}"
+        except (OSError, ValueError):
+            return "Drive import is temporarily unavailable. Verify local authorization, then try again."
         status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
         return f"{status}: {result.source.path.name}"
 
@@ -1460,8 +1460,8 @@ class StewardDriveImportApplication:
             return "Drive search is not configured on this Steward process. Authorize Drive locally first."
         try:
             results = self._importer.search(query.strip())
-        except (OSError, ValueError) as error:
-            return f"Drive search failed: {error}"
+        except (OSError, ValueError):
+            return "Drive search is temporarily unavailable. Verify local authorization, then try again."
         if not results:
             return "No Drive files matched."
         visible = results[:5]
@@ -1500,8 +1500,8 @@ class StewardGmailImportApplication:
             )
         try:
             result = self._importer.import_message(message_id)
-        except (OSError, ValueError) as error:
-            return f"Gmail import failed: {error}"
+        except (OSError, ValueError):
+            return "Gmail import is temporarily unavailable. Verify local authorization, then try again."
         status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
         return f"{status}: {result.source.path.name}"
 
@@ -1510,8 +1510,8 @@ class StewardGmailImportApplication:
             return "Gmail search is not configured on this Steward process. Authorize Gmail locally first."
         try:
             results = self._importer.search(query.strip())
-        except (OSError, ValueError) as error:
-            return f"Gmail search failed: {error}"
+        except (OSError, ValueError):
+            return "Gmail search is temporarily unavailable. Verify local authorization, then try again."
         if not results:
             return "No Gmail messages matched."
         visible = results[:5]

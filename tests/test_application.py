@@ -1997,6 +1997,40 @@ def test_telegram_can_explicitly_import_one_gmail_message() -> None:
     )
 
 
+def test_telegram_external_import_failures_do_not_disclose_local_diagnostics() -> None:
+    class DriveImporter:
+        def import_file(self, _file_id: str) -> CaptureResult:
+            raise OSError("C:/private/google-drive-token.json is unreadable")
+
+        def search(self, _query: str):
+            raise ValueError("C:/private/client-secret.json was rejected")
+
+    class GmailImporter:
+        def import_message(self, _message_id: str) -> CaptureResult:
+            raise OSError("C:/private/gmail-token.json is unreadable")
+
+        def search(self, _query: str):
+            raise ValueError("C:/private/client-secret.json was rejected")
+
+    drive = StewardDriveImportApplication(DriveImporter())
+    gmail = StewardGmailImportApplication(GmailImporter())
+
+    replies = (
+        drive.handle_command(make_event(text="/drive_import file-42")),
+        drive.handle_command(make_event(text="/drive_search OpenMP")),
+        gmail.handle_command(make_event(text="/gmail_import mail-42")),
+        gmail.handle_command(make_event(text="/gmail_search OpenMP")),
+    )
+
+    assert replies == (
+        "Drive import is temporarily unavailable. Verify local authorization, then try again.",
+        "Drive search is temporarily unavailable. Verify local authorization, then try again.",
+        "Gmail import is temporarily unavailable. Verify local authorization, then try again.",
+        "Gmail search is temporarily unavailable. Verify local authorization, then try again.",
+    )
+    assert all("C:/private" not in reply for reply in replies)
+
+
 def test_telegram_gmail_search_offers_explicit_individual_imports() -> None:
     class Importer:
         def search(self, query):
