@@ -1171,6 +1171,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 WorkspaceRepository(database_path),
                 activity,
                 PrivacyService(database_path),
+                model_is_local=settings.model_provider == "local",
             )
             telegram_tools = build_read_only_tools(tool_service)
             telegram_definitions = list(READ_ONLY_TOOL_DEFINITIONS)
@@ -1197,6 +1198,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             WorkspaceRepository(database_path),
             ActivityService(database_path),
             PrivacyService(database_path),
+            model_is_local=settings.model_provider == "local",
         )
         checkpoint_connection = sqlite3.connect(
             settings.data_dir / "checkpoints.db", check_same_thread=False
@@ -1395,6 +1397,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 WorkspaceRepository(database_path),
                 activity,
                 privacy,
+                model_is_local=settings.model_provider == "local",
             )
             telegram_tools = build_read_only_tools(tool_service)
             telegram_definitions = list(READ_ONLY_TOOL_DEFINITIONS)

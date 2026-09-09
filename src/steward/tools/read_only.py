@@ -42,6 +42,7 @@ class ReadOnlyToolService:
         workspace_repository: WorkspaceRepository,
         activity_service: ActivityService,
         privacy_service: PrivacyService | None = None,
+        model_is_local: bool = False,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -51,6 +52,7 @@ class ReadOnlyToolService:
         self._workspaces = workspace_repository
         self._activity = activity_service
         self._privacy = privacy_service
+        self._model_is_local = model_is_local
 
     def search_sources(self, query: str, limit: int = 5) -> str:
         """Find source fragments by exact terms and return their provenance."""
@@ -79,7 +81,7 @@ class ReadOnlyToolService:
                     "score": hit.score,
                 }
                 for hit in hits
-                if self._permits_external_model(hit.source.id)
+                if self._permits_model(hit.source.id)
             ]
         )
 
@@ -88,7 +90,7 @@ class ReadOnlyToolService:
         source = self._sources.get_by_id(source_id)
         if source is None:
             return self._json({"error": f"Source {source_id} was not found."})
-        if not self._permits_external_model(source.id):
+        if not self._permits_model(source.id):
             return self._json(
                 {"error": "This source's privacy rule prevents sending its content to an external model."}
             )
@@ -133,7 +135,7 @@ class ReadOnlyToolService:
         needle = query.casefold().strip()
         records = []
         for record in self._records.list_travel_records():
-            if not self._permits_external_model(record.source_id):
+            if not self._permits_model(record.source_id):
                 continue
             values = (record.flight_number, record.departure, record.arrival, record.booking_reference)
             if any(needle in value.casefold() for value in values if value):
@@ -151,7 +153,7 @@ class ReadOnlyToolService:
                     }
                 )
         for record in self._records.list_receipt_records():
-            if not self._permits_external_model(record.source_id):
+            if not self._permits_model(record.source_id):
                 continue
             values = (record.merchant, record.currency, record.receipt_number)
             if any(needle in value.casefold() for value in values if value):
@@ -168,7 +170,7 @@ class ReadOnlyToolService:
                     }
                 )
         for record in self._records.list_warranty_records():
-            if not self._permits_external_model(record.source_id):
+            if not self._permits_model(record.source_id):
                 continue
             values = (record.product_name, record.provider, record.warranty_number)
             if any(needle in value.casefold() for value in values if value):
@@ -229,9 +231,15 @@ class ReadOnlyToolService:
         """
         return max(1, min(value, 20))
 
-    def _permits_external_model(self, source_id: int | None) -> bool:
-        return source_id is not None and (
-            self._privacy is None or self._privacy.permits_external_model(source_id)
+    def _permits_model(self, source_id: int | None) -> bool:
+        """Enforce the policy for the model that will receive tool output."""
+
+        if source_id is None or self._privacy is None:
+            return source_id is not None
+        return (
+            self._privacy.permits_local_model(source_id)
+            if self._model_is_local
+            else self._privacy.permits_external_model(source_id)
         )
 
     @staticmethod

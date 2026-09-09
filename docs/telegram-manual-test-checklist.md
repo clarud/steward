@@ -137,6 +137,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   you approve. After approval, confirm restricted source content is not sent
   to a cloud-backed model. Reject a second proposed change and verify the
   existing rule remains unchanged.
+- With `STEWARD_MODEL_PROVIDER=local`, set a harmless source to
+  `local_model_only` and ask about it through the tool agent. Verify the local
+  model can use it. Switch to an external provider and verify the same source
+  is withheld from the tool result.
 - Choose a harmless Markdown source with a known ID and send
   `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
   approval, accepting refreshes its fragments, and the original file remains

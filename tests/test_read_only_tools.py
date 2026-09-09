@@ -125,6 +125,33 @@ def test_read_only_tools_do_not_return_private_source_text_to_cloud_agent(tmp_pa
     assert "privacy rule" in json.loads(service.read_source(source.id or 0))["error"]
 
 
+def test_read_only_tools_allow_local_models_to_read_local_only_sources(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "local.md", "c" * 64, SourceType.MARKDOWN, 1, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(
+        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "Local-only OpenMP notes.", "lines 1"),))
+    )
+    privacy = PrivacyService(database)
+    privacy.set_rule(source.id or 0, PrivacyRule.LOCAL_MODEL_ONLY)
+
+    cloud = ReadOnlyToolService(
+        sources, fragments, LexicalSearchService(sources, fragments), KnowledgeService(database),
+        RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy,
+    )
+    local = ReadOnlyToolService(
+        sources, fragments, LexicalSearchService(sources, fragments), KnowledgeService(database),
+        RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy,
+        model_is_local=True,
+    )
+
+    assert json.loads(cloud.search_sources("OpenMP")) == []
+    assert json.loads(local.search_sources("OpenMP"))[0]["source_id"] == source.id
+    assert "Local-only OpenMP notes." in json.loads(local.read_source(source.id or 0))["fragments"][0]["text"]
+
+
 def test_read_only_tools_recover_when_an_agent_searches_a_markdown_filename(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)
