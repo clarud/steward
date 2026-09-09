@@ -263,6 +263,11 @@ class ProvisionalIntakeService:
         )
         return result
 
+    def get(self, intake_id: int) -> ProvisionalIntake | None:
+        """Read one staged intake for a transport-level next-step decision."""
+
+        return self._repository.get(intake_id)
+
     def discard(self, intake_id: int, chat_id: str) -> ProvisionalIntake:
         intake = self._pending_for_chat(intake_id, chat_id)
         decided = self._repository.decide(intake_id, "discarded")

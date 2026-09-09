@@ -1740,6 +1740,39 @@ def test_shared_link_is_staged_without_fetching_or_saving(tmp_path: Path) -> Non
     assert sources.list_all() == []
 
 
+def test_accepted_flight_intake_immediately_offers_a_record_review(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, fragments, activity)
+    proposals = ActionProposalRepository(database_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            )
+        ),
+        record_application=StewardRecordApplication(RecordService(database_path), fragments, proposals, activity),
+    )
+
+    staged = application.handle(make_event(
+        text="Flight SQ638\nDeparture: Singapore\nArrival: Tokyo\nBooking Reference: ABC123"
+    ))
+    reviewed = application.handle(make_event(text="/intake_accept 1"))
+
+    assert isinstance(staged, PresentedReply)
+    assert isinstance(reviewed, PresentedReply)
+    assert reviewed.title == "Review travel record"
+    assert "Saved to Inbox" in reviewed.text
+    assert "flight: SQ638" in reviewed.text
+    assert proposals.get(1) is not None
+    assert RecordService(database_path).list_travel_records() == []
+
+
 def test_provisional_intake_failure_does_not_disclose_a_local_staging_path() -> None:
     class UnavailableService:
         def accept(self, _intake_id: int, _event: IncomingEvent) -> CaptureResult:

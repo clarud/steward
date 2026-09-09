@@ -671,15 +671,32 @@ class StewardRecordApplication:
             return None
         if not separator or not argument.strip().isdigit():
             return "Use /propose_travel_record followed by a numeric source ID."
-        source_id = int(argument.strip())
+        return self._propose_travel_record_for_source(int(argument.strip()))
+
+    def propose_for_captured_source(self, source_id: int, source_name: str) -> PresentedReply | None:
+        """Create the appropriate *review* from one just-preserved original.
+
+        Classification selects a proposal type only.  Field extraction remains
+        deterministic and evidence-backed, and this method never persists a
+        record itself.
+        """
+
+        normalized = source_name.casefold()
+        if any(term in normalized for term in ("receipt", "invoice")):
+            return self._propose_document_record_for_source("receipt", source_id)
+        if "warranty" in normalized:
+            return self._propose_document_record_for_source("warranty", source_id)
+        return self._propose_travel_record_for_source(source_id)
+
+    def _propose_travel_record_for_source(self, source_id: int) -> PresentedReply | None:
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
-            return f"Source {source_id} has no extracted text to interpret as a travel record."
+            return None
         proposal = self._records.propose_travel_record(
             source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
         )
         if not proposal.field_evidence:
-            return f"Source {source_id} did not yield evidenced travel fields."
+            return None
         record = proposal.record
         fields = (
             ("flight", "flight_number", record.flight_number),
@@ -705,12 +722,13 @@ class StewardRecordApplication:
                 details=f"Create travel record from source {source_id}",
             )
         return PresentedReply(
-            f"Travel record preview from source {source_id}:\n{rendered}\n\n"
-            f"Proposal {pending.id}: no travel record has been saved.",
+            f"{rendered}\n\nNo travel record has been saved yet.",
             (
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
+            title="Review travel record",
+            icon="✈️",
         )
 
     def _travel_references(self, separator: str, argument: str) -> str:
@@ -802,16 +820,21 @@ class StewardRecordApplication:
         if not separator or not argument.strip().isdigit():
             return f"Use {command} followed by a numeric source ID."
         source_id = int(argument.strip())
+        proposal = self._propose_document_record_for_source(label, source_id)
+        return proposal or f"The source did not yield evidenced {label} fields."
+
+    def _propose_document_record_for_source(self, label: str, source_id: int) -> PresentedReply | None:
+        action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
-            return f"Source {source_id} has no extracted text to interpret as a {label} record."
+            return None
         proposal = (
             self._records.propose_receipt_record(source_id, [(item.id or 0, item.text) for item in fragments])
             if label == "receipt"
             else self._records.propose_warranty_record(source_id, [(item.id or 0, item.text) for item in fragments])
         )
         if not proposal.field_evidence:
-            return f"Source {source_id} did not yield evidenced {label} fields."
+            return None
         fields = [
             f"{field}: {getattr(proposal.record, field)} (fragment {fragment_id})"
             for field, fragment_id in proposal.field_evidence.items()
@@ -822,9 +845,10 @@ class StewardRecordApplication:
             pending = self._proposals.add(action_type, {"source_id": str(source_id)})
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create {label} record from source {source_id}")
         return PresentedReply(
-            f"{label.title()} record preview from source {source_id}:\n" + "\n".join(fields)
-            + f"\n\nProposal {pending.id}: no {label} record has been saved.",
+            "\n".join(fields) + f"\n\nNo {label} record has been saved yet.",
             (ReplyAction("Accept record", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+            title=f"Review {label} record",
+            icon="🧾" if label == "receipt" else "🛡️",
         )
 
     def _list_records(self) -> str:
@@ -1679,6 +1703,21 @@ class StewardProvisionalIntakeApplication:
         except ValueError as error:
             return str(error)
         return f"Discarded provisional intake {intake.id}; its staged copy was removed."
+
+    def pending_category_for_acceptance(self, event: IncomingEvent) -> tuple[str, str] | None:
+        """Return the pending intake classification before accepting its original.
+
+        The method is intentionally read-only.  It lets the application select
+        a next review card after capture without trusting callback text.
+        """
+
+        command, separator, argument = (event.text or "").strip().partition(" ")
+        if command.partition("@")[0] != "/intake_accept" or not separator or not argument.strip().isdigit():
+            return None
+        intake = self._service.get(int(argument.strip()))
+        if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
+            return None
+        return intake.category, intake.original_name
 
     def handle_followup(self, event: IncomingEvent) -> PresentedReply | str | None:
         """Attach the next ordinary message to an explicitly requested intake context."""
@@ -2888,9 +2927,12 @@ class StewardEventApplication:
             if tool_response is not None:
                 return tool_response
         if self._provisional_intake_application is not None:
+            intake_classification = self._provisional_intake_application.pending_category_for_acceptance(event)
             intake_response = self._provisional_intake_application.handle_command(event)
             if isinstance(intake_response, CaptureResult):
-                return self._capture_with_optional_proposal(event, intake_response)
+                return self._capture_with_optional_proposal(
+                    event, intake_response, intake_classification=intake_classification
+                )
             if intake_response is not None:
                 return intake_response
             intake_followup = self._provisional_intake_application.handle_followup(event)
@@ -2979,9 +3021,27 @@ class StewardEventApplication:
         )
 
     def _capture_with_optional_proposal(
-        self, event: IncomingEvent, result: CaptureResult
-    ) -> str:
+        self,
+        event: IncomingEvent,
+        result: CaptureResult,
+        *,
+        intake_classification: tuple[str, str] | None = None,
+    ) -> str | PresentedReply:
         saved = self._capture_application.format_result(result)
+        if (
+            intake_classification is not None
+            and intake_classification[0] == "record"
+            and self._record_application is not None
+            and result.source.id is not None
+        ):
+            record_review = self._record_application.propose_for_captured_source(
+                result.source.id, intake_classification[1]
+            )
+            if record_review is not None:
+                return PresentedReply(
+                    f"{saved}\n\n{record_review.text}", record_review.actions,
+                    title=record_review.title, icon=record_review.icon,
+                )
         if self._organization_approval_application is None:
             return saved
         proposal = self._organization_approval_application.begin(event, result)
