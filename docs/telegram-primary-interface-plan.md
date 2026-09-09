@@ -153,7 +153,8 @@ Currently Telegram supports:
 - text capture through `/save <text>`;
 - document/photo provisional intake by default: an attachment is staged locally
   until `Save to Inbox` or `Do not keep`; `/save` as its caption remains the
-  explicit immediate-capture shortcut;
+  explicit immediate-capture shortcut. Replying with bare `/save` to a staged
+  attachment also accepts that exact pending item without downloading it again;
 - provisional capture of substantial text notes and explicit note/thought
   prefixes, also requiring a save/discard decision;
 - `/intake_context ID ...` records additional user guidance and revises a
@@ -167,10 +168,6 @@ Currently Telegram supports:
 
 Current observed limitations to address:
 
-- natural-language workspace and Inbox organization requests are not routed to
-  a full organization-review workflow yet;
-- replying `/save` to an earlier attachment cannot capture it because the
-  reply has no attachment payload;
 - the CLI has many capabilities that Telegram cannot yet initiate or inspect.
 
 ## Existing-vault onboarding

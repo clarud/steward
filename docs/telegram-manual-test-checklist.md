@@ -49,6 +49,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 - Send a document without `/save`. Verify it is described as staged and has
   **Save to Inbox** and **Do not keep** choices.
+- Reply to that original attachment with bare `/save`. Verify Steward saves
+  that same staged attachment once, without asking you to upload it again.
+  Replying from another chat or to a non-staged message must not select a
+  pending attachment.
 - Send a harmless `https://...` link. Verify it is staged as a **reference**;
   Steward must not fetch it, send it to a model, or save it until you choose
   **Save**.

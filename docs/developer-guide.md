@@ -551,7 +551,9 @@ explicit operations:
   retained merely because it arrived in chat. Provisional material defaults to
   `no_model`; `/intake_analysis ID external|local|none` makes the model boundary
   explicit before acceptance. When accepted, that choice becomes the captured
-  Source's privacy rule before any model-assisted organization can run.
+  source's privacy rule before any model-assisted organization can run. A bare `/save` reply can select only the pending staged
+  intake from that exact chat message; it reuses the original staged bytes and
+  does not re-download or infer an attachment from reply text.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.

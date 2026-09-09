@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Callable, NotRequired, Protocol, TypedDict
 
@@ -1941,6 +1942,24 @@ class StewardProvisionalIntakeApplication:
             return None
         return intake.category, intake.original_name, self._service.guidance_for(intake.id or 0)
 
+    def reply_save_event(self, event: IncomingEvent) -> IncomingEvent | None:
+        """Translate a reply-only ``/save`` into the matching intake decision.
+
+        The original attachment was already downloaded into the local staged
+        intake. We therefore do not re-download Telegram media or infer a
+        filename from reply text; this only accepts the exact pending item the
+        user replied to.
+        """
+
+        raw = (event.text or "").strip()
+        command = raw.partition(" ")[0].partition("@")[0]
+        if command != "/save" or raw != raw.partition(" ")[0]:
+            return None
+        intake = self._service.pending_for_reply(event)
+        if intake is None or intake.id is None:
+            return None
+        return replace(event, text=f"/intake_accept {intake.id}")
+
     def handle_followup(self, event: IncomingEvent) -> PresentedReply | str | None:
         """Attach the next ordinary message to an explicitly requested intake context."""
 
@@ -3259,11 +3278,12 @@ class StewardEventApplication:
             if tool_response is not None:
                 return tool_response
         if self._provisional_intake_application is not None:
-            intake_classification = self._provisional_intake_application.pending_category_for_acceptance(event)
-            intake_response = self._provisional_intake_application.handle_command(event)
+            intake_event = self._provisional_intake_application.reply_save_event(event) or event
+            intake_classification = self._provisional_intake_application.pending_category_for_acceptance(intake_event)
+            intake_response = self._provisional_intake_application.handle_command(intake_event)
             if isinstance(intake_response, CaptureResult):
                 return self._capture_with_optional_proposal(
-                    event, intake_response, intake_classification=intake_classification
+                    intake_event, intake_response, intake_classification=intake_classification
                 )
             if intake_response is not None:
                 return intake_response

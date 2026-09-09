@@ -1827,6 +1827,82 @@ def test_provisional_intake_context_followup_survives_a_restart(tmp_path: Path) 
     assert sources.list_all() == []
 
 
+def test_replying_save_to_a_staged_attachment_accepts_that_exact_intake(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(capture_service),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            )
+        ),
+    )
+    original = tmp_path / "lecture-notes.md"
+    original.write_text("# OpenMP\n", encoding="utf-8")
+    upload = IncomingEvent(
+        "telegram:attachment", "telegram", "100", "12", None,
+        datetime(2026, 9, 9, tzinfo=UTC), None, ("lecture-notes.md",),
+    )
+    application.handle_file(upload, original)
+
+    response = application.handle(
+        IncomingEvent(
+            "telegram:save-reply", "telegram", "100", "13", "12",
+            datetime(2026, 9, 9, tzinfo=UTC), "/save",
+        )
+    )
+
+    assert "Saved to Inbox" in response
+    assert [source.path.name for source in sources.list_all()] == ["telegram-100-12-lecture-notes.md"]
+    intake = ProvisionalIntakeRepository(database_path).get(1)
+    assert intake is not None and intake.status == "accepted"
+
+
+def test_reply_save_never_accepts_an_intake_from_another_chat(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(capture_service),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(
+                tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+                capture_service, activity, PrivacyService(database_path),
+            )
+        ),
+    )
+    original = tmp_path / "private.md"
+    original.write_text("private", encoding="utf-8")
+    application.handle_file(
+        IncomingEvent(
+            "telegram:attachment", "telegram", "100", "12", None,
+            datetime(2026, 9, 9, tzinfo=UTC), None, ("private.md",),
+        ),
+        original,
+    )
+
+    response = application.handle(
+        IncomingEvent(
+            "telegram:save-reply", "telegram", "200", "13", "12",
+            datetime(2026, 9, 9, tzinfo=UTC), "/save",
+        )
+    )
+
+    assert "Use /save followed by the text" in response
+    assert sources.list_all() == []
+    intake = ProvisionalIntakeRepository(database_path).get(1)
+    assert intake is not None and intake.status == "pending"
+
+
 def test_short_personal_record_text_is_staged_without_being_saved(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

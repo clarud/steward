@@ -102,6 +102,28 @@ class ProvisionalIntakeRepository:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
+    def get_pending_for_message(
+        self, *, platform: str, chat_id: str, message_id: str
+    ) -> ProvisionalIntake | None:
+        """Find the still-reviewable intake represented by one chat message.
+
+        Telegram reply IDs are message IDs, not Steward intake IDs. Looking up
+        the pending item here keeps that transport detail out of capture and
+        prevents a reply in another chat from selecting an item.
+        """
+
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                FROM provisional_intakes
+                WHERE platform = ? AND chat_id = ? AND message_id = ? AND status = 'pending'
+                """,
+                (platform, chat_id, message_id),
+            ).fetchone()
+        return self._from_row(row) if row is not None else None
+
     def list_all(self) -> tuple[ProvisionalIntake, ...]:
         """List staged decisions for a presentation layer; callers still scope by chat."""
         with sqlite3.connect(self._database_path) as connection:
@@ -283,6 +305,17 @@ class ProvisionalIntakeService:
         """Read one staged intake for a transport-level next-step decision."""
 
         return self._repository.get(intake_id)
+
+    def pending_for_reply(self, event: IncomingEvent) -> ProvisionalIntake | None:
+        """Return the pending intake explicitly targeted by a chat reply."""
+
+        if event.reply_to_id is None:
+            return None
+        return self._repository.get_pending_for_message(
+            platform=event.platform,
+            chat_id=event.chat_id,
+            message_id=event.reply_to_id,
+        )
 
     def guidance_for(self, intake_id: int) -> str | None:
         """Read the latest explicit guidance without changing intake state."""
