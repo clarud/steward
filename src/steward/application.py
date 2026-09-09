@@ -1409,7 +1409,9 @@ class StewardProvisionalIntakeApplication:
                     self._actions(intake),
                 )
             intake = self._service.discard(intake_id, event.chat_id)
-        except (OSError, ValueError) as error:
+        except OSError:
+            return "Could not update this provisional intake because local staging is temporarily unavailable. Try again later."
+        except ValueError as error:
             return str(error)
         return f"Discarded provisional intake {intake.id}; its staged copy was removed."
 

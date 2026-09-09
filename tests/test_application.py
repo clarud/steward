@@ -1479,6 +1479,21 @@ def test_provisional_intake_context_command_updates_without_saving(tmp_path: Pat
     assert sources.list_all() == []
 
 
+def test_provisional_intake_failure_does_not_disclose_a_local_staging_path() -> None:
+    class UnavailableService:
+        def accept(self, _intake_id: int, _event: IncomingEvent) -> CaptureResult:
+            raise OSError("C:/private/staging/telegram-100-1.pdf is locked")
+
+    response = StewardProvisionalIntakeApplication(UnavailableService()).handle_command(  # type: ignore[arg-type]
+        make_event(text="/intake_accept 1")
+    )
+
+    assert response == (
+        "Could not update this provisional intake because local staging is temporarily unavailable. Try again later."
+    )
+    assert "C:/private" not in response
+
+
 def test_event_application_routes_downloaded_document_to_capture_service(tmp_path: Path) -> None:
     class FileCapture:
         def __init__(self) -> None:

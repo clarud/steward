@@ -43,6 +43,8 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Choose **Do not keep**. Verify no file appears in Inbox.
 - Send another document, add `/intake_context ID CS3210 OpenMP assignment`,
   then choose **Save to Inbox**. Verify the original appears once in Inbox.
+- If local staging is deliberately unavailable in a test setup, verify an
+  intake accept/discard/context retry message never exposes the staging path.
 - While an intake or organization proposal is pending, stop the local bot with
   `Ctrl+C`, start `steward telegram` again, then finish the decision. Verify
   the result happens once.
