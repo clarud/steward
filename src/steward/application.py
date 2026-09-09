@@ -1619,7 +1619,13 @@ class StewardOrganizationApprovalApplication:
                     ReplyAction("Reject", f"/organization_reject {proposal_id}"),
                 ),
             )
-        destination = str(proposal.suggested_path)
+        workspace = next(
+            (item for item in self._workspaces.list_all() if item.id == proposal.workspace_id), None
+        )
+        destination = (
+            f"workspace {workspace.name} ({proposal.suggested_path.name})"
+            if workspace is not None else f"the proposed workspace ({proposal.suggested_path.name})"
+        )
         return PresentedReply(
             f"Organization proposal {proposal_id}: {proposal.rationale}\n"
             f"Suggested destination: {destination}\n\n"

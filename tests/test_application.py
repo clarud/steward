@@ -1581,6 +1581,8 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
 
     assert isinstance(paused, PresentedReply)
     assert "Organization proposal 1" in paused.text
+    assert "workspace Steward" in paused.text
+    assert str(tmp_path) not in paused.text
     assert [action.command for action in paused.actions] == [
         "/organization_accept 1", "/organization_keep_inbox 1", "/organization_reject 1"
     ]
