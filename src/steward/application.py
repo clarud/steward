@@ -150,7 +150,8 @@ class StewardReadApplication:
             "/propose_reextract SOURCE_ID, /propose_rebuild_index â€” derived-data maintenance after review\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
-            "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE.\n\n"
+            "Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE, "
+            "or /organization_keep_inbox ID.\n\n"
             "Admin diagnostics: /deliveries, /delivery_history, /dead_letters\n"
             "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"
         )
@@ -1601,6 +1602,7 @@ class StewardOrganizationApprovalApplication:
             "Accepting is the only action that may move this original file.",
             (
                 ReplyAction("Accept", f"/organization_accept {proposal_id}"),
+                ReplyAction("Keep in Inbox", f"/organization_keep_inbox {proposal_id}"),
                 ReplyAction("Reject", f"/organization_reject {proposal_id}"),
             ),
         )
@@ -1626,6 +1628,10 @@ class StewardOrganizationApprovalApplication:
             if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not workspace_name.strip():
                 return f"Use /organization_new_workspace {pending.proposal_id} followed by a new workspace name."
             return self._revise_with_new_workspace(event, pending, workspace_name)
+        if command == "/organization_keep_inbox":
+            if not argument.isdigit() or int(argument) != pending.proposal_id:
+                return f"Use /organization_keep_inbox followed by proposal {pending.proposal_id}."
+            return self._revise_keep_in_inbox(event, pending)
         if command == "/organization_accept" and argument.isdigit() and int(argument) == pending.proposal_id:
             decision = "accepted"
         elif command == "/organization_reject" and argument.isdigit() and int(argument) == pending.proposal_id:
@@ -1705,6 +1711,34 @@ class StewardOrganizationApprovalApplication:
             ActivityType.ORGANIZATION_REJECTED,
             object_id=str(pending.proposal_id),
             details="Superseded after user requested a new workspace.",
+        )
+        return self._start_proposal(event, proposal)
+
+    def _revise_keep_in_inbox(
+        self, event: IncomingEvent, pending: PendingOrganizationApproval
+    ) -> str | PresentedReply:
+        """Replace a proposed move with an explicitly accepted Inbox outcome."""
+        if self._sources is None:
+            return "Inbox organization revision is not configured for this Steward process."
+        previous = self._proposals.get(pending.proposal_id)
+        source = self._sources.get_by_id(previous.source_id) if previous is not None else None
+        if source is None:
+            return "The source for this organization proposal was not found."
+        proposal = OrganizationProposal(
+            None,
+            source.id or 0,
+            "keep_in_inbox",
+            None,
+            None,
+            "You chose to keep this original in Inbox.",
+            1.0,
+        )
+        self._proposals.set_status(pending.proposal_id, "rejected")
+        self._threads.finish(event.platform, event.chat_id, "rejected")
+        self._activity.record(
+            ActivityType.ORGANIZATION_REJECTED,
+            object_id=str(pending.proposal_id),
+            details="Superseded after user chose to keep the source in Inbox.",
         )
         return self._start_proposal(event, proposal)
 

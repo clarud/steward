@@ -1467,7 +1467,7 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert isinstance(paused, PresentedReply)
     assert "Organization proposal 1" in paused.text
     assert [action.command for action in paused.actions] == [
-        "/organization_accept 1", "/organization_reject 1"
+        "/organization_accept 1", "/organization_keep_inbox 1", "/organization_reject 1"
     ]
     assert not (tmp_path / "vault" / "projects" / "Steward").exists()
 
@@ -1656,6 +1656,41 @@ def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tm
     assert app.handle_decision(make_event(text="/organization_accept 2")) == "Proposal 2 accepted."
     assert [workspace.name for workspace in WorkspaceRepository(database).list_all()] == ["Distributed Systems"]
     assert (tmp_path / "vault" / "projects" / "Distributed Systems" / "distributed-systems.md").is_file()
+
+
+def test_telegram_organization_can_replace_a_move_with_an_accepted_inbox_outcome(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "cs3210-notes.md"; source_path.write_text("notes", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 5, now, now, now))
+    workspaces = WorkspaceRepository(database); workspaces.create("CS3210")
+    proposals = OrganizationProposalRepository(database); threads = OrganizationApprovalThreadRepository(database)
+    activity = ActivityService(database)
+    approval = OrganizationApprovalService(
+        proposals, sources, FileMutationService(sources, activity), activity, workspaces
+    )
+    application = StewardOrganizationApprovalApplication(
+        proposals, workspaces, threads, activity,
+        build_organization_approval_graph(proposals, checkpointer=InMemorySaver(), review_proposal=approval.review),
+        source_repository=sources,
+    )
+
+    initial = application.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+
+    assert isinstance(initial, PresentedReply)
+    assert "Suggested destination" in initial.text
+    revised = application.handle_decision(make_event(text="/organization_keep_inbox 1"))
+    assert isinstance(revised, PresentedReply)
+    assert "leave the original in Inbox" in revised.text
+    assert proposals.get(1).status == "rejected"
+    assert proposals.get(2).proposal_type == "keep_in_inbox"
+    assert source_path.is_file()
+
+    assert application.handle_decision(make_event(text="/organization_accept 2")) == "Proposal 2 accepted."
+    assert source_path.is_file()
+    assert proposals.get(2).status == "accepted"
 
 
 def test_context_revised_organization_proposal_survives_a_restart(tmp_path: Path) -> None:
