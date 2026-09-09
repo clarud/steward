@@ -743,7 +743,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent; direct Calendar reads | Calendar tools in the model agent and broader provider-failure evaluations |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion and natural task phrasing; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Reminder scheduling and richer deadline/time-zone review |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review, explicit curated-note proposal, ephemeral research cards with retain-to-Inbox | Conversation summarization, external-source retention beyond a labeled note, conflict-review UX |
-| 7. Multi-root and reliability | In progress | Locally authorized roots, root health, delivery history/dead-letter diagnostics | Scanner root enforcement/exclusions, watches, backup/recovery and fault injection |
+| 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, and write-once local SQLite snapshots | Recovery rehearsal, start-at-login/log rotation, and fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, privacy controls, delivery inspection and status | Local OAuth status, confirmed maintenance flows |
 | 9. Daily-use hardening | Not started | Unit/integration coverage has grown with each slice | Real-vault/Telegram checklist, metrics, restart/outage evaluation and sustained trial |
 

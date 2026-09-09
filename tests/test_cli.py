@@ -25,6 +25,22 @@ def test_cli_without_a_command_shows_help(capsys) -> None:
     assert "usage: steward" in capsys.readouterr().out
 
 
+def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    initialize_database(data_dir / "steward.db")
+    initialize_database(data_dir / "checkpoints.db")
+    destination = tmp_path / "backup"
+
+    main(["backup", "--destination", str(destination)])
+
+    output = capsys.readouterr().out
+    assert "Backed up local Steward databases:" in output
+    assert (destination / "steward.db").is_file()
+    assert (destination / "checkpoints.db").is_file()
+    main(["backup", "--destination", str(destination)])
+    assert "already exists" in capsys.readouterr().out
+
+
 def test_cli_scan_registers_markdown_sources(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

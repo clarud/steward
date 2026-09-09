@@ -57,7 +57,7 @@ from steward.graphs import (
 from steward.logging import configure_logging
 from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
-from steward.storage import initialize_database
+from steward.storage import initialize_database, snapshot_database
 from steward.retrieval import (
     HybridRetriever,
     LexicalSearchService,
@@ -230,6 +230,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Download Steward's local embedding model for semantic search",
     )
     subcommands.add_parser("sources", help="List registered sources")
+    backup_parser = subcommands.add_parser(
+        "backup", help="Create consistent local snapshots of Steward's SQLite databases"
+    )
+    backup_parser.add_argument(
+        "--destination", type=Path,
+        help="New directory for snapshots (defaults to DATA_DIR/backups/<timestamp>)",
+    )
     root_add = subcommands.add_parser("add-root", help="Locally authorize an existing directory as a source root")
     root_add.add_argument("name")
     root_add.add_argument("path", type=Path)
@@ -700,6 +707,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     settings = Settings.from_environment()
     configure_logging(settings)
+
+    if arguments.command == "backup":
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        destination = arguments.destination or settings.data_dir / "backups" / timestamp
+        if destination.exists():
+            print(f"Backup destination already exists: {destination.resolve()}")
+            return
+        database_paths = (settings.data_dir / "steward.db", settings.data_dir / "checkpoints.db")
+        available = tuple(path for path in database_paths if path.is_file())
+        if not available:
+            print("No Steward databases exist yet; there is nothing to back up.")
+            return
+        try:
+            snapshots = tuple(snapshot_database(path, destination / path.name) for path in available)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f"Backup failed: {error}")
+            return
+        print("Backed up local Steward databases:\n" + "\n".join(str(path) for path in snapshots))
+        return
 
     if arguments.command == "scan":
         database_path = settings.data_dir / "steward.db"

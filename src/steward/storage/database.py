@@ -420,3 +420,30 @@ def initialize_database(database_path: Path) -> None:
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (version, datetime.now(UTC).isoformat()),
             )
+
+
+def snapshot_database(source_path: Path, destination_path: Path) -> Path:
+    """Create a consistent SQLite copy without overwriting an existing backup.
+
+    SQLite's backup API works while the application has the source database
+    open, unlike a filesystem copy which can miss WAL-backed changes. The
+    destination is deliberately write-once: restore is a separate, explicit
+    local operation rather than an implicit replacement of active state.
+    """
+    source = source_path.resolve()
+    destination = destination_path.resolve()
+    if not source.is_file():
+        raise ValueError(f"Database to snapshot was not found: {source}")
+    if source == destination:
+        raise ValueError("Database snapshot destination must differ from its source.")
+    if destination.exists():
+        raise ValueError(f"Database snapshot already exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sqlite3.connect(source) as source_connection, sqlite3.connect(destination) as destination_connection:
+            source_connection.backup(destination_connection)
+    except sqlite3.Error:
+        if destination.exists():
+            destination.unlink()
+        raise
+    return destination

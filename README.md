@@ -59,6 +59,23 @@ steward scan path\to\your\vault
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
 
+## Back up local Steward state
+
+Sources in your authorized roots are canonical and must be backed up by your
+normal file-backup system. Steward's operational databases are separate. Create
+consistent SQLite snapshots locally with:
+
+```powershell
+steward backup
+# Or choose a new, empty destination directory:
+steward backup --destination D:\Steward-backups\2026-09-10
+```
+
+The command never overwrites an existing destination and snapshots both
+`steward.db` and `checkpoints.db` when present. Restoring a snapshot is a
+deliberate local maintenance operation: stop Steward first, preserve the
+current `.steward/` directory, then replace only the intended database files.
+
 ## Search a vault
 
 Lexical search needs only the scan:

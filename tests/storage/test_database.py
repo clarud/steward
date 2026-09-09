@@ -1,7 +1,9 @@
 import sqlite3
 from pathlib import Path
 
-from steward.storage import INITIAL_SCHEMA_VERSION, initialize_database
+import pytest
+
+from steward.storage import INITIAL_SCHEMA_VERSION, initialize_database, snapshot_database
 from steward.storage.database import (
     FRAGMENTS_SCHEMA_VERSION,
     LEXICAL_SEARCH_SCHEMA_VERSION,
@@ -119,3 +121,16 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
         ).fetchone()[0]
 
     assert migration_count == 37
+
+
+def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:
+    source = tmp_path / "steward.db"; initialize_database(source)
+    with sqlite3.connect(source) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)", ("source_captured", "1", "test", "2026-09-10T00:00:00+00:00"))
+
+    snapshot = snapshot_database(source, tmp_path / "backups" / "steward.db")
+
+    with sqlite3.connect(snapshot) as connection:
+        assert connection.execute("SELECT details FROM activity_events").fetchone() == ("test",)
+    with pytest.raises(ValueError, match="already exists"):
+        snapshot_database(source, snapshot)
