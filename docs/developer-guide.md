@@ -1013,6 +1013,14 @@ external agent-observability platform.
 
 ## Evaluation framework
 
+`steward evaluate-retrieval VAULT CASES.yaml` promotes the lexical evaluation
+fixture into a local acceptance tool. A case is a user-written query plus an
+expected source path (relative to that vault) and heading. It reports Recall@5,
+mean reciprocal rank, and every miss rather than hiding failures behind a
+single aggregate. It reads the existing SQLite index and never sends vault text
+to a model or changes canonical sources. Personal course cases should stay
+outside the repository unless the author explicitly wants to publish them.
+
 Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
 `retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
 fixture. `product_cases.yaml` adds reviewable cases for organization (including

@@ -62,6 +62,7 @@ from steward.records import RecordService
 from steward.calendar import CalendarService, CalendarWriteService, GOOGLE_CALENDAR_EVENTS_SCOPE, authorize_google_calendar
 from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
 from steward.gmail import GmailService, authorize_gmail
+from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
 from steward.research import (
     GeminiGoogleSearchProvider,
     ResearchProviderError,
@@ -158,6 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
         "index", help="Scan supported source files and build their local semantic index"
     )
     index_parser.add_argument("root", type=Path, help="Directory containing supported source files")
+    evaluation_parser = subcommands.add_parser(
+        "evaluate-retrieval", help="Measure lexical retrieval against human-authored expected results"
+    )
+    evaluation_parser.add_argument("root", type=Path, help="The already indexed vault root")
+    evaluation_parser.add_argument("cases", type=Path, help="YAML cases with query and expected source/heading")
     subcommands.add_parser(
         "download-embedding-model",
         help="Download Steward's local embedding model for semantic search",
@@ -481,6 +487,37 @@ def main(argv: Sequence[str] | None = None) -> None:
     if arguments.command == "download-embedding-model":
         SentenceTransformerEmbeddingProvider(allow_download=True)
         print("Embedding model downloaded and ready for offline use.")
+        return
+
+    if arguments.command == "evaluate-retrieval":
+        if not arguments.root.is_dir():
+            print(f"Vault root does not exist or is not a directory: {arguments.root}")
+            return
+        if not arguments.cases.is_file():
+            print(f"Retrieval case file does not exist: {arguments.cases}")
+            return
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            evaluation = evaluate_lexical_retrieval(
+                LexicalSearchService(
+                    SourceRepository(database_path), SourceFragmentRepository(database_path)
+                ),
+                load_retrieval_cases(arguments.cases),
+                arguments.root,
+            )
+        except ValueError as error:
+            print(f"Invalid retrieval evaluation: {error}")
+            return
+        print(
+            f"Cases: {evaluation.case_count}\n"
+            f"Recall@5: {evaluation.recall_at_5:.1%}\n"
+            f"MRR: {evaluation.mean_reciprocal_rank:.3f}"
+        )
+        if evaluation.misses:
+            print("Misses:")
+            for miss in evaluation.misses:
+                print(f"- {miss.query} -> {miss.expected_source} [{miss.expected_heading}]")
         return
 
     if arguments.command == "sources":

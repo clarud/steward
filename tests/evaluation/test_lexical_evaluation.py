@@ -5,7 +5,7 @@ from steward.retrieval import LexicalSearchService
 from steward.sources import SourceRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
-from tests.evaluation.lexical_evaluator import (
+from steward.evaluation import (
     evaluate_lexical_retrieval,
     load_retrieval_cases,
 )

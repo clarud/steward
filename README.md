@@ -270,6 +270,24 @@ any extraction work. Press `Ctrl+C` to stop the foreground watcher.
 steward watch path\to\your\vault
 ```
 
+## Evaluate retrieval against your own vault
+
+Keep a small YAML file outside Git for personal expected results, then measure
+lexical Recall@5 and MRR after indexing. Expected source paths are relative to
+the vault root, so the same case file stays portable across machines.
+
+```yaml
+cases:
+  - query: "why do packets wait in a network"
+    expected:
+      source: "cs4226 learning notes.md"
+      heading: "02 - Network Queueing Models"
+```
+
+```powershell
+steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml
+```
+
 ## Set source privacy before model use
 
 ```powershell

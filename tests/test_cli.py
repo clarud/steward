@@ -93,6 +93,23 @@ def test_cli_search_filters_results_by_source_type(tmp_path: Path, monkeypatch, 
     assert str(markdown.resolve()) not in output
 
 
+def test_cli_evaluates_retrieval_cases_against_an_indexed_vault(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    (vault / "network.md").write_text("# Queueing\nPackets wait in queues.", encoding="utf-8")
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "cases:\n  - query: queueing\n    expected:\n      source: network.md\n      heading: Queueing\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+    main(["scan", str(vault)])
+    capsys.readouterr()
+
+    main(["evaluate-retrieval", str(vault), str(cases)])
+
+    assert capsys.readouterr().out == "Cases: 1\nRecall@5: 100.0%\nMRR: 1.000\n"
+
+
 def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
     monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
