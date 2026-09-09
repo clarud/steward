@@ -1520,7 +1520,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                     capture_service,
                     activity,
                     privacy,
-                )
+                ),
+                contexts=review_contexts,
             ),
             tool_agent_application=tool_agent_application,
             review_inbox_application=StewardReviewInboxApplication(

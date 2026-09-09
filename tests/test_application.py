@@ -50,6 +50,7 @@ from steward.workspaces import WorkspaceRepository, WorkspaceService
 from steward.retrieval import HybridSearchHit, LexicalSearchService, SemanticSearchHit
 from steward.presentation import PresentedReply
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.reviews import ReviewContextRepository
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
@@ -1591,6 +1592,43 @@ def test_provisional_intake_context_command_updates_without_saving(tmp_path: Pat
 
     assert isinstance(updated, PresentedReply)
     assert "CS3210 assignment" in updated.text
+    assert sources.list_all() == []
+
+
+def test_provisional_intake_collects_context_from_an_ordinary_followup(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    provisional = StewardProvisionalIntakeApplication(
+        ProvisionalIntakeService(
+            tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+            capture_service, activity, PrivacyService(database_path),
+        ),
+        contexts=ReviewContextRepository(database_path),
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+        provisional_intake_application=provisional,
+    )
+    original = tmp_path / "notes.pdf"
+    original.write_bytes(b"pdf")
+    upload = IncomingEvent(
+        "telegram:attachment", "telegram", "100", "12", None,
+        datetime(2026, 9, 9, tzinfo=UTC), None, ("notes.pdf",),
+    )
+    card = application.handle_file(upload, original)
+
+    prompt = application.handle(make_event(text="/intake_context 1"))
+    revised = application.handle(make_event(text="This is for my CS3210 OpenMP assignment."))
+
+    assert isinstance(card, PresentedReply)
+    assert "Provisional intake" not in card.text
+    assert isinstance(prompt, PresentedReply)
+    assert prompt.title == "Add context"
+    assert isinstance(revised, PresentedReply)
+    assert "CS3210 OpenMP assignment" in revised.text
     assert sources.list_all() == []
 
 

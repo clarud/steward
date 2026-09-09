@@ -1590,8 +1590,14 @@ class StewardCaptureApplication:
 class StewardProvisionalIntakeApplication:
     """Present staged attachment intake as a reviewable save-or-discard choice."""
 
-    def __init__(self, service: ProvisionalIntakeService) -> None:
+    def __init__(
+        self,
+        service: ProvisionalIntakeService,
+        *,
+        contexts: ReviewContextRepository | None = None,
+    ) -> None:
         self._service = service
+        self._contexts = contexts
 
     def begin_file(self, event: IncomingEvent, original_path: Path) -> PresentedReply:
         intake = self._service.stage_file(event, original_path)
@@ -1599,21 +1605,11 @@ class StewardProvisionalIntakeApplication:
             return PresentedReply("This attachment was already saved.")
         if intake.status == "discarded":
             return PresentedReply("This attachment was previously discarded. Send it again to reconsider it.")
-        return PresentedReply(
-            f"Provisional intake {intake.id}: {intake.summary}\n\n"
-            "It is staged locally and has not been added to your Inbox.\n"
-            "Analysis boundary: no model (default).",
-            self._actions(intake),
-        )
+        return self._review_card(intake)
 
     def begin_text(self, event: IncomingEvent) -> PresentedReply:
         intake = self._service.stage_text(event)
-        return PresentedReply(
-            f"Provisional intake {intake.id}: {intake.summary}\n\n"
-            "It is staged locally and has not been added to your Inbox.\n"
-            "Analysis boundary: no model (default).",
-            self._actions(intake),
-        )
+        return self._review_card(intake)
 
     @staticmethod
     def should_propose_text(event: IncomingEvent) -> bool:
@@ -1639,15 +1635,16 @@ class StewardProvisionalIntakeApplication:
                 return self._service.accept(intake_id, event)
             if command == "/intake_context":
                 if not context_separator:
-                    return (
-                        "Use /intake_context followed by the intake ID and what it relates to. "
-                        "For example: /intake_context 4 CS3210 OpenMP assignment"
+                    if self._contexts is not None:
+                        self._contexts.set(event.platform, event.chat_id, "intake_context", intake_id)
+                    return PresentedReply(
+                        "Tell me what this relates to, such as a course, project, or purpose. "
+                        "I will update this pending review; nothing will be saved yet.",
+                        title="Add context",
+                        icon="💬",
                     )
                 intake = self._service.add_context(intake_id, event.chat_id, context)
-                return PresentedReply(
-                    f"Updated provisional intake {intake.id}: {intake.summary}",
-                    self._actions(intake),
-                )
+                return self._review_card(intake)
             if command == "/intake_analysis":
                 if not context_separator:
                     return "Use /intake_analysis followed by an intake ID and external, local, or none."
@@ -1661,16 +1658,49 @@ class StewardProvisionalIntakeApplication:
                     IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
                     IntakeAnalysisMode.NONE: "No model may analyze this item after you save it.",
                 }[mode]
-                return PresentedReply(
-                    f"Analysis boundary for provisional intake {intake.id}: {mode.value}. {description}",
-                    self._actions(intake),
-                )
+                return self._review_card(intake, analysis_description=description)
             intake = self._service.discard(intake_id, event.chat_id)
         except OSError:
             return "Could not update this provisional intake because local staging is temporarily unavailable. Try again later."
         except ValueError as error:
             return str(error)
         return f"Discarded provisional intake {intake.id}; its staged copy was removed."
+
+    def handle_followup(self, event: IncomingEvent) -> PresentedReply | str | None:
+        """Attach the next ordinary message to an explicitly requested intake context."""
+
+        if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "intake_context":
+            return None
+        try:
+            intake = self._service.add_context(context.identifier, event.chat_id, (event.text or "").strip())
+        except OSError:
+            return "Could not update this pending review because local staging is temporarily unavailable. Try again later."
+        except ValueError as error:
+            return str(error)
+        self._contexts.set(event.platform, event.chat_id, "intake", intake.id or context.identifier)
+        return self._review_card(intake)
+
+    def _review_card(
+        self,
+        intake: ProvisionalIntake,
+        *,
+        analysis_description: str | None = None,
+    ) -> PresentedReply:
+        description = analysis_description or {
+            IntakeAnalysisMode.EXTERNAL: "A configured external model may analyze extracted content after you save it.",
+            IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
+            IntakeAnalysisMode.NONE: "No model will analyze this item after you save it.",
+        }[intake.analysis_mode]
+        return PresentedReply(
+            f"Type: {intake.category}\nSummary: {intake.summary}\n\n"
+            f"{description}\n\nIt is staged locally and has not been saved.",
+            self._actions(intake),
+            title=f"Review {intake.original_name}",
+            icon="📄",
+        )
 
     @staticmethod
     def _actions(intake: ProvisionalIntake) -> tuple[ReplyAction, ...]:
@@ -2837,6 +2867,9 @@ class StewardEventApplication:
                 return self._capture_with_optional_proposal(event, intake_response)
             if intake_response is not None:
                 return intake_response
+            intake_followup = self._provisional_intake_application.handle_followup(event)
+            if intake_followup is not None:
+                return intake_followup
         if self._read_application is not None:
             read_response = self._read_application.handle_command(event)
             if read_response is not None:
