@@ -40,6 +40,7 @@ _PRIMARY_COMMANDS = (
     ("pending", "show pending reviews"),
     ("search", "search your saved material"),
     ("calendar", "show current calendar events"),
+    ("tasks", "show open tasks"),
     ("inbox", "show saved Inbox items"),
     ("workspaces", "show workspaces"),
     ("organize", "review Inbox organization"),
