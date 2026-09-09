@@ -748,7 +748,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | Goal | Current status | What is available now | Important remaining work |
 | --- | --- | --- | --- |
 | 0. Production-source integrity | Complete | Production fixture cleanup, isolated tests, explicit source removal | Keep enforcing root exclusions as roots evolve |
-| 1. Routing foundation | Substantially complete | Commands, deterministic natural-language reads, callbacks, pagination | Broader reply/reference-resolution cases |
+| 1. Routing foundation | Substantially complete | Commands, deterministic natural-language reads, callbacks, pagination, and path-redacted activity presentation | Broader reply/reference-resolution cases |
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded | Explicit external-analysis choice and more extractor-specific review |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, context revision to an existing workspace, and reviewed new-workspace proposals | Edit-target UX |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent; Calendar reads in the agent only when local OAuth is already configured | Broader provider-failure evaluations |

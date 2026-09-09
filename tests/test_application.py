@@ -209,6 +209,33 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     )
 
 
+def test_activity_hides_local_directory_structure_from_telegram(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    inbox = tmp_path / "private" / "vault" / "inbox"
+    inbox.mkdir(parents=True)
+    activity = ActivityService(database_path)
+    activity.record(
+        ActivityType.SOURCE_CAPTURED,
+        object_id="1",
+        details=str(inbox / "private-note.md"),
+    )
+    reads = StewardReadApplication(
+        SourceRepository(database_path),
+        SourceFragmentRepository(database_path),
+        LexicalSearchService(SourceRepository(database_path), SourceFragmentRepository(database_path)),
+        WorkspaceRepository(database_path),
+        activity,
+        inbox,
+    )
+
+    response = reads.activity("")
+
+    assert "private-note.md" in response
+    assert str(tmp_path) not in response
+    assert "local file:" in response
+
+
 def test_status_reports_review_and_delivery_health_without_message_content(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)

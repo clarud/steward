@@ -191,9 +191,30 @@ class StewardReadApplication:
         if not events:
             return "No matching recent activity."
         return "Recent activity:\n" + "\n".join(
-            f"{event.id}: {event.event_type.value} — {event.details or 'no details'}"
+            f"{event.id}: {event.event_type.value} — {self._safe_activity_details(event.details)}"
             for event in events
         )
+
+    @staticmethod
+    def _safe_activity_details(details: str) -> str:
+        """Present file-related audit details without exposing local paths.
+
+        The audit database retains the original value locally so that recovery
+        and operator inspection remain useful. Telegram is an external
+        transport, however, so it receives only the final filename.
+        """
+        if not details:
+            return "no details"
+        looks_like_path = (
+            details.startswith("/")
+            or (len(details) > 2 and details[1] == ":" and details[2] in "\\/")
+            or "/" in details
+            or "\\" in details
+        )
+        if not looks_like_path:
+            return details
+        filename = details.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        return f"local file: {filename or '(name withheld)'}"
 
     def search(self, query: str) -> str:
         if not query:
