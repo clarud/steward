@@ -536,6 +536,20 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert isinstance(natural, PresentedReply)
     assert natural.title == "2 decisions waiting"
 
+    draft = actions.add(StewardCuratedNoteApplication.CREATE_CURATED_NOTE, {
+        "text": "# Reviewed draft\nA specific point.", "origin": "selected reply",
+    })
+    draft_card = reviews.handle_command(make_event(text=f"/review action {draft.id}"))
+    assert "A specific point." in draft_card.text
+    assert "selected reply" in draft_card.text
+    assert actions.get(draft.id).status == "pending"
+    correction = actions.add(StewardRecordApplication.CORRECT_TRAVEL_RECORD, {
+        "record_id": "42", "field": "arrival", "value": "Osaka",
+    })
+    correction_card = reviews.handle_command(make_event(text=f"/review action {correction.id}"))
+    assert "Record: 42" in correction_card.text and "Replacement: Osaka" in correction_card.text
+    assert "not automatically source-evidenced" in correction_card.text
+
 
 def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"

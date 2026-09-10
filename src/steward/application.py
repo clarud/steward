@@ -346,13 +346,23 @@ class StewardReviewInboxApplication:
         if action_type == StewardTaskApplication.CREATE_TASK:
             title = payload.get("title", "task")
             due = payload.get("due_at") or payload.get("due_hint")
-            return f"Save task: {title}", f"This task will be saved." + (f" Due: {due}." if due else "")
+            reminder = payload.get("remind_at")
+            return f"Save task: {title}", (
+                f"Task: {title}\nThis task will be saved."
+                + (f"\nDue: {due}" if due else "")
+                + (f"\nTelegram reminder: {reminder}" if reminder else "\nNo Telegram reminder is scheduled.")
+            )
         if action_type.startswith("create_calendar"):
             return "Create calendar event", "A new event will be added to Google Calendar after approval."
         if action_type.startswith("create_") and "record" in action_type:
             return "Save extracted record", "A record will be created from the reviewed source evidence."
         if action_type.startswith("correct_"):
-            return "Apply record correction", "The reviewed record fields will be corrected from source evidence."
+            return "Apply record correction", (
+                f"Record: {payload.get('record_id', 'unknown')}\n"
+                f"Field: {payload.get('field', 'unknown')}\n"
+                f"Replacement: {payload.get('value', '')}\n\n"
+                "This is your supplied correction; it is not automatically source-evidenced."
+            )
         if action_type == "unregister_source":
             return "Remove source metadata", "Steward will remove local metadata; the original file will remain untouched."
         if action_type == "reextract_source":
@@ -364,7 +374,10 @@ class StewardReviewInboxApplication:
             rule = payload.get("rule", "selected rule")
             return f"Change privacy for source {source_id}", f"Source {source_id} will use {rule} after approval."
         if action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
-            return "Save curated note", "Your reviewed note will be saved to Inbox. You may edit it before approval."
+            return "Save curated note", (
+                "This exact draft will be saved to Inbox. You may edit it before approval.\n\n"
+                f"Origin: {payload.get('origin', 'user supplied')}\n\n{payload.get('text', '')}"
+            )
         return "Review requested action", "Steward needs your approval before making this change."
 
 

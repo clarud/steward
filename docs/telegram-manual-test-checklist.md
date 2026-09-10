@@ -83,6 +83,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Capture, review, and restart
 
+- Reopen a curated-note proposal through `/pending`: its full draft and origin
+  must remain visible before approval. Reopen a record correction and check the
+  record ID, field, and replacement value; it must not claim your correction
+  came from source evidence. Task reviews must retain any scheduled reminder.
+
 - Leave an organization proposal pending, then open a source card. Send `yes`:
   the older organization proposal must remain pending. Reopen its review from
   `/pending` before deciding, or use that proposal's explicit button. Ordinary
