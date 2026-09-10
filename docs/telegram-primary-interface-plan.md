@@ -785,6 +785,10 @@ record/task snapshot, refusing changed values before calling the writer.
 Active source cards now offer a paginated workspace picker leading to the existing
 explicit link review. Selection alone does not create membership or move files;
 already-linked workspaces offer a View action. Live Telegram acceptance remains open.
+Workspace-link review now rechecks the proposal and active objects inside a
+SQLite write transaction. Membership, review status, and audit events commit
+together. An injected audit failure verifies rollback to a pending proposal
+without a link; retry records one link and duplicate approval adds no audit events.
 
 Remaining implementation work includes broader conversational reference
 resolution, representative long-document evaluation, and the broader task, knowledge, administration,

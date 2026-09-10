@@ -1,6 +1,7 @@
 """Explicit workspace context and its source relationships."""
 from __future__ import annotations
 import sqlite3
+import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,49 @@ class WorkspaceRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute("SELECT id,name,status,created_at FROM workspaces ORDER BY name").fetchall()
         return [Workspace(int(row[0]), str(row[1]), str(row[2]), datetime.fromisoformat(str(row[3]))) for row in rows]
+
+    def review_link_proposal(self, proposal_id: int, decision: str) -> tuple[int, int]:
+        """Atomically review a semantic link, including its durable audit events."""
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("Invalid link review decision.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT action_type, payload_json, status FROM action_proposals WHERE id = ?",
+                (proposal_id,),
+            ).fetchone()
+            if row is None or row[0] != "link_source_to_workspace":
+                raise ValueError("Link proposal was not found.")
+            payload = json.loads(row[1])
+            workspace_id, source_id = int(payload["workspace_id"]), int(payload["source_id"])
+            if row[2] == decision:
+                return workspace_id, source_id
+            if row[2] != "pending":
+                raise ValueError(f"Link proposal {proposal_id} was already {row[2]}.")
+            now = datetime.now(UTC).isoformat()
+            if decision == "accepted":
+                workspace = connection.execute("SELECT status FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
+                source = connection.execute("SELECT status FROM sources WHERE id = ?", (source_id,)).fetchone()
+                if workspace != ("active",) or source != ("active",):
+                    raise ValueError("The workspace or source is no longer available; the link was not created.")
+                added = connection.execute(
+                    "INSERT OR IGNORE INTO workspace_sources (workspace_id, source_id) VALUES (?, ?)",
+                    (workspace_id, source_id),
+                ).rowcount
+                if added:
+                    connection.execute(
+                        "INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)",
+                        (ActivityType.SOURCE_LINKED_TO_WORKSPACE.value, str(source_id), f"workspace:{workspace_id}", now),
+                    )
+            connection.execute("UPDATE action_proposals SET status = ?, reviewed_at = ? WHERE id = ?",
+                               (decision, now, proposal_id))
+            connection.execute(
+                "INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)",
+                (ActivityType.ACTION_ACCEPTED.value if decision == "accepted" else ActivityType.ACTION_REJECTED.value,
+                 str(proposal_id), "link_source_to_workspace", now),
+            )
+        return workspace_id, source_id
     def list_source_ids(self, workspace_id: int) -> tuple[int, ...]:
         """Return semantic links without implying ownership or file movement."""
         with sqlite3.connect(self._database_path) as connection:

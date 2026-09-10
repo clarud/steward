@@ -3733,21 +3733,12 @@ class StewardActionProposalApplication:
             return f"Link proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":
             return f"Link proposal {proposal.id} was already {proposal.status}."
+        try:
+            workspace_id, source_id = self._workspaces.review_link_proposal(proposal_id, decision)
+        except ValueError as error:
+            return str(error)
         if decision == "rejected":
-            self._repository.set_status(proposal_id, decision)
-            if self._activity is not None:
-                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return f"Link proposal {proposal.id} rejected."
-        workspace_id = int(proposal.payload["workspace_id"])
-        source_id = int(proposal.payload["source_id"])
-        source = self._sources.get_by_id(source_id)
-        if not any(item.id == workspace_id and item.status == "active" for item in self._workspaces.list_all()) or source is None or source.status.value != "active":
-            return "The workspace or source is no longer available; the link was not created."
-        self._workspaces.link_source(workspace_id, source_id)
-        self._repository.set_status(proposal_id, decision)
-        if self._activity is not None:
-            self._activity.record(ActivityType.SOURCE_LINKED_TO_WORKSPACE, object_id=str(source_id), details=f"workspace:{workspace_id}")
-            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Source {source_id} linked to workspace {workspace_id}. No file moved."
 
     def _review_travel_record(self, proposal_id: int, decision: str) -> str | PresentedReply:

@@ -466,3 +466,9 @@ unchanged. Approve, reopen the picker, and confirm the workspace now reads
 “already linked” with a View action. Repeat approval must not duplicate the link.
 With more than eight workspaces, check Next and Previous and select a workspace
 on the second page. These are live acceptance steps, not yet verified in Telegram.
+
+Automated failure injection also covers an audit insert failing during approval:
+membership and approval must roll back together. Retrying creates one link and
+one approval audit; duplicate approval does not duplicate either. Once reviewed,
+an opposite decision is refused. This is local transaction coverage, not proof
+of Telegram delivery or crash recovery across every workflow.
