@@ -747,6 +747,17 @@ Every implementation goal contributes to this matrix:
 
 ### Acceptance evidence from 11 September 2026
 
+Long-document provider check: a synthetic 66,500-character Cedar document
+was processed in four evidence batches and one combination call using the
+configured gateway and normal environment loading. The successful diagnostic
+run produced batch notes of 156, 207, 210, and 421 characters with permitted
+keys; its 686-character final answer contained the queue, idempotency, and
+manual-review facts and cited F1, F2, and F3. No vault content was used.
+An earlier live attempt failed a `DocumentSynthesisError` check; its failing
+stage was not recorded. Thus one successful run is verified, not consistent
+provider reliability. Failed-batch recovery, representative non-repetitive
+document evaluation, and real Telegram long-document acceptance remain open.
+
 A live smoke test using the configured model gateway and normal `.env` loading
 returned a nonempty summary of a synthetic two-section Cedar-project document.
 It cited both supplied keys (`F1`, `F2`), with no unknown citation keys. No vault
