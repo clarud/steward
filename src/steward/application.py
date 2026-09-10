@@ -135,6 +135,7 @@ class StewardReviewInboxApplication:
                     ReplyAction("Calendar", "/calendar"),
                     ReplyAction("Tasks", "/tasks"),
                     ReplyAction("Workspaces", "/workspaces"),
+                    ReplyAction("Knowledge", "/knowledge"),
                     ReplyAction("Pending", "/pending"),
                 ),
                 title="Steward", icon="🏠",
@@ -1976,10 +1977,28 @@ class StewardKnowledgeApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command == "/knowledge":
-            if not separator or not argument.strip():
-                return "Use /knowledge followed by a concept name or alias."
-            concept = self._knowledge.find(argument.strip())
+        if command == "/concepts" or (command == "/knowledge" and not argument.strip()):
+            if argument and (not argument.strip().isdigit() or int(argument) < 1):
+                return "Use /concepts with an optional positive page number."
+            concepts = self._knowledge.list_concepts()
+            if not concepts:
+                return PresentedReply("No saved concepts yet. Your sources remain searchable; knowledge is built separately from them.", (ReplyAction("Sources", "/sources"),), title="Knowledge", icon="🧠")
+            pages = (len(concepts) + 7) // 8
+            page = min(int(argument) if argument.strip() else 1, pages)
+            visible = concepts[(page - 1) * 8:page * 8]
+            actions = [ReplyAction(f"Open {index}", f"/concept {item.id}") for index, item in enumerate(visible, start=1)]
+            if page > 1:
+                actions.append(ReplyAction("Previous", f"/concepts {page - 1}"))
+            if page < pages:
+                actions.append(ReplyAction("Next", f"/concepts {page + 1}"))
+            return PresentedReply(f"Page {page} of {pages}\n" + "\n".join(f"{index}. {item.name}" for index, item in enumerate(visible, start=1)), tuple(actions), title="Knowledge", icon="🧠")
+        if command in {"/knowledge", "/concept"}:
+            if command == "/concept":
+                if not argument.strip().isdigit():
+                    return "Choose a concept from /knowledge."
+                concept = next((item for item in self._knowledge.list_concepts() if item.id == int(argument)), None)
+            else:
+                concept = self._knowledge.find(argument.strip())
             if concept is None:
                 return f"No canonical concept matches {argument.strip()!r}."
             claims = self._knowledge.list_claims(concept.id or 0)
@@ -1995,6 +2014,7 @@ class StewardKnowledgeApplication:
                 lines.append("Accepted reviews do not establish truth or rewrite claims. Inspect disagreements before relying on a claim.")
             return PresentedReply("\n".join(lines), (
                 ReplyAction("Evidence reviews", f"/knowledge_reviews {concept.id}"),
+                ReplyAction("All concepts", "/knowledge"),
             ), title=concept.name, icon="🧠")
         if command == "/knowledge_reviews":
             parts = argument.split()

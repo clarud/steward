@@ -1581,6 +1581,26 @@ def test_workspace_pages_reach_every_workspace_and_linked_source(tmp_path: Path)
     assert any(action.command == "/sources" for action in empty.actions)
 
 
+def test_knowledge_browser_reaches_all_concepts_without_name_commands(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    knowledge = KnowledgeService(database)
+    app = StewardKnowledgeApplication(knowledge, SourceFragmentRepository(database), KnowledgeEnrichmentProposalRepository(database), ActivityService(database))
+    empty = app.handle_command(make_event(text="/knowledge"))
+    assert "No saved concepts" in empty.text
+    for index in range(10):
+        knowledge.create_concept(f"Concept {index}")
+    first = app.handle_command(make_event(text="/knowledge"))
+    next_command = next(action.command for action in first.actions if action.label == "Next")
+    last = app.handle_command(make_event(text=next_command))
+    assert "Page 2 of 2" in last.text and "Concept 9" in last.text
+    detail = app.handle_command(make_event(text=last.actions[1].command))
+    assert detail.title == "Concept 9"
+    assert any(action.command == "/knowledge" for action in detail.actions)
+    assert "positive page" in app.handle_command(make_event(text="/concepts 0"))
+    assert app.handle_command(make_event(text="/concepts 999")).text == last.text
+
+
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

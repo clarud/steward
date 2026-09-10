@@ -163,6 +163,11 @@ class KnowledgeService:
             connection.execute("PRAGMA foreign_keys = ON")
             cursor=connection.execute("INSERT INTO concepts (name,created_at) VALUES (?,?)",(concept.name,concept.created_at.isoformat()))
         return replace(concept,id=int(cursor.lastrowid))
+
+    def list_concepts(self) -> tuple[Concept, ...]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute("SELECT id, name, created_at FROM concepts ORDER BY name COLLATE NOCASE, id").fetchall()
+        return tuple(Concept(int(row[0]), str(row[1]), datetime.fromisoformat(str(row[2]))) for row in rows)
     def add_alias(self, concept_id: int, alias: str) -> None:
         if not alias.strip(): raise ValueError("Alias must not be empty.")
         with sqlite3.connect(self._database_path) as connection:

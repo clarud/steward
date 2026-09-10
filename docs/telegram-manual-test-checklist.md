@@ -182,6 +182,13 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Knowledge disagreement visibility
 
+- Home → Knowledge opens saved concepts without requiring a remembered name.
+  More than eight concepts use Next/Previous; Open buttons identify concepts
+  by ID, then expose their claims and Evidence reviews. All concepts returns
+  to the browser. An empty knowledge store offers Sources rather than claiming
+  that no source material exists. Automated tests cover pagination and opening
+  a concept on the second page.
+
 - The read-only agent's knowledge results include permitted accepted review
   evidence and caution that acceptance is not proof. Claim text is withheld
   when any supporting fragment is unavailable or its source policy forbids
