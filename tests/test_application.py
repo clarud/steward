@@ -637,6 +637,30 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     contexts.clear("telegram", "100")
     assert "Open a source" in restarted.handle(make_event(text="give me the content"))
 
+    class SummaryModel:
+        def __init__(self):
+            self.inputs = []
+
+        def generate(self, *, instructions, input_text):
+            self.inputs.append(input_text)
+            return "Parallel loops use scheduling. [F1]"
+
+    model = SummaryModel()
+    privacy = PrivacyService(database)
+    reader = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), workspaces,
+        activity, tmp_path / "inbox", contexts=contexts,
+        source_model=model, source_model_allowed=privacy.permits_external_model,
+    )
+    reader.handle_command(make_event(text=f"/source {source.id}"))
+    summary = reader.resolve_source_reference(make_event(text="summarize it"))
+    assert "Generated summary of 2 extracted sections" in summary.text
+    assert "Parallel loops" in model.inputs[0] and "Static scheduling" in model.inputs[0]
+    assert str(tmp_path) not in model.inputs[0]
+    privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
+    assert "privacy rule" in reader.resolve_source_reference(make_event(text="summarize it"))
+    assert len(model.inputs) == 1
+
 
 def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)

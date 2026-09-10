@@ -1518,6 +1518,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
                 runtime_status=telegram_runtime_status,
                 contexts=review_contexts,
+                source_model=model_gateway,
+                source_model_allowed=(privacy.permits_local_model if settings.model_provider == "local" else privacy.permits_external_model),
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(
                 ProvisionalIntakeService(

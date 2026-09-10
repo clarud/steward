@@ -22,6 +22,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Core reads and routing
 
+- Open a harmless source and choose **Summarize**, or send `summarize it`.
+  Check the generated response uses that document and provides fragment
+  locations. A source whose privacy rule denies the configured model must
+  receive a denial before model processing. This test sends the selected
+  source's text to the configured permitted model.
+
 - Send `/home` with and without pending reviews. Verify it offers source,
   Inbox, Calendar, task, workspace, and review navigation. When `/tasks` is
   empty, follow its example to propose a task and verify saving still needs

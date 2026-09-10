@@ -788,6 +788,14 @@ steward telegram
 
 ## Conversation state and checkpoints
 
+Source cards also expose `/summarize_source ID`; `summarize it` resolves the
+selected source from chat context. The configured model receives only that
+source's stored fragments and location labels after the source privacy policy
+permits it. No local path is included. The generated answer includes evidence
+locations and is not saved as knowledge. Inputs over 60,000 characters are
+declined explicitly; whole-document batching and semantic citation verification
+remain limitations. No new model dependency or persistence table is required.
+
 Calendar list/detail cards use `calendar_time_label` for readable dates and
 explicit provider UTC offsets. All-day dates retain date-only semantics and
 their exclusive end is converted to the last included day. No-argument Calendar
