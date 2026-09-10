@@ -640,6 +640,20 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "parallel-computing.md"
 
+    empty_memberships = restarted.handle(make_event(text="Which workspace is this in?"))
+    assert "not linked to any workspace" in empty_memberships.text
+    for index in range(10):
+        workspace = workspaces.create(f"Course {index}")
+        workspaces.link_source(workspace.id, source.id)
+    memberships = restarted.handle(make_event(text="Which workspace is it in?"))
+    assert "Course 0" in memberships.text and "Page 1 of 2" in memberships.text
+    assert "Course 9" not in memberships.text
+    following = next(action.command for action in memberships.actions if action.label == "Next")
+    last_memberships = restarted.handle(make_event(text=following))
+    assert "Course 9" in last_memberships.text
+    assert any(action.command == "/workspace 10" for action in last_memberships.actions)
+    assert "physical location" in last_memberships.text
+
     fragments.replace_for_source(ExtractionResult(source.id, (
         SourceFragment(None, source.id, "OpenMP", 0, "Parallel loops", "page 1"),
         SourceFragment(None, source.id, "Scheduling", 1, "Static scheduling", "page 2"),
@@ -654,6 +668,7 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert "Parallel loops" not in second.text
     assert "between 1 and 2" in restarted.handle(make_event(text=f"/source_content {source.id} 3"))
     contexts.clear("telegram", "100")
+    assert "Open a source" in restarted.handle(make_event(text="Which workspace is this in?"))
     assert "Open a source" in restarted.handle(make_event(text="give me the content"))
 
     class SummaryModel:

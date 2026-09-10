@@ -459,6 +459,13 @@ Stop older Steward versions before starting the upgraded runtime.
 
 ## Guided source-to-workspace linking
 
+After selecting a source, ask “Which workspace is this in?” The reply should
+name that source and list its actual workspace memberships, or explicitly say
+there are none. Check the same follow-up after restart. Use Open to inspect a
+workspace, and Link workspace to start a separately approved link. More than
+eight memberships must be reachable through Next/Previous. No model is needed
+for this lookup, and the response must not claim memberships are physical folders.
+
 Open an active source from `/sources`, tap **Link workspace**, and select a
 workspace. The review must name both the original file and destination workspace
 and say that no file moves. Before approval, workspace membership must remain

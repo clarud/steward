@@ -518,6 +518,14 @@ class StewardReadApplication:
             return self.inbox(self._page(argument))
         if command == "/sources":
             return self.sources(self._page(argument))
+        if command == "/source_memberships":
+            parts = argument.split()
+            if len(parts) not in {1, 2} or not all(part.isdigit() and int(part) > 0 for part in parts):
+                return "Open a source and choose Workspaces, or use /source_memberships SOURCE_ID [PAGE]."
+            response = self.source_memberships(int(parts[0]), int(parts[1]) if len(parts) == 2 else 1)
+            if self._contexts is not None and isinstance(response, PresentedReply):
+                self._contexts.set(event.platform, event.chat_id, "source", int(parts[0]))
+            return response
         if command == "/summarize_source":
             if not argument.isdecimal():
                 return "Open a source and choose Summarize."
@@ -598,6 +606,12 @@ class StewardReadApplication:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
         context = self._contexts.get(event.platform, event.chat_id)
+        if normalized in {"which workspace is this in", "which workspace is it in", "what workspace is this in",
+                          "which workspaces is this in", "show its workspaces", "show workspace links"}:
+            if context is None or context.kind not in {"source", "source_question"}:
+                return "Open a source from /sources first so I know which workspace links you want."
+            self._contexts.set(event.platform, event.chat_id, "source", int(context.identifier))
+            return self.source_memberships(int(context.identifier))
         if normalized in {"send me that pdf", "send that pdf", "send me that file", "send the original", "send original", "download that file"}:
             if context is None or context.kind not in {"source", "source_question"}:
                 return "Open a source from /sources first so I know which original you want."
@@ -763,10 +777,35 @@ class StewardReadApplication:
             f"Extracted sections: {len(fragments)}",
             actions=(ReplyAction("Read content", f"/source_content {source_id}"), ReplyAction("Summarize", f"/summarize_source {source_id}"), ReplyAction("Ask about it", f"/ask_source {source_id}"))
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
-            + ((ReplyAction("Link workspace", f"/source_workspaces {source_id}"),) if source.status.value == "active" else ()),
+            + ((ReplyAction("Workspaces", f"/source_memberships {source_id}"),
+                ReplyAction("Link workspace", f"/source_workspaces {source_id}")) if source.status.value == "active" else ()),
             title=source.path.name,
             icon="📄",
         )
+
+    def source_memberships(self, source_id: int, page: int = 1) -> str | PresentedReply:
+        """Show actual semantic memberships, never infer them from the file path."""
+        source = self._sources.get_by_id(source_id)
+        if source is None or source.status.value != "active":
+            return "That source is unavailable. Choose an active source from /sources."
+        memberships = [workspace for workspace in self._workspaces.list_all()
+                       if source_id in self._workspaces.list_source_ids(workspace.id)]
+        pages = max(1, (len(memberships) + 7) // 8)
+        page = max(1, min(page, pages))
+        visible = memberships[(page - 1) * 8:page * 8]
+        lines = [f"Source: {source.path.name}", "Workspace links describe context, not the file's physical location."]
+        if not memberships:
+            lines.append("This source is not linked to any workspace yet.")
+        else:
+            lines.append(f"Page {page} of {pages}")
+            lines.extend(f"{index}. {workspace.name} · {workspace.status}" for index, workspace in enumerate(visible, 1))
+        actions = [ReplyAction(f"Open {index}", f"/workspace {workspace.id}") for index, workspace in enumerate(visible, 1)]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/source_memberships {source_id} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/source_memberships {source_id} {page + 1}"))
+        actions.extend((ReplyAction("Link workspace", f"/source_workspaces {source_id}"), ReplyAction("Back", f"/source {source_id}")))
+        return PresentedReply("\n\n".join(lines), tuple(actions), title="Source workspaces", icon="📁")
 
     def summarize_source(self, source_id: int, *, question: str | None = None) -> str | PresentedReply:
         """Summarize only the selected registered source after its privacy check."""
