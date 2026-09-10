@@ -44,6 +44,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   duplicate does not create duplicate capture/proposal state.
 - If Telegram visibly retries a review-button callback, verify it does not
   accept/reject the proposal twice or send a second confirmation.
+- Open a pending action through `/pending`, then reply `yes` (or `no`) to its
+  card instead of using its button. Verify only that exact card is accepted
+  (or rejected); a stale card or a card from another chat must not authorize a
+  change.
 
 ## Capture, review, and restart
 

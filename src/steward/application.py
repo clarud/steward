@@ -198,6 +198,63 @@ class StewardReviewInboxApplication:
             return None
         return self.detail(event, context.kind, context.identifier)
 
+    def contextual_confirmation_command(self, event: IncomingEvent) -> str | None:
+        """Translate an unambiguous confirmation of the displayed review card.
+
+        Telegram buttons remain the clearest approval mechanism, but users
+        naturally answer a card with ``yes`` or ``no``.  The durable context
+        identifies the exact, chat-scoped card that was shown; this method
+        merely turns that explicit response into the same validated command a
+        button would issue.  It never infers a target from a general question
+        and it refuses stale or cross-chat intake decisions.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!.").strip()
+        decision = {
+            "yes": "accepted",
+            "y": "accepted",
+            "accept": "accepted",
+            "approve": "accepted",
+            "okay": "accepted",
+            "ok": "accepted",
+            "no": "rejected",
+            "n": "rejected",
+            "reject": "rejected",
+            "decline": "rejected",
+            "discard": "rejected",
+        }.get(normalized)
+        if decision is None:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None:
+            return None
+
+        if context.kind == "action":
+            proposal = self._actions.get(context.identifier)
+            if proposal is not None and proposal.status == "pending":
+                command = "/approve_action" if decision == "accepted" else "/reject_action"
+                return f"{command} {context.identifier}"
+        elif context.kind == "intake" and self._intakes is not None:
+            intake = self._intakes.get(context.identifier)
+            if (
+                intake is not None
+                and intake.status == "pending"
+                and intake.platform == event.platform
+                and intake.chat_id == event.chat_id
+            ):
+                command = "/intake_accept" if decision == "accepted" else "/intake_discard"
+                return f"{command} {context.identifier}"
+        elif context.kind == "knowledge" and self._knowledge is not None:
+            proposal = self._knowledge.get(context.identifier)
+            if proposal is not None and proposal.status == "pending":
+                return f"/review_enrichment {context.identifier} {decision}"
+        # Organization confirmations are intentionally handled by its
+        # LangGraph approval thread, which verifies the chat's active thread
+        # before it resumes a file-moving workflow.
+        return None
+
     def handle_natural_request(self, event: IncomingEvent) -> PresentedReply | None:
         """Keep common review-list requests out of the general retrieval agent."""
 
@@ -3302,6 +3359,9 @@ class StewardEventApplication:
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
         if self._review_inbox_application is not None:
+            confirmation_command = self._review_inbox_application.contextual_confirmation_command(event)
+            if confirmation_command is not None:
+                event = replace(event, text=confirmation_command)
             review_response = self._review_inbox_application.handle_command(event)
             if review_response is not None:
                 return review_response

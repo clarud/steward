@@ -562,6 +562,12 @@ explicit operations:
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
+- `/home` and `/pending` unify outstanding actions, organization choices,
+  staged intake, and knowledge updates into identifiable review cards. After
+  opening one card, an unambiguous `yes`/`accept` or `no`/`reject` reply is
+  resolved through its durable, chat-scoped review reference and invokes the
+  same validated approval command as the card button. A stale card, or an
+  intake from another chat, cannot be confirmed this way.
 - A Telegram task may additionally use `--remind-at` with an explicit
   offset-aware ISO timestamp. Approval creates a separate durable reminder
   addressed only to the originating chat. The polling process claims due

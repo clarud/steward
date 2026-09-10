@@ -537,6 +537,65 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert natural.title == "2 decisions waiting"
 
 
+def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tmp_path: Path) -> None:
+    """A plain-language reply uses the durable card context, never an inferred ID."""
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    sources = SourceRepository(database)
+    actions = ActionProposalRepository(database)
+    proposal = actions.add(ActionProposalService.CREATE_WORKSPACE, {"name": "CS3210 Revision"})
+    organizations = OrganizationProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    activity = ActivityService(database)
+    workspaces = WorkspaceRepository(database)
+    reviews = StewardReviewInboxApplication(
+        actions, organizations, sources, contexts=contexts
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        review_inbox_application=reviews,
+        action_proposal_application=StewardActionProposalApplication(
+            actions,
+            ActionProposalService(actions, workspaces, activity),
+            activity_service=activity,
+            workspace_repository=workspaces,
+            source_repository=sources,
+        ),
+    )
+
+    card = application.handle(make_event(text=f"/review action {proposal.id}"))
+
+    assert isinstance(card, PresentedReply)
+    assert card.title == "Create workspace CS3210 Revision"
+    accepted = application.handle(make_event(text="yes"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Workspace created"
+    assert actions.get(proposal.id or 0).status == "accepted"
+    assert [workspace.name for workspace in workspaces.list_all()] == ["CS3210 Revision"]
+
+
+def test_active_review_does_not_confirm_a_stale_action(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    actions = ActionProposalRepository(database)
+    proposal = actions.add(ActionProposalService.CREATE_WORKSPACE, {"name": "Stale"})
+    actions.set_status(proposal.id or 0, "rejected")
+    contexts = ReviewContextRepository(database)
+    reviews = StewardReviewInboxApplication(
+        actions,
+        OrganizationProposalRepository(database),
+        SourceRepository(database),
+        contexts=contexts,
+    )
+    event = make_event(text="yes")
+    contexts.set(event.platform, event.chat_id, "action", proposal.id or 0)
+
+    assert reviews.contextual_confirmation_command(event) is None
+    assert actions.get(proposal.id or 0).status == "rejected"
+
+
 def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:
     class LoopingToolGraph:
         def invoke(self, input, config):
