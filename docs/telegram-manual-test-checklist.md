@@ -145,6 +145,13 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Original document delivery
 
+- After selecting a source, say “send me that PDF” or “send the original”.
+  Steward should show the selected filename and ask for a Send original click,
+  explicitly noting the Telegram transfer. No attachment is sent merely by
+  opening this confirmation. This reference survives restart and is scoped
+  to the originating chat; without a selected source Steward must not guess.
+  It takes precedence over the selected-source question prompt.
+
 - Open a source card and choose Send original. The original bytes should arrive
   as a Telegram document with only its filename, not a local path. This is an
   explicit external transfer through Telegram, not an LLM request. Reads of

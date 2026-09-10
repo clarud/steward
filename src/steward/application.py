@@ -596,6 +596,21 @@ class StewardReadApplication:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
         context = self._contexts.get(event.platform, event.chat_id)
+        if normalized in {"send me that pdf", "send that pdf", "send me that file", "send the original", "send original", "download that file"}:
+            if context is None or context.kind not in {"source", "source_question"}:
+                return "Open a source from /sources first so I know which original you want."
+            source = self._sources.get_by_id(int(context.identifier))
+            if source is None or source.status.value != "active":
+                self._contexts.clear(event.platform, event.chat_id)
+                return "That original is no longer available. Open another source to continue."
+            if self._source_export is None:
+                return "Original-file delivery is not configured on this process."
+            self._contexts.set(event.platform, event.chat_id, "source", int(context.identifier))
+            return PresentedReply(
+                f"Send {source.path.name} as an original attachment? This transfers the file through Telegram, not to an LLM.",
+                (ReplyAction("Send original", f"/send_source {source.id}"), ReplyAction("Cancel", f"/source {source.id}")),
+                title="Send selected original", icon="📎",
+            )
         if context is not None and context.kind == "source_question" and normalized and not normalized.startswith("/"):
             self._contexts.set(event.platform, event.chat_id, "source", int(context.identifier))
             return self.summarize_source(int(context.identifier), question=(event.text or "").strip())
