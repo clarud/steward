@@ -84,6 +84,22 @@ class RecordService:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
 
+    @staticmethod
+    def _validate_review_snapshot(connection: sqlite3.Connection, proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal, expected_snapshot: str | None) -> None:
+        """Validate against current evidence while holding the record write lock."""
+        if expected_snapshot is None:
+            return
+        connection.execute("BEGIN IMMEDIATE")
+        source = connection.execute("SELECT status FROM sources WHERE id = ?", (proposal.record.source_id,)).fetchone()
+        if source is None or source[0] != "active":
+            raise ValueError("The record source is no longer active. Request a new preview after restoring it.")
+        fragments = connection.execute(
+            "SELECT id, text FROM source_fragments WHERE source_id = ? ORDER BY ordinal",
+            (proposal.record.source_id,),
+        ).fetchall()
+        if record_review_snapshot(proposal, fragments) != expected_snapshot:
+            raise ValueError("This record preview is stale. Request a new record proposal before approving.")
+
     def create_travel_record(self, record: TravelRecord) -> TravelRecord:
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
@@ -258,12 +274,13 @@ class RecordService:
                 purchased_at = value; evidence["purchased_at"] = fragment_id
         return ReceiptRecordProposal(ReceiptRecord(None, source_id, merchant, total_cents, currency, purchased_at, receipt_number), evidence)
 
-    def create_receipt_from_proposal(self, proposal: ReceiptRecordProposal) -> ReceiptRecord:
+    def create_receipt_from_proposal(self, proposal: ReceiptRecordProposal, *, expected_snapshot: str | None = None) -> ReceiptRecord:
         if not proposal.field_evidence:
             raise ValueError("Cannot create a receipt record without extracted, evidenced fields")
         record = proposal.record
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            self._validate_review_snapshot(connection, proposal, expected_snapshot)
             cursor = connection.execute("INSERT INTO receipt_records (source_id, merchant, total_cents, currency, purchased_at, receipt_number) VALUES (?, ?, ?, ?, ?, ?)", (record.source_id, record.merchant, record.total_cents, record.currency, record.purchased_at.isoformat() if record.purchased_at else None, record.receipt_number))
             record_id = int(cursor.lastrowid)
             connection.executemany("INSERT INTO receipt_record_evidence (receipt_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
@@ -289,12 +306,13 @@ class RecordService:
                 coverage_ends_at = value; evidence["coverage_ends_at"] = fragment_id
         return WarrantyRecordProposal(WarrantyRecord(None, source_id, product, provider, warranty_number, coverage_ends_at), evidence)
 
-    def create_warranty_from_proposal(self, proposal: WarrantyRecordProposal) -> WarrantyRecord:
+    def create_warranty_from_proposal(self, proposal: WarrantyRecordProposal, *, expected_snapshot: str | None = None) -> WarrantyRecord:
         if not proposal.field_evidence:
             raise ValueError("Cannot create a warranty record without extracted, evidenced fields")
         record = proposal.record
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            self._validate_review_snapshot(connection, proposal, expected_snapshot)
             cursor = connection.execute("INSERT INTO warranty_records (source_id, product_name, provider, warranty_number, coverage_ends_at) VALUES (?, ?, ?, ?, ?)", (record.source_id, record.product_name, record.provider, record.warranty_number, record.coverage_ends_at.isoformat() if record.coverage_ends_at else None))
             record_id = int(cursor.lastrowid)
             connection.executemany("INSERT INTO warranty_record_evidence (warranty_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
@@ -305,7 +323,7 @@ class RecordService:
             rows = connection.execute("SELECT id, source_id, product_name, provider, warranty_number, coverage_ends_at FROM warranty_records ORDER BY id").fetchall()
         return [WarrantyRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, str(row[3]) if row[3] else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None) for row in rows]
 
-    def create_from_proposal(self, proposal: TravelRecordProposal) -> TravelRecord:
+    def create_from_proposal(self, proposal: TravelRecordProposal, *, expected_snapshot: str | None = None) -> TravelRecord:
         """Persist an explicitly accepted proposal and its field-level evidence.
 
         Proposing is intentionally read-only. This separate method is the
@@ -316,6 +334,7 @@ class RecordService:
 
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            self._validate_review_snapshot(connection, proposal, expected_snapshot)
             cursor = connection.execute(
                 "INSERT INTO travel_records "
                 "(source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference) "

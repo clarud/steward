@@ -2,11 +2,48 @@ from datetime import UTC, datetime
 from pathlib import Path
 import sqlite3
 import pytest
-from steward.records import RecordService, TravelRecord
+from steward.records import RecordService, TravelRecord, record_review_snapshot
 from steward.records import ReceiptRecord, ReceiptRecordProposal, WarrantyRecord, WarrantyRecordProposal
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
+
+@pytest.mark.parametrize("kind,text", [
+    ("travel", "Flight SQ638"),
+    ("receipt", "Merchant: Cafe"),
+    ("warranty", "Product: Laptop"),
+])
+def test_snapshot_validation_holds_write_lock_through_record_insert(tmp_path: Path, kind: str, text: str) -> None:
+    database = tmp_path / "db.sqlite"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "source.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    stored = fragments.replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, text, "line 1"),
+    )))
+    parts = [(part.id, part.text) for part in stored]
+
+    class ContendedRecords(RecordService):
+        @staticmethod
+        def _validate_review_snapshot(connection, proposal, expected_snapshot):
+            RecordService._validate_review_snapshot(connection, proposal, expected_snapshot)
+            with sqlite3.connect(database, timeout=0) as competing:
+                with pytest.raises(sqlite3.OperationalError, match="locked"):
+                    competing.execute("UPDATE source_fragments SET text = 'changed'")
+
+    service = ContendedRecords(database)
+    proposal = getattr(service, f"propose_{kind}_record")(source.id, parts)
+    snapshot = record_review_snapshot(proposal, parts)
+    create = service.create_from_proposal if kind == "travel" else getattr(service, f"create_{kind}_from_proposal")
+    record = create(proposal, expected_snapshot=snapshot)
+    assert record.id is not None
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE source_fragments SET text = 'changed'")
+    with pytest.raises(ValueError, match="stale"):
+        create(proposal, expected_snapshot=snapshot)
+    assert len(getattr(service, f"list_{kind}_records")()) == 1
+
 
 def test_travel_record_keeps_its_source_reference(tmp_path: Path) -> None:
     database=tmp_path / "db.sqlite"; initialize_database(database); time=datetime(2026,9,8,tzinfo=UTC)

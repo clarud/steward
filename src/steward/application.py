@@ -3568,7 +3568,7 @@ class StewardActionProposalApplication:
             if proposal.payload.get("snapshot") != record_review_snapshot(record_proposal, [(part.id or 0, part.text) for part in fragments]):
                 return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
             try:
-                record = self._records.create_from_proposal(record_proposal)
+                record = self._records.create_from_proposal(record_proposal, expected_snapshot=proposal.payload["snapshot"])
             except ValueError as error:
                 return str(error)
             self._repository.set_status(proposal_id, decision)
@@ -3657,8 +3657,8 @@ class StewardActionProposalApplication:
             return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
         try:
             record = (
-                self._records.create_receipt_from_proposal(extracted)
-                if label == "receipt" else self._records.create_warranty_from_proposal(extracted)
+                self._records.create_receipt_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"])
+                if label == "receipt" else self._records.create_warranty_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"])
             )
         except ValueError as error:
             return str(error)

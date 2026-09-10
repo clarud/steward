@@ -153,8 +153,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   review the current values. Test this by re-extracting changed content after
   opening a preview, then pressing its old Accept button. No record should be
   created. Travel, receipt, and warranty paths have automated regression coverage.
-  Validation and record persistence are not yet one atomic transaction with
-  concurrent extraction, so that narrower race remains to be closed.
+  Snapshot validation and record persistence share a SQLite write transaction;
+  automated two-connection tests verify concurrent evidence writes are blocked.
+  The source must still be active. Record persistence and marking the action
+  accepted remain separate commits, so crash-safe approval idempotency still
+  needs follow-up coverage and implementation.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.
