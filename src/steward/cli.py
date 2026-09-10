@@ -1581,7 +1581,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ActionProposalRepository(database_path),
                 activity,
             ),
-            calendar_application=StewardCalendarApplication(_calendar_reader_factory(settings)),
+            calendar_application=StewardCalendarApplication(
+                _calendar_reader_factory(settings), contexts=review_contexts
+            ),
         )
         run_telegram_polling(
             token,

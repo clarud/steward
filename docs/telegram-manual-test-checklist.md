@@ -38,6 +38,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Open a Travel Record with `/record travel ID`, restart the bot, then send
   `show that flight`. Verify it reopens that exact flight card; do the
   equivalent for a receipt or warranty only after opening a card of that type.
+- Search Calendar, open one event card, restart the bot, then send `show that
+  event`. Verify Steward fetches and shows that same current Calendar event
+  again. If it was deleted or Calendar becomes unavailable, it must clear the
+  stale reference and direct you to search Calendar again rather than showing
+  old event details.
 - Send `/tasks`, open one task with its compact button, restart the bot, then
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.

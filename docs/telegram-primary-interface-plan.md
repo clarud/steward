@@ -840,6 +840,9 @@ that no write occurs before explicit approval.
   **open that workspace** reopen only the matching card. They do not infer a
   write, broaden a search, reveal a local path, or replace ordinary questions
   with navigation.
+- Calendar detail cards use the same chat-scoped mechanism for their opaque
+  external event ID. **Show that event** refetches current Calendar state, so
+  external Calendar data is never treated as a stale local record.
 - Root cards intentionally stop at health and exclusion-count information:
   root selection, enablement, and scans remain local-only operations. This
   preserves the multi-root boundary even while Telegram makes its state

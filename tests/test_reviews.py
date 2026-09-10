@@ -15,3 +15,15 @@ def test_review_context_is_chat_scoped_and_survives_a_new_repository(tmp_path: P
     assert restored is not None
     assert (restored.kind, restored.identifier) == ("action", 7)
     assert contexts.get("telegram", "200") is None
+
+
+def test_review_context_preserves_an_opaque_external_identifier(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+
+    ReviewContextRepository(database).set("telegram", "100", "calendar", "event-opaque-1")
+
+    restored = ReviewContextRepository(database).get("telegram", "100")
+
+    assert restored is not None
+    assert (restored.kind, restored.identifier) == ("calendar", "event-opaque-1")

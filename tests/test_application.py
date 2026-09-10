@@ -1178,6 +1178,46 @@ def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None
     assert "C:/private" not in response
 
 
+def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) -> None:
+    class Events:
+        def get(self, **kwargs):
+            assert kwargs["eventId"] == "event-opaque-1"
+            return type("Request", (), {"execute": lambda self: {
+                "id": "event-opaque-1", "summary": "Flight", "start": {"date": "2026-10-01"},
+                "end": {"date": "2026-10-02"},
+            }})()
+
+    class Client:
+        def events(self):
+            return Events()
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    graph = FakeGraph()
+    calendar_factory = lambda: CalendarService(Client())
+    first = StewardEventApplication(
+        StewardQuestionApplication(graph), StewardCaptureApplication(type("Capture", (), {})()),
+        calendar_application=StewardCalendarApplication(
+            calendar_factory, contexts=ReviewContextRepository(database)
+        ),
+    )
+
+    opened = first.handle(make_event(text="/calendar_get event-opaque-1"))
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(graph), StewardCaptureApplication(type("Capture", (), {})()),
+        calendar_application=StewardCalendarApplication(
+            calendar_factory, contexts=ReviewContextRepository(database)
+        ),
+    )
+    reopened = restarted.handle(make_event(text="show that event"))
+
+    assert isinstance(opened, PresentedReply)
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == "Flight"
+    assert "Calendar ID: event-opaque-1" in reopened.text
+    assert graph.inputs == []
+
+
 def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database)

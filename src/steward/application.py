@@ -2002,8 +2002,41 @@ class StewardPrivacyApplication:
 class StewardCalendarApplication:
     """Read current Calendar state through a lazy, locally authorized adapter."""
 
-    def __init__(self, calendar_factory: Callable[[], CalendarService] | None) -> None:
+    def __init__(
+        self,
+        calendar_factory: Callable[[], CalendarService] | None,
+        *,
+        contexts: ReviewContextRepository | None = None,
+    ) -> None:
         self._calendar_factory = calendar_factory
+        self._contexts = contexts
+
+    def resolve_calendar_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen only the exact Calendar event deliberately viewed in this chat.
+
+        Calendar stays authoritative: reopening fetches the current event rather
+        than reusing stale local content. Broad Calendar questions still fall
+        through to normal routing.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "show that event", "open that event", "show the last event",
+            "open the last event", "show that calendar event", "open that calendar event",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "calendar":
+            return None
+        if self._calendar_factory is None:
+            return "Calendar is not configured locally. Complete Calendar authorization on the local machine first."
+        try:
+            return self._event_card(event, self._calendar_factory().get_event(str(context.identifier)))
+        except Exception:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That Calendar event is unavailable. Search Calendar again for the current event."
 
     def handle_command(self, event: IncomingEvent) -> str | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -2018,12 +2051,7 @@ class StewardCalendarApplication:
             calendar = self._calendar_factory()
             if command == "/calendar_get":
                 event_result = calendar.get_event(argument.strip())
-                return PresentedReply(
-                    f"{event_result.start} → {event_result.end}\n\n"
-                    f"Calendar ID: {event_result.id}",
-                    title=event_result.summary,
-                    icon="📅",
-                )
+                return self._event_card(event, event_result)
             events = calendar.search(argument.strip(), limit=10)
         except Exception:
             return "Calendar is temporarily unavailable. Verify local authorization, then try again."
@@ -2036,6 +2064,19 @@ class StewardCalendarApplication:
             actions.append(ReplyAction(f"Open {index}", f"/calendar_get {item.id}"))
         return PresentedReply(
             "\n\n".join(lines), tuple(actions), title="Calendar events", icon="📅"
+        )
+
+    def _event_card(self, event: IncomingEvent, event_result: object) -> PresentedReply:
+        """Render one current external event and retain only its opaque ID."""
+
+        identifier = str(getattr(event_result, "id"))
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
+        return PresentedReply(
+            f"{getattr(event_result, 'start')} → {getattr(event_result, 'end')}\n\n"
+            f"Calendar ID: {identifier}",
+            title=str(getattr(event_result, "summary")),
+            icon="📅",
         )
 
 class StewardOperationsApplication:
@@ -3617,6 +3658,9 @@ class StewardEventApplication:
             if normalized.startswith(("remind me to ", "remember to ", "todo:", "task:", "deadline:")) or self._is_time_bound_commitment(normalized):
                 return self._task_application.propose(event.text or "", chat_id=event.chat_id)
         if self._calendar_application is not None:
+            calendar_reference = self._calendar_application.resolve_calendar_reference(event)
+            if calendar_reference is not None:
+                return calendar_reference
             calendar_response = self._calendar_application.handle_command(event)
             if calendar_response is not None:
                 return calendar_response
