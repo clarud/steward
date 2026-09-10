@@ -788,6 +788,13 @@ steward telegram
 
 ## Conversation state and checkpoints
 
+**Ask about it** stores a `source_question` context for the selected source.
+The next ordinary message consumes that input step and restores a `source`
+reference. `/ask_source ID QUESTION` provides an explicit equivalent. The same
+selected-document model path enforces privacy, whole-input size limits, and
+citation membership for both answers and summaries. This input step survives
+restart and adds no document text to the reference store.
+
 When the tool agent has consumed its execution budget, it permits one final
 model invocation using the results already received and an instruction to
 finish. Additional tool requests from this response are never executed;

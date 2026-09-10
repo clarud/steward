@@ -22,6 +22,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Core reads and routing
 
+- Open a source and choose **Ask about it**. Restart once before sending the
+  question; the question must still use the chosen document. **Cancel** returns
+  to its source card. Answers retain the same model privacy rule and evidence
+  reference checks as summaries.
+
 - Open a harmless source and choose **Summarize**, or send `summarize it`.
   Check the generated response uses that document and provides fragment
   locations. A source whose privacy rule denies the configured model must

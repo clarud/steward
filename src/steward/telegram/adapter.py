@@ -368,6 +368,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("source", adapter.handle_update))
     application.add_handler(CommandHandler("source_content", adapter.handle_update))
     application.add_handler(CommandHandler("summarize_source", adapter.handle_update))
+    application.add_handler(CommandHandler("ask_source", adapter.handle_update))
     application.add_handler(CommandHandler("workspaces", adapter.handle_update))
     application.add_handler(CommandHandler("workspace", adapter.handle_update))
     application.add_handler(CommandHandler("activity", adapter.handle_update))

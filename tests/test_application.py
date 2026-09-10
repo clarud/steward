@@ -658,6 +658,17 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert "Generated summary of 2 extracted sections" in summary.text
     assert "Parallel loops" in model.inputs[0] and "Static scheduling" in model.inputs[0]
     assert str(tmp_path) not in model.inputs[0]
+    prompt = reader.handle_command(make_event(text=f"/ask_source {source.id}"))
+    assert prompt.title == "Ask about this source"
+    restarted_reader = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), workspaces,
+        activity, tmp_path / "inbox", contexts=ReviewContextRepository(database),
+        source_model=model, source_model_allowed=privacy.permits_external_model,
+    )
+    answer = restarted_reader.resolve_source_reference(make_event(text="What scheduling is mentioned?"))
+    assert answer.title == "Answer: parallel-computing.md"
+    assert "Question: What scheduling is mentioned?" in model.inputs[-1]
+    assert contexts.get("telegram", "100").kind == "source"
     for invalid_answer in ("Unsupported statement [F99999]", "No citation at all"):
         model.answer = invalid_answer
         unverified = reader.resolve_source_reference(make_event(text="summarize it"))
