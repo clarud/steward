@@ -44,6 +44,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Send `/workspaces`, open a workspace card, restart the bot, then send `show
   that workspace`. Verify it lists only semantic source links and never moves
   or exposes a local root path.
+- Send `/roots`, open a root card, and verify it reports only health and
+  exclusion count. A missing/disabled root must direct you to local recovery;
+  Telegram must never show its path or offer a scan/enable action.
 - Open a deliberately long harmless source or broad search result. Verify a
   long answer arrives as consecutive readable messages rather than a Telegram
   delivery error, and any action buttons appear only on the final message.

@@ -1004,18 +1004,22 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
 
     assert isinstance(response, PresentedReply)
     assert response.title == "Authorized source roots"
-    assert response.text == "School: available"
+    assert response.text == "1: School (available)"
+    assert response.actions[0].command == "/root 1"
+    detail = application.handle(make_event(text="/root 1"))
+    assert isinstance(detail, PresentedReply)
+    assert detail.title == "School"
+    assert "Root paths and changes remain local-only." in detail.text
     roots.set_enabled("School", False)
     disabled = application.handle(make_event(text="/roots"))
     assert isinstance(disabled, PresentedReply)
-    assert disabled.text == "School: disabled — enable it locally before scanning."
+    assert disabled.text == "1: School (disabled)"
 
     roots.set_enabled("School", True)
     root_path.rmdir()
     missing = application.handle(make_event(text="/roots"))
     assert isinstance(missing, PresentedReply)
-    assert "School: missing" in missing.text
-    assert 'steward scan-root "School"' in missing.text
+    assert "School (missing)" in missing.text
     assert str(root_path) not in missing.text
 
 

@@ -409,6 +409,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("propose_enrichment", adapter.handle_update))
     application.add_handler(CommandHandler("review_enrichment", adapter.handle_update))
     application.add_handler(CommandHandler("roots", adapter.handle_update))
+    application.add_handler(CommandHandler("root", adapter.handle_update))
     application.add_handler(CommandHandler("privacy", adapter.handle_update))
     application.add_handler(CommandHandler("set_privacy", adapter.handle_update))
     application.add_handler(CommandHandler("deliveries", adapter.handle_update))

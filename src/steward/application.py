@@ -1814,25 +1814,37 @@ class StewardRootsApplication:
         self._roots = roots
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
-        command = (event.text or "").strip().partition(" ")[0].partition("@")[0]
+        command, _, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/root":
+            if not argument.strip().isdigit():
+                return "Use /root followed by a numeric root ID."
+            root = next((item for item in self._roots.list_all() if item.id == int(argument.strip())), None)
+            if root is None:
+                return f"Authorized root {argument.strip()} was not found."
+            guidance = (
+                "Reconnect or restore this root locally, then scan it locally."
+                if root.health == "missing"
+                else "Enable this root locally before scanning."
+                if root.health == "disabled"
+                else "This root is available for local scans."
+            )
+            return PresentedReply(
+                f"Status: {root.health}\nExcluded subdirectories: {len(root.exclusions)}\n\n"
+                f"{guidance}\nRoot paths and changes remain local-only.",
+                (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
+                title=root.name, icon="🗂️",
+            )
         if command != "/roots":
             return None
         roots = self._roots.list_all()
         if not roots:
             return "No locally authorized source roots. Add one from the local CLI or setup UI."
-        lines = []
-        for root in roots:
-            if root.health == "available":
-                lines.append(f"{root.name}: available")
-            elif root.health == "missing":
-                lines.append(
-                    f"{root.name}: missing — reconnect or restore it locally, then run `steward scan-root \"{root.name}\"`."
-                )
-            else:
-                lines.append(f"{root.name}: disabled — enable it locally before scanning.")
+        visible = roots[:8]
         return PresentedReply(
-            "\n".join(lines),
-            (ReplyAction("Home", "/home"),),
+            "\n".join(f"{root.id}: {root.name} ({root.health})" for root in visible),
+            tuple(ReplyAction(f"Open {index}", f"/root {root.id}") for index, root in enumerate(visible, start=1))
+            + (ReplyAction("Home", "/home"),),
             title="Authorized source roots",
             icon="🗂️",
         )
