@@ -2745,6 +2745,12 @@ class StewardOrganizationApprovalApplication:
         normalized_response = response.casefold().rstrip("?!.").strip()
         command, _, argument = response.partition(" ")
         command = command.casefold()
+        if self._contexts is not None and not response.startswith("/"):
+            context = self._contexts.get(event.platform, event.chat_id)
+            if context is None or context.kind != "organization" or context.identifier != pending.proposal_id:
+                if normalized_response in {"yes", "y", "okay", "ok", "accept", "accepted", "no", "n", "reject", "rejected"}:
+                    return "Open the organization review from /pending before deciding, or use its Accept/Reject button."
+                return None
         if command == "/organization_context":
             proposal_identifier, separator, guidance = argument.partition(" ")
             if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id:

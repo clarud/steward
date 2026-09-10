@@ -2689,6 +2689,23 @@ def test_pending_telegram_approval_does_not_treat_other_text_as_a_question(tmp_p
         "or name the workspace you want."
     )
 
+    # Browsing another item must not leave a hidden move armed for a bare yes.
+    contexts = ReviewContextRepository(database_path)
+    class MustNotExecute:
+        def invoke(self, *_args, **_kwargs):
+            raise AssertionError("unexpected approval")
+
+    guarded = StewardOrganizationApprovalApplication(
+        proposals, WorkspaceRepository(database_path), threads, ActivityService(database_path),
+        MustNotExecute(),
+        contexts=contexts,
+    )
+    contexts.set("telegram", "100", "source", source.id)
+    assert "Open the organization review" in guarded.handle_decision(make_event(text="yes"))
+    assert guarded.handle_decision(make_event(text="What is a TLB?")) is None
+    assert proposals.get(proposal_id).status == "pending"
+    assert source_path.read_text(encoding="utf-8") == "note"
+
 
 def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"

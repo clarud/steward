@@ -83,6 +83,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Capture, review, and restart
 
+- Leave an organization proposal pending, then open a source card. Send `yes`:
+  the older organization proposal must remain pending. Reopen its review from
+  `/pending` before deciding, or use that proposal's explicit button. Ordinary
+  questions after changing cards must not be trapped in the older review.
+
 - Send a document without `/save`. Verify it is described as staged and has
   **Save to Inbox** and **Do not keep** choices.
 - Reply to that original attachment with bare `/save`. Verify Steward saves
