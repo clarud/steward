@@ -745,6 +745,27 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+### Acceptance evidence from 11 September 2026
+
+The user's real Telegram transcript verifies status/root browsing, source-list
+pagination, source detail and `show that PDF`, workspace inspection, empty task
+and review screens, and Calendar search/detail delivery. It does not demonstrate
+restart recovery, approval execution, document-content reading, or a sustained
+trial. Do not treat a passing automated suite as proof of those live behaviors.
+
+Follow-up releases implement extracted-section reading with provenance and
+navigation, readable Calendar date ranges and upcoming defaults, a useful Home
+screen, exact external-ID persistence, active-review approval scoping, detailed
+reopened note/correction/task reviews, and complete pending-inbox pagination.
+Their automated checks pass; live acceptance of these releases remains pending.
+
+Remaining implementation work includes selected-source summarization and
+question answering beyond exact reading/navigation phrases, fuller record and
+Calendar proposal previews, and the broader task, knowledge, administration,
+and recovery items in the table below. The program is therefore still in
+progress for both implementation and live validation; root configuration alone
+is no longer a blocker, and manual testing is not the only remaining work.
+
 This is a delivery program, not a claim that every item listed below already
 works. Status is deliberately conservative: a goal is only **complete** when
 its acceptance criteria and proportionate automated tests are satisfied.
