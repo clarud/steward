@@ -1776,6 +1776,21 @@ def test_telegram_integration_status_reports_expired_token_without_disclosing_it
     assert "secret" not in response.text and "client.json" not in response.text
 
 
+def test_telegram_integration_status_flags_insufficient_drive_scope_without_disclosing_scope(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", "C:/private/client.json")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "google-drive-token.json").write_text(
+        '{"token":"secret","expiry":"2099-01-01T00:00:00+00:00","scopes":["metadata-only"]}',
+        encoding="utf-8",
+    )
+
+    response = StewardIntegrationStatusApplication(tmp_path).handle_command(make_event(text="/integrations"))
+
+    assert isinstance(response, PresentedReply)
+    assert "Drive: local token lacks required access; reauthorize locally" in response.text
+    assert "secret" not in response.text and "metadata-only" not in response.text
+
+
 def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

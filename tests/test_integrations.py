@@ -23,6 +23,32 @@ def test_oauth_token_readiness_is_secret_free_and_identifies_reauthorization(tmp
     assert oauth_token_readiness(refreshable, now=now) == "local token expired; refresh available locally"
 
 
+def test_oauth_token_readiness_detects_missing_required_scope_without_disclosing_it(tmp_path: Path) -> None:
+    insufficient = tmp_path / "insufficient.json"
+    insufficient.write_text(
+        '{"token":"secret","expiry":"2026-10-01T00:00:00+00:00","scopes":["metadata-only"]}',
+        encoding="utf-8",
+    )
+    sufficient = tmp_path / "sufficient.json"
+    sufficient.write_text(
+        '{"token":"secret","expiry":"2026-10-01T00:00:00+00:00","scopes":["required-scope"]}',
+        encoding="utf-8",
+    )
+    unknown = tmp_path / "unknown.json"
+    unknown.write_text(
+        '{"token":"secret","expiry":"2026-10-01T00:00:00+00:00"}', encoding="utf-8"
+    )
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+
+    assert oauth_token_readiness(insufficient, now=now, required_scopes=("required-scope",)) == (
+        "local token lacks required access; reauthorize locally"
+    )
+    assert oauth_token_readiness(sufficient, now=now, required_scopes=("required-scope",)) == "local token present"
+    assert oauth_token_readiness(unknown, now=now, required_scopes=("required-scope",)) == (
+        "local token present (required access cannot be verified)"
+    )
+
+
 def test_integration_registry_requires_external_tool_policy() -> None:
     registry = IntegrationRegistry()
     calendar = IntegrationDefinition("google_calendar", "GoogleCalendarApi", "CalendarService", ("calendar_search",), True)

@@ -666,6 +666,10 @@ claiming that a token file alone proves remote access will succeed.
 uses `drive.readonly`, stored in a dedicated `google-drive-token.json`, rather
 than reusing broader Calendar credentials. A token created for the older,
 metadata-only scope must be reauthorized once.
+Telegram's `/integrations` screen reads only non-secret local token metadata:
+for Drive and Gmail it can report that a token lacks the required import scope
+or that scope metadata is unavailable. It never shows the scope name, token,
+refresh token, client-secret path, or asks for authorization in chat.
 `steward drive-search QUERY` queries Google Drive for non-trashed filenames and
 returns current metadata: Drive ID, name, MIME type, modification time, web
 link, and available size. Drive is authoritative for that state.

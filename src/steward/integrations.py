@@ -10,12 +10,18 @@ from pathlib import Path
 from steward.tools import ToolDefinition
 
 
-def oauth_token_readiness(token_path: Path, *, now: datetime | None = None) -> str:
+def oauth_token_readiness(
+    token_path: Path,
+    *,
+    now: datetime | None = None,
+    required_scopes: tuple[str, ...] = (),
+) -> str:
     """Return a secret-free local OAuth readiness summary.
 
     This is deliberately not an OAuth validation call: Telegram must neither
     send token data nor launch a browser. It only distinguishes absent,
-    unreadable, expired-without-refresh, and plausibly refreshable local state.
+    unreadable, expired-without-refresh, plausibly refreshable, and locally
+    declared scope state. It never returns token values or scope names.
     """
 
     if not token_path.is_file():
@@ -42,6 +48,16 @@ def oauth_token_readiness(token_path: Path, *, now: datetime | None = None) -> s
             if bool(payload.get("refresh_token"))
             else "local token expired; reauthorize locally"
         )
+    if required_scopes:
+        scopes = payload.get("scopes")
+        if isinstance(scopes, str):
+            granted_scopes = frozenset(scopes.split())
+        elif isinstance(scopes, list) and all(isinstance(scope, str) for scope in scopes):
+            granted_scopes = frozenset(scopes)
+        else:
+            return "local token present (required access cannot be verified)"
+        if not set(required_scopes).issubset(granted_scopes):
+            return "local token lacks required access; reauthorize locally"
     return "local token present"
 
 

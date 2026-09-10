@@ -27,7 +27,9 @@ from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
+from steward.drive import GOOGLE_DRIVE_READONLY_SCOPE
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
+from steward.gmail import GOOGLE_GMAIL_READONLY_SCOPE
 from steward.retrieval import HybridRetriever, LexicalSearchService, SemanticSearchService
 from steward.sources import SourceRepository
 from steward.presentation import PresentedReply, ReplyAction
@@ -1191,12 +1193,18 @@ class StewardIntegrationStatusApplication:
         config_state = "configured locally" if configured else "client secrets not configured"
         token_dir = self._data_dir / "config"
         states = {
-            "Calendar": token_dir / "google-calendar-token.json",
-            "Drive": token_dir / "google-drive-token.json",
-            "Gmail": token_dir / "gmail-token.json",
+            # Calendar can validly hold either its read-only or its separately
+            # authorized write scope, so only Drive/Gmail have one exact
+            # required scope that this metadata-only screen can verify.
+            "Calendar": (token_dir / "google-calendar-token.json", ()),
+            "Drive": (token_dir / "google-drive-token.json", (GOOGLE_DRIVE_READONLY_SCOPE,)),
+            "Gmail": (token_dir / "gmail-token.json", (GOOGLE_GMAIL_READONLY_SCOPE,)),
         }
         lines = ["Google integration status (metadata only):", f"OAuth client: {config_state}"]
-        lines.extend(f"{name}: {oauth_token_readiness(token)}" for name, token in states.items())
+        lines.extend(
+            f"{name}: {oauth_token_readiness(token, required_scopes=scopes)}"
+            for name, (token, scopes) in states.items()
+        )
         lines.append("Authorize or change OAuth settings only on the local machine.")
         return PresentedReply(
             "\n".join(lines),
