@@ -409,6 +409,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("curate_synthesize", adapter.handle_update))
     application.add_handler(CommandHandler("curate_edit", adapter.handle_update))
     application.add_handler(CommandHandler("propose_link_source", adapter.handle_update))
+    application.add_handler(CommandHandler("source_workspaces", adapter.handle_update))
     application.add_handler(CommandHandler("integrations", adapter.handle_update))
     application.add_handler(CommandHandler("propose_travel_record", adapter.handle_update))
     application.add_handler(CommandHandler("propose_receipt_record", adapter.handle_update))

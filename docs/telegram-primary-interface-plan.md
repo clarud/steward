@@ -782,8 +782,12 @@ paths and durable question prompts. Record previews retain reviewed snapshots;
 record approval, evidence validation, persistence, and audit commit together.
 Calendar proposals now show event details and bind approval to the reviewed
 record/task snapshot, refusing changed values before calling the writer.
+Active source cards now offer a paginated workspace picker leading to the existing
+explicit link review. Selection alone does not create membership or move files;
+already-linked workspaces offer a View action. Live Telegram acceptance remains open.
+
 Remaining implementation work includes broader conversational reference
-resolution, long-document synthesis, and the broader task, knowledge, administration,
+resolution, representative long-document evaluation, and the broader task, knowledge, administration,
 and recovery items in the table below. The program is therefore still in
 progress for both implementation and live validation; root configuration alone
 is no longer a blocker, and manual testing is not the only remaining work.

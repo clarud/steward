@@ -2028,6 +2028,8 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 6, now, now, now))
     activity = ActivityService(database); workspaces = WorkspaceRepository(database)
     workspace = WorkspaceService(workspaces, activity).create("CS3210")
+    for index in range(9):
+        WorkspaceService(workspaces, activity).create(f"Workspace {index}")
     proposals = ActionProposalRepository(database)
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
@@ -2038,11 +2040,32 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
         ),
     )
 
-    preview = application.handle(make_event(text="/propose_link_source 1 1"))
+    picker = application.handle(make_event(text="/source_workspaces 1"))
+    assert isinstance(picker, PresentedReply)
+    assert "note.md" in picker.text and "Page 1 of 2" in picker.text
+    assert workspaces.list_source_ids(1) == ()
+    later = application.handle(make_event(text="/source_workspaces 1 2"))
+    assert isinstance(later, PresentedReply)
+    assert "Workspace 8" in later.text
+    assert any(action.command == "/propose_link_source 10 1" for action in later.actions)
+    assert "positive page" in application.handle(make_event(text="/source_workspaces 1 0"))
+    assert "unavailable" in application.handle(make_event(text="/source_workspaces 999"))
+    preview = application.handle(make_event(text=picker.actions[0].command))
     assert isinstance(preview, PresentedReply)
     assert "No file will move" in preview.text
+    assert "CS3210" in preview.text and "note.md" in preview.text
+    assert workspaces.list_source_ids(1) == ()
     assert application.handle(make_event(text="/approve_action 1")) == "Source 1 linked to workspace 1. No file moved."
     assert source_path.is_file()
+    linked = application.handle(make_event(text="/source_workspaces 1"))
+    assert "already linked" in linked.text
+    assert linked.actions[0].command == "/workspace 1"
+    stale = application.handle(make_event(text="/propose_link_source 2 1"))
+    import sqlite3
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'missing' WHERE id = 1")
+    assert "no longer available" in application.handle(make_event(text=stale.actions[0].command))
+    assert workspaces.list_source_ids(2) == ()
 
 
 def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:

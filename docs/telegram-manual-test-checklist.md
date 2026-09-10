@@ -456,3 +456,13 @@ SQLite write transaction. Telegram delivery passes that token back when it
 acknowledges or releases the claim. This does not guarantee exactly-once external
 delivery: a crash after Telegram accepts a message may still cause a retry.
 Stop older Steward versions before starting the upgraded runtime.
+
+## Guided source-to-workspace linking
+
+Open an active source from `/sources`, tap **Link workspace**, and select a
+workspace. The review must name both the original file and destination workspace
+and say that no file moves. Before approval, workspace membership must remain
+unchanged. Approve, reopen the picker, and confirm the workspace now reads
+“already linked” with a View action. Repeat approval must not duplicate the link.
+With more than eight workspaces, check Next and Previous and select a workspace
+on the second page. These are live acceptance steps, not yet verified in Telegram.

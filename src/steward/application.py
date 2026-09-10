@@ -762,7 +762,8 @@ class StewardReadApplication:
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
             f"Extracted sections: {len(fragments)}",
             actions=(ReplyAction("Read content", f"/source_content {source_id}"), ReplyAction("Summarize", f"/summarize_source {source_id}"), ReplyAction("Ask about it", f"/ask_source {source_id}"))
-            + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ()),
+            + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
+            + ((ReplyAction("Link workspace", f"/source_workspaces {source_id}"),) if source.status.value == "active" else ()),
             title=source.path.name,
             icon="📄",
         )
@@ -1649,6 +1650,11 @@ class StewardWorkspaceLinkApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
+        if command == "/source_workspaces":
+            parts = argument.split()
+            if len(parts) not in {1, 2} or not all(part.isdigit() and int(part) > 0 for part in parts):
+                return "Use /source_workspaces SOURCE_ID followed by an optional positive page number."
+            return self._choose_workspace(int(parts[0]), int(parts[1]) if len(parts) == 2 else 1)
         if command != "/propose_link_source":
             return None
         parts = argument.split()
@@ -1661,6 +1667,12 @@ class StewardWorkspaceLinkApplication:
             return f"Workspace {workspace_id} was not found."
         if source is None:
             return f"Source {source_id} was not found."
+        if source.status.value != "active" or workspace.status != "active":
+            return "The source and workspace must both be active before proposing a link."
+        if source_id in self._workspaces.list_source_ids(workspace_id):
+            return PresentedReply("This source is already linked. No file moved.",
+                                  (ReplyAction("View workspace", f"/workspace {workspace_id}"),),
+                                  title=workspace.name)
         payload = {"workspace_id": str(workspace_id), "source_id": str(source_id)}
         pending = self._proposals.find_pending(self.LINK_SOURCE, payload)
         if pending is None:
@@ -1669,7 +1681,36 @@ class StewardWorkspaceLinkApplication:
         return PresentedReply(
             f"Link proposal {pending.id}: relate source {source_id} ({source.path.name}) to workspace {workspace_id} ({workspace.name}).\n\nNo file will move.",
             (ReplyAction("Link", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+            title="Review workspace link", icon="📁",
         )
+
+    def _choose_workspace(self, source_id: int, page: int) -> str | PresentedReply:
+        source = self._sources.get_by_id(source_id)
+        if source is None or source.status.value != "active":
+            return "That source is unavailable. Choose an active source from /sources."
+        choices = [workspace for workspace in self._workspaces.list_all()
+                   if workspace.status == "active"]
+        if not choices:
+            return PresentedReply("No active workspaces yet. Create one from Home, then return to this source.",
+                                  (ReplyAction("Home", "/home"), ReplyAction("Back", f"/source {source_id}")),
+                                  title="Choose a workspace", icon="📁")
+        pages = (len(choices) + 7) // 8
+        page = min(page, pages)
+        visible = choices[(page - 1) * 8:page * 8]
+        lines = [f"Source: {source.path.name}", f"Page {page} of {pages}",
+                 "Choose a workspace to preview a semantic link. No file will move."]
+        actions = []
+        for index, workspace in enumerate(visible, 1):
+            linked = source_id in self._workspaces.list_source_ids(workspace.id)
+            lines.append(f"{index}. {workspace.name}" + (" · already linked" if linked else ""))
+            actions.append(ReplyAction(f"View {index}" if linked else f"Choose {index}",
+                                      f"/workspace {workspace.id}" if linked else f"/propose_link_source {workspace.id} {source_id}"))
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/source_workspaces {source_id} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/source_workspaces {source_id} {page + 1}"))
+        actions.append(ReplyAction("Back", f"/source {source_id}"))
+        return PresentedReply("\n\n".join(lines), tuple(actions), title="Choose a workspace", icon="📁")
 
 
 class StewardIntegrationStatusApplication:
@@ -3699,7 +3740,8 @@ class StewardActionProposalApplication:
             return f"Link proposal {proposal.id} rejected."
         workspace_id = int(proposal.payload["workspace_id"])
         source_id = int(proposal.payload["source_id"])
-        if not any(item.id == workspace_id for item in self._workspaces.list_all()) or self._sources.get_by_id(source_id) is None:
+        source = self._sources.get_by_id(source_id)
+        if not any(item.id == workspace_id and item.status == "active" for item in self._workspaces.list_all()) or source is None or source.status.value != "active":
             return "The workspace or source is no longer available; the link was not created."
         self._workspaces.link_source(workspace_id, source_id)
         self._repository.set_status(proposal_id, decision)
