@@ -378,6 +378,7 @@ class StewardReadApplication:
         semantic_search: SemanticSearchService | None = None,
         hybrid_retriever: HybridRetriever | None = None,
         runtime_status: Callable[[], tuple[str, ...]] | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._sources = source_repository
         self._fragments = fragment_repository
@@ -390,6 +391,7 @@ class StewardReadApplication:
         self._semantic_search = semantic_search
         self._hybrid_retriever = hybrid_retriever
         self._runtime_status = runtime_status
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -405,7 +407,10 @@ class StewardReadApplication:
         if command == "/sources":
             return self.sources(self._page(argument))
         if command == "/source":
-            return self.source(argument)
+            response = self.source(argument)
+            if self._contexts is not None and argument.isdigit() and self._sources.get_by_id(int(argument)) is not None:
+                self._contexts.set(event.platform, event.chat_id, "source", int(argument))
+            return response
         if command == "/workspaces":
             return self.workspaces()
         if command == "/activity":
@@ -419,6 +424,41 @@ class StewardReadApplication:
         if command == "/hybrid_search":
             return self.hybrid_search(argument)
         return None
+
+    def resolve_source_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen the exact source card most recently selected in this chat.
+
+        This deliberately handles only narrow, unambiguous navigation phrases.
+        More open-ended follow-ups remain questions for retrieval or the
+        allowlisted tool agent; Steward must not pretend that every pronoun
+        refers to one source.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "show that source",
+            "open that source",
+            "show the last source",
+            "open the last source",
+            "show that document",
+            "open that document",
+            "show that file",
+            "open that file",
+            "show that note",
+            "open that note",
+            "show that pdf",
+            "open that pdf",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "source":
+            return None
+        if self._sources.get_by_id(context.identifier) is None:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That previously opened source is no longer registered. Search or list sources to choose another."
+        return self.source(str(context.identifier))
 
     @staticmethod
     def help_text() -> str:
@@ -3477,6 +3517,9 @@ class StewardEventApplication:
             if intake_followup is not None:
                 return intake_followup
         if self._read_application is not None:
+            source_reference = self._read_application.resolve_source_reference(event)
+            if source_reference is not None:
+                return source_reference
             read_response = self._read_application.handle_command(event)
             if read_response is not None:
                 return read_response

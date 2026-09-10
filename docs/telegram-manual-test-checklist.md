@@ -31,6 +31,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   a safe clarification/helpful next step instead of silently ignoring it.
 - Send `/sources`, `/inbox`, `/search OpenMP`, `/source 1`, `/workspaces`, and
   `/activity`; use pagination where it appears.
+- Open a source card with `/source ID`, restart the bot, then send `open the
+  last source` or `show that PDF`. Verify Steward reopens only that exact
+  source card; a broader question about a source must remain a normal
+  retrieval question rather than being guessed as navigation.
 - Open a deliberately long harmless source or broad search result. Verify a
   long answer arrives as consecutive readable messages rather than a Telegram
   delivery error, and any action buttons appear only on the final message.

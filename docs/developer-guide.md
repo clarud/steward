@@ -800,7 +800,10 @@ store full documents. For a small deterministic first reference resolver, a
 follow-up containing terms such as `that`, `this`, or `it` is expanded with the
 preceding user question and recently retrieved filenames before retrieval. This
 is useful but deliberately conservative: it is not yet general natural-language
-reference resolution.
+reference resolution. Separately, opening a Telegram `/source ID` card stores a
+durable, chat-scoped source reference. Exact navigation requests such as
+`open the last source` or `show that PDF` reopen that same card without an LLM;
+broader phrases still go through ordinary retrieval rather than being guessed.
 
 ## Commands and data flow
 

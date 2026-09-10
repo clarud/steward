@@ -537,6 +537,52 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert natural.title == "2 decisions waiting"
 
 
+def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "parallel-computing.md"
+    source_path.write_text("# OpenMP", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 8, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    contexts = ReviewContextRepository(database)
+    activity = ActivityService(database)
+    workspaces = WorkspaceRepository(database)
+
+    def read_application() -> StewardReadApplication:
+        return StewardReadApplication(
+            sources, fragments, LexicalSearchService(sources, fragments), workspaces,
+            activity, tmp_path / "inbox", contexts=contexts,
+        )
+
+    class QuestionMustNotRun:
+        def invoke(self, _input, _config=None):
+            raise AssertionError("an exact source-reference request must not enter retrieval")
+
+    first = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=read_application(),
+    )
+    opened = first.handle(make_event(text=f"/source {source.id}"))
+
+    assert isinstance(opened, PresentedReply)
+    assert opened.title == "parallel-computing.md"
+    context = contexts.get("telegram", "100")
+    assert context is not None and context.kind == "source"
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=read_application(),
+    )
+    reopened = restarted.handle(make_event(text="open the last source"))
+
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == "parallel-computing.md"
+
+
 def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tmp_path: Path) -> None:
     """A plain-language reply uses the durable card context, never an inferred ID."""
 

@@ -1517,6 +1517,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ),
                 ),
                 runtime_status=telegram_runtime_status,
+                contexts=review_contexts,
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(
                 ProvisionalIntakeService(
