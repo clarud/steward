@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from enum import StrEnum
 import re
+from steward.activity import ActivityType
 
 @dataclass(frozen=True, slots=True)
 class Concept:
@@ -117,6 +118,20 @@ class KnowledgeEnrichmentProposalRepository:
             raise ValueError("Knowledge enrichment status must be accepted or rejected.")
         reviewed_at = datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at "
+                "FROM knowledge_enrichment_proposals WHERE id = ?", (proposal_id,),
+            ).fetchone()
+            if row is None or row[5] != "pending":
+                raise ValueError("Knowledge enrichment proposal was not found or is already reviewed.")
+            if status == "accepted":
+                evidence = connection.execute(
+                    "SELECT s.status FROM source_fragments f JOIN sources s ON s.id = f.source_id WHERE f.id = ?",
+                    (row[2],),
+                ).fetchone()
+                if evidence != ("active",):
+                    raise ValueError("The supporting source is no longer available; the proposal remains pending.")
             cursor = connection.execute(
                 """
                 UPDATE knowledge_enrichment_proposals
@@ -124,6 +139,11 @@ class KnowledgeEnrichmentProposalRepository:
                 WHERE id = ? AND status = 'pending'
                 """,
                 (status, reviewed_at.isoformat(), proposal_id),
+            )
+            connection.execute(
+                "INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)",
+                (ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED.value if status == "accepted" else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED.value,
+                 str(proposal_id), f"{row[3]}: {row[4]}", reviewed_at.isoformat()),
             )
         if cursor.rowcount != 1:
             raise ValueError("Knowledge enrichment proposal was not found or is already reviewed.")

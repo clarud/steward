@@ -2206,10 +2206,6 @@ class StewardKnowledgeApplication:
                 proposal = self._proposals.review(int(parts[0]), parts[1])
             except ValueError as error:
                 return str(error)
-            self._activity.record(
-                ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED if proposal.status == "accepted" else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED,
-                object_id=str(proposal.id), details=f"{proposal.operation.value}: {proposal.rationale}",
-            )
             if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
                 return f"Knowledge contradiction proposal {proposal.id} accepted. Existing claim unchanged."
             return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."

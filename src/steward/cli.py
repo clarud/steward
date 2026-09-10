@@ -2002,13 +2002,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             except ValueError as error:
                 print(str(error))
                 return
-            activity.record(
-                ActivityType.KNOWLEDGE_ENRICHMENT_ACCEPTED
-                if proposal.status == "accepted"
-                else ActivityType.KNOWLEDGE_ENRICHMENT_REJECTED,
-                object_id=str(proposal.id),
-                details=f"{proposal.operation.value}: {proposal.rationale}",
-            )
             print(f"Knowledge enrichment proposal {proposal.id} {proposal.status}.")
             return
         knowledge = KnowledgeService(database_path)

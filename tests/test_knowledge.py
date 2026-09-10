@@ -60,6 +60,20 @@ def test_enrichment_proposal_is_durable_and_requires_one_explicit_review(tmp_pat
     repository = KnowledgeEnrichmentProposalRepository(database)
 
     stored = repository.add(derived)
+    with sqlite3.connect(database) as connection:
+        connection.execute("""CREATE TRIGGER fail_enrichment_audit BEFORE INSERT ON activity_events
+            BEGIN SELECT RAISE(ABORT, 'injected review failure'); END""")
+    with pytest.raises(sqlite3.IntegrityError, match="injected review failure"):
+        repository.review(stored.id, "accepted")
+    assert repository.get(stored.id).status == "pending"
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER fail_enrichment_audit")
+        connection.execute("UPDATE sources SET status = 'missing' WHERE id = ?", (source.id,))
+    with pytest.raises(ValueError, match="no longer available"):
+        repository.review(stored.id, "accepted")
+    assert repository.get(stored.id).status == "pending"
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'active' WHERE id = ?", (source.id,))
     reviewed = repository.review(stored.id, "accepted")
 
     assert stored.status == "pending"
@@ -69,6 +83,9 @@ def test_enrichment_proposal_is_durable_and_requires_one_explicit_review(tmp_pat
     assert repository.add(derived).id == stored.id
     with pytest.raises(ValueError, match="already reviewed"):
         repository.review(stored.id, "rejected")
+    events = ActivityService(database).list_recent()
+    assert len(events) == 1
+    assert events[0].event_type.value == "knowledge_enrichment_accepted"
 
 
 def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:

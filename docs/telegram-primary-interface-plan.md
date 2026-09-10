@@ -789,6 +789,11 @@ Source cards also expose a paginated actual-membership view. Exact follow-ups
 such as “Which workspace is this in?” resolve the durable selected source and
 read SQLite without a model call. Missing context asks for source selection;
 semantic links are explicitly distinguished from physical folders.
+Knowledge-enrichment review status and audit now commit atomically across CLI
+and Telegram. Acceptance rechecks that the supporting fragment belongs to an
+active source. Injected audit failure leaves the proposal pending and retryable.
+This does not yet bind the review to a snapshot of the original claim/evidence
+text: content-version protection remains required for the broader knowledge lifecycle.
 Workspace-link review now rechecks the proposal and active objects inside a
 SQLite write transaction. Membership, review status, and audit events commit
 together. An injected audit failure verifies rollback to a pending proposal

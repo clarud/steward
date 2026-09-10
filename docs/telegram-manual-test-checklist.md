@@ -457,6 +457,14 @@ acknowledges or releases the claim. This does not guarantee exactly-once externa
 delivery: a crash after Telegram accepts a message may still cause a retry.
 Stop older Steward versions before starting the upgraded runtime.
 
+## Knowledge review transaction coverage
+
+Knowledge review reliability is covered separately by automated audit-failure
+injection: failed audit persistence must leave the proposal pending, and retry
+must produce one review event. Acceptance of a missing supporting source is
+refused. These checks do not prove that unchanged IDs still represent the exact
+claim/evidence text originally reviewed; content snapshots remain unfinished.
+
 ## Guided source-to-workspace linking
 
 After selecting a source, ask “Which workspace is this in?” The reply should
