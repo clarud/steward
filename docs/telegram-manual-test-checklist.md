@@ -22,6 +22,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Core reads and routing
 
+- Send `/home` with and without pending reviews. Verify it offers source,
+  Inbox, Calendar, task, workspace, and review navigation. When `/tasks` is
+  empty, follow its example to propose a task and verify saving still needs
+  approval.
+
 - Open a source, choose **Read content**, and use **Next**/**Previous** to
   browse extracted sections. Send `give me the content` after opening it,
   including after restart. Check that the text belongs to the selected source

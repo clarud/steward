@@ -91,7 +91,21 @@ class StewardReviewInboxApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, _, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0].casefold()
-        if command in {"/home", "/pending"}:
+        if command == "/home":
+            return PresentedReply(
+                "Ask about your notes, send a document, or tell me something you want to remember.\n\n"
+                "Open Pending to review suggested changes before accepting them.",
+                (
+                    ReplyAction("Browse sources", "/sources"),
+                    ReplyAction("Inbox", "/inbox"),
+                    ReplyAction("Calendar", "/calendar"),
+                    ReplyAction("Tasks", "/tasks"),
+                    ReplyAction("Workspaces", "/workspaces"),
+                    ReplyAction("Pending", "/pending"),
+                ),
+                title="Steward", icon="🏠",
+            )
+        if command == "/pending":
             return self.pending(event)
         if command != "/review":
             return None
@@ -107,7 +121,7 @@ class StewardReviewInboxApplication:
         if not items:
             return PresentedReply(
                 "There is nothing waiting for your decision.",
-                (ReplyAction("Search", "/search "), ReplyAction("Inbox", "/inbox")),
+                (ReplyAction("Browse sources", "/sources"), ReplyAction("Inbox", "/inbox"), ReplyAction("Home", "/home")),
                 title="All caught up",
                 icon="✅",
             )
@@ -1307,7 +1321,13 @@ class StewardTaskApplication:
     def _list_tasks(self) -> str | PresentedReply:
         tasks = self._tasks.list_open()
         if not tasks:
-            return "No open tasks."
+            return PresentedReply(
+                "No open tasks.\n\nSend a message such as:\n"
+                "Task: compare OpenMP scheduling\n\n"
+                "I will show you a proposal to review before saving it.",
+                (ReplyAction("Home", "/home"), ReplyAction("Pending", "/pending")),
+                title="Tasks", icon="✅",
+            )
         visible = tasks[:8]
         lines = ["Open tasks:"]
         lines.extend(
