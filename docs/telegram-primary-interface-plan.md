@@ -163,6 +163,9 @@ Currently Telegram supports:
   search, and safe workspace-creation proposals;
 - durable, chat-scoped pagination callbacks for source and Inbox lists;
 - selected durable proposal-review replies;
+- compact source, record, task, workspace, and root cards, with explicit
+  `open/show that …` follow-ups for the last opened source, record, task, or
+  workspace after a local process restart;
 - delivery deduplication, retries, backoff, history, and dead-letter
   inspection through the CLI.
 
@@ -758,7 +761,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |
-| 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; selected review cards; contextual intake guidance; compact buttons; source and Calendar browsing; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across every review/record workflow; validate the full daily-use checklist on Telegram |
+| 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; contextual review confirmations; compact buttons; source, record, task, workspace, root, and Calendar browsing; durable explicit follow-ups for recently opened source/record/task/workspace cards; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across remaining review/Calendar workflows; validate the full daily-use checklist on Telegram |
 
 ### Goal 10 — Telegram companion experience
 
@@ -831,6 +834,16 @@ that no write occurs before explicit approval.
   Calendar lists use compact **Open 1**-style buttons; pending decisions use
   **Review 1**-style buttons. Internal IDs remain a recovery interface, not
   the normal user journey.
+- Source, record, task, and workspace detail cards now persist a narrow,
+  chat-scoped reference. After a local restart, explicit phrases such as
+  **open the last source**, **show that flight**, **show that task**, and
+  **open that workspace** reopen only the matching card. They do not infer a
+  write, broaden a search, reveal a local path, or replace ordinary questions
+  with navigation.
+- Root cards intentionally stop at health and exclusion-count information:
+  root selection, enablement, and scans remain local-only operations. This
+  preserves the multi-root boundary even while Telegram makes its state
+  discoverable.
 
 ### Priority sequence from here
 
