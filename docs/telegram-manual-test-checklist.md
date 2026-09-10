@@ -145,6 +145,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Long-document synthesis
 
+- Source availability and model privacy are rechecked before each long-document
+  batch, repair, and combination call, and before displaying the answer.
+  Revoking access stops subsequent calls and withholds the result. It cannot
+  recall information already sent or cancel an in-flight provider request.
+  Automated tests cover revocation at the batch/repair/combination boundaries.
+
 - Summaries and selected-source questions above 60,000 extracted characters
   use evidence batches, then combine their notes. Every section is processed;
   the reply labels the result as multi-pass and warns that condensation can
