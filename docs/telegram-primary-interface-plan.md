@@ -747,6 +747,13 @@ Every implementation goal contributes to this matrix:
 
 ### Acceptance evidence from 11 September 2026
 
+A live smoke test using the configured model gateway and normal `.env` loading
+returned a nonempty summary of a synthetic two-section Cedar-project document.
+It cited both supplied keys (`F1`, `F2`), with no unknown citation keys. No vault
+content was sent. This verifies one provider request and citation membership;
+it does not prove factual entailment, long-document behavior, Telegram rendering,
+or the remaining end-to-end acceptance cases.
+
 The user's real Telegram transcript verifies status/root browsing, source-list
 pagination, source detail and `show that PDF`, workspace inspection, empty task
 and review screens, and Calendar search/detail delivery. It does not demonstrate
