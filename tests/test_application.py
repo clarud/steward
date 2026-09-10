@@ -486,6 +486,31 @@ def test_tool_agent_uses_an_explicit_telegram_reply_as_bounded_context() -> None
     assert response == "Explained."
 
 
+def test_pending_review_pages_reach_older_items_and_recover_after_decisions(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    actions = ActionProposalRepository(database)
+    for index in range(10):
+        actions.add("create_workspace", {"name": f"Workspace {index}"})
+    reviews = StewardReviewInboxApplication(
+        actions, OrganizationProposalRepository(database), SourceRepository(database),
+    )
+    first = reviews.handle_command(make_event(text="/pending"))
+    next_button = next(action for action in first.actions if action.label == "Next")
+    second = reviews.handle_command(make_event(text=next_button.command))
+    reviewed = {
+        action.command for card in (first, second) for action in card.actions
+        if action.label.startswith("Review")
+    }
+    assert reviewed == {f"/review action {identifier}" for identifier in range(1, 11)}
+    assert "10 decisions" in second.title
+    for identifier in range(1, 10):
+        actions.set_status(identifier, "rejected")
+    refreshed = reviews.handle_command(make_event(text="/pending 2"))
+    assert "Page 1 of 1" in refreshed.text
+    assert refreshed.actions[0].command == "/review action 10"
+
+
 def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

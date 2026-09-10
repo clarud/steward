@@ -83,6 +83,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Capture, review, and restart
 
+- With more than eight pending reviews, use **Next**/**Previous** in `/pending`.
+  All decisions must be reachable, and the heading must show the total count.
+  After completing reviews, an older page button should show a remaining page
+  rather than incorrectly report that no decisions exist.
+
 - Reopen a curated-note proposal through `/pending`: its full draft and origin
   must remain visible before approval. Reopen a record correction and check the
   record ID, field, and replacement value; it must not claim your correction

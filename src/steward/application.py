@@ -106,7 +106,9 @@ class StewardReviewInboxApplication:
                 title="Steward", icon="🏠",
             )
         if command == "/pending":
-            return self.pending(event)
+            if argument and (not argument.isdecimal() or int(argument) < 1):
+                return "Use /pending or /pending followed by a positive page number."
+            return self.pending(event, int(argument) if argument else 1)
         if command != "/review":
             return None
         kind, separator, identifier = argument.partition(" ")
@@ -114,24 +116,31 @@ class StewardReviewInboxApplication:
             return "Choose a review from /pending."
         return self.detail(event, kind.casefold(), int(identifier))
 
-    def pending(self, event: IncomingEvent) -> PresentedReply:
+    def pending(self, event: IncomingEvent, page: int = 1) -> PresentedReply:
         """Show only items this chat can safely act on, with no internal payloads."""
 
-        items = self._pending_items(event)[: self._MAX_ITEMS]
-        if not items:
+        all_items = self._pending_items(event)
+        if not all_items:
             return PresentedReply(
                 "There is nothing waiting for your decision.",
                 (ReplyAction("Browse sources", "/sources"), ReplyAction("Inbox", "/inbox"), ReplyAction("Home", "/home")),
                 title="All caught up",
                 icon="✅",
             )
-        lines = ["Choose an item to see what will change before deciding."]
+        pages = (len(all_items) + self._MAX_ITEMS - 1) // self._MAX_ITEMS
+        page = min(max(page, 1), pages)
+        items = all_items[(page - 1) * self._MAX_ITEMS:page * self._MAX_ITEMS]
+        lines = [f"Page {page} of {pages}", "Choose an item to see what will change before deciding."]
         actions: list[ReplyAction] = []
         for index, (kind, identifier, summary) in enumerate(items, start=1):
             lines.append(f"{index}. {summary}")
             actions.append(ReplyAction(f"Review {index}", f"/review {kind} {identifier}"))
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/pending {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/pending {page + 1}"))
         return PresentedReply(
-            "\n".join(lines), tuple(actions), title=f"{len(items)} decision{'s' if len(items) != 1 else ''} waiting", icon="🕒"
+            "\n".join(lines), tuple(actions), title=f"{len(all_items)} decision{'s' if len(all_items) != 1 else ''} waiting", icon="🕒"
         )
 
     def detail(self, event: IncomingEvent, kind: str, identifier: int) -> str | PresentedReply:
