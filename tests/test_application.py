@@ -1218,6 +1218,23 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
     assert graph.inputs == []
 
 
+def test_telegram_clears_a_stale_calendar_reference_when_current_read_fails(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    contexts.set("telegram", "100", "calendar", "deleted-event")
+
+    def unavailable() -> CalendarService:
+        raise OSError("local authorization is unavailable")
+
+    response = StewardCalendarApplication(unavailable, contexts=contexts).resolve_calendar_reference(
+        make_event(text="show that event")
+    )
+
+    assert response == "That Calendar event is unavailable. Search Calendar again for the current event."
+    assert contexts.get("telegram", "100") is None
+
+
 def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database)
