@@ -35,6 +35,14 @@ class WorkspaceRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute("SELECT id,name,status,created_at FROM workspaces ORDER BY name").fetchall()
         return [Workspace(int(row[0]), str(row[1]), str(row[2]), datetime.fromisoformat(str(row[3]))) for row in rows]
+    def list_source_ids(self, workspace_id: int) -> tuple[int, ...]:
+        """Return semantic links without implying ownership or file movement."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT source_id FROM workspace_sources WHERE workspace_id = ? ORDER BY source_id",
+                (workspace_id,),
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
 class WorkspaceService:
     def __init__(self, repository: WorkspaceRepository, activity_service: ActivityService | None = None) -> None: self._repository = repository; self._activity_service = activity_service

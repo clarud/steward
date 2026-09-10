@@ -810,6 +810,9 @@ only when the record type and the chat-scoped durable record reference agree.
 Tasks use compact `/tasks` cards with `Open` actions; after opening one,
 `show that task` can reopen that precise task after restart. Marking a task
 complete remains an explicit **Mark complete** action or `/complete_task ID`.
+Workspaces likewise use `/workspaces` cards and `/workspace ID` detail views.
+Their source list is a semantic link list, not a directory listing or a move
+instruction; `show that workspace` only reopens the explicit workspace card.
 
 ## Commands and data flow
 

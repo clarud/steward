@@ -583,6 +583,43 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert reopened.title == "parallel-computing.md"
 
 
+def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    sources = SourceRepository(database); fragments = SourceFragmentRepository(database)
+    activity = ActivityService(database); workspaces = WorkspaceRepository(database)
+    workspace = WorkspaceService(workspaces, activity).create("CS3210")
+
+    def reads() -> StewardReadApplication:
+        return StewardReadApplication(
+            sources, fragments, LexicalSearchService(sources, fragments), workspaces,
+            activity, tmp_path / "inbox", contexts=contexts,
+        )
+
+    class QuestionMustNotRun:
+        def invoke(self, _input, _config=None):
+            raise AssertionError("an exact workspace-reference request must not enter retrieval")
+
+    first = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()), read_application=reads(),
+    )
+    listing = first.handle(make_event(text="/workspaces"))
+    assert isinstance(listing, PresentedReply)
+    assert listing.actions[0].command == f"/workspace {workspace.id}"
+    detail = first.handle(make_event(text=f"/workspace {workspace.id}"))
+    assert isinstance(detail, PresentedReply)
+    assert detail.title == "CS3210"
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()), read_application=reads(),
+    )
+    reopened = restarted.handle(make_event(text="show that workspace"))
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == "CS3210"
+
+
 def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tmp_path: Path) -> None:
     """A plain-language reply uses the durable card context, never an inferred ID."""
 

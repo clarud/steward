@@ -413,6 +413,13 @@ class StewardReadApplication:
             return response
         if command == "/workspaces":
             return self.workspaces()
+        if command == "/workspace":
+            if not argument.isdigit():
+                return "Use /workspace followed by a numeric workspace ID."
+            response = self.workspace(int(argument))
+            if self._contexts is not None and any(item.id == int(argument) for item in self._workspaces.list_all()):
+                self._contexts.set(event.platform, event.chat_id, "workspace", int(argument))
+            return response
         if command == "/activity":
             return self.activity(argument)
         if command == "/metrics":
@@ -459,6 +466,22 @@ class StewardReadApplication:
             self._contexts.clear(event.platform, event.chat_id)
             return "That previously opened source is no longer registered. Search or list sources to choose another."
         return self.source(str(context.identifier))
+
+    def resolve_workspace_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen an explicitly selected workspace for exact navigation phrases."""
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {"show that workspace", "open that workspace", "show the last workspace", "open the last workspace"}:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "workspace":
+            return None
+        if not any(item.id == context.identifier for item in self._workspaces.list_all()):
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That previously opened workspace is no longer available. Open another workspace to continue."
+        return self.workspace(context.identifier)
 
     @staticmethod
     def help_text() -> str:
@@ -560,12 +583,35 @@ class StewardReadApplication:
             icon="📄",
         )
 
-    def workspaces(self) -> str:
+    def workspaces(self) -> str | PresentedReply:
         workspaces = self._workspaces.list_all()
         if not workspaces:
             return "No workspaces yet. Ask me to create a workspace and I will make a reviewable proposal."
-        return "Workspaces:\n" + "\n".join(
-            f"{workspace.id}: {workspace.name} ({workspace.status})" for workspace in workspaces
+        visible = workspaces[:8]
+        return PresentedReply(
+            "Workspaces:\n" + "\n".join(
+                f"{workspace.id}: {workspace.name} ({workspace.status})" for workspace in visible
+            ),
+            tuple(ReplyAction(f"Open {index}", f"/workspace {workspace.id}") for index, workspace in enumerate(visible, start=1)),
+            title="Workspaces", icon="📁",
+        )
+
+    def workspace(self, workspace_id: int) -> str | PresentedReply:
+        workspace = next((item for item in self._workspaces.list_all() if item.id == workspace_id), None)
+        if workspace is None:
+            return f"Workspace {workspace_id} was not found."
+        sources = [
+            source for source_id in self._workspaces.list_source_ids(workspace_id)
+            if (source := self._sources.get_by_id(source_id)) is not None
+        ]
+        lines = [f"Status: {workspace.status}", f"Linked sources: {len(sources)}"]
+        if sources:
+            lines.extend(f"{index}. {source.path.name}" for index, source in enumerate(sources[:5], start=1))
+        return PresentedReply(
+            "\n".join(lines),
+            tuple(ReplyAction(f"Open source {index}", f"/source {source.id}") for index, source in enumerate(sources[:5], start=1) if source.id is not None)
+            + (ReplyAction("Workspaces", "/workspaces"),),
+            title=workspace.name, icon="📁",
         )
 
     def activity(self, query: str) -> str:
@@ -3632,6 +3678,9 @@ class StewardEventApplication:
             source_reference = self._read_application.resolve_source_reference(event)
             if source_reference is not None:
                 return source_reference
+            workspace_reference = self._read_application.resolve_workspace_reference(event)
+            if workspace_reference is not None:
+                return workspace_reference
             read_response = self._read_application.handle_command(event)
             if read_response is not None:
                 return read_response

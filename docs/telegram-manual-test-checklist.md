@@ -41,6 +41,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Send `/tasks`, open one task with its compact button, restart the bot, then
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.
+- Send `/workspaces`, open a workspace card, restart the bot, then send `show
+  that workspace`. Verify it lists only semantic source links and never moves
+  or exposes a local root path.
 - Open a deliberately long harmless source or broad search result. Verify a
   long answer arrives as consecutive readable messages rather than a Telegram
   delivery error, and any action buttons appear only on the final message.
