@@ -807,6 +807,9 @@ broader phrases still go through ordinary retrieval rather than being guessed.
 The same narrow navigation rule applies to explicitly opened record cards:
 `show that flight`, `open the last receipt`, and `show that warranty` resolve
 only when the record type and the chat-scoped durable record reference agree.
+Tasks use compact `/tasks` cards with `Open` actions; after opening one,
+`show that task` can reopen that precise task after restart. Marking a task
+complete remains an explicit **Mark complete** action or `/complete_task ID`.
 
 ## Commands and data flow
 

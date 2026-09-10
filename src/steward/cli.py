@@ -1543,7 +1543,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 contexts=review_contexts,
             ),
             task_application=StewardTaskApplication(
-                tasks, ActionProposalRepository(database_path), activity, task_reminders
+                tasks, ActionProposalRepository(database_path), activity, task_reminders,
+                contexts=review_contexts,
             ),
             research_application=StewardResearchApplication(
                 lambda: _research_provider_from_settings(settings, "auto"),

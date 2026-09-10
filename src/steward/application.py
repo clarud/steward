@@ -1159,31 +1159,27 @@ class StewardTaskApplication:
         proposals: ActionProposalRepository,
         activity: ActivityService,
         reminders: TaskReminderService | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._tasks = tasks
         self._proposals = proposals
         self._activity = activity
         self._reminders = reminders
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/tasks":
-            tasks = self._tasks.list_open()
-            if not tasks:
-                return "No open tasks."
-            return "Open tasks:\n" + "\n".join(
-                f"{task.id}: {task.title}"
-                + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
-                + (f" ({task.due_hint})" if task.due_hint else "")
-                + (
-                    f" (reminder {reminder.remind_at.isoformat()})"
-                    if self._reminders is not None
-                    and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
-                    else ""
-                )
-                for task in tasks
-            )
+            return self._list_tasks()
+        if command == "/task":
+            if not separator or not argument.strip().isdigit():
+                return "Use /task followed by a numeric task ID."
+            task_id = int(argument.strip())
+            response = self._task_detail(task_id)
+            if self._contexts is not None and self._tasks.get(task_id) is not None:
+                self._contexts.set(event.platform, event.chat_id, "task", task_id)
+            return response
         if command == "/complete_task":
             if not separator or not argument.strip().isdigit():
                 return "Use /complete_task followed by a numeric task ID."
@@ -1202,6 +1198,65 @@ class StewardTaskApplication:
         if not separator:
             return "Use /propose_task followed by what you need to do."
         return self.propose(argument, chat_id=event.chat_id)
+
+    def resolve_task_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen one explicitly selected task for a narrow navigation phrase."""
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {"show that task", "open that task", "show the last task", "open the last task"}:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "task":
+            return None
+        if self._tasks.get(context.identifier) is None:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That previously opened task is no longer available. Open another task to continue."
+        return self._task_detail(context.identifier)
+
+    def _list_tasks(self) -> str | PresentedReply:
+        tasks = self._tasks.list_open()
+        if not tasks:
+            return "No open tasks."
+        visible = tasks[:8]
+        lines = ["Open tasks:"]
+        lines.extend(
+            f"{task.id}: {task.title}"
+            + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
+            + (f" ({task.due_hint})" if task.due_hint else "")
+            + (
+                f" (reminder {reminder.remind_at.isoformat()})"
+                if self._reminders is not None
+                and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
+                else ""
+            )
+            for task in visible
+        )
+        return PresentedReply(
+            "\n".join(lines),
+            tuple(ReplyAction(f"Open {index}", f"/task {task.id}") for index, task in enumerate(visible, start=1)),
+            title="Open tasks",
+            icon="✅",
+        )
+
+    def _task_detail(self, task_id: int) -> str | PresentedReply:
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        lines = [task.title, f"Status: {task.status}"]
+        if task.due_at:
+            lines.append(f"Due at: {task.due_at.isoformat()}")
+        elif task.due_hint:
+            lines.append(f"Due cue: {task.due_hint}")
+        if self._reminders is not None and (reminder := self._reminders.reminder_for_task(task_id)) is not None:
+            lines.append(f"Reminder: {reminder.remind_at.isoformat()}")
+        actions = [ReplyAction("Tasks", "/tasks")]
+        if task.status == "open":
+            actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
+        return PresentedReply(
+            "\n".join(lines), tuple(actions), title=f"Task {task_id}", icon="✅"
+        )
 
     def propose(self, text: str, *, chat_id: str | None = None) -> str | PresentedReply:
         try:
@@ -3531,6 +3586,9 @@ class StewardEventApplication:
             if record_response is not None:
                 return record_response
         if self._task_application is not None:
+            task_reference = self._task_application.resolve_task_reference(event)
+            if task_reference is not None:
+                return task_reference
             task_response = self._task_application.handle_command(event)
             if task_response is not None:
                 return task_response

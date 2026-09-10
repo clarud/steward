@@ -1165,6 +1165,41 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     assert tasks.list_open() == ()
 
 
+def test_telegram_task_card_and_reference_survive_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database)
+    task = tasks.create("compare OpenMP scheduling", "before Tuesday")
+    contexts = ReviewContextRepository(database)
+    activity = ActivityService(database)
+
+    def task_application() -> StewardTaskApplication:
+        return StewardTaskApplication(tasks, ActionProposalRepository(database), activity, contexts=contexts)
+
+    class QuestionMustNotRun:
+        def invoke(self, _input, _config=None):
+            raise AssertionError("an exact task-reference request must not enter retrieval")
+
+    first = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()), task_application=task_application(),
+    )
+    listing = first.handle(make_event(text="/tasks"))
+    assert isinstance(listing, PresentedReply)
+    assert listing.actions[0].command == f"/task {task.id}"
+    detail = first.handle(make_event(text=f"/task {task.id}"))
+    assert isinstance(detail, PresentedReply)
+    assert detail.actions[0].command == f"/complete_task {task.id}"
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()), task_application=task_application(),
+    )
+    reopened = restarted.handle(make_event(text="show that task"))
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == f"Task {task.id}"
+    assert "compare OpenMP scheduling" in reopened.text
+
+
 def test_deterministic_natural_task_phrase_creates_the_same_reviewable_proposal(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
@@ -1262,7 +1297,9 @@ def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_pa
     assert accepted.title == "Task saved"
     reminder = reminders.reminder_for_task(1)
     assert reminder is not None and reminder.chat_id == "100"
-    assert "reminder 2026-09-18T01:00:00+00:00" in application.handle(make_event(text="/tasks"))
+    task_list = application.handle(make_event(text="/tasks"))
+    assert isinstance(task_list, PresentedReply)
+    assert "reminder 2026-09-18T01:00:00+00:00" in task_list.text
 
 
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:

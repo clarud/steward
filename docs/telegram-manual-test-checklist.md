@@ -38,6 +38,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Open a Travel Record with `/record travel ID`, restart the bot, then send
   `show that flight`. Verify it reopens that exact flight card; do the
   equivalent for a receipt or warranty only after opening a card of that type.
+- Send `/tasks`, open one task with its compact button, restart the bot, then
+  send `show that task`. Verify the detail card survives and **Mark complete**
+  remains an explicit action rather than an inferred conversational write.
 - Open a deliberately long harmless source or broad search result. Verify a
   long answer arrives as consecutive readable messages rather than a Telegram
   delivery error, and any action buttons appear only on the final message.
