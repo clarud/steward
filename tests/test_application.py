@@ -1601,6 +1601,32 @@ def test_knowledge_browser_reaches_all_concepts_without_name_commands(tmp_path: 
     assert app.handle_command(make_event(text="/concepts 999")).text == last.text
 
 
+def test_task_browser_reaches_later_pages_and_completed_history(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    tasks = TaskService(database)
+    for index in range(10):
+        tasks.create(f"Task {index}")
+    app = StewardTaskApplication(tasks, ActionProposalRepository(database), ActivityService(database))
+    first = app.handle_command(make_event(text="/tasks"))
+    command = next(action.command for action in first.actions if action.label == "Next")
+    last = app.handle_command(make_event(text=command))
+    assert "Page 2 of 2" in last.text and "Task 9" in last.text
+    assert last.actions[1].command == "/task 10"
+    for task in tasks.list_open():
+        tasks.complete(task.id)
+    empty = app.handle_command(make_event(text="/tasks"))
+    completed_command = next(action.command for action in empty.actions if action.label == "Completed")
+    completed = app.handle_command(make_event(text=completed_command))
+    assert completed.title == "Completed tasks"
+    assert any(action.label == "Next" for action in completed.actions)
+    detail = app.handle_command(make_event(text=completed.actions[0].command))
+    assert "completed" in detail.text
+    assert all(action.label != "Mark complete" for action in detail.actions)
+    assert len(tasks.list_completed()) == 10
+    assert "positive page" in app.handle_command(make_event(text="/completed_tasks 0"))
+
+
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

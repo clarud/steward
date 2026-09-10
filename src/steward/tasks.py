@@ -128,6 +128,14 @@ class TaskService:
             for row in rows
         )
 
+    def list_completed(self) -> tuple[Task, ...]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT id, title, due_hint, due_at, status, created_at FROM tasks "
+                "WHERE status = 'completed' ORDER BY completed_at DESC, id DESC"
+            ).fetchall()
+        return tuple(self._from_row(row) for row in rows)
+
     def complete(self, task_id: int) -> Task:
         if task_id <= 0:
             raise ValueError("Task ID must be positive.")

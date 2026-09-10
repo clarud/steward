@@ -241,6 +241,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Tasks and records
 
+- `/tasks` offers paginated open tasks and a Completed button. Completed task
+  history is also paginated and opens ordinary task details without a Mark
+  complete action or an active reminder display. Empty open tasks still link
+  to history. Browsing does not reopen, delete, or otherwise mutate tasks.
+  Automated coverage verifies access beyond eight open/completed tasks.
+
 - Calendar proposals from travel records and tasks show readable dates and
   the flight/task title before approval, including disclosure of any booking
   reference sent in the event description. Reopening through `/pending` uses

@@ -1498,8 +1498,10 @@ class StewardTaskApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command == "/tasks":
-            return self._list_tasks()
+        if command in {"/tasks", "/completed_tasks"}:
+            if argument.strip() and (not argument.strip().isdigit() or int(argument) < 1):
+                return f"Use {command} with an optional positive page number."
+            return self._list_tasks(int(argument) if argument.strip() else 1, completed=command == "/completed_tasks")
         if command == "/task":
             if not separator or not argument.strip().isdigit():
                 return "Use /task followed by a numeric task ID."
@@ -1543,34 +1545,45 @@ class StewardTaskApplication:
             return "That previously opened task is no longer available. Open another task to continue."
         return self._task_detail(context.identifier)
 
-    def _list_tasks(self) -> str | PresentedReply:
-        tasks = self._tasks.list_open()
+    def _list_tasks(self, page: int = 1, *, completed: bool = False) -> str | PresentedReply:
+        tasks = self._tasks.list_completed() if completed else self._tasks.list_open()
+        if completed and not tasks:
+            return PresentedReply("No completed tasks yet.", (ReplyAction("Open tasks", "/tasks"),), title="Completed tasks", icon="✅")
         if not tasks:
             return PresentedReply(
                 "No open tasks.\n\nSend a message such as:\n"
                 "Task: compare OpenMP scheduling\n\n"
                 "I will show you a proposal to review before saving it.",
-                (ReplyAction("Home", "/home"), ReplyAction("Pending", "/pending")),
+                (ReplyAction("Completed", "/completed_tasks"), ReplyAction("Home", "/home"), ReplyAction("Pending", "/pending")),
                 title="Tasks", icon="✅",
             )
-        visible = tasks[:8]
-        lines = ["Open tasks:"]
+        pages = max(1, (len(tasks) + 7) // 8)
+        page = min(max(page, 1), pages)
+        visible = tasks[(page - 1) * 8:page * 8]
+        command = "/completed_tasks" if completed else "/tasks"
+        actions = [ReplyAction(f"Open {index}", f"/task {task.id}") for index, task in enumerate(visible, start=1)]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"{command} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"{command} {page + 1}"))
+        actions.append(ReplyAction("Open tasks" if completed else "Completed", "/tasks" if completed else "/completed_tasks"))
+        lines = [f"Page {page} of {pages}"]
         lines.extend(
-            f"{task.id}: {task.title}"
+            f"{index}: {task.title}"
             + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
             + (f" ({task.due_hint})" if task.due_hint else "")
             + (
                 f" (reminder {reminder.remind_at.isoformat()})"
-                if self._reminders is not None
+                if not completed and self._reminders is not None
                 and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
                 else ""
             )
-            for task in visible
+            for index, task in enumerate(visible, start=1)
         )
         return PresentedReply(
             "\n".join(lines),
-            tuple(ReplyAction(f"Open {index}", f"/task {task.id}") for index, task in enumerate(visible, start=1)),
-            title="Open tasks",
+            tuple(actions),
+            title="Completed tasks" if completed else "Open tasks",
             icon="✅",
         )
 
@@ -1583,7 +1596,7 @@ class StewardTaskApplication:
             lines.append(f"Due at: {task.due_at.isoformat()}")
         elif task.due_hint:
             lines.append(f"Due cue: {task.due_hint}")
-        if self._reminders is not None and (reminder := self._reminders.reminder_for_task(task_id)) is not None:
+        if task.status == "open" and self._reminders is not None and (reminder := self._reminders.reminder_for_task(task_id)) is not None:
             lines.append(f"Reminder: {reminder.remind_at.isoformat()}")
         actions = [ReplyAction("Tasks", "/tasks")]
         if task.status == "open":
