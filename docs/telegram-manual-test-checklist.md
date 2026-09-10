@@ -149,9 +149,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   evidence and caution that acceptance is not proof. Claim text is withheld
   when any supporting fragment is unavailable or its source policy forbids
   the selected model. Review evidence is filtered separately. Local-only and
-  no-model regression tests cover this boundary. Concept names themselves are
-  not yet assigned a separate privacy policy; this guard applies to claims
-  and evidence, not to all concept metadata.
+  no-model regression tests cover this boundary. Missing registered sources
+  are also excluded from source, record, and knowledge tool content. When all
+  of a concept's claims are withheld, the entire concept result is withheld
+  too. Empty concepts and mixed public/private concepts still lack an explicit
+  independent concept-level privacy policy.
 
 - Accept a contradiction review, then open its concept with `/knowledge NAME`.
   The original claim must remain intact, with the accepted contradiction

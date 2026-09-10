@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from dataclasses import replace
 
 from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
@@ -14,7 +15,7 @@ from steward.records import (
     WarrantyRecordProposal,
 )
 from steward.retrieval import LexicalSearchService
-from steward.sources import Source, SourceRepository, SourceType
+from steward.sources import Source, SourceRepository, SourceType, SourceStatus
 from steward.storage import initialize_database
 from steward.tools import ReadOnlyToolService, build_read_only_tools
 from steward.workspaces import WorkspaceRepository
@@ -106,12 +107,17 @@ def test_knowledge_tool_respects_evidence_privacy_and_surfaces_reviewed_conflict
     assert result["accepted_reviews"][0]["operation"] == "contradict"
     assert result["accepted_reviews"][0]["text"] == fragment.text
     assert "not proven truth" in result["review_caveat"]
+    sources.update(replace(source, status=SourceStatus.MISSING))
+    assert json.loads(service.search_knowledge("TLB"))["concept"] is None
+    assert "error" in json.loads(service.read_source(source.id))
+    assert service.search_sources("translations") == "[]"
+    sources.update(source)
     privacy.set_rule(source.id, PrivacyRule.LOCAL_MODEL_ONLY)
-    assert json.loads(service.search_knowledge("TLB"))["concept"]["claims"] == []
+    assert json.loads(service.search_knowledge("TLB"))["concept"] is None
     local = ReadOnlyToolService(sources, fragments, LexicalSearchService(sources, fragments), knowledge, RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy, model_is_local=True)
     assert len(json.loads(local.search_knowledge("TLB"))["concept"]["claims"]) == 1
     privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
-    assert json.loads(local.search_knowledge("TLB"))["concept"]["claims"] == []
+    assert json.loads(local.search_knowledge("TLB"))["concept"] is None
 
 
 def test_read_only_record_search_includes_receipts_and_warranties(tmp_path: Path) -> None:

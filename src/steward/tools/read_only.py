@@ -92,7 +92,7 @@ class ReadOnlyToolService:
             return self._json({"error": f"Source {source_id} was not found."})
         if not self._permits_model(source.id):
             return self._json(
-                {"error": "This source's privacy rule prevents sending its content to an external model."}
+                {"error": "This source is unavailable or its privacy rule prevents use by the selected model."}
             )
         return self._json(
             {
@@ -115,7 +115,8 @@ class ReadOnlyToolService:
         """Resolve a canonical concept or alias without creating knowledge."""
         concept = self._knowledge.find(query)
         claims = []
-        for claim in self._knowledge.list_claims(concept.id or 0) if concept else ():
+        candidate_claims = self._knowledge.list_claims(concept.id or 0) if concept else []
+        for claim in candidate_claims:
             evidence_ids = self._knowledge.evidence_fragment_ids(claim.id or 0)
             evidence = [self._fragments.get(identifier) for identifier in evidence_ids]
             if not evidence or any(part is None or not self._permits_model(part.source_id) for part in evidence):
@@ -135,6 +136,8 @@ class ReadOnlyToolService:
                 "evidence_fragment_ids": evidence_ids, "accepted_reviews": reviews,
                 "review_caveat": "Reviews record user assessment, not proven truth. Claims are unchanged. Respect contradictions and qualifications. Evidence may be withheld by privacy policy.",
             })
+        if candidate_claims and not claims:
+            return self._json({"concept": None})
         return self._json(
             {
                 "concept": None
@@ -252,8 +255,11 @@ class ReadOnlyToolService:
     def _permits_model(self, source_id: int | None) -> bool:
         """Enforce the policy for the model that will receive tool output."""
 
-        if source_id is None or self._privacy is None:
-            return source_id is not None
+        source = self._sources.get_by_id(source_id) if source_id is not None else None
+        if source is None or source.status.value != "active":
+            return False
+        if self._privacy is None:
+            return True
         return (
             self._privacy.permits_local_model(source_id)
             if self._model_is_local
