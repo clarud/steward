@@ -36,3 +36,15 @@ def test_telegram_presenter_splits_long_escaped_text_without_repeating_actions()
     assert all(item.rows == () for item in rendered[:-1])
     assert rendered[-1].rows[0][0].label == "Accept"
     assert "&lt;evidence&gt;" in "".join(item.text for item in rendered)
+
+
+def test_long_titles_and_emoji_chunks_keep_balanced_markup_and_text() -> None:
+    from html import unescape
+    title = "Long title " * 800
+    body = "📄" * 4000 + " <evidence>"
+    chunks = TelegramPresenter().render_many(PresentedReply(body, title=title))
+    assert all(len(chunk.text.encode("utf-16-le")) // 2 <= 3800 for chunk in chunks)
+    assert all(chunk.text.count("<b>") == chunk.text.count("</b>") for chunk in chunks)
+    combined = unescape("".join(chunk.text for chunk in chunks))
+    assert title in combined
+    assert body in combined

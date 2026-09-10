@@ -56,6 +56,11 @@ class TelegramPresenter:
         body = response.text
         if heading is None:
             heading, body = self._split_heading(body)
+        if len(heading) > 88:
+            # Keep markup confined to the first chunk while preserving the
+            # complete user-supplied title in the plain body.
+            body = f"{heading}\n\n{body}"
+            heading = heading[:87] + "…"
         prefix = f"{escape(response.icon)} " if response.icon else ""
         rendered = f"{prefix}<b>{escape(heading)}</b>"
         if body:
@@ -114,12 +119,14 @@ class TelegramPresenter:
 
     @classmethod
     def _split_html(cls, text: str) -> tuple[str, ...]:
-        if len(text) <= cls._MAX_MESSAGE_CHARACTERS:
+        if len(text.encode("utf-16-le")) // 2 <= cls._MAX_MESSAGE_CHARACTERS:
             return (text,)
         chunks: list[str] = []
         remaining = text
-        while len(remaining) > cls._MAX_MESSAGE_CHARACTERS:
-            limit = cls._MAX_MESSAGE_CHARACTERS
+        while len(remaining.encode("utf-16-le")) // 2 > cls._MAX_MESSAGE_CHARACTERS:
+            # Astral characters (e.g. emoji) occupy two UTF-16 units. Decode
+            # only complete characters so a boundary never loses a surrogate.
+            limit = len(remaining.encode("utf-16-le")[:cls._MAX_MESSAGE_CHARACTERS * 2].decode("utf-16-le", errors="ignore"))
             boundary = max(remaining.rfind("\n", 0, limit), remaining.rfind(" ", 0, limit))
             cut = boundary if boundary > limit // 2 else limit
             ampersand = remaining.rfind("&", 0, cut)

@@ -22,6 +22,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Core reads and routing
 
+- Try a harmless long note containing emoji and a long title. Each delivered
+  part should render correctly, the complete title/text should remain readable,
+  and action buttons should appear only on the final part.
+
 - Open a source and choose **Ask about it**. Restart once before sending the
   question; the question must still use the chosen document. **Cancel** returns
   to its source card. Answers retain the same model privacy rule and evidence
