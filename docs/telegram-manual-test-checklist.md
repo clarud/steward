@@ -143,6 +143,20 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   an existing workspace name. Verify Steward supersedes the old proposal with
   a new review card; only accepting that new card may move the original file.
 
+## Original document delivery
+
+- Open a source card and choose Send original. The original bytes should arrive
+  as a Telegram document with only its filename, not a local path. This is an
+  explicit external transfer through Telegram, not an LLM request. Reads of
+  extracted text and model summaries remain separate actions.
+- Delivery uses Steward's conservative 20 MiB cap. Missing/inactive originals,
+  changed hashes, excluded paths, and paths outside enabled roots or the
+  configured Inbox are refused. Root checks resolve paths before access.
+  The cap is an application policy, not a statement of Telegram's maximum.
+- Automated export and adapter tests cover boundaries and delivered bytes.
+  Real Telegram document delivery remains a manual acceptance check. A crash
+  after Telegram accepts the attachment can still cause duplicate delivery.
+
 ## External import recovery
 
 - Status must report missing required access ahead of token refreshability.

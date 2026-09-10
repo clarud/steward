@@ -44,6 +44,23 @@ class FakeUpdate:
         self.effective_message = message
 
 
+def test_explicit_original_reply_sends_bytes_without_a_local_path():
+    from steward.sources.export import OriginalDocument
+
+    class Handler:
+        def handle(self, event):
+            assert event.text == "/send_source 1"
+            return PresentedReply("Original requested.", document=OriginalDocument("notes.pdf", b"pdf data"))
+
+    class Message(FakeMessage):
+        async def reply_document(self, **kwargs):
+            self.sent = kwargs
+
+    message = Message(text="/send_source 1")
+    asyncio.run(TelegramAdapter(Handler()).handle_update(FakeUpdate(message), None))
+    assert message.sent == {"document": b"pdf data", "filename": "notes.pdf"}
+
+
 class FakeCallbackMessage(FakeMessage):
     async def reply_text(self, text: str, **kwargs) -> None:
         del kwargs

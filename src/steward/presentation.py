@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from steward.sources.export import OriginalDocument
 
 
 def calendar_time_label(start: str, end: str) -> str:
@@ -50,3 +51,4 @@ class PresentedReply:
     actions: tuple[ReplyAction, ...] = ()
     title: str | None = None
     icon: str | None = None
+    document: OriginalDocument | None = None

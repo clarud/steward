@@ -60,6 +60,7 @@ from steward.graphs import (
 from steward.logging import configure_logging
 from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
+from steward.sources.export import SourceExportService
 from steward.storage import initialize_database, restore_database, snapshot_database
 from steward.retrieval import (
     HybridRetriever,
@@ -1520,6 +1521,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 runtime_status=telegram_runtime_status,
                 contexts=review_contexts,
                 source_model=model_gateway,
+                source_export=SourceExportService(sources, SourceRootRepository(database_path), settings.inbox_dir),
                 source_model_allowed=(privacy.permits_local_model if settings.model_provider == "local" else privacy.permits_external_model),
             ),
             provisional_intake_application=StewardProvisionalIntakeApplication(

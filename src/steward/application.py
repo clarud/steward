@@ -23,6 +23,7 @@ from steward.organization import (
     OrganizationService,
 )
 from steward.sources import Source
+from steward.sources.export import SourceExportService
 from steward.sources.service import SourceService
 from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
@@ -484,7 +485,9 @@ class StewardReadApplication:
         contexts: ReviewContextRepository | None = None,
         source_model: ModelGateway | None = None,
         source_model_allowed: Callable[[int], bool] | None = None,
+        source_export: SourceExportService | None = None,
     ) -> None:
+        self._source_export = source_export
         self._source_model = source_model
         self._source_model_allowed = source_model_allowed
         self._sources = source_repository
@@ -517,6 +520,18 @@ class StewardReadApplication:
             if not argument.isdecimal():
                 return "Open a source and choose Summarize."
             return self.summarize_source(int(argument))
+        if command == "/send_source":
+            if not argument.isdigit():
+                return "Open a source and choose Send original. This sends the file through Telegram."
+            if self._source_export is None:
+                return "Original-file delivery is not configured on this process."
+            try:
+                document = self._source_export.export(int(argument))
+            except ValueError as error:
+                return str(error)
+            except OSError:
+                return "The original could not be read. Check its availability locally."
+            return PresentedReply("Original file requested for delivery through Telegram.", title=document.filename, document=document)
         if command == "/ask_source":
             identifier, _, question = argument.partition(" ")
             if not identifier.isdecimal() or self._sources.get_by_id(int(identifier)) is None:
@@ -729,7 +744,8 @@ class StewardReadApplication:
         return PresentedReply(
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
             f"Extracted sections: {len(fragments)}",
-            actions=(ReplyAction("Read content", f"/source_content {source_id}"), ReplyAction("Summarize", f"/summarize_source {source_id}"), ReplyAction("Ask about it", f"/ask_source {source_id}")),
+            actions=(ReplyAction("Read content", f"/source_content {source_id}"), ReplyAction("Summarize", f"/summarize_source {source_id}"), ReplyAction("Ask about it", f"/ask_source {source_id}"))
+            + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ()),
             title=source.path.name,
             icon="📄",
         )

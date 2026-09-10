@@ -233,6 +233,8 @@ class TelegramAdapter:
         """Render escaped HTML and locally-resolved compact follow-up buttons."""
         if isinstance(response, PresentedReply):
             self._remember_review(event, response)
+            if response.document is not None:
+                await message.reply_document(document=response.document.content, filename=response.document.filename)  # type: ignore[attr-defined]
         rendered_messages = self._presenter.render_many(
             response if isinstance(response, PresentedReply) else str(response)
         )
@@ -422,6 +424,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("connect_knowledge", adapter.handle_update))
     application.add_handler(CommandHandler("knowledge_proposals", adapter.handle_update))
     application.add_handler(CommandHandler("knowledge_reviews", adapter.handle_update))
+    application.add_handler(CommandHandler("send_source", adapter.handle_update))
     application.add_handler(CommandHandler("knowledge_proposal", adapter.handle_update))
     application.add_handler(CommandHandler("propose_enrichment", adapter.handle_update))
     application.add_handler(CommandHandler("review_enrichment", adapter.handle_update))
