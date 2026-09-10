@@ -160,6 +160,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   transaction. Failure-injection tests verify rollback and repeated approvals
   cannot create a second record from the same proposal. Separate proposals
   for the same source are not deduplicated by this guarantee.
+  Stale reviews offer Fresh preview, View source, and Dismiss old review.
+  Pressing Fresh preview must show the new fields without saving a record;
+  a second explicit approval is required. Dismissing the old review must
+  leave the source intact. Automated application tests exercise the fresh
+  preview button route for travel, receipt, and warranty records.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.

@@ -1595,12 +1595,18 @@ def test_record_approval_rejects_changed_evidence_and_legacy_previews(tmp_path: 
             StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
             action_proposal_application=review, record_application=intake,
         )
-        assert "stale" in application.handle(make_event(text="/approve_action 1"))
+        stale = application.handle(make_event(text="/approve_action 1"))
+        assert isinstance(stale, PresentedReply)
+        assert "stale" in stale.text
+        assert [action.command for action in stale.actions] == [
+            f"/propose_{kind}_record {source.id}", f"/source {source.id}", "/reject_action 1",
+        ]
         assert proposals.get(1).status == "pending"
         legacy = proposals.add(f"create_{kind}_record", {"source_id": str(source.id)})
-        assert "snapshot protection" in application.handle(make_event(text=f"/approve_action {legacy.id}"))
+        assert "snapshot protection" in application.handle(make_event(text=f"/approve_action {legacy.id}")).text
         assert getattr(records, f"list_{kind}_records")() == []
-        fresh = intake.handle_command(make_event(text=f"/propose_{kind}_record {source.id}"))
+        fresh = application.handle(make_event(text=stale.actions[0].command))
+        assert getattr(records, f"list_{kind}_records")() == []
         approve = next(action.command for action in fresh.actions if action.command.startswith("/approve_action"))
         application.handle(make_event(text=approve))
         assert len(getattr(records, f"list_{kind}_records")()) == 1

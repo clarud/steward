@@ -59,6 +59,23 @@ from steward.research import ResearchBundle, ResearchProvider, ResearchProviderE
 from steward.reviews import ReviewContextRepository
 
 
+def _stale_record_review(action_type: str, source_id: int, proposal_id: int) -> PresentedReply:
+    """Offer explicit recovery without approving newly extracted values."""
+    record_type = action_type.removeprefix("create_").removesuffix("_record")
+    return PresentedReply(
+        f"The {record_type} preview for source {source_id} is stale or predates snapshot protection.\n\n"
+        "Nothing was saved. Open a fresh preview to check the current fields, then approve it separately. "
+        "You can dismiss this old review without deleting the source.",
+        (
+            ReplyAction("Fresh preview", f"/propose_{record_type}_record {source_id}"),
+            ReplyAction("View source", f"/source {source_id}"),
+            ReplyAction("Dismiss old review", f"/reject_action {proposal_id}"),
+        ),
+        title="Review needs refreshing",
+        icon="🔄",
+    )
+
+
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
 
 
@@ -174,7 +191,7 @@ class StewardReviewInboxApplication:
                 }[proposal.action_type]
                 preview = builder(source_id, [(part.id, part.text) for part in parts])
                 if proposal.payload.get("snapshot") != record_review_snapshot(preview, [(part.id, part.text) for part in parts]):
-                    return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
+                    return _stale_record_review(proposal.action_type, source_id, identifier)
                 if not preview.field_evidence:
                     return "No evidenced record fields remain. Re-extract or inspect the source before approving."
                 description = f"Source: {source.path.name}\nCurrent extracted fields:\n" + "\n".join(
@@ -3566,7 +3583,7 @@ class StewardActionProposalApplication:
                 source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
             )
             if proposal.payload.get("snapshot") != record_review_snapshot(record_proposal, [(part.id or 0, part.text) for part in fragments]):
-                return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
+                return _stale_record_review(proposal.action_type, source_id, proposal_id)
             try:
                 record = self._records.create_from_proposal(record_proposal, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
             except ValueError as error:
@@ -3628,7 +3645,7 @@ class StewardActionProposalApplication:
             f"{reference.reference_type} (fragment {reference.fragment_id})."
         )
 
-    def _review_document_record(self, proposal_id: int, decision: str) -> str:
+    def _review_document_record(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._records is None or self._fragments is None:
             return "Record review is not configured on this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -3651,7 +3668,7 @@ class StewardActionProposalApplication:
             if label == "receipt" else self._records.propose_warranty_record(source_id, fragments)
         )
         if proposal.payload.get("snapshot") != record_review_snapshot(extracted, fragments):
-            return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
+            return _stale_record_review(proposal.action_type, source_id, proposal_id)
         try:
             record = (
                 self._records.create_receipt_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
