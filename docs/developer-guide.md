@@ -793,7 +793,9 @@ selected source from chat context. The configured model receives only that
 source's stored fragments and location labels after the source privacy policy
 permits it. No local path is included. The generated answer includes evidence
 locations and is not saved as knowledge. Inputs over 60,000 characters are
-declined explicitly; whole-document batching and semantic citation verification
+declined explicitly. Missing or unknown citation keys cause the generated text
+to be withheld with retry/read actions. This checks reference membership, not
+whether each claim follows from its evidence; whole-document batching and semantic citation verification
 remain limitations. No new model dependency or persistence table is required.
 
 Calendar list/detail cards use `calendar_time_label` for readable dates and

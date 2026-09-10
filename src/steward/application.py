@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Callable, NotRequired, Protocol, TypedDict
 
 from steward.answer import AnswerCitation
+from steward.answer.citations import verify_citations
 from steward.capture import CaptureResult, InboxCaptureService
 from pathlib import Path
 from steward.events import IncomingEvent
@@ -670,6 +671,19 @@ class StewardReadApplication:
             )
         except ModelGatewayError:
             return "The summary model is temporarily unavailable. Please retry or use Read content."
+        citations = tuple(
+            AnswerCitation(f"F{part.id}", part.id, source.path, part.heading, part.location)
+            for part in fragments
+        )
+        verification = verify_citations(summary, citations)
+        if not verification.is_verified:
+            return PresentedReply(
+                "The model returned a summary with missing or unknown evidence references. "
+                "Please retry or read the extracted content directly.",
+                (ReplyAction("Read content", f"/source_content {source_id}"),
+                 ReplyAction("Retry summary", f"/summarize_source {source_id}")),
+                title="Summary needs verification", icon="📄",
+            )
         return PresentedReply(
             f"Generated summary of {len(fragments)} extracted sections:\n\n{summary}\n\n"
             + "Evidence locations:\n" + "\n".join(f"[F{part.id}] {part.location}" for part in fragments),

@@ -640,10 +640,11 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     class SummaryModel:
         def __init__(self):
             self.inputs = []
+            self.answer = "Parallel loops use scheduling. [F1]"
 
         def generate(self, *, instructions, input_text):
             self.inputs.append(input_text)
-            return "Parallel loops use scheduling. [F1]"
+            return self.answer
 
     model = SummaryModel()
     privacy = PrivacyService(database)
@@ -657,9 +658,15 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert "Generated summary of 2 extracted sections" in summary.text
     assert "Parallel loops" in model.inputs[0] and "Static scheduling" in model.inputs[0]
     assert str(tmp_path) not in model.inputs[0]
+    for invalid_answer in ("Unsupported statement [F99999]", "No citation at all"):
+        model.answer = invalid_answer
+        unverified = reader.resolve_source_reference(make_event(text="summarize it"))
+        assert unverified.title == "Summary needs verification"
+        assert invalid_answer not in unverified.text
+    calls_before_denial = len(model.inputs)
     privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
     assert "privacy rule" in reader.resolve_source_reference(make_event(text="summarize it"))
-    assert len(model.inputs) == 1
+    assert len(model.inputs) == calls_before_denial
 
 
 def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -> None:
