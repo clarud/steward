@@ -143,6 +143,19 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   an existing workspace name. Verify Steward supersedes the old proposal with
   a new review card; only accepting that new card may move the original file.
 
+## Long-document synthesis
+
+- Summaries and selected-source questions above 60,000 extracted characters
+  use evidence batches, then combine their notes. Every section is processed;
+  the reply labels the result as multi-pass and warns that condensation can
+  omit detail. At most 32 batch calls and one combination call are allowed.
+  This costs more model requests than a short-document summary.
+- Every batch and final answer must use supplied citation keys. A failed,
+  oversized, or uncited batch must not yield a complete-looking partial answer.
+  Citation membership is checked, not semantic truth or coverage of every fact.
+  Tests cover final-section inclusion and early budget refusal. No live-provider
+  or real Telegram long-document acceptance is claimed yet.
+
 ## Original document delivery
 
 - After selecting a source, say “send me that PDF” or “send the original”.
