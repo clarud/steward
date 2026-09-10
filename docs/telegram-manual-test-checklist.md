@@ -322,3 +322,12 @@ Record any failed command, exact visible response, expected result, and whether
 the issue involved a source mutation, external service, or model. That turns a
 daily-use problem into a reproducible evaluation case rather than a vague
 regression.
+# Reminder claim ownership regression
+
+Automated coverage verifies that a worker with an expired claim cannot release
+or acknowledge a newer claim, including after a reminder is rescheduled.
+Migration 45 adds a per-claim token; claim selection and acquisition use one
+SQLite write transaction. Telegram delivery passes that token back when it
+acknowledges or releases the claim. This does not guarantee exactly-once external
+delivery: a crash after Telegram accepts a message may still cause a retry.
+Stop older Steward versions before starting the upgraded runtime.

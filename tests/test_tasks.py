@@ -83,10 +83,12 @@ def test_task_reminder_claims_retries_and_acknowledges_due_delivery(tmp_path: Pa
 
     assert reminder_service.claim_due(datetime(2026, 9, 18, 8, 59, tzinfo=UTC)) == ()
     claimed = reminder_service.claim_due(datetime(2026, 9, 18, 9, tzinfo=UTC))
-    assert claimed == (scheduled,)
-    reminder_service.release(task.id or 0)
-    assert reminder_service.claim_due(datetime(2026, 9, 18, 9, 1, tzinfo=UTC)) == (scheduled,)
-    reminder_service.acknowledge(task.id or 0, datetime(2026, 9, 18, 9, 2, tzinfo=UTC))
+    assert claimed[0].task == scheduled.task
+    assert claimed[0].claim_token
+    reminder_service.release(task.id or 0, claimed[0].claim_token)
+    retry = reminder_service.claim_due(datetime(2026, 9, 18, 9, 1, tzinfo=UTC))[0]
+    assert retry.claim_token != claimed[0].claim_token
+    reminder_service.acknowledge(task.id or 0, retry.claim_token, datetime(2026, 9, 18, 9, 2, tzinfo=UTC))
 
     assert reminder_service.claim_due(datetime(2026, 9, 18, 9, 10, tzinfo=UTC)) == ()
     assert activity.list_recent()[0].event_type is ActivityType.TASK_REMINDER_SENT
@@ -95,3 +97,29 @@ def test_task_reminder_claims_retries_and_acknowledges_due_delivery(tmp_path: Pa
 def test_task_service_requires_a_title() -> None:
     with pytest.raises(ValueError, match="task"):
         TaskService.parse_proposal("remind me to")
+
+
+@pytest.mark.parametrize("reschedule", [False, True])
+def test_stale_reminder_worker_cannot_change_new_claim(tmp_path: Path, reschedule: bool) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    tasks = TaskService(database)
+    activity = ActivityService(database)
+    service = TaskReminderService(database, tasks, activity)
+    task_id = tasks.create("Review notes").id
+    now = datetime(2026, 9, 18, 9, tzinfo=UTC)
+    service.schedule(task_id, "100", now)
+    old = service.claim_due(now)[0]
+    if reschedule:
+        service.schedule(task_id, "100", now)
+    later = datetime(2026, 9, 18, 9, 6, tzinfo=UTC)
+    replacement = TaskReminderService(database, tasks, activity)
+    new = replacement.claim_due(later)[0]
+    assert new.claim_token != old.claim_token
+    service.release(task_id, old.claim_token)
+    assert replacement.claim_due(later) == ()
+    service.acknowledge(task_id, old.claim_token, later)
+    assert replacement.reminder_for_task(task_id) is not None
+    assert activity.list_recent() == []
+    replacement.acknowledge(task_id, new.claim_token, later)
+    assert replacement.reminder_for_task(task_id) is None

@@ -50,6 +50,7 @@ ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
 PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
 TASK_REMINDERS_SCHEMA_VERSION = 43
 TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
+TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
@@ -447,6 +448,10 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             PRIMARY KEY (platform, chat_id)
         )
         """,
+    ),
+    (
+        TASK_REMINDER_CLAIM_SCHEMA_VERSION,
+        "ALTER TABLE task_reminders ADD COLUMN claim_token TEXT",
     ),
 )
 

@@ -470,8 +470,10 @@ async def deliver_due_task_reminders(
     delivered = 0
     for reminder in await asyncio.to_thread(reminders.claim_due):
         task_id = reminder.task.id or 0
+        if reminder.claim_token is None:
+            continue
         if allowed_chat_ids and reminder.chat_id not in allowed_chat_ids:
-            await asyncio.to_thread(reminders.release, task_id)
+            await asyncio.to_thread(reminders.release, task_id, reminder.claim_token)
             continue
         text = (
             f"Reminder: Task {task_id}: {reminder.task.title}\n"
@@ -480,9 +482,9 @@ async def deliver_due_task_reminders(
         try:
             await bot.send_message(chat_id=reminder.chat_id, text=text)  # type: ignore[attr-defined]
         except Exception:
-            await asyncio.to_thread(reminders.release, task_id)
+            await asyncio.to_thread(reminders.release, task_id, reminder.claim_token)
             continue
-        await asyncio.to_thread(reminders.acknowledge, task_id)
+        await asyncio.to_thread(reminders.acknowledge, task_id, reminder.claim_token)
         delivered += 1
     return delivered
 

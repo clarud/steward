@@ -7,6 +7,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from steward.activity import ActivityService, ActivityType
 
@@ -28,6 +29,7 @@ class TaskReminder:
     task: Task
     chat_id: str
     remind_at: datetime
+    claim_token: str | None = None
 
 
 class TaskService:
@@ -214,6 +216,7 @@ class TaskReminderService:
         stale_before = now - self._CLAIM_TTL
         claimed: list[TaskReminder] = []
         with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute(
                 """
                 SELECT t.id, t.title, t.due_hint, t.due_at, t.status, t.created_at,
@@ -228,10 +231,11 @@ class TaskReminderService:
             ).fetchall()
             for row in rows:
                 task_id = int(row[0])
+                claim_token = uuid4().hex
                 cursor = connection.execute(
-                    "UPDATE task_reminders SET claimed_at = ? WHERE task_id = ? AND reminded_at IS NULL "
+                    "UPDATE task_reminders SET claimed_at = ?, claim_token = ? WHERE task_id = ? AND reminded_at IS NULL "
                     "AND (claimed_at IS NULL OR claimed_at < ?)",
-                    (now.isoformat(), task_id, stale_before.isoformat()),
+                    (now.isoformat(), claim_token, task_id, stale_before.isoformat()),
                 )
                 if cursor.rowcount != 1:
                     continue
@@ -240,23 +244,24 @@ class TaskReminderService:
                     datetime.fromisoformat(str(row[3])) if row[3] else None,
                     str(row[4]), datetime.fromisoformat(str(row[5])),
                 )
-                claimed.append(TaskReminder(task, str(row[6]), datetime.fromisoformat(str(row[7]))))
+                claimed.append(TaskReminder(task, str(row[6]), datetime.fromisoformat(str(row[7])), claim_token))
         return tuple(claimed)
 
-    def acknowledge(self, task_id: int, now: datetime | None = None) -> None:
+    def acknowledge(self, task_id: int, claim_token: str, now: datetime | None = None) -> None:
         occurred_at = (now or datetime.now(UTC)).astimezone(UTC)
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
-                "UPDATE task_reminders SET reminded_at = ?, claimed_at = NULL "
-                "WHERE task_id = ? AND reminded_at IS NULL",
-                (occurred_at.isoformat(), task_id),
+                "UPDATE task_reminders SET reminded_at = ?, claimed_at = NULL, claim_token = NULL "
+                "WHERE task_id = ? AND claim_token = ? AND reminded_at IS NULL",
+                (occurred_at.isoformat(), task_id, claim_token),
             )
         if cursor.rowcount:
             self._activity.record(ActivityType.TASK_REMINDER_SENT, object_id=str(task_id), details="Telegram reminder delivered")
 
-    def release(self, task_id: int) -> None:
+    def release(self, task_id: int, claim_token: str) -> None:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute(
-                "UPDATE task_reminders SET claimed_at = NULL WHERE task_id = ? AND reminded_at IS NULL",
-                (task_id,),
+                "UPDATE task_reminders SET claimed_at = NULL, claim_token = NULL "
+                "WHERE task_id = ? AND claim_token = ? AND reminded_at IS NULL",
+                (task_id, claim_token),
             )
