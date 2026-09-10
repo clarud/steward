@@ -1532,6 +1532,37 @@ def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_pa
     assert "reminder 2026-09-18T01:00:00+00:00" in task_list.text
 
 
+def test_workspace_pages_reach_every_workspace_and_linked_source(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    sources = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    workspaces = WorkspaceRepository(database)
+    contexts = ReviewContextRepository(database)
+    for index in range(10):
+        workspaces.create(f"Project {index}")
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    for index in range(7):
+        source = sources.add(Source(None, tmp_path / f"note-{index}.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+        workspaces.link_source(1, source.id)
+    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), workspaces, ActivityService(database), tmp_path / "inbox", contexts=contexts)
+    first = reader.handle_command(make_event(text="/workspaces"))
+    next_command = next(action.command for action in first.actions if action.label == "Next")
+    second = reader.handle_command(make_event(text=next_command))
+    assert "Project 9" in second.text and "Page 2 of 2" in second.text
+    detail = reader.handle_command(make_event(text="/workspace 1"))
+    next_command = next(action.command for action in detail.actions if action.label == "Next")
+    second_detail = reader.handle_command(make_event(text=next_command))
+    assert "note-6.md" in second_detail.text and "Page 2 of 2" in second_detail.text
+    assert any(action.command == "/source 7" for action in second_detail.actions)
+    assert contexts.get("telegram", "100").identifier == 1
+    assert reader.handle_command(make_event(text="/workspace 1 999")).text == second_detail.text
+    assert "positive" in reader.handle_command(make_event(text="/workspace 1 0"))
+    assert "positive" in reader.handle_command(make_event(text="/workspaces -1"))
+    empty = reader.handle_command(make_event(text="/workspace 2"))
+    assert any(action.command == "/sources" for action in empty.actions)
+
+
 def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

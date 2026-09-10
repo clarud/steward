@@ -143,6 +143,16 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   an existing workspace name. Verify Steward supersedes the old proposal with
   a new review card; only accepting that new card may move the original file.
 
+## Workspace navigation
+
+- With more than eight workspaces, use Next/Previous to reach every workspace.
+  Within a workspace with more than five linked sources, use its separate
+  Next/Previous controls to reach every source. Each Open button must target
+  the source displayed beside its number. Page navigation preserves the
+  selected workspace reference and does not alter membership or file locations.
+  Empty workspaces offer Browse sources. Out-of-range pages clamp to the last
+  available page; invalid nonpositive page arguments return usage guidance.
+
 ## Tasks and records
 
 - Calendar proposals from travel records and tasks show readable dates and

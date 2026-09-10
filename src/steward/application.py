@@ -534,13 +534,17 @@ class StewardReadApplication:
                 self._contexts.set(event.platform, event.chat_id, "source", int(argument))
             return response
         if command == "/workspaces":
-            return self.workspaces()
+            if argument and (not argument.isdigit() or int(argument) < 1):
+                return "Use /workspaces with an optional positive page number."
+            return self.workspaces(int(argument) if argument else 1)
         if command == "/workspace":
-            if not argument.isdigit():
-                return "Use /workspace followed by a numeric workspace ID."
-            response = self.workspace(int(argument))
-            if self._contexts is not None and any(item.id == int(argument) for item in self._workspaces.list_all()):
-                self._contexts.set(event.platform, event.chat_id, "workspace", int(argument))
+            parts = argument.split()
+            if not 1 <= len(parts) <= 2 or any(not part.isdigit() or int(part) < 1 for part in parts):
+                return "Use /workspace followed by a numeric workspace ID and optional positive page number."
+            identifier = int(parts[0])
+            response = self.workspace(identifier, int(parts[1]) if len(parts) == 2 else 1)
+            if self._contexts is not None and any(item.id == identifier for item in self._workspaces.list_all()):
+                self._contexts.set(event.platform, event.chat_id, "workspace", identifier)
             return response
         if command == "/activity":
             return self.activity(argument)
@@ -794,20 +798,27 @@ class StewardReadApplication:
             tuple(actions), title=source.path.name, icon="📖",
         )
 
-    def workspaces(self) -> str | PresentedReply:
+    def workspaces(self, page: int = 1) -> str | PresentedReply:
         workspaces = self._workspaces.list_all()
         if not workspaces:
             return "No workspaces yet. Ask me to create a workspace and I will make a reviewable proposal."
-        visible = workspaces[:8]
+        pages = max(1, (len(workspaces) + 7) // 8)
+        page = min(max(page, 1), pages)
+        visible = workspaces[(page - 1) * 8:page * 8]
+        actions = [ReplyAction(f"Open {index}", f"/workspace {workspace.id}") for index, workspace in enumerate(visible, start=1)]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/workspaces {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/workspaces {page + 1}"))
         return PresentedReply(
-            "Workspaces:\n" + "\n".join(
-                f"{workspace.id}: {workspace.name} ({workspace.status})" for workspace in visible
+            f"Page {page} of {pages} · {len(workspaces)} workspaces\n" + "\n".join(
+                f"{index}. {workspace.name} ({workspace.status})" for index, workspace in enumerate(visible, start=1)
             ),
-            tuple(ReplyAction(f"Open {index}", f"/workspace {workspace.id}") for index, workspace in enumerate(visible, start=1)),
+            tuple(actions),
             title="Workspaces", icon="📁",
         )
 
-    def workspace(self, workspace_id: int) -> str | PresentedReply:
+    def workspace(self, workspace_id: int, page: int = 1) -> str | PresentedReply:
         workspace = next((item for item in self._workspaces.list_all() if item.id == workspace_id), None)
         if workspace is None:
             return f"Workspace {workspace_id} was not found."
@@ -816,12 +827,24 @@ class StewardReadApplication:
             if (source := self._sources.get_by_id(source_id)) is not None
         ]
         lines = [f"Status: {workspace.status}", f"Linked sources: {len(sources)}"]
+        pages = max(1, (len(sources) + 4) // 5)
+        page = min(max(page, 1), pages)
+        visible = sources[(page - 1) * 5:page * 5]
+        actions = [ReplyAction(f"Open source {index}", f"/source {source.id}") for index, source in enumerate(visible, start=1) if source.id is not None]
         if sources:
-            lines.extend(f"{index}. {source.path.name}" for index, source in enumerate(sources[:5], start=1))
+            lines.append(f"Page {page} of {pages}")
+            lines.extend(f"{index}. {source.path.name}" for index, source in enumerate(visible, start=1))
+        else:
+            lines.append("No linked sources yet. Browse your sources to find material for this workspace.")
+            actions.append(ReplyAction("Browse sources", "/sources"))
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/workspace {workspace_id} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/workspace {workspace_id} {page + 1}"))
+        actions.append(ReplyAction("Workspaces", "/workspaces"))
         return PresentedReply(
             "\n".join(lines),
-            tuple(ReplyAction(f"Open source {index}", f"/source {source.id}") for index, source in enumerate(sources[:5], start=1) if source.id is not None)
-            + (ReplyAction("Workspaces", "/workspaces"),),
+            tuple(actions),
             title=workspace.name, icon="📁",
         )
 
