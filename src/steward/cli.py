@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from steward.config import Settings, load_environment_file
+from steward.runtime import RuntimeAlreadyRunningError, telegram_runtime_lock
 from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
@@ -1587,16 +1588,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 _calendar_reader_factory(settings), contexts=review_contexts
             ),
         )
-        run_telegram_polling(
-            token,
-            application,
-            application,
-            allowed_chat_ids=settings.telegram_allowed_chat_ids,
-            delivery_repository=TelegramUpdateDeliveryRepository(database_path),
-            callback_repository=TelegramCallbackRepository(database_path),
-            review_contexts=review_contexts,
-            task_reminders=task_reminders,
-        )
+        try:
+            with telegram_runtime_lock(settings.data_dir):
+                run_telegram_polling(
+                    token,
+                    application,
+                    application,
+                    allowed_chat_ids=settings.telegram_allowed_chat_ids,
+                    delivery_repository=TelegramUpdateDeliveryRepository(database_path),
+                    callback_repository=TelegramCallbackRepository(database_path),
+                    review_contexts=review_contexts,
+                    task_reminders=task_reminders,
+                )
+        except RuntimeAlreadyRunningError as error:
+            print(str(error))
         return
 
     if arguments.command == "telegram-deliveries":

@@ -269,6 +269,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Failure and recovery checks
 
+- After restarting into the version with the runtime guard, try starting a
+  second `steward telegram` with the same data directory. It must report an
+  existing instance before polling. After the original exits, startup must
+  work without deleting `telegram-runtime.db`.
+
 - With reminders enabled, stop the bot while its reminder worker is idle.
   It should exit promptly rather than wait for the next 60-second poll. Restart
   and verify pending reminders remain available. In-flight network deliveries

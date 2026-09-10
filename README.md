@@ -471,6 +471,13 @@ otherwise it is selected only when retrieved evidence requires local handling.
 
 ## Ask through Telegram
 
+`steward telegram` holds a process-lifetime lock in
+`STEWARD_DATA_DIR/telegram-runtime.db`. A second instance using that directory
+exits with an already-running message. The operating system releases the lock
+after a crash; the remaining file is normal and need not be deleted. Separate
+data directories are not coordinated, so use one installation per bot token.
+An older running version must be stopped once before this guard takes effect.
+
 Create a bot with BotFather, put its token in your private `.env`, and start
 the local polling process. Send `/save` as a message to capture its text, or
 use `/save` as the caption on a Markdown, text, DOCX, HTML, image, or PDF attachment. Captured
