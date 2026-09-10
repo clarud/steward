@@ -1942,9 +1942,42 @@ class StewardKnowledgeApplication:
             if concept is None:
                 return f"No canonical concept matches {argument.strip()!r}."
             claims = self._knowledge.list_claims(concept.id or 0)
+            claim_ids = {claim.id for claim in claims}
+            accepted = [item for item in self._proposals.list_all() if item.claim_id in claim_ids and item.status == "accepted"]
             lines = [f"Concept {concept.id}: {concept.name}"]
-            lines.extend(f"Claim {claim.id}: {claim.text}" for claim in claims)
-            return "\n".join(lines)
+            for claim in claims:
+                lines.append(f"Claim {claim.id}: {claim.text}")
+                operations = sorted({item.operation.value for item in accepted if item.claim_id == claim.id})
+                if operations:
+                    lines.append("Reviewed evidence: " + ", ".join(operations))
+            if accepted:
+                lines.append("Accepted reviews do not establish truth or rewrite claims. Inspect disagreements before relying on a claim.")
+            return PresentedReply("\n".join(lines), (
+                ReplyAction("Evidence reviews", f"/knowledge_reviews {concept.id}"),
+            ), title=concept.name, icon="🧠")
+        if command == "/knowledge_reviews":
+            parts = argument.split()
+            if not 1 <= len(parts) <= 2 or any(not part.isdigit() or int(part) < 1 for part in parts):
+                return "Use /knowledge_reviews with a concept ID and optional positive page number."
+            concept_id = int(parts[0])
+            claim_ids = {claim.id for claim in self._knowledge.list_claims(concept_id)}
+            reviews = [item for item in self._proposals.list_all() if item.claim_id in claim_ids and item.status == "accepted"]
+            if not reviews:
+                return "No accepted evidence reviews for this concept. Original claims remain unchanged."
+            pages = (len(reviews) + 7) // 8
+            page = min(int(parts[1]) if len(parts) == 2 else 1, pages)
+            visible = reviews[(page - 1) * 8:page * 8]
+            actions = [ReplyAction(f"Inspect {index}", f"/knowledge_proposal {item.id}") for index, item in enumerate(visible, start=1)]
+            if page > 1:
+                actions.append(ReplyAction("Previous", f"/knowledge_reviews {concept_id} {page - 1}"))
+            if page < pages:
+                actions.append(ReplyAction("Next", f"/knowledge_reviews {concept_id} {page + 1}"))
+            return PresentedReply(
+                f"Page {page} of {pages}\n" + "\n".join(
+                    f"{index}. Claim {item.claim_id}: {item.operation.value.upper()} — {item.rationale}"
+                    for index, item in enumerate(visible, start=1)
+                ), tuple(actions), title="Reviewed evidence", icon="🔎",
+            )
         if command == "/connect_knowledge":
             if self._connector is None:
                 return "Knowledge connection inspection is not configured for this Steward process."

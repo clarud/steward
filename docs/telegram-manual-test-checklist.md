@@ -143,6 +143,17 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   an existing workspace name. Verify Steward supersedes the old proposal with
   a new review card; only accepting that new card may move the original file.
 
+## Knowledge disagreement visibility
+
+- Accept a contradiction review, then open its concept with `/knowledge NAME`.
+  The original claim must remain intact, with the accepted contradiction
+  visible and an Evidence reviews button. Open that history and inspect the
+  claim, rationale, and evidence. More than eight accepted reviews must be
+  reachable through Next/Previous. Acceptance records the user's review;
+  it does not prove the claim, automatically resolve the contradiction, or
+  rewrite canonical knowledge. Pending/rejected reviews are not presented as
+  accepted evidence. Automated application coverage checks this navigation.
+
 ## Workspace navigation
 
 - With more than eight workspaces, use Next/Previous to reach every workspace.

@@ -1073,6 +1073,24 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
         "Knowledge contradiction proposal 1 accepted. Existing claim unchanged."
     )
     assert knowledge.get_claim(claim.id or 0) == claim
+    concept_card = application.handle(make_event(text="/knowledge TLB"))
+    assert isinstance(concept_card, PresentedReply)
+    assert "contradict" in concept_card.text and "do not establish truth" in concept_card.text
+    reviews = application.handle(make_event(text=concept_card.actions[0].command))
+    assert "CONTRADICT" in reviews.text
+    detail = application.handle(make_event(text=reviews.actions[0].command))
+    assert "TLBs do not cache translations." in detail
+    from dataclasses import replace
+    repository = KnowledgeEnrichmentProposalRepository(database)
+    candidate = knowledge.compare_evidence(claim, fragment_id=fragment.id, evidence_text=fragment.text)
+    for index in range(8):
+        item = repository.add(replace(candidate, rationale=f"Additional review {index}"))
+        repository.review(item.id, "accepted")
+    page = application.handle(make_event(text=concept_card.actions[0].command))
+    next_command = next(action.command for action in page.actions if action.label == "Next")
+    last = application.handle(make_event(text=next_command))
+    assert "Page 2 of 2" in last.text and "Additional review 7" in last.text
+    assert "positive page" in application.handle(make_event(text="/knowledge_reviews 1 0"))
 
 
 def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:
