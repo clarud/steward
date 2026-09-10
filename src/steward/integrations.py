@@ -32,6 +32,18 @@ def oauth_token_readiness(
         return "local token present (readiness cannot be verified)"
     if not isinstance(payload, dict):
         return "local token present (readiness cannot be verified)"
+    # Refreshing a token does not repair missing authorization scopes. Check
+    # required access even when expiry metadata is absent or malformed.
+    if required_scopes:
+        scopes = payload.get("scopes")
+        if isinstance(scopes, str):
+            granted_scopes = frozenset(scopes.split())
+        elif isinstance(scopes, list) and all(isinstance(scope, str) for scope in scopes):
+            granted_scopes = frozenset(scopes)
+        else:
+            return "local token present (required access cannot be verified)"
+        if not set(required_scopes).issubset(granted_scopes):
+            return "local token lacks required access; reauthorize locally"
     expiry = payload.get("expiry")
     if not isinstance(expiry, str):
         return "local token present"
@@ -48,16 +60,6 @@ def oauth_token_readiness(
             if bool(payload.get("refresh_token"))
             else "local token expired; reauthorize locally"
         )
-    if required_scopes:
-        scopes = payload.get("scopes")
-        if isinstance(scopes, str):
-            granted_scopes = frozenset(scopes.split())
-        elif isinstance(scopes, list) and all(isinstance(scope, str) for scope in scopes):
-            granted_scopes = frozenset(scopes)
-        else:
-            return "local token present (required access cannot be verified)"
-        if not set(required_scopes).issubset(granted_scopes):
-            return "local token lacks required access; reauthorize locally"
     return "local token present"
 
 

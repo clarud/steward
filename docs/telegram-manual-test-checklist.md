@@ -145,9 +145,16 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## External import recovery
 
+- Status must report missing required access ahead of token refreshability.
+  An expired metadata-only Drive token still needs local reauthorization for
+  downloads, even if it contains a refresh token. Local readiness checks do
+  not contact Google or prove that a token is currently accepted by Google.
+  Regression coverage includes missing, malformed, and expired timestamps,
+  with both string and list scope representations.
+
 - An unavailable Drive/Gmail service or expired authorization must return a
   secret-free recovery card, not a traceback. Retry targets the same item/query;
-  Status and Inbox remain available. Authorization must happen on the local
+  Integrations and Inbox remain available. Authorization must happen on the local
   Steward computer, never by sending credentials in Telegram. Check Inbox
   after ambiguous import failures: a failed response is not proof of rollback.
   Automated tests cover OS and provider-style exceptions without disclosure.

@@ -1,4 +1,5 @@
 import pytest
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -46,6 +47,24 @@ def test_oauth_token_readiness_detects_missing_required_scope_without_disclosing
     assert oauth_token_readiness(sufficient, now=now, required_scopes=("required-scope",)) == "local token present"
     assert oauth_token_readiness(unknown, now=now, required_scopes=("required-scope",)) == (
         "local token present (required access cannot be verified)"
+    )
+
+
+@pytest.mark.parametrize("expiry", [None, "malformed", "2026-09-01T00:00:00+00:00"])
+@pytest.mark.parametrize("scopes", [["metadata-only"], "metadata-only"])
+def test_missing_oauth_access_takes_priority_over_refresh_and_expiry(tmp_path: Path, expiry, scopes) -> None:
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"expiry": expiry, "scopes": scopes, "refresh_token": "secret"}), encoding="utf-8")
+    assert oauth_token_readiness(token, now=datetime(2026, 9, 10, tzinfo=UTC), required_scopes=("download",)) == (
+        "local token lacks required access; reauthorize locally"
+    )
+
+
+def test_expired_token_with_required_access_remains_refreshable(tmp_path: Path) -> None:
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"expiry": "2026-09-01T00:00:00+00:00", "scopes": ["download"], "refresh_token": "secret"}), encoding="utf-8")
+    assert oauth_token_readiness(token, now=datetime(2026, 9, 10, tzinfo=UTC), required_scopes=("download",)) == (
+        "local token expired; refresh available locally"
     )
 
 

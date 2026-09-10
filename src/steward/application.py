@@ -63,9 +63,9 @@ from steward.reviews import ReviewContextRepository
 def _external_import_failure(operation: str, retry_command: str) -> PresentedReply:
     return PresentedReply(
         f"{operation} could not finish. The service may be unreachable or need local reauthorization.\n\n"
-        "Check Status, complete any required browser sign-in on the Steward computer, then retry. "
+        "Check Integrations, complete any required browser sign-in on the Steward computer, then retry. "
         "Do not send tokens or client-secret files here. A failed reply does not prove that an import saved nothing; check Inbox before retrying.",
-        (ReplyAction("Retry", retry_command), ReplyAction("Status", "/status"), ReplyAction("Inbox", "/inbox")),
+        (ReplyAction("Retry", retry_command), ReplyAction("Integrations", "/integrations"), ReplyAction("Inbox", "/inbox")),
         title="Integration needs attention", icon="⚠️",
     )
 

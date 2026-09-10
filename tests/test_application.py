@@ -2226,7 +2226,7 @@ def test_telegram_integration_status_reports_expired_token_without_disclosing_it
     monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", "C:/private/client.json")
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "google-drive-token.json").write_text(
-        '{"token":"secret","expiry":"2020-01-01T00:00:00+00:00"}', encoding="utf-8"
+        '{"token":"secret","expiry":"2020-01-01T00:00:00+00:00","scopes":["https://www.googleapis.com/auth/drive.readonly"]}', encoding="utf-8"
     )
     response = StewardIntegrationStatusApplication(tmp_path).handle_command(make_event(text="/integrations"))
 
