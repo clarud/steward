@@ -60,6 +60,16 @@ from steward.research import ResearchBundle, ResearchProvider, ResearchProviderE
 from steward.reviews import ReviewContextRepository
 
 
+def _external_import_failure(operation: str, retry_command: str) -> PresentedReply:
+    return PresentedReply(
+        f"{operation} could not finish. The service may be unreachable or need local reauthorization.\n\n"
+        "Check Status, complete any required browser sign-in on the Steward computer, then retry. "
+        "Do not send tokens or client-secret files here. A failed reply does not prove that an import saved nothing; check Inbox before retrying.",
+        (ReplyAction("Retry", retry_command), ReplyAction("Status", "/status"), ReplyAction("Inbox", "/inbox")),
+        title="Integration needs attention", icon="⚠️",
+    )
+
+
 def _stale_record_review(action_type: str, source_id: int, proposal_id: int) -> PresentedReply:
     """Offer explicit recovery without approving newly extracted values."""
     record_type = action_type.removeprefix("create_").removesuffix("_record")
@@ -2725,7 +2735,7 @@ class StewardDriveImportApplication:
     def __init__(self, importer: DriveInboxImporter | None) -> None:
         self._importer = importer
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/drive_search":
@@ -2742,8 +2752,8 @@ class StewardDriveImportApplication:
             )
         try:
             result = self._importer.import_file(file_id)
-        except (OSError, ValueError):
-            return "Drive import is temporarily unavailable. Verify local authorization, then try again."
+        except Exception:
+            return _external_import_failure("Drive import", f"/drive_import {file_id}")
         status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
         return f"{status}: {result.source.path.name}"
 
@@ -2752,8 +2762,8 @@ class StewardDriveImportApplication:
             return "Drive search is not configured on this Steward process. Authorize Drive locally first."
         try:
             results = self._importer.search(query.strip())
-        except (OSError, ValueError):
-            return "Drive search is temporarily unavailable. Verify local authorization, then try again."
+        except Exception:
+            return _external_import_failure("Drive search", f"/drive_search {query}")
         if not results:
             return "No Drive files matched."
         visible = results[:5]
@@ -2775,7 +2785,7 @@ class StewardGmailImportApplication:
     def __init__(self, importer: GmailInboxImporter | None) -> None:
         self._importer = importer
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/gmail_search":
@@ -2792,8 +2802,8 @@ class StewardGmailImportApplication:
             )
         try:
             result = self._importer.import_message(message_id)
-        except (OSError, ValueError):
-            return "Gmail import is temporarily unavailable. Verify local authorization, then try again."
+        except Exception:
+            return _external_import_failure("Gmail import", f"/gmail_import {message_id}")
         status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
         return f"{status}: {result.source.path.name}"
 
@@ -2802,8 +2812,8 @@ class StewardGmailImportApplication:
             return "Gmail search is not configured on this Steward process. Authorize Gmail locally first."
         try:
             results = self._importer.search(query.strip())
-        except (OSError, ValueError):
-            return "Gmail search is temporarily unavailable. Verify local authorization, then try again."
+        except Exception:
+            return _external_import_failure("Gmail search", f"/gmail_search {query}")
         if not results:
             return "No Gmail messages matched."
         visible = results[:5]

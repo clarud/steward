@@ -143,6 +143,15 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   an existing workspace name. Verify Steward supersedes the old proposal with
   a new review card; only accepting that new card may move the original file.
 
+## External import recovery
+
+- An unavailable Drive/Gmail service or expired authorization must return a
+  secret-free recovery card, not a traceback. Retry targets the same item/query;
+  Status and Inbox remain available. Authorization must happen on the local
+  Steward computer, never by sending credentials in Telegram. Check Inbox
+  after ambiguous import failures: a failed response is not proof of rollback.
+  Automated tests cover OS and provider-style exceptions without disclosure.
+
 ## Knowledge disagreement visibility
 
 - The read-only agent's knowledge results include permitted accepted review
