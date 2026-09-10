@@ -141,6 +141,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Tasks and records
 
+- Reopen a travel, receipt, or warranty extraction proposal through `/pending`.
+  Check the source filename, current field values, and evidence fragment IDs.
+  Merely opening the preview must not create a record. These previews use the
+  current extracted source; immutable approval snapshots remain a limitation.
+
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.
 - Send `deadline: submit CS3210 lab due Friday` without a command. Verify the

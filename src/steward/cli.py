@@ -1540,6 +1540,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 intakes=ProvisionalIntakeRepository(database_path),
                 knowledge_proposals=KnowledgeEnrichmentProposalRepository(database_path),
                 contexts=review_contexts,
+                records=RecordService(database_path),
+                fragments=fragments,
             ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity,

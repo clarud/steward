@@ -575,6 +575,20 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert "Record: 42" in correction_card.text and "Replacement: Osaka" in correction_card.text
     assert "not automatically source-evidenced" in correction_card.text
 
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, "Flight SQ638\nArrival: Tokyo", "page 1"),
+    )))
+    record_proposal = actions.add("create_travel_record", {"source_id": str(source.id)})
+    record_reviews = StewardReviewInboxApplication(
+        actions, organizations, sources, records=RecordService(database), fragments=fragments,
+    )
+    record_card = record_reviews.handle_command(make_event(text=f"/review action {record_proposal.id}"))
+    assert "flight_number: SQ638" in record_card.text and "arrival: Tokyo" in record_card.text
+    assert "fragment" in record_card.text and "resume.pdf" in record_card.text
+    assert str(tmp_path) not in record_card.text
+    assert RecordService(database).list_travel_records() == []
+
 
 def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"

@@ -81,6 +81,8 @@ class StewardReviewInboxApplication:
         intakes: ProvisionalIntakeRepository | None = None,
         knowledge_proposals: KnowledgeEnrichmentProposalRepository | None = None,
         contexts: ReviewContextRepository | None = None,
+        records: RecordService | None = None,
+        fragments: SourceFragmentRepository | None = None,
     ) -> None:
         self._actions = action_proposals
         self._organizations = organization_proposals
@@ -88,6 +90,8 @@ class StewardReviewInboxApplication:
         self._intakes = intakes
         self._knowledge = knowledge_proposals
         self._contexts = contexts
+        self._records = records
+        self._fragments = fragments
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, _, argument = (event.text or "").strip().partition(" ")
@@ -155,6 +159,26 @@ class StewardReviewInboxApplication:
             if proposal is None or proposal.status != "pending":
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
             title, description = self._action_summary(proposal.action_type, proposal.payload)
+            if proposal.action_type in {"create_travel_record", "create_receipt_record", "create_warranty_record"}:
+                if self._records is None or self._fragments is None:
+                    return "Record preview is unavailable. Open the original record proposal before approving."
+                source_id = int(proposal.payload["source_id"])
+                source = self._sources.get_by_id(source_id)
+                if source is None or source.status.value != "active":
+                    return "The record's source is unavailable. Restore or rescan it before reviewing."
+                parts = self._fragments.list_for_source(source_id)
+                builder = {
+                    "create_travel_record": self._records.propose_travel_record,
+                    "create_receipt_record": self._records.propose_receipt_record,
+                    "create_warranty_record": self._records.propose_warranty_record,
+                }[proposal.action_type]
+                preview = builder(source_id, [(part.id, part.text) for part in parts])
+                if not preview.field_evidence:
+                    return "No evidenced record fields remain. Re-extract or inspect the source before approving."
+                description = f"Source: {source.path.name}\nCurrent extracted fields:\n" + "\n".join(
+                    f"{field}: {getattr(preview.record, field)} (fragment {fragment_id})"
+                    for field, fragment_id in preview.field_evidence.items()
+                )
             actions = [ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")]
             if proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
                 actions.insert(1, ReplyAction("Edit", f"/curate_edit {identifier}"))
