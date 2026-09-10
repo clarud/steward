@@ -148,7 +148,13 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Reopen a travel, receipt, or warranty extraction proposal through `/pending`.
   Check the source filename, current field values, and evidence fragment IDs.
   Merely opening the preview must not create a record. These previews use the
-  current extracted source; immutable approval snapshots remain a limitation.
+  reviewed field values and evidence fingerprints. Approval refuses changed
+  evidence or legacy proposals without snapshots; request a new proposal to
+  review the current values. Test this by re-extracting changed content after
+  opening a preview, then pressing its old Accept button. No record should be
+  created. Travel, receipt, and warranty paths have automated regression coverage.
+  Validation and record persistence are not yet one atomic transaction with
+  concurrent extraction, so that narrower race remains to be closed.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.

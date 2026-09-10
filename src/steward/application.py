@@ -43,7 +43,7 @@ from steward.intake import (
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGateway, ModelGatewayError
-from steward.records import RecordService
+from steward.records import RecordService, record_review_snapshot
 from steward.knowledge import (
     EnrichmentOperation,
     KnowledgeEnrichmentProposalRepository,
@@ -173,6 +173,8 @@ class StewardReviewInboxApplication:
                     "create_warranty_record": self._records.propose_warranty_record,
                 }[proposal.action_type]
                 preview = builder(source_id, [(part.id, part.text) for part in parts])
+                if proposal.payload.get("snapshot") != record_review_snapshot(preview, [(part.id, part.text) for part in parts]):
+                    return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
                 if not preview.field_evidence:
                     return "No evidenced record fields remain. Re-extract or inspect the source before approving."
                 description = f"Source: {source.path.name}\nCurrent extracted fields:\n" + "\n".join(
@@ -1134,11 +1136,10 @@ class StewardRecordApplication:
             for label, field, value in fields
             if value is not None and field in proposal.field_evidence
         )
-        pending = self._proposals.find_pending(
-            self.CREATE_TRAVEL_RECORD, {"source_id": str(source_id)}
-        )
+        payload = {"source_id": str(source_id), "snapshot": record_review_snapshot(proposal, [(part.id or 0, part.text) for part in fragments])}
+        pending = self._proposals.find_pending(self.CREATE_TRAVEL_RECORD, payload)
         if pending is None:
-            pending = self._proposals.add(self.CREATE_TRAVEL_RECORD, {"source_id": str(source_id)})
+            pending = self._proposals.add(self.CREATE_TRAVEL_RECORD, payload)
             self._activity.record(
                 ActivityType.ACTION_PROPOSED,
                 object_id=str(pending.id),
@@ -1264,9 +1265,10 @@ class StewardRecordApplication:
             for field, fragment_id in proposal.field_evidence.items()
             if getattr(proposal.record, field) is not None
         ]
-        pending = self._proposals.find_pending(action_type, {"source_id": str(source_id)})
+        payload = {"source_id": str(source_id), "snapshot": record_review_snapshot(proposal, [(part.id or 0, part.text) for part in fragments])}
+        pending = self._proposals.find_pending(action_type, payload)
         if pending is None:
-            pending = self._proposals.add(action_type, {"source_id": str(source_id)})
+            pending = self._proposals.add(action_type, payload)
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create {label} record from source {source_id}")
         return PresentedReply(
             "\n".join(fields) + f"\n\nNo {label} record has been saved yet.",
@@ -3563,6 +3565,8 @@ class StewardActionProposalApplication:
             record_proposal = self._records.propose_travel_record(
                 source_id, [(fragment.id or 0, fragment.text) for fragment in fragments]
             )
+            if proposal.payload.get("snapshot") != record_review_snapshot(record_proposal, [(part.id or 0, part.text) for part in fragments]):
+                return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
             try:
                 record = self._records.create_from_proposal(record_proposal)
             except ValueError as error:
@@ -3649,6 +3653,8 @@ class StewardActionProposalApplication:
             self._records.propose_receipt_record(source_id, fragments)
             if label == "receipt" else self._records.propose_warranty_record(source_id, fragments)
         )
+        if proposal.payload.get("snapshot") != record_review_snapshot(extracted, fragments):
+            return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
         try:
             record = (
                 self._records.create_receipt_from_proposal(extracted)

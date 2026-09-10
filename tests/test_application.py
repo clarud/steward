@@ -579,7 +579,12 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     fragments.replace_for_source(ExtractionResult(source.id, (
         SourceFragment(None, source.id, None, 0, "Flight SQ638\nArrival: Tokyo", "page 1"),
     )))
-    record_proposal = actions.add("create_travel_record", {"source_id": str(source.id)})
+    from steward.records import record_review_snapshot
+    parts = [(part.id, part.text) for part in fragments.list_for_source(source.id)]
+    preview = RecordService(database).propose_travel_record(source.id, parts)
+    record_proposal = actions.add("create_travel_record", {
+        "source_id": str(source.id), "snapshot": record_review_snapshot(preview, parts),
+    })
     record_reviews = StewardReviewInboxApplication(
         actions, organizations, sources, records=RecordService(database), fragments=fragments,
     )
@@ -1556,6 +1561,49 @@ def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_pa
     assert records.list_receipt_records() == []
     assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 created from source 1."
     assert records.list_receipt_records()[0].merchant == "Campus Cafe"
+
+
+def test_record_approval_rejects_changed_evidence_and_legacy_previews(tmp_path: Path) -> None:
+    for kind, original, changed in (
+        ("travel", "Flight SQ638\nArrival: Tokyo", "Flight SQ638\nArrival: Osaka"),
+        ("receipt", "Merchant: Cafe\nTotal: SGD 12.50", "Merchant: Cafe\nTotal: SGD 99.00"),
+        ("warranty", "Product: Laptop\nProvider: Shop", "Product: Phone\nProvider: Shop"),
+    ):
+        database = tmp_path / f"{kind}.db"
+        initialize_database(database)
+        now = datetime(2026, 9, 10, tzinfo=UTC)
+        source = SourceRepository(database).add(Source(None, tmp_path / f"{kind}.md", "a" * 64, SourceType.MARKDOWN, 1, now, now, now))
+        fragments = SourceFragmentRepository(database)
+        fragments.replace_for_source(ExtractionResult(source.id, (
+            SourceFragment(None, source.id, None, 0, original, "lines 1-2"),
+        )))
+        activity = ActivityService(database)
+        proposals = ActionProposalRepository(database)
+        records = RecordService(database)
+        intake = StewardRecordApplication(records, fragments, proposals, activity)
+        intake.handle_command(make_event(text=f"/propose_{kind}_record {source.id}"))
+        pending = proposals.get(1)
+        assert "snapshot" in pending.payload
+        fragments.replace_for_source(ExtractionResult(source.id, (
+            SourceFragment(None, source.id, None, 0, changed, "lines 1-2"),
+        )))
+        review = StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            record_service=records, fragment_repository=fragments, activity_service=activity,
+        )
+        application = StewardEventApplication(
+            StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+            action_proposal_application=review, record_application=intake,
+        )
+        assert "stale" in application.handle(make_event(text="/approve_action 1"))
+        assert proposals.get(1).status == "pending"
+        legacy = proposals.add(f"create_{kind}_record", {"source_id": str(source.id)})
+        assert "snapshot protection" in application.handle(make_event(text=f"/approve_action {legacy.id}"))
+        assert getattr(records, f"list_{kind}_records")() == []
+        fresh = intake.handle_command(make_event(text=f"/propose_{kind}_record {source.id}"))
+        approve = next(action.command for action in fresh.actions if action.command.startswith("/approve_action"))
+        application.handle(make_event(text=approve))
+        assert len(getattr(records, f"list_{kind}_records")()) == 1
 
 
 def test_telegram_warranty_preview_can_be_rejected_without_persisting(tmp_path: Path) -> None:

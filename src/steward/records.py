@@ -1,8 +1,10 @@
 """Concrete personal records with provenance back to original sources."""
 from __future__ import annotations
 import re
+import json
+from hashlib import sha256
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +60,25 @@ class WarrantyRecord:
 class WarrantyRecordProposal:
     record: WarrantyRecord
     field_evidence: dict[str, int]
+
+def record_review_snapshot(
+    proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal,
+    fragments: list[tuple[int, str]],
+) -> str:
+    """Persist reviewed values and bind them to the exact extraction evidence.
+
+    Include text digests because fragment IDs may be reused during re-extraction.
+    Stable serialization also detects changes in extraction behavior on upgrade.
+    """
+    return json.dumps(
+        {
+            "proposal": asdict(proposal),
+            "evidence": [(identifier, sha256(text.encode("utf-8")).hexdigest()) for identifier, text in fragments],
+        },
+        sort_keys=True,
+        default=lambda value: value.isoformat(),
+    )
+
 
 class RecordService:
     def __init__(self, database_path: Path) -> None:
