@@ -35,7 +35,31 @@ def test_bad_batch_never_produces_partial_document_answer(response):
     model = Model()
     with pytest.raises(DocumentSynthesisError, match="No partial summary"):
         synthesize_long_document(model, [SourceFragment(1, 1, None, 0, "x" * 65000, "page 1")], [AnswerCitation("F1", 1, Path("a.pdf"), None, "page 1")])
-    assert model.calls == 1
+    assert model.calls == 2
+
+
+def test_one_invalid_batch_can_be_repaired_from_original_evidence():
+    class Model:
+        inputs = []
+        def generate(self, **kwargs):
+            self.inputs.append(kwargs["input_text"])
+            return "bad draft" if len(self.inputs) == 1 else "Supported notes [F1]"
+    model = Model()
+    result = synthesize_long_document(model, [SourceFragment(1, 1, None, 0, "original evidence", "page 1")], [AnswerCitation("F1", 1, Path("a.pdf"), None, "page 1")])
+    assert result == "Supported notes [F1]" and len(model.inputs) == 3
+    assert "original evidence" in model.inputs[1] and "bad draft" not in model.inputs[1]
+
+
+def test_repair_budget_is_shared_across_batches():
+    class Model:
+        calls = 0
+        def generate(self, **kwargs):
+            self.calls += 1
+            return "Repaired [F1]" if self.calls == 2 else "invalid"
+    model = Model()
+    with pytest.raises(DocumentSynthesisError, match="No partial summary"):
+        synthesize_long_document(model, [SourceFragment(1, 1, None, 0, "x" * 40000, "page 1")], [AnswerCitation("F1", 1, Path("a.pdf"), None, "page 1")])
+    assert model.calls == 3
 
 
 def test_batch_budget_is_checked_before_any_model_request():

@@ -148,7 +148,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Summaries and selected-source questions above 60,000 extracted characters
   use evidence batches, then combine their notes. Every section is processed;
   the reply labels the result as multi-pass and warns that condensation can
-  omit detail. At most 32 batch calls and one combination call are allowed.
+  omit detail. At most 32 batch calls, one shared format-repair call, and one
+  combination call are allowed. A failed batch is retried from original
+  evidence once; the repair budget is shared across the entire document.
   This costs more model requests than a short-document summary.
 - Every batch and final answer must use supplied citation keys. A failed,
   oversized, or uncited batch must not yield a complete-looking partial answer.
