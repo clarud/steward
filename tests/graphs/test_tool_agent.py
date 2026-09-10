@@ -206,6 +206,33 @@ def test_gemini_tool_adapter_converts_function_calls_to_ai_tool_calls() -> None:
     assert result.tool_calls == [{"name": "search_sources", "args": {"query": "TLB"}, "id": "gemini-call-1", "type": "tool_call"}]
 
 
+def test_gemini_tool_adapter_wraps_message_conversion_failures_as_provider_failures(monkeypatch) -> None:
+    class Models:
+        def generate_content(self, **_kwargs):
+            raise AssertionError("message conversion should stop before the network call")
+
+    class Client:
+        models = Models()
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources by query."""
+        return query
+
+    def invalid_contents(_messages, _types):
+        raise TypeError("SDK message part is incompatible")
+
+    monkeypatch.setattr(GeminiToolCallingModel, "_contents", staticmethod(invalid_contents))
+    adapter = GeminiToolCallingModel(api_key="test", model="gemini-test", client=Client()).bind_tools([search_sources])
+
+    try:
+        adapter.invoke([HumanMessage("Find TLB notes")])
+    except ModelGatewayError as error:
+        assert "could not be completed" in str(error)
+    else:
+        raise AssertionError("SDK message conversion must become a recoverable provider failure.")
+
+
 def test_ollama_tool_adapter_sends_schemas_and_converts_tool_calls() -> None:
     captured = {}
 

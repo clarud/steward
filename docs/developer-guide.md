@@ -960,6 +960,10 @@ message and `ToolMessage` is appended rather than replacing prior context.
 LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
 then returns its result to the next model turn. `steward agent QUESTION` uses
 this graph with a persistent thread ID and an eight-step recursion cap.
+Provider request construction—including SDK message conversion—is wrapped as a
+recoverable `ModelGatewayError`, so an incompatible provider SDK response ends
+the tool turn with Steward's safe unavailable-model reply rather than crashing
+the Telegram update handler.
 
 The Telegram `/agent` boundary also catches a `GraphRecursionError` from this
 loop and returns a clear, non-mutating failure message. It does not treat a

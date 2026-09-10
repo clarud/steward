@@ -35,32 +35,32 @@ class GeminiToolCallingModel:
 
     def invoke(self, messages: list[BaseMessage]) -> AIMessage:
         """Ask Gemini for text or tool calls while preserving conversation history."""
-        from google.genai import types
-
-        declarations = [
-            types.FunctionDeclaration(
-                name=tool.name,
-                description=tool.description or tool.name,
-                parameters=self._parameters(tool),
-            )
-            for tool in self._tools
-        ]
-        system_parts = [str(message.content) for message in messages if isinstance(message, SystemMessage)]
-        config = types.GenerateContentConfig(
-            tools=[types.Tool(function_declarations=declarations)],
-            system_instruction="\n".join(system_parts) or None,
-            automatic_function_calling={"disable": True},
-        )
         try:
+            from google.genai import types
+
+            declarations = [
+                types.FunctionDeclaration(
+                    name=tool.name,
+                    description=tool.description or tool.name,
+                    parameters=self._parameters(tool),
+                )
+                for tool in self._tools
+            ]
+            system_parts = [str(message.content) for message in messages if isinstance(message, SystemMessage)]
+            config = types.GenerateContentConfig(
+                tools=[types.Tool(function_declarations=declarations)],
+                system_instruction="\n".join(system_parts) or None,
+                automatic_function_calling={"disable": True},
+            )
             response = self._client.models.generate_content(
                 model=self._model,
                 contents=self._contents(messages, types),
                 config=config,
             )
+            calls = self._function_calls(response)
+            response_text = self._response_text(response)
         except Exception as error:
             raise ModelGatewayError("The Gemini tool-agent request could not be completed.") from error
-        calls = self._function_calls(response)
-        response_text = self._response_text(response)
         if calls:
             tool_calls = [
                 {
