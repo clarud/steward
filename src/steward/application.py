@@ -793,11 +793,13 @@ class StewardRecordApplication:
         fragments: SourceFragmentRepository,
         proposals: ActionProposalRepository,
         activity: ActivityService,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._records = records
         self._fragments = fragments
         self._proposals = proposals
         self._activity = activity
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -805,7 +807,16 @@ class StewardRecordApplication:
         if command == "/records":
             return self._list_records()
         if command == "/record":
-            return self._record_detail(separator, argument)
+            response = self._record_detail(separator, argument)
+            record_type, _, identifier = argument.strip().partition(" ")
+            if (
+                self._contexts is not None
+                and record_type.casefold() in {"travel", "receipt", "warranty"}
+                and identifier.isdigit()
+                and self._record_exists(record_type.casefold(), int(identifier))
+            ):
+                self._contexts.set(event.platform, event.chat_id, f"record:{record_type.casefold()}", int(identifier))
+            return response
         if command == "/travel_references":
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
@@ -819,6 +830,46 @@ class StewardRecordApplication:
         if not separator or not argument.strip().isdigit():
             return "Use /propose_travel_record followed by a numeric source ID."
         return self._propose_travel_record_for_source(int(argument.strip()))
+
+    def resolve_record_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen one explicitly selected record for an exact navigation phrase."""
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        requested_type = {
+            "show that flight": "travel",
+            "open that flight": "travel",
+            "show the last flight": "travel",
+            "open the last flight": "travel",
+            "show that travel record": "travel",
+            "open that travel record": "travel",
+            "show that receipt": "receipt",
+            "open that receipt": "receipt",
+            "show the last receipt": "receipt",
+            "open the last receipt": "receipt",
+            "show that warranty": "warranty",
+            "open that warranty": "warranty",
+            "show the last warranty": "warranty",
+            "open the last warranty": "warranty",
+        }.get(normalized)
+        if requested_type is None:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != f"record:{requested_type}":
+            return None
+        if not self._record_exists(requested_type, context.identifier):
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That previously opened record is no longer available. Open another record to continue."
+        return self._record_detail(" ", f"{requested_type} {context.identifier}")
+
+    def _record_exists(self, record_type: str, record_id: int) -> bool:
+        records = {
+            "travel": self._records.list_travel_records,
+            "receipt": self._records.list_receipt_records,
+            "warranty": self._records.list_warranty_records,
+        }.get(record_type)
+        return records is not None and any(record.id == record_id for record in records())
 
     def propose_for_captured_source(self, source_id: int, source_name: str) -> PresentedReply | None:
         """Create the appropriate *review* from one just-preserved original.
@@ -3473,6 +3524,9 @@ class StewardEventApplication:
             if knowledge_response is not None:
                 return knowledge_response
         if self._record_application is not None:
+            record_reference = self._record_application.resolve_record_reference(event)
+            if record_reference is not None:
+                return record_reference
             record_response = self._record_application.handle_command(event)
             if record_response is not None:
                 return record_response

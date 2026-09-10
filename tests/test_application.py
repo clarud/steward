@@ -701,6 +701,54 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert "arrival: Osaka (not source-evidenced)" in corrected.text
 
 
+def test_telegram_record_reference_reopens_the_last_explicitly_opened_flight_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "flight.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(
+        source.id or 0,
+        (SourceFragment(None, source.id or 0, None, 0, "Flight SQ638\nArrival: Tokyo", "entire file"),),
+    ))[0]
+    records = RecordService(database)
+    record = records.create_from_proposal(records.propose_travel_record(
+        source.id or 0, [(fragment.id or 0, fragment.text)]
+    ))
+    contexts = ReviewContextRepository(database)
+    activity = ActivityService(database)
+
+    def record_application() -> StewardRecordApplication:
+        return StewardRecordApplication(
+            records, fragments, ActionProposalRepository(database), activity, contexts=contexts
+        )
+
+    class QuestionMustNotRun:
+        def invoke(self, _input, _config=None):
+            raise AssertionError("an exact record-reference request must not enter retrieval")
+
+    first = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=record_application(),
+    )
+    opened = first.handle(make_event(text=f"/record travel {record.id}"))
+    assert isinstance(opened, PresentedReply)
+    assert opened.title == f"Travel record {record.id}"
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(QuestionMustNotRun()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=record_application(),
+    )
+    reopened = restarted.handle(make_event(text="show that flight"))
+
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == f"Travel record {record.id}"
+    assert "flight: SQ638" in reopened.text
+
+
 def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

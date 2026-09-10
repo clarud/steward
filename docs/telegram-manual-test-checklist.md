@@ -35,6 +35,9 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   last source` or `show that PDF`. Verify Steward reopens only that exact
   source card; a broader question about a source must remain a normal
   retrieval question rather than being guessed as navigation.
+- Open a Travel Record with `/record travel ID`, restart the bot, then send
+  `show that flight`. Verify it reopens that exact flight card; do the
+  equivalent for a receipt or warranty only after opening a card of that type.
 - Open a deliberately long harmless source or broad search result. Verify a
   long answer arrives as consecutive readable messages rather than a Telegram
   delivery error, and any action buttons appear only on the final message.

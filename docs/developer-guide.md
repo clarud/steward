@@ -804,6 +804,9 @@ reference resolution. Separately, opening a Telegram `/source ID` card stores a
 durable, chat-scoped source reference. Exact navigation requests such as
 `open the last source` or `show that PDF` reopen that same card without an LLM;
 broader phrases still go through ordinary retrieval rather than being guessed.
+The same narrow navigation rule applies to explicitly opened record cards:
+`show that flight`, `open the last receipt`, and `show that warranty` resolve
+only when the record type and the chat-scoped durable record reference agree.
 
 ## Commands and data flow
 
