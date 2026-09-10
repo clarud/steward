@@ -6,8 +6,9 @@ from hashlib import sha256
 import sqlite3
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from steward.activity import ActivityType
 
 @dataclass(frozen=True, slots=True)
 class TravelRecord:
@@ -99,6 +100,26 @@ class RecordService:
         ).fetchall()
         if record_review_snapshot(proposal, fragments) != expected_snapshot:
             raise ValueError("This record preview is stale. Request a new record proposal before approving.")
+
+    @staticmethod
+    def _accept_record_action(connection: sqlite3.Connection, action_id: int | None, action_type: str, source_id: int, snapshot: str | None, record_id: int) -> None:
+        """Commit approval and audit with the record, or roll the entire write back."""
+        if action_id is None:
+            return
+        row = connection.execute(
+            "SELECT action_type, payload_json, status FROM action_proposals WHERE id = ?", (action_id,),
+        ).fetchone()
+        if row is None or row[2] != "pending":
+            raise ValueError("Action proposal was not found or was already reviewed.")
+        payload = json.loads(row[1])
+        if snapshot is None or row[0] != action_type or payload.get("snapshot") != snapshot or payload.get("source_id") != str(source_id):
+            raise ValueError("Record approval does not match the reviewed proposal.")
+        now = datetime.now(UTC).isoformat()
+        connection.execute("UPDATE action_proposals SET status = 'accepted', reviewed_at = ? WHERE id = ?", (now, action_id))
+        connection.execute(
+            "INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)",
+            (ActivityType.ACTION_ACCEPTED.value, str(action_id), f"{action_type}: record {record_id}", now),
+        )
 
     def create_travel_record(self, record: TravelRecord) -> TravelRecord:
         with sqlite3.connect(self._database_path) as connection:
@@ -274,7 +295,7 @@ class RecordService:
                 purchased_at = value; evidence["purchased_at"] = fragment_id
         return ReceiptRecordProposal(ReceiptRecord(None, source_id, merchant, total_cents, currency, purchased_at, receipt_number), evidence)
 
-    def create_receipt_from_proposal(self, proposal: ReceiptRecordProposal, *, expected_snapshot: str | None = None) -> ReceiptRecord:
+    def create_receipt_from_proposal(self, proposal: ReceiptRecordProposal, *, expected_snapshot: str | None = None, action_id: int | None = None) -> ReceiptRecord:
         if not proposal.field_evidence:
             raise ValueError("Cannot create a receipt record without extracted, evidenced fields")
         record = proposal.record
@@ -284,6 +305,7 @@ class RecordService:
             cursor = connection.execute("INSERT INTO receipt_records (source_id, merchant, total_cents, currency, purchased_at, receipt_number) VALUES (?, ?, ?, ?, ?, ?)", (record.source_id, record.merchant, record.total_cents, record.currency, record.purchased_at.isoformat() if record.purchased_at else None, record.receipt_number))
             record_id = int(cursor.lastrowid)
             connection.executemany("INSERT INTO receipt_record_evidence (receipt_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
+            self._accept_record_action(connection, action_id, "create_receipt_record", record.source_id, expected_snapshot, record_id)
         return ReceiptRecord(record_id, record.source_id, record.merchant, record.total_cents, record.currency, record.purchased_at, record.receipt_number)
 
     def list_receipt_records(self) -> list[ReceiptRecord]:
@@ -306,7 +328,7 @@ class RecordService:
                 coverage_ends_at = value; evidence["coverage_ends_at"] = fragment_id
         return WarrantyRecordProposal(WarrantyRecord(None, source_id, product, provider, warranty_number, coverage_ends_at), evidence)
 
-    def create_warranty_from_proposal(self, proposal: WarrantyRecordProposal, *, expected_snapshot: str | None = None) -> WarrantyRecord:
+    def create_warranty_from_proposal(self, proposal: WarrantyRecordProposal, *, expected_snapshot: str | None = None, action_id: int | None = None) -> WarrantyRecord:
         if not proposal.field_evidence:
             raise ValueError("Cannot create a warranty record without extracted, evidenced fields")
         record = proposal.record
@@ -316,6 +338,7 @@ class RecordService:
             cursor = connection.execute("INSERT INTO warranty_records (source_id, product_name, provider, warranty_number, coverage_ends_at) VALUES (?, ?, ?, ?, ?)", (record.source_id, record.product_name, record.provider, record.warranty_number, record.coverage_ends_at.isoformat() if record.coverage_ends_at else None))
             record_id = int(cursor.lastrowid)
             connection.executemany("INSERT INTO warranty_record_evidence (warranty_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
+            self._accept_record_action(connection, action_id, "create_warranty_record", record.source_id, expected_snapshot, record_id)
         return WarrantyRecord(record_id, record.source_id, record.product_name, record.provider, record.warranty_number, record.coverage_ends_at)
 
     def list_warranty_records(self) -> list[WarrantyRecord]:
@@ -323,7 +346,7 @@ class RecordService:
             rows = connection.execute("SELECT id, source_id, product_name, provider, warranty_number, coverage_ends_at FROM warranty_records ORDER BY id").fetchall()
         return [WarrantyRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, str(row[3]) if row[3] else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None) for row in rows]
 
-    def create_from_proposal(self, proposal: TravelRecordProposal, *, expected_snapshot: str | None = None) -> TravelRecord:
+    def create_from_proposal(self, proposal: TravelRecordProposal, *, expected_snapshot: str | None = None, action_id: int | None = None) -> TravelRecord:
         """Persist an explicitly accepted proposal and its field-level evidence.
 
         Proposing is intentionally read-only. This separate method is the
@@ -346,6 +369,7 @@ class RecordService:
                 "INSERT INTO travel_record_evidence (travel_record_id, field_name, fragment_id) VALUES (?, ?, ?)",
                 [(record_id, field_name, fragment_id) for field_name, fragment_id in proposal.field_evidence.items()],
             )
+            self._accept_record_action(connection, action_id, "create_travel_record", proposal.record.source_id, expected_snapshot, record_id)
         return TravelRecord(
             record_id,
             proposal.record.source_id,

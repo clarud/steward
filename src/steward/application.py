@@ -3568,12 +3568,9 @@ class StewardActionProposalApplication:
             if proposal.payload.get("snapshot") != record_review_snapshot(record_proposal, [(part.id or 0, part.text) for part in fragments]):
                 return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
             try:
-                record = self._records.create_from_proposal(record_proposal, expected_snapshot=proposal.payload["snapshot"])
+                record = self._records.create_from_proposal(record_proposal, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
             except ValueError as error:
                 return str(error)
-            self._repository.set_status(proposal_id, decision)
-            if self._activity is not None:
-                self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
             actions = [ReplyAction("Records", "/records"), ReplyAction("Home", "/home")]
             if self._calendar_proposals is not None:
                 actions.insert(0, ReplyAction("Add to calendar", f"/calendar_travel {record.id}"))
@@ -3657,14 +3654,11 @@ class StewardActionProposalApplication:
             return "This record preview is stale or predates snapshot protection. Request a new record proposal before approving."
         try:
             record = (
-                self._records.create_receipt_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"])
-                if label == "receipt" else self._records.create_warranty_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"])
+                self._records.create_receipt_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
+                if label == "receipt" else self._records.create_warranty_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
             )
         except ValueError as error:
             return str(error)
-        self._repository.set_status(proposal_id, decision)
-        if self._activity is not None:
-            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"{label.title()} record {record.id} created from source {source_id}."
 
     def _review_record_correction(self, proposal_id: int, decision: str) -> str:

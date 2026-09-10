@@ -7,6 +7,43 @@ from steward.records import ReceiptRecord, ReceiptRecordProposal, WarrantyRecord
 from steward.sources import Source, SourceRepository, SourceType
 from steward.storage import initialize_database
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
+from steward.action_proposals import ActionProposalRepository
+from steward.activity import ActivityService, ActivityType
+
+
+@pytest.mark.parametrize("kind,text", [
+    ("travel", "Flight SQ638"), ("receipt", "Merchant: Cafe"), ("warranty", "Product: Laptop"),
+])
+def test_record_approval_rolls_back_on_failure_and_cannot_execute_twice(tmp_path: Path, kind: str, text: str) -> None:
+    database = tmp_path / "db.sqlite"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "source.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    stored = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, text, "line 1"),
+    )))
+    parts = [(part.id, part.text) for part in stored]
+    service = RecordService(database)
+    proposal = getattr(service, f"propose_{kind}_record")(source.id, parts)
+    snapshot = record_review_snapshot(proposal, parts)
+    actions = ActionProposalRepository(database)
+    action = actions.add(f"create_{kind}_record", {"source_id": str(source.id), "snapshot": snapshot})
+    create = service.create_from_proposal if kind == "travel" else getattr(service, f"create_{kind}_from_proposal")
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TRIGGER fail_audit BEFORE INSERT ON activity_events BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+    with pytest.raises(sqlite3.IntegrityError, match="injected failure"):
+        create(proposal, expected_snapshot=snapshot, action_id=action.id)
+    assert actions.get(action.id).status == "pending"
+    assert getattr(service, f"list_{kind}_records")() == []
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER fail_audit")
+    create(proposal, expected_snapshot=snapshot, action_id=action.id)
+    assert actions.get(action.id).status == "accepted"
+    with pytest.raises(ValueError, match="already reviewed"):
+        create(proposal, expected_snapshot=snapshot, action_id=action.id)
+    assert len(getattr(service, f"list_{kind}_records")()) == 1
+    events = ActivityService(database).list_recent()
+    assert len(events) == 1 and events[0].event_type is ActivityType.ACTION_ACCEPTED
 
 @pytest.mark.parametrize("kind,text", [
     ("travel", "Flight SQ638"),

@@ -155,9 +155,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
   created. Travel, receipt, and warranty paths have automated regression coverage.
   Snapshot validation and record persistence share a SQLite write transaction;
   automated two-connection tests verify concurrent evidence writes are blocked.
-  The source must still be active. Record persistence and marking the action
-  accepted remain separate commits, so crash-safe approval idempotency still
-  needs follow-up coverage and implementation.
+  The source must still be active. For these Telegram record approvals, record
+  insertion, evidence, accepted status, and the acceptance audit share one
+  transaction. Failure-injection tests verify rollback and repeated approvals
+  cannot create a second record from the same proposal. Separate proposals
+  for the same source are not deduplicated by this guarantee.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.
