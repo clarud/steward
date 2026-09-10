@@ -582,6 +582,22 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "parallel-computing.md"
 
+    fragments.replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, "OpenMP", 0, "Parallel loops", "page 1"),
+        SourceFragment(None, source.id, "Scheduling", 1, "Static scheduling", "page 2"),
+    )))
+    content = restarted.handle(make_event(text="give me the content"))
+    assert isinstance(content, PresentedReply)
+    assert "Parallel loops" in content.text and "page 1" in content.text
+    assert "Static scheduling" not in content.text
+    next_action = next(action for action in content.actions if action.label == "Next")
+    second = restarted.handle(make_event(text=next_action.command))
+    assert "Static scheduling" in second.text and "page 2" in second.text
+    assert "Parallel loops" not in second.text
+    assert "between 1 and 2" in restarted.handle(make_event(text=f"/source_content {source.id} 3"))
+    contexts.clear("telegram", "100")
+    assert "Open a source" in restarted.handle(make_event(text="give me the content"))
+
 
 def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)

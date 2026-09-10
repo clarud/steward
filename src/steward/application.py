@@ -406,6 +406,14 @@ class StewardReadApplication:
             return self.inbox(self._page(argument))
         if command == "/sources":
             return self.sources(self._page(argument))
+        if command == "/source_content":
+            parts = argument.split()
+            if not 1 <= len(parts) <= 2 or not all(part.isdecimal() for part in parts):
+                return "Use /source_content SOURCE_ID [SECTION_NUMBER]."
+            response = self.source_content(int(parts[0]), int(parts[1]) if len(parts) == 2 else 1)
+            if self._contexts is not None and self._sources.get_by_id(int(parts[0])) is not None:
+                self._contexts.set(event.platform, event.chat_id, "source", int(parts[0]))
+            return response
         if command == "/source":
             response = self.source(argument)
             if self._contexts is not None and argument.isdigit() and self._sources.get_by_id(int(argument)) is not None:
@@ -444,6 +452,11 @@ class StewardReadApplication:
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized in {"give me the content", "show me the content", "show the content", "read it", "read that pdf"}:
+            context = self._contexts.get(event.platform, event.chat_id)
+            if context is None or context.kind != "source":
+                return "Open a source from /sources first, then choose Read content."
+            return self.source_content(int(context.identifier))
         if normalized not in {
             "show that source",
             "open that source",
@@ -579,8 +592,38 @@ class StewardReadApplication:
         return PresentedReply(
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
             f"Extracted sections: {len(fragments)}",
+            actions=(ReplyAction("Read content", f"/source_content {source_id}"),),
             title=source.path.name,
             icon="📄",
+        )
+
+    def source_content(self, source_id: int, section: int = 1) -> str | PresentedReply:
+        """Read stored extraction in document order, with original provenance.
+
+        This is an owner-requested text view; no model or parser is invoked.
+        Section numbers refer to extraction units, not necessarily PDF pages.
+        """
+        source = self._sources.get_by_id(source_id)
+        if source is None:
+            return "That source is no longer registered. Choose another from /sources."
+        if source.status.value != "active":
+            return "That source is unavailable. Rescan its root locally before reading it."
+        fragments = self._fragments.list_for_source(source_id)
+        if not fragments:
+            return "No extracted text is available for this source yet."
+        if not 1 <= section <= len(fragments):
+            return f"Choose a section between 1 and {len(fragments)}."
+        fragment = fragments[section - 1]
+        actions = []
+        if section > 1:
+            actions.append(ReplyAction("Previous", f"/source_content {source_id} {section - 1}"))
+        if section < len(fragments):
+            actions.append(ReplyAction("Next", f"/source_content {source_id} {section + 1}"))
+        actions.append(ReplyAction("Source details", f"/source {source_id}"))
+        return PresentedReply(
+            f"Extracted section {section} of {len(fragments)} · {fragment.location}\n"
+            f"{fragment.heading or ''}\n\n{fragment.text}",
+            tuple(actions), title=source.path.name, icon="📖",
         )
 
     def workspaces(self) -> str | PresentedReply:

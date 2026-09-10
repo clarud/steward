@@ -788,6 +788,15 @@ steward telegram
 
 ## Conversation state and checkpoints
 
+Source cards expose **Read content** through `/source_content ID [SECTION]`.
+The application reads stored fragments in document order and presents one
+section with its location and Previous/Next actions. The existing Telegram
+presenter splits oversized sections across messages. `give me the content`
+uses the selected source's durable chat context; without a selected source it
+asks the user to open one. Reading extracted content invokes no model and does
+not reparse the original. This is an explicit owner read delivered through
+Telegram; model-access privacy rules remain separate.
+
 Phase 8 gives each Telegram chat a LangGraph thread ID such as
 `telegram:100`. The application invokes the graph with that ID, and the local
 SQLite checkpointer stores a snapshot after each graph step in

@@ -22,6 +22,12 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Core reads and routing
 
+- Open a source, choose **Read content**, and use **Next**/**Previous** to
+  browse extracted sections. Send `give me the content` after opening it,
+  including after restart. Check that the text belongs to the selected source
+  and retains its page/heading location. Section numbering follows extraction
+  units, which may differ from physical PDF page numbers.
+
 - Send `/status`; verify it reports local counts and delivery health, never a
   token or message body.
 - Send `/metrics`; verify it reports only aggregate activity-event counts, not
