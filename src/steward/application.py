@@ -32,7 +32,7 @@ from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.gmail import GOOGLE_GMAIL_READONLY_SCOPE
 from steward.retrieval import HybridRetriever, LexicalSearchService, SemanticSearchService
 from steward.sources import SourceRepository
-from steward.presentation import PresentedReply, ReplyAction
+from steward.presentation import PresentedReply, ReplyAction, calendar_time_label
 from steward.intake import (
     IntakeAnalysisMode,
     ProvisionalIntake,
@@ -2095,7 +2095,10 @@ class StewardCalendarApplication:
             if command == "/calendar_get":
                 event_result = calendar.get_event(argument.strip())
                 return self._event_card(event, event_result)
-            events = calendar.search(argument.strip(), limit=10)
+            events = calendar.search(
+                argument.strip(), limit=10,
+                time_min=datetime.now(UTC) if not argument.strip() else None,
+            )
         except Exception:
             return "Calendar is temporarily unavailable. Verify local authorization, then try again."
         if not events:
@@ -2103,7 +2106,7 @@ class StewardCalendarApplication:
         lines = []
         actions: list[ReplyAction] = []
         for index, item in enumerate(events, start=1):
-            lines.append(f"{index}. {item.summary}\n{item.start} → {item.end}")
+            lines.append(f"{index}. {item.summary}\n{calendar_time_label(item.start, item.end)}")
             actions.append(ReplyAction(f"Open {index}", f"/calendar_get {item.id}"))
         return PresentedReply(
             "\n\n".join(lines), tuple(actions), title="Calendar events", icon="📅"
@@ -2116,7 +2119,7 @@ class StewardCalendarApplication:
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
         return PresentedReply(
-            f"{getattr(event_result, 'start')} → {getattr(event_result, 'end')}\n\n"
+            f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
             f"Calendar ID: {identifier}",
             title=str(getattr(event_result, "summary")),
             icon="📅",

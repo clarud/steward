@@ -168,6 +168,10 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 - Complete Google OAuth locally in a browser, never in Telegram.
 - Use `/calendar_search` and `/calendar_get EVENT_ID`; compare results with
   Google Calendar directly.
+- With no search terms, Calendar lists upcoming/ongoing events. A named search
+  can still find past events. Check readable dates and UTC offsets on both list
+  and detail cards; single-day all-day events should show one date, not the
+  provider's exclusive next-day end date.
 - With a deliberately unavailable test Calendar authorization, verify a
   Calendar read returns a retry-oriented message without a local token path or
   provider diagnostic.

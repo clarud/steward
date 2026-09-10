@@ -1194,6 +1194,22 @@ def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None
     assert "C:/private" not in response
 
 
+def test_telegram_calendar_default_limits_to_upcoming_but_named_search_keeps_history() -> None:
+    calls = []
+
+    class Reader:
+        def search(self, query, **kwargs):
+            calls.append((query, kwargs))
+            return ()
+
+    application = StewardCalendarApplication(lambda: Reader())
+    before = datetime.now(UTC)
+    application.handle_command(make_event(text="/calendar_search"))
+    application.handle_command(make_event(text="/calendar_search dentist"))
+    assert before <= calls[0][1]["time_min"] <= datetime.now(UTC)
+    assert calls[1][0] == "dentist" and calls[1][1]["time_min"] is None
+
+
 def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) -> None:
     class Events:
         def get(self, **kwargs):

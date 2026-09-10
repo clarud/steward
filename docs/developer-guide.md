@@ -788,6 +788,12 @@ steward telegram
 
 ## Conversation state and checkpoints
 
+Calendar list/detail cards use `calendar_time_label` for readable dates and
+explicit provider UTC offsets. All-day dates retain date-only semantics and
+their exclusive end is converted to the last included day. No-argument Calendar
+browsing passes the current UTC time as a lower bound; named searches retain
+historical reach. This presentation change adds no dependency or persisted state.
+
 Source cards expose **Read content** through `/source_content ID [SECTION]`.
 The application reads stored fragments in document order and presents one
 section with its location and Previous/Next actions. The existing Telegram
