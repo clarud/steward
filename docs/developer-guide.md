@@ -830,7 +830,9 @@ Their source list is a semantic link list, not a directory listing or a move
 instruction; `show that workspace` only reopens the explicit workspace card.
 Calendar event IDs are opaque external identifiers rather than Steward integer
 IDs. Opening `/calendar_get EVENT_ID` therefore stores the event ID in the same
-chat-scoped context, and `show that event` refetches that exact event from
+chat-scoped context. String IDs use a storage prefix to prevent SQLite's legacy
+integer-column affinity from stripping leading zeroes or rounding long IDs.
+Existing integer Steward references remain compatible. `show that event` refetches that exact event from
 Calendar after restart. It never stores a stale Calendar copy; an unavailable
 or deleted event clears the reference and asks the user to search again.
 

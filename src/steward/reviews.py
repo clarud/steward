@@ -36,6 +36,9 @@ class ReviewContextRepository:
         elif not identifier.strip():
             raise ValueError("A review context identifier must not be empty.")
         updated_at = datetime.now(UTC)
+        # The legacy column has INTEGER affinity. Prefix strings so SQLite
+        # cannot coerce digit-only external IDs and discard leading zeroes.
+        stored_identifier = f"text:{identifier}" if isinstance(identifier, str) else identifier
         with sqlite3.connect(self._database_path) as connection:
             connection.execute(
                 """
@@ -46,7 +49,7 @@ class ReviewContextRepository:
                     review_id = excluded.review_id,
                     updated_at = excluded.updated_at
                 """,
-                (platform, chat_id, kind, identifier, updated_at.isoformat()),
+                (platform, chat_id, kind, stored_identifier, updated_at.isoformat()),
             )
         return ReviewContext(platform, chat_id, kind, identifier, updated_at)
 
@@ -60,7 +63,12 @@ class ReviewContextRepository:
         if row is None:
             return None
         raw_identifier = str(row[3])
-        identifier: int | str = int(raw_identifier) if raw_identifier.isdigit() else raw_identifier
+        if raw_identifier.startswith("text:"):
+            identifier: int | str = raw_identifier[len("text:"):]
+        elif str(row[2]) == "calendar":
+            identifier = raw_identifier
+        else:
+            identifier = int(raw_identifier) if raw_identifier.isdigit() else raw_identifier
         return ReviewContext(str(row[0]), str(row[1]), str(row[2]), identifier, datetime.fromisoformat(str(row[4])))
 
     def clear(self, platform: str, chat_id: str) -> None:
