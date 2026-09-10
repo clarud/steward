@@ -567,7 +567,9 @@ explicit operations:
   opening one card, an unambiguous `yes`/`accept` or `no`/`reject` reply is
   resolved through its durable, chat-scoped review reference and invokes the
   same validated approval command as the card button. A stale card, or an
-  intake from another chat, cannot be confirmed this way.
+  intake from another chat, cannot be confirmed this way. The card reference
+  is retired as soon as a decision is submitted, even if deterministic
+  execution then reports a recoverable failure.
 - A Telegram task may additionally use `--remind-at` with an explicit
   offset-aware ISO timestamp. Approval creates a separate durable reminder
   addressed only to the originating chat. The polling process claims due

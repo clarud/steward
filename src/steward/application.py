@@ -255,6 +255,34 @@ class StewardReviewInboxApplication:
         # before it resumes a file-moving workflow.
         return None
 
+    def clear_context_for_decision_command(self, event: IncomingEvent) -> None:
+        """Retire a displayed-card reference once its decision is submitted.
+
+        A review context is navigation state, not durable authorization.  The
+        underlying services remain responsible for idempotency and final
+        validation, while clearing this pointer prevents a later ``yes`` from
+        being interpreted as confirmation of an old card.
+        """
+
+        if self._contexts is None:
+            return
+        command, _, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0].casefold()
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None:
+            return
+        target_id = argument.split()[0] if argument else ""
+        if not target_id.isdigit() or int(target_id) != context.identifier:
+            return
+        matching_command = {
+            "action": {"/approve_action", "/reject_action"},
+            "organization": {"/organization_accept", "/organization_reject"},
+            "intake": {"/intake_accept", "/intake_discard"},
+            "knowledge": {"/review_enrichment"},
+        }
+        if command in matching_command.get(context.kind, set()):
+            self._contexts.clear(event.platform, event.chat_id)
+
     def handle_natural_request(self, event: IncomingEvent) -> PresentedReply | None:
         """Keep common review-list requests out of the general retrieval agent."""
 
@@ -3362,6 +3390,7 @@ class StewardEventApplication:
             confirmation_command = self._review_inbox_application.contextual_confirmation_command(event)
             if confirmation_command is not None:
                 event = replace(event, text=confirmation_command)
+            self._review_inbox_application.clear_context_for_decision_command(event)
             review_response = self._review_inbox_application.handle_command(event)
             if review_response is not None:
                 return review_response

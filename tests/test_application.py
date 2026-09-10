@@ -574,6 +574,7 @@ def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tm
     assert accepted.title == "Workspace created"
     assert actions.get(proposal.id or 0).status == "accepted"
     assert [workspace.name for workspace in workspaces.list_all()] == ["CS3210 Revision"]
+    assert contexts.get("telegram", "100") is None
 
 
 def test_active_review_does_not_confirm_a_stale_action(tmp_path: Path) -> None:
