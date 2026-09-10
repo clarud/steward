@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -304,7 +305,7 @@ class CalendarEventProposalService:
     def propose_travel_event(self, record_id: int) -> ActionProposal:
         record = self._record(record_id)
         self._validate_record(record)
-        payload = {"record_id": str(record_id)}
+        payload = {"record_id": str(record_id), "snapshot": self._snapshot(record)}
         existing = self._proposals.find_pending(self.CREATE_TRAVEL_EVENT, payload)
         if existing is not None:
             return existing
@@ -319,7 +320,7 @@ class CalendarEventProposalService:
     def propose_task_event(self, task_id: int) -> ActionProposal:
         task = self._task(task_id)
         self._validate_task(task)
-        payload = {"task_id": str(task_id)}
+        payload = {"task_id": str(task_id), "snapshot": self._snapshot(task)}
         existing = self._proposals.find_pending(self.CREATE_TASK_EVENT, payload)
         if existing is not None:
             return existing
@@ -350,9 +351,17 @@ class CalendarEventProposalService:
             if calendar_writer is None:
                 raise ValueError("Calendar authorization is required to accept this proposal.")
             if proposal.action_type == self.CREATE_TRAVEL_EVENT:
-                calendar_writer.create_travel_event(self._record(int(proposal.payload["record_id"])))
+                record = self._record(int(proposal.payload["record_id"]))
+                self._validate_record(record)
+                if proposal.payload.get("snapshot") != self._snapshot(record):
+                    raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
+                calendar_writer.create_travel_event(record)
             else:
-                calendar_writer.create_task_deadline_event(self._task(int(proposal.payload["task_id"])))
+                task = self._task(int(proposal.payload["task_id"]))
+                self._validate_task(task)
+                if proposal.payload.get("snapshot") != self._snapshot(task):
+                    raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
+                calendar_writer.create_task_deadline_event(task)
         self._proposals.set_status(proposal_id, decision)
         self._activity.record(
             ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
@@ -363,6 +372,10 @@ class CalendarEventProposalService:
         if reviewed is None:
             raise RuntimeError("Reviewed Calendar proposal disappeared.")
         return reviewed
+
+    @staticmethod
+    def _snapshot(item: TravelRecord | Task) -> str:
+        return json.dumps(asdict(item), sort_keys=True, default=lambda value: value.isoformat())
 
     def _proposal(self, proposal_id: int) -> ActionProposal:
         proposal = self._proposals.get(proposal_id)

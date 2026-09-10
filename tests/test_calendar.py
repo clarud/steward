@@ -188,6 +188,14 @@ def test_calendar_event_proposal_requires_a_separate_acceptance_before_writing(t
     assert ActionProposalRepository(database).get(pending.id or 0).status == "pending"
 
     writer = CalendarWriteService(CalendarService(FakeCalendarClient()), database, activity)
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE travel_records SET arrival = 'Osaka' WHERE id = ?", (record.id,))
+    with pytest.raises(ValueError, match="stale"):
+        proposals.review(pending.id or 0, "accepted", writer)
+    assert ActionProposalRepository(database).get(pending.id or 0).status == "pending"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM calendar_event_links").fetchone()[0] == 0
+        connection.execute("UPDATE travel_records SET arrival = 'Tokyo' WHERE id = ?", (record.id,))
     accepted = proposals.review(pending.id or 0, "accepted", writer)
 
     assert accepted.status == "accepted"
@@ -232,6 +240,13 @@ def test_task_calendar_event_requires_review_and_is_idempotent(tmp_path) -> None
     assert pending.status == "pending"
     assert pending.action_type == "create_calendar_task_event"
     writer = CalendarWriteService(CalendarService(FakeCalendarClient()), database, activity)
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE tasks SET title = 'Changed task' WHERE id = ?", (task.id,))
+    with pytest.raises(ValueError, match="stale"):
+        proposals.review(pending.id or 0, "accepted", writer)
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM calendar_task_event_links").fetchone()[0] == 0
+        connection.execute("UPDATE tasks SET title = ? WHERE id = ?", (task.title, task.id))
     accepted = proposals.review(pending.id or 0, "accepted", writer)
     assert accepted.status == "accepted"
     created = writer.create_task_deadline_event(task)

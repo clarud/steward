@@ -3138,7 +3138,9 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     response = app.handle_command(make_event(text=f"/calendar_travel {record.id}"))
 
     assert isinstance(response, PresentedReply)
-    assert "No Calendar event has been created" in response.text
+    assert "No event has been created" in response.text
+    assert "Flight SQ638" in response.text and "Singapore → Tokyo" in response.text
+    assert "9 Sep 2026" in response.text
     assert response.actions[0].command == "/approve_action 1"
 
 
@@ -3157,8 +3159,9 @@ def test_telegram_can_create_a_reviewed_task_calendar_proposal(tmp_path: Path) -
     response = app.handle_command(make_event(text=f"/calendar_task {task.id}"))
 
     assert isinstance(response, PresentedReply)
-    assert "task 1" in response.text
-    assert "No Calendar event has been created" in response.text
+    assert "Submit CS3210 lab" in response.text
+    assert "18 Sep 2026" in response.text and "15-minute deadline marker" in response.text
+    assert "No event has been created" in response.text
     assert repository.get(1).action_type == "create_calendar_task_event"
 
 

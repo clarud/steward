@@ -766,9 +766,13 @@ screen, exact external-ID persistence, active-review approval scoping, detailed
 reopened note/correction/task reviews, and complete pending-inbox pagination.
 Their automated checks pass; live acceptance of these releases remains pending.
 
-Remaining implementation work includes selected-source summarization and
-question answering beyond exact reading/navigation phrases, fuller record and
-Calendar proposal previews, and the broader task, knowledge, administration,
+Selected-source summarization and questions now have citation-checked model
+paths and durable question prompts. Record previews retain reviewed snapshots;
+record approval, evidence validation, persistence, and audit commit together.
+Calendar proposals now show event details and bind approval to the reviewed
+record/task snapshot, refusing changed values before calling the writer.
+Remaining implementation work includes broader conversational reference
+resolution, long-document synthesis, and the broader task, knowledge, administration,
 and recovery items in the table below. The program is therefore still in
 progress for both implementation and live validation; root configuration alone
 is no longer a blocker, and manual testing is not the only remaining work.

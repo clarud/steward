@@ -145,6 +145,13 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Tasks and records
 
+- Calendar proposals from travel records and tasks show readable dates and
+  the flight/task title before approval, including disclosure of any booking
+  reference sent in the event description. Reopening through `/pending` uses
+  the same reviewed snapshot. Change the record/task after proposing: approval
+  must refuse the stale proposal before a Calendar write. Request a new preview.
+  Existing linked Calendar events are reused, not updated by this flow.
+
 - Reopen a travel, receipt, or warranty extraction proposal through `/pending`.
   Check the source filename, current field values, and evidence fragment IDs.
   Merely opening the preview must not create a record. These previews use the

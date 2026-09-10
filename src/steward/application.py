@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import secrets
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -406,7 +407,19 @@ class StewardReviewInboxApplication:
                 + (f"\nTelegram reminder: {reminder}" if reminder else "\nNo Telegram reminder is scheduled.")
             )
         if action_type.startswith("create_calendar"):
-            return "Create calendar event", "A new event will be added to Google Calendar after approval."
+            if "snapshot" not in payload:
+                return "Refresh Calendar preview", "This older proposal needs a fresh Calendar preview before approval."
+            item = json.loads(payload["snapshot"])
+            if "task_id" in payload:
+                start = item["due_at"]
+                end = (datetime.fromisoformat(start) + timedelta(minutes=15)).isoformat()
+                details = f"Due: {item['title']}\n{calendar_time_label(start, end)}\n15-minute deadline marker."
+            else:
+                details = f"Flight {item.get('flight_number') or ''}\n{calendar_time_label(item['departure_time'], item['arrival_time'])}"
+                details += f"\nRoute: {item.get('departure') or 'unspecified'} → {item.get('arrival') or 'unspecified'}"
+                if item.get("booking_reference"):
+                    details += f"\nBooking reference included in Calendar: {item['booking_reference']}"
+            return "Review Calendar event", details + "\n\nDestination: configured Google Calendar. No event has been created. Existing linked events are reused, not updated."
         if action_type.startswith("create_") and "record" in action_type:
             return "Save extracted record", "A record will be created from the reviewed source evidence."
         if action_type.startswith("correct_"):
@@ -3213,22 +3226,15 @@ class StewardActionProposalApplication:
                 )
             except ValueError as error:
                 return str(error)
-            if command == "/calendar_task":
-                return PresentedReply(
-                    f"Calendar proposal {proposal.id} is pending for task {proposal.payload['task_id']}. "
-                    "No Calendar event has been created.",
-                    (
-                        ReplyAction("Create deadline event", f"/approve_action {proposal.id}"),
-                        ReplyAction("Reject", f"/reject_action {proposal.id}"),
-                    ),
-                )
+            title, description = StewardReviewInboxApplication._action_summary(proposal.action_type, proposal.payload)
             return PresentedReply(
-                f"Calendar proposal {proposal.id} is pending for travel record "
-                f"{proposal.payload['record_id']}. No Calendar event has been created.",
+                description,
                 (
                     ReplyAction("Create event", f"/approve_action {proposal.id}"),
                     ReplyAction("Reject", f"/reject_action {proposal.id}"),
                 ),
+                title=title,
+                icon="📅",
             )
         if command == "/create_workspace":
             return self.propose_workspace(argument)
