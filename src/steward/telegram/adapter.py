@@ -320,9 +320,12 @@ def run_telegram_polling(
         raise ValueError("Telegram bot token must not be empty.")
 
     builder = ApplicationBuilder().token(token)
+    reminder_stop: asyncio.Event | None = None
+    reminder_worker: asyncio.Task | None = None
 
     async def start_services(application: object) -> None:
         """Set a small discovery menu without making Telegram startup depend on it."""
+        nonlocal reminder_stop, reminder_worker
         try:
             await application.bot.set_my_commands(  # type: ignore[attr-defined]
                 [BotCommand(command, description) for command, description in _PRIMARY_COMMANDS]
@@ -330,12 +333,22 @@ def run_telegram_polling(
         except Exception:
             _LOGGER.warning("Could not update Steward's Telegram command menu.")
         if task_reminders is not None:
-            # Application.create_task owns cancellation during orderly polling shutdown.
-            application.create_task(  # type: ignore[attr-defined]
-                _task_reminder_loop(application, task_reminders, allowed_chat_ids),
+            reminder_stop = asyncio.Event()
+            # Own this task explicitly: an infinite Application.create_task
+            # worker must not be awaited by Application.stop before we signal it.
+            reminder_worker = asyncio.create_task(
+                _task_reminder_loop(application, task_reminders, allowed_chat_ids, stop=reminder_stop),
                 name="steward-task-reminders",
             )
+
+    async def stop_services(application: object) -> None:
+        if reminder_stop is not None:
+            reminder_stop.set()
+        if reminder_worker is not None:
+            await reminder_worker
+
     builder = builder.post_init(start_services)
+    builder = builder.post_stop(stop_services)
     application = builder.build()
     adapter = TelegramAdapter(
         event_handler,
@@ -478,8 +491,16 @@ async def _task_reminder_loop(
     application: object,
     reminders: TaskReminderService,
     allowed_chat_ids: frozenset[str],
+    *,
+    stop: asyncio.Event,
 ) -> None:
     """Poll due reminder records independently of Telegram update delivery."""
-    while True:
-        await deliver_due_task_reminders(application.bot, reminders, allowed_chat_ids)  # type: ignore[attr-defined]
-        await asyncio.sleep(60)
+    while not stop.is_set():
+        try:
+            await deliver_due_task_reminders(application.bot, reminders, allowed_chat_ids)  # type: ignore[attr-defined]
+        except Exception:
+            _LOGGER.warning("Reminder delivery cycle failed; retrying on the next cycle.")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=60)
+        except TimeoutError:
+            pass

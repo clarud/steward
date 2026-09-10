@@ -269,6 +269,11 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Failure and recovery checks
 
+- With reminders enabled, stop the bot while its reminder worker is idle.
+  It should exit promptly rather than wait for the next 60-second poll. Restart
+  and verify pending reminders remain available. In-flight network deliveries
+  may take until their request completes before shutdown finishes.
+
 - Before and after restarting the local Telegram process, run `steward health`.
   Confirm it reports database/checkpoint availability, root counts, and only
   whether a Telegram token is configured—never paths, source text, or tokens.

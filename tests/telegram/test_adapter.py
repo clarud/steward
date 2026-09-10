@@ -282,6 +282,9 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
         def post_init(self, callback):
             application.post_init = callback
             return self
+        def post_stop(self, callback):
+            application.post_stop = callback
+            return self
         def token(self, _token: str): return self
         def build(self) -> FakeApplication: return application
 
@@ -393,6 +396,28 @@ def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> Non
     event = normalize_telegram_update(FakeUpdate(message))  # type: ignore[arg-type]
 
     assert event.attachments == ("telegram-photo-7.jpg",)
+
+
+def test_reminder_worker_stops_promptly_and_survives_delivery_failure(monkeypatch) -> None:
+    async def scenario():
+        stop = asyncio.Event()
+        called = asyncio.Event()
+
+        async def failing_cycle(*_args):
+            called.set()
+            raise OSError("temporary database failure")
+
+        monkeypatch.setattr(telegram_adapter, "deliver_due_task_reminders", failing_cycle)
+        worker = asyncio.create_task(telegram_adapter._task_reminder_loop(
+            type("App", (), {"bot": object()})(), object(), frozenset(), stop=stop,
+        ))
+        await asyncio.wait_for(called.wait(), timeout=1)
+        await asyncio.sleep(0)
+        assert not worker.done()
+        stop.set()
+        await asyncio.wait_for(worker, timeout=1)
+
+    asyncio.run(scenario())
 
 
 def test_photo_over_cloud_limit_is_not_downloaded() -> None:

@@ -576,6 +576,10 @@ explicit operations:
   reminders, acknowledges them only after Telegram accepts the message, and
   releases failed sends for a later retry; a crash can therefore produce at
   most an at-least-once duplicate rather than silent reminder loss.
+  The worker owns a stop event: the Telegram post-stop hook signals and awaits
+  it before HTTP shutdown. Cycle errors are logged without provider details
+  and retried on the next interval. Shutdown waits for an in-flight delivery
+  to finish, but interrupts the idle 60-second wait immediately.
 - `/research` is explicitly external and ephemeral. Keeping its result writes
   a provenance-labeled Inbox note; it does not archive or silently promote web
   information to canonical personal knowledge.
