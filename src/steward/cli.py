@@ -770,7 +770,8 @@ def _health_report(settings: Settings) -> str:
             missing = sum(root.health == "missing" for root in roots)
             disabled = sum(root.health == "disabled" for root in roots)
             root_summary = f"{available} available, {missing} missing, {disabled} disabled"
-    telegram = "configured" if os.environ.get("STEWARD_TELEGRAM_BOT_TOKEN") else "not configured"
+    # Keep this aligned with the variable read by the ``telegram`` command.
+    telegram = "configured" if os.environ.get("TELEGRAM_BOT_TOKEN") else "not configured"
     return (
         "Steward health:\n"
         f"Operational database: {database_health}\n"

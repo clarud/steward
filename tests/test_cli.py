@@ -92,7 +92,8 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    monkeypatch.delenv("STEWARD_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 
     main(["health"])
 
@@ -113,7 +114,7 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     roots = SourceRootRepository(database)
     roots.add("Available", available); roots.add("Missing", missing); roots.add("Disabled", disabled)
     missing.rmdir(); roots.set_enabled("Disabled", False)
-    monkeypatch.setenv("STEWARD_TELEGRAM_BOT_TOKEN", "private-token")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "private-token")
 
     main(["health"])
 
