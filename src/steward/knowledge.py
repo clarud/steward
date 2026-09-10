@@ -147,6 +147,15 @@ class KnowledgeEnrichmentProposalRepository:
 
 class KnowledgeService:
     def __init__(self, database_path: Path) -> None: self._database_path = database_path
+
+    def evidence_fragment_ids(self, claim_id: int) -> tuple[int, ...]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute("SELECT fragment_id FROM claim_evidence WHERE claim_id = ? ORDER BY fragment_id", (claim_id,)).fetchall()
+        return tuple(int(row[0]) for row in rows)
+
+    def accepted_reviews(self, claim_id: int) -> tuple[StoredKnowledgeEnrichmentProposal, ...]:
+        return tuple(item for item in KnowledgeEnrichmentProposalRepository(self._database_path).list_all() if item.claim_id == claim_id and item.status == "accepted")
+
     def create_concept(self, name: str) -> Concept:
         concept = Concept(None, name.strip(), datetime.now(UTC))
         if not concept.name: raise ValueError("Concept name must not be empty.")

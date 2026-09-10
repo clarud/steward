@@ -114,6 +114,27 @@ class ReadOnlyToolService:
     def search_knowledge(self, query: str) -> str:
         """Resolve a canonical concept or alias without creating knowledge."""
         concept = self._knowledge.find(query)
+        claims = []
+        for claim in self._knowledge.list_claims(concept.id or 0) if concept else ():
+            evidence_ids = self._knowledge.evidence_fragment_ids(claim.id or 0)
+            evidence = [self._fragments.get(identifier) for identifier in evidence_ids]
+            if not evidence or any(part is None or not self._permits_model(part.source_id) for part in evidence):
+                continue
+            reviews = []
+            for review in self._knowledge.accepted_reviews(claim.id or 0):
+                part = self._fragments.get(review.fragment_id)
+                if part is None or not self._permits_model(part.source_id):
+                    continue
+                reviews.append({
+                    "operation": review.operation.value, "rationale": review.rationale,
+                    "fragment_id": part.id, "source_id": part.source_id,
+                    "location": part.location, "text": part.text,
+                })
+            claims.append({
+                "id": claim.id, "text": claim.text, "created_at": claim.created_at.isoformat(),
+                "evidence_fragment_ids": evidence_ids, "accepted_reviews": reviews,
+                "review_caveat": "Reviews record user assessment, not proven truth. Claims are unchanged. Respect contradictions and qualifications. Evidence may be withheld by privacy policy.",
+            })
         return self._json(
             {
                 "concept": None
@@ -122,10 +143,7 @@ class ReadOnlyToolService:
                     "id": concept.id,
                     "name": concept.name,
                     "created_at": concept.created_at.isoformat(),
-                    "claims": [
-                        {"id": claim.id, "text": claim.text, "created_at": claim.created_at.isoformat()}
-                        for claim in self._knowledge.list_claims(concept.id or 0)
-                    ],
+                    "claims": claims,
                 }
             }
         )

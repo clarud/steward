@@ -4,7 +4,7 @@ from pathlib import Path
 
 from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
-from steward.knowledge import KnowledgeService
+from steward.knowledge import KnowledgeService, KnowledgeEnrichmentProposalRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.records import (
     ReceiptRecord,
@@ -81,6 +81,37 @@ def test_read_only_tools_expose_only_the_phase_21_safe_tool_set(tmp_path: Path) 
         "search_sources", "read_source", "search_knowledge", "search_records",
         "search_workspaces", "search_activity",
     ]
+
+
+def test_knowledge_tool_respects_evidence_privacy_and_surfaces_reviewed_conflicts(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "tlb.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, "TLBs do not cache translations.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id, "TLBs cache translations.", [fragment.id])
+    proposals = KnowledgeEnrichmentProposalRepository(database)
+    review = proposals.add(knowledge.compare_evidence(claim, fragment_id=fragment.id, evidence_text=fragment.text))
+    privacy = PrivacyService(database)
+    service = ReadOnlyToolService(sources, fragments, LexicalSearchService(sources, fragments), knowledge, RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy)
+    assert json.loads(service.search_knowledge("TLB"))["concept"]["claims"][0]["accepted_reviews"] == []
+    proposals.review(review.id, "accepted")
+    result = json.loads(service.search_knowledge("TLB"))["concept"]["claims"][0]
+    assert result["accepted_reviews"][0]["operation"] == "contradict"
+    assert result["accepted_reviews"][0]["text"] == fragment.text
+    assert "not proven truth" in result["review_caveat"]
+    privacy.set_rule(source.id, PrivacyRule.LOCAL_MODEL_ONLY)
+    assert json.loads(service.search_knowledge("TLB"))["concept"]["claims"] == []
+    local = ReadOnlyToolService(sources, fragments, LexicalSearchService(sources, fragments), knowledge, RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy, model_is_local=True)
+    assert len(json.loads(local.search_knowledge("TLB"))["concept"]["claims"]) == 1
+    privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
+    assert json.loads(local.search_knowledge("TLB"))["concept"]["claims"] == []
 
 
 def test_read_only_record_search_includes_receipts_and_warranties(tmp_path: Path) -> None:

@@ -145,6 +145,14 @@ token, OAuth credentials, model provider, and machine filesystem work together.
 
 ## Knowledge disagreement visibility
 
+- The read-only agent's knowledge results include permitted accepted review
+  evidence and caution that acceptance is not proof. Claim text is withheld
+  when any supporting fragment is unavailable or its source policy forbids
+  the selected model. Review evidence is filtered separately. Local-only and
+  no-model regression tests cover this boundary. Concept names themselves are
+  not yet assigned a separate privacy policy; this guard applies to claims
+  and evidence, not to all concept metadata.
+
 - Accept a contradiction review, then open its concept with `/knowledge NAME`.
   The original claim must remain intact, with the accepted contradiction
   visible and an Evidence reviews button. Open that history and inspect the
