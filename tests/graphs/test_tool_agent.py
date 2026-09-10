@@ -59,6 +59,31 @@ def test_tool_agent_requires_at_least_one_tool() -> None:
         raise AssertionError("An empty tool list must fail.")
 
 
+def test_tool_agent_can_answer_from_the_last_allowed_tool_result() -> None:
+    calls = []
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        calls.append(query)
+        return "Found OpenMP notes."
+
+    class Model:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, messages):
+            if isinstance(messages[-1], ToolMessage) or "tool budget is closed" in str(messages[-1].content):
+                return AIMessage("I found your OpenMP notes.")
+            return AIMessage("", tool_calls=[{"name": "search_sources", "args": {"query": "OpenMP"}, "id": "once"}])
+
+    result = build_tool_agent_graph(Model(), [search_sources], max_tool_calls=1).invoke(
+        {"messages": [HumanMessage("Find OpenMP notes")]}
+    )
+    assert calls == ["OpenMP"]
+    assert result["messages"][-1].content == "I found your OpenMP notes."
+
+
 def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
     @tool
     def search_sources(query: str) -> str:

@@ -788,6 +788,13 @@ steward telegram
 
 ## Conversation state and checkpoints
 
+When the tool agent has consumed its execution budget, it permits one final
+model invocation using the results already received and an instruction to
+finish. Additional tool requests from this response are never executed;
+continued tool requests or provider failure yield the bounded fallback. This
+adds at most one model request at budget exhaustion and preserves the original
+tool-execution cap. It lets a successful last lookup contribute to an answer.
+
 Source cards also expose `/summarize_source ID`; `summarize it` resolves the
 selected source from chat context. The configured model receives only that
 source's stored fragments and location labels after the source privacy policy

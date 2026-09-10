@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Callable, Literal, Protocol, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -45,6 +45,23 @@ def build_tool_agent_graph(
         raise ValueError("max_tool_calls must be positive.")
     bound_model = model.bind_tools(tools)
 
+    def finish_from_evidence(state: ToolAgentState, fallback: str) -> dict[str, list[BaseMessage]]:
+        """Allow one final synthesis, but never execute further requested tools."""
+        trace("tool_agent.final_synthesis")
+        try:
+            response = bound_model.invoke([
+                *state["messages"],
+                SystemMessage(
+                    "The tool budget is closed. Give your best final answer using only results already received. "
+                    "Explain any missing evidence. Do not request more tools or claim unperformed actions."
+                ),
+            ])
+        except ModelGatewayError:
+            return {"messages": [AIMessage(fallback)]}
+        if response.tool_calls or not response.content:
+            return {"messages": [AIMessage(fallback)]}
+        return {"messages": [response]}
+
     def call_model(state: ToolAgentState) -> dict[str, list[BaseMessage]]:
         last_request_index = max(
             (index for index, message in enumerate(state["messages"]) if isinstance(message, HumanMessage)),
@@ -56,14 +73,10 @@ def build_tool_agent_graph(
         )
         if tool_results >= max_tool_calls:
             trace("tool_agent.tool_budget_exhausted", max_tool_calls=max_tool_calls)
-            return {
-                "messages": [
-                    AIMessage(
-                        "I reached Steward's tool-call limit before completing this request. "
-                        "Please narrow the question or start a new request."
-                    )
-                ]
-            }
+            return finish_from_evidence(
+                state, "I reached Steward's tool-call limit before completing this request. "
+                "Please narrow the question or start a new request.",
+            )
         trace("tool_agent.model_call", message_count=len(state["messages"]))
         try:
             response = bound_model.invoke(state["messages"])
