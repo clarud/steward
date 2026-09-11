@@ -745,6 +745,13 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+A synthetic backup/restore workflow now passes across a fresh Python process:
+a pending enrichment is restored and accepted with one audit event while the
+safety copy preserves the later rejection and the original file stays unchanged.
+This is one operational-database recovery case, not the full deployment gate.
+Paired checkpoint recovery, external-side-effect reconciliation, and real
+Telegram restart/restore acceptance remain unverified.
+
 Backup output now uses exclusive reservation rather than only an existence
 check. Fault injection verifies a competing destination is preserved, and a
 failed SQLite copy removes its own reserved output. Source access is read-only.

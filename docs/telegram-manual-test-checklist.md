@@ -449,6 +449,14 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+An automated synthetic rehearsal (`tests/test_recovery_workflow.py`) verifies
+restoring a pending knowledge review and completing it in a fresh interpreter.
+For live restore acceptance, stop Steward and preserve both operational and
+conversation state before proceeding. Confirm that pending cards and callbacks
+refer to the restored review, and reconcile any external actions performed
+after the backup instead of assuming rollback undoes them. This live procedure
+has not been performed by the synthetic test.
+
 Local runtime ownership tests now also exercise a live subprocess contender and
 forced termination using temporary directories. They do not test Telegram API
 delivery. During manual deployment acceptance, verify only one poller uses the

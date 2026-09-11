@@ -1345,6 +1345,17 @@ behavior easy to edit and inspect in code review.
 
 ## Restore preflight
 
+`tests/test_recovery_workflow.py` rehearses one complete operational recovery:
+create a synthetic source/claim/pending enrichment, snapshot the database, reject
+the review, restore the pending snapshot with a safety copy, and accept the
+restored review in a fresh Python interpreter. It verifies current-evidence
+lookup, one acceptance audit, preservation of the rejected state in the safety
+copy, an unchanged pending backup, and byte-identical original source content.
+The subprocess is bounded by a timeout. This verifies one local database
+workflow, not paired operational/checkpoint restoration or external actions.
+Restoring old local state can forget later remote effects; do not replay Calendar
+or other external actions without reconciling their authoritative live state.
+
 `snapshot_database()` reserves its output with exclusive file creation (`xb`)
 before SQLite opens it. A competing destination created after the initial
 existence check causes refusal rather than overwrite. Source connections use
