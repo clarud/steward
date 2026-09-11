@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Empty extracted-content views now provide reviewed re-extraction navigation and
+format-specific PDF/image/encoding guidance without claiming the original is
+empty. No parser/model runs merely to display the card. Persistent per-extractor
+diagnosis and live attachment-recovery acceptance remain unfinished.
+
 Verification checkpoint (2026-09-12): the full automated pytest suite passed
 after the Calendar and generic tool-error privacy changes at `5bcf802`. An
 expanded interrupt regression also passed in the 22-test agent-graph file:

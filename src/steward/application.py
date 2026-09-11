@@ -871,7 +871,7 @@ class StewardReadApplication:
             return "That source is unavailable. Rescan its root locally before reading it."
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
-            return "No extracted text is available for this source yet."
+            return self._extraction_recovery(source)
         if not 1 <= section <= len(fragments):
             return f"Choose a section between 1 and {len(fragments)}."
         fragment = fragments[section - 1]
@@ -885,6 +885,24 @@ class StewardReadApplication:
             f"Extracted section {section} of {len(fragments)} · {fragment.location}\n"
             f"{fragment.heading or ''}\n\n{fragment.text}",
             tuple(actions), title=source.path.name, icon="📖",
+        )
+
+    def _extraction_recovery(self, source: Source) -> PresentedReply:
+        suffix = source.path.suffix.casefold()
+        if suffix == ".pdf":
+            guidance = "For scanned PDFs, local OCR may require Tesseract and Poppler. Encrypted or damaged PDFs may need attention locally."
+        elif suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp"}:
+            guidance = "Images need readable text and an available local OCR setup. Check Tesseract locally if extraction failed."
+        else:
+            guidance = "Check the source's format, encoding, and local extractor support. The file may also contain no extractable text."
+        actions = [ReplyAction("Review re-extraction", f"/propose_reextract {source.id}"),
+                   ReplyAction("Source details", f"/source {source.id}")]
+        if self._source_export is not None:
+            actions.append(ReplyAction("Send original", f"/send_source {source.id}"))
+        return PresentedReply(
+            "No extracted text is stored for this source. This does not establish that the document is empty.\n\n"
+            + guidance + "\n\nReview re-extraction before running a parser again. Opening this card does not modify the original or invoke a model.",
+            tuple(actions), title=source.path.name, icon="📄",
         )
 
     def workspaces(self, page: int = 1) -> str | PresentedReply:

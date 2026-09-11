@@ -639,6 +639,18 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
 
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "parallel-computing.md"
+    empty_content = restarted.handle(make_event(text="give me the content"))
+    assert isinstance(empty_content, PresentedReply)
+    assert "does not establish that the document is empty" in empty_content.text
+    assert empty_content.actions[0].command == f"/propose_reextract {source.id}"
+    assert fragments.list_for_source(source.id) == ()
+    from dataclasses import replace
+    for suffix, expected_hint in ((".pdf", "Poppler"), (".png", "Tesseract"), (".txt", "encoding")):
+        sources.update(replace(source, path=source.path.with_suffix(suffix)))
+        recovery = restarted.handle(make_event(text="give me the content"))
+        assert expected_hint in recovery.text
+        assert recovery.actions[0].command == f"/propose_reextract {source.id}"
+    sources.update(source)
 
     empty_memberships = restarted.handle(make_event(text="Which workspace is this in?"))
     assert "not linked to any workspace" in empty_memberships.text

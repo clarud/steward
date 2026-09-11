@@ -449,6 +449,12 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+Open a source with no extracted fragments and choose Read content. Expect an
+explanation that no text is stored, relevant format guidance, and Review
+re-extraction. Tapping that action should create a review, not immediately run
+extraction. Check the named source before approval; the original must remain
+unchanged. Live verification of this recovery card is still pending.
+
 Calendar tool error privacy is now tested through real tool wrappers with
 synthetic secret-bearing failures. For live agent outage checks, expect an
 unavailability explanation—not an empty-calendar claim or provider traceback.

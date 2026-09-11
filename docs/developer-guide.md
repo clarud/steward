@@ -1421,6 +1421,15 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+When source-content browsing finds no stored fragments, `StewardReadApplication`
+returns a recovery card instead of inferring an empty document. The card offers
+the existing reviewed re-extraction command, source details, and original-file
+delivery when configured. PDF/image guidance identifies local OCR dependencies;
+other formats suggest encoding/parser checks. These are possible causes, not a
+persisted extraction diagnosis. Displaying the card runs neither parser nor
+model; a separate review controls re-extraction. Tests verify empty storage,
+source-specific commands, and format hints after reconstructed source navigation.
+
 The tool-agent `ToolNode` uses a fixed JSON error message for handled argument
 validation and execution exceptions. It does not return exception strings or
 validation payloads to the model. Its callable handler explicitly re-raises
