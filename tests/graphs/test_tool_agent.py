@@ -2,6 +2,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
+import pytest
 
 from steward.graphs import (
     GeminiToolCallingModel,
@@ -30,6 +31,53 @@ class ToolCallingFakeModel:
             "",
             tool_calls=[{"name": "search_sources", "args": {"query": "TLB"}, "id": "call-1"}],
         )
+
+
+@pytest.mark.parametrize("invalid_arguments", [False, True])
+def test_tool_graph_returns_secret_free_errors_to_model(invalid_arguments: bool) -> None:
+    diagnostic = "token=synthetic-secret C:/private/state.db"
+    calls = []
+
+    @tool
+    def inspect_item(identifier: int) -> str:
+        """Inspect a registered item."""
+        calls.append(identifier)
+        raise RuntimeError(diagnostic)
+
+    class Model:
+        def bind_tools(self, tools):
+            return self
+
+        def invoke(self, messages):
+            if isinstance(messages[-1], ToolMessage):
+                failure = messages[-1]
+                assert failure.status == "error"
+                assert "synthetic-secret" not in failure.content
+                assert "C:/private" not in failure.content
+                assert "No reliable result" in failure.content
+                return AIMessage("I could not verify that item.")
+            return AIMessage("", tool_calls=[{"name": "inspect_item", "id": "failure-1",
+                "args": {"identifier": diagnostic if invalid_arguments else 1}}])
+
+    result = build_tool_agent_graph(Model(), [inspect_item]).invoke({"messages": [HumanMessage("Inspect my item")]})
+    assert result["messages"][-1].content == "I could not verify that item."
+    assert calls == ([] if invalid_arguments else [1])
+
+
+def test_tool_error_boundary_preserves_langgraph_interrupts() -> None:
+    from langgraph.types import interrupt
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Synthetic tool that pauses for a decision."""
+        return interrupt("Review before continuing")
+
+    graph = build_tool_agent_graph(ToolCallingFakeModel(), [search_sources], checkpointer=InMemorySaver())
+    result = graph.invoke({"messages": [HumanMessage("Inspect") ]},
+                          {"configurable": {"thread_id": "interrupt-test"}})
+    assert "__interrupt__" in result
+    assert not any(isinstance(message, ToolMessage) for message in result["messages"])
 
 
 def test_tool_agent_runs_model_tool_model_loop() -> None:

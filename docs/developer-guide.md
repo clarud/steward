@@ -1421,6 +1421,19 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+The tool-agent `ToolNode` uses a fixed JSON error message for handled argument
+validation and execution exceptions. It does not return exception strings or
+validation payloads to the model. Its callable handler explicitly re-raises
+`GraphBubbleUp`: the installed ToolNode wrapper-level catch would otherwise
+convert an intentional interrupt into an ordinary failure.
+The error is marked as a failed ToolMessage
+and explicitly warns against claiming success or assuming no side effects;
+the graph may then synthesize a bounded explanation. No automatic write retry
+is introduced. Tests verify both invalid arguments and execution errors through
+the graph, and that LangGraph interrupts still propagate as pauses. This guard
+does not sanitize successful tool return values or replace per-tool privacy
+policy. It also does not by itself diagnose the underlying local failure.
+
 `CalendarReadToolService` returns fixed, secret-free error payloads when client
 creation, API requests, or event projection fails. Provider exception strings
 are deliberately excluded: they may contain OAuth paths, tokens, request URLs,

@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+The agent tool node now converts handled validation/execution failures into
+fixed secret-free error results. Graph tests verify model continuation without
+exception diagnostics and preserve intentional LangGraph interrupts. Successful
+tool payloads still need their existing per-tool privacy boundaries.
+
 Calendar model-tool failures no longer interpolate provider exceptions. Fixed
 errors cover factory, request, and projection failures; wrapper-level tests
 verify synthetic tokens, paths, and email diagnostics do not enter tool results.

@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langgraph.errors import GraphBubbleUp
 
 from steward.tools.policy import ToolPolicy
 from steward.observability import trace
@@ -159,7 +160,18 @@ def build_tool_agent_graph(
             tool_call_id=request.tool_call["id"],
         )
 
-    builder.add_node("tools", ToolNode(tools, wrap_tool_call=enforce_policy))
+    def safe_tool_error(error: Exception) -> str:
+        # Wrapper-level handling in the installed ToolNode also catches graph
+        # interrupts; preserve their control-flow semantics explicitly.
+        if isinstance(error, GraphBubbleUp):
+            raise error
+        return json.dumps({"error": (
+            "The tool could not complete or its arguments were invalid. No reliable result is available. "
+            "Do not expose internal diagnostics, claim success, or assume no side effects occurred. "
+            "Check existing state before proposing any retry of a write."
+        )})
+
+    builder.add_node("tools", ToolNode(tools, wrap_tool_call=enforce_policy, handle_tool_errors=safe_tool_error))
     builder.add_edge(START, "model")
     builder.add_conditional_edges("model", route_after_model, {"tools": "tools", "end": END})
     builder.add_edge("tools", "model")
