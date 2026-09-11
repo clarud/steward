@@ -449,6 +449,13 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+A disk-backed organization graph test now rehearses stopped-writer backup and
+restore of both operational and checkpoint databases. It confirms restored
+pending state does nothing until explicit approval. During live Telegram recovery,
+also verify that old buttons reference the intended restored proposal: restoring
+SQLite cannot retract or restore already delivered Telegram messages. That
+external callback acceptance step remains unverified by the graph test.
+
 An automated synthetic rehearsal (`tests/test_recovery_workflow.py`) verifies
 restoring a pending knowledge review and completing it in a fresh interpreter.
 For live restore acceptance, stop Steward and preserve both operational and

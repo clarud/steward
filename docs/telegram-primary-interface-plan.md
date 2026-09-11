@@ -745,6 +745,13 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Paired stopped-writer recovery is now covered for an interrupted organization
+workflow using real SQLite checkpoints: restore returns both proposal and graph
+to pending, reconstructing/inspecting state does not move the original, and only
+explicit acceptance resumes the move. Both safety copies preserve the later
+rejected state. Actual Telegram callback and operator deployment recovery remain
+separate acceptance gaps; this does not make live sequential backups atomic.
+
 CLI backup now explicitly reports partial sets, preserves completed copies, and
 requires a new destination for retry. A corrupt second database regression
 verifies this behavior. Successful paired copies warn that writers must be

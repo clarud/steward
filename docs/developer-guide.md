@@ -1345,6 +1345,15 @@ behavior easy to edit and inspect in code review.
 
 ## Restore preflight
 
+The organization graph recovery regression uses real SQLite checkpoints and
+operational repositories. With writers stopped it snapshots both databases at
+an interrupt, completes a rejection, restores the paused pair, and reconstructs
+the graph. State inspection alone leaves the original untouched; explicit
+`Command(resume="accepted")` performs the reviewed move. The safety copies keep
+the rejected state, and the original backup keeps the pending state. This
+rehearses a consistent stopped-writer pair, not live cross-database atomicity or
+restoration of Telegram messages/callbacks already delivered externally.
+
 The CLI backup command reserves the output directory exclusively and tracks
 successful copies individually. Failure reports an incomplete set and lists
 retained completed snapshots; it does not delete usable copies or report overall
