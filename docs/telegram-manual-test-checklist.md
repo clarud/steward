@@ -447,6 +447,15 @@ Record any failed command, exact visible response, expected result, and whether
 the issue involved a source mutation, external service, or model. That turns a
 daily-use problem into a reproducible evaluation case rather than a vague
 regression.
+## Runtime ownership verification
+
+Local runtime ownership tests now also exercise a live subprocess contender and
+forced termination using temporary directories. They do not test Telegram API
+delivery. During manual deployment acceptance, verify only one poller uses the
+bot token across all machines/data directories; the SQLite guard coordinates
+one data directory, not the bot token globally. Do not delete a runtime lock
+file as a substitute for checking and stopping the actual process.
+
 # Reminder claim ownership regression
 
 Automated coverage verifies that a worker with an expired claim cannot release

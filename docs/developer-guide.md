@@ -1343,6 +1343,23 @@ needed for a future deterministic or model-backed evaluator. This avoids
 claiming model quality from one-off manual examples while keeping the expected
 behavior easy to edit and inspect in code review.
 
+## Telegram runtime ownership verification
+
+`telegram_runtime_lock(data_dir)` holds an exclusive SQLite transaction in
+`telegram-runtime.db` for the polling process lifetime. The file is not a PID
+marker: its existence after shutdown does not mean Steward is still running.
+The OS releases ownership when the connection/process closes.
+
+`tests/test_runtime.py` checks normal exit, abrupt `os._exit`, and a live
+cross-process contender. The latter waits for an explicit lock-acquired
+handshake, confirms that another process is refused for the same data directory,
+checks an independent directory, kills only the test-owned process, and then
+reacquires the original lock despite its file remaining. All subprocess waits
+are bounded and cleanup terminates the owned child on assertion failure.
+This is local process coordination coverage, not a live Telegram polling test.
+Different data directories using the same bot token are not coordinated by this
+guard; run only one polling instance per bot, including on other machines.
+
 ## Known limitations
 
 - Capture supports Markdown, plain text, DOCX, HTML, images, and PDFs. PDFs use native text first;

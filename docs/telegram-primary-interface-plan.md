@@ -745,6 +745,14 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Runtime coordination now has verified live-subprocess contention coverage:
+a confirmed lock owner excludes another process for the same temporary data
+directory, an independent directory remains usable, and killing the test owner
+releases ownership without deleting the coordination database. Normal and abrupt
+exit tests also pass. No actual bot process or user database is used. Telegram
+polling restart, deployment startup, and cross-machine operator validation
+remain separate, unfinished acceptance requirements.
+
 ### Acceptance evidence from 11 September 2026
 
 Long-document provider check: a synthetic 66,500-character Cedar document
