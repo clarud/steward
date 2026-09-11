@@ -449,6 +449,14 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+For a controlled extraction failure, approve re-extraction of a non-sensitive
+test source whose parser cannot complete. Expect Text refresh incomplete with
+Retry refresh, Read stored text, and Dismiss review, without local error paths.
+Repair the local dependency before retrying; inspect derived content because
+partial refresh is possible. Do not infer original deletion or successful
+indexing from this failure card. Actual parser-outage Telegram validation remains
+pending despite simulated application coverage.
+
 Open a source with no extracted fragments and choose Read content. Expect an
 explanation that no text is stored, relevant format guidance, and Review
 re-extraction. Tapping that action should create a review, not immediately run

@@ -3668,7 +3668,7 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"Reopened {update_id} for a future genuine Telegram redelivery. No message was replayed."
 
-    def _review_reextract(self, proposal_id: int, decision: str) -> str:
+    def _review_reextract(self, proposal_id: int, decision: str) -> str | PresentedReply:
         """Refresh derived text after a review without changing canonical input.
 
         This deliberately has a narrow payload: a registered source ID.  The
@@ -3695,12 +3695,19 @@ class StewardActionProposalApplication:
             return f"Re-extraction proposal {proposal.id} rejected."
         try:
             fragments = self._source_service.reextract_source(int(proposal.payload["source_id"]))
-        except ValueError as error:
-            # Preserve the pending proposal for a deliberate retry after the
-            # local file or extractor problem is repaired.
-            return f"Could not refresh derived text: {error}"
-        except (OSError, UnicodeDecodeError):
-            return "Could not refresh derived text; the local source or extractor is unavailable. The proposal remains pending."
+        except Exception:
+            # Parser/index adapters may raise library-specific errors containing
+            # local paths. Do not forward diagnostics through Telegram.
+            source_id = proposal.payload["source_id"]
+            return PresentedReply(
+                f"Could not complete text refresh for source {source_id}. Check source availability and local extractor/index setup. "
+                "The review remains pending. Derived text or index data may have partially refreshed; this does not mean nothing changed. "
+                "The original is not rewritten by this operation.",
+                (ReplyAction("Retry refresh", f"/approve_action {proposal_id}"),
+                 ReplyAction("Read stored text", f"/source_content {source_id}"),
+                 ReplyAction("Dismiss review", f"/reject_action {proposal_id}")),
+                title="Text refresh incomplete", icon="⚠️",
+            )
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:
             self._activity.record(

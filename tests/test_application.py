@@ -2248,10 +2248,30 @@ def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> No
     assert application.handle_command(make_event(text="/propose_reextract 99")) == "Source 99 was not found."
     proposal = proposals.add(application.REEXTRACT_SOURCE, {"source_id": "99"})
 
-    assert application.handle_command(make_event(text=f"/approve_action {proposal.id}")) == (
-        "Could not refresh derived text: Source 99 was not found."
-    )
+    recovery = application.handle_command(make_event(text=f"/approve_action {proposal.id}"))
+    assert recovery.title == "Text refresh incomplete"
+    assert "source 99" in recovery.text
+    assert recovery.actions[0].command == f"/approve_action {proposal.id}"
     assert proposals.get(proposal.id or 0).status == "pending"
+    calls = []
+    class RecoveringExtractor:
+        def reextract_source(self, source_id):
+            calls.append(source_id)
+            if len(calls) == 1:
+                raise RuntimeError("C:/private/secret-source.pdf token=synthetic-secret")
+            return ()
+    restarted = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity, source_repository=sources, source_service=RecoveringExtractor(),
+    )
+    failure = restarted.handle_command(make_event(text=recovery.actions[0].command))
+    assert "synthetic-secret" not in failure.text and "C:/private" not in failure.text
+    assert "partially refreshed" in failure.text
+    assert proposals.get(proposal.id).status == "pending"
+    success = restarted.handle_command(make_event(text=failure.actions[0].command))
+    assert "0 fragments" in success
+    assert proposals.get(proposal.id).status == "accepted"
+    assert calls == [99, 99]
 
 
 def test_telegram_semantic_rebuild_is_reviewed_and_uses_no_source_paths(tmp_path: Path) -> None:

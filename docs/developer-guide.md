@@ -1421,6 +1421,15 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+Re-extraction approval failures return a fixed recovery card rather than parser
+exception text. The adapter boundary catches library-specific extraction/index
+failures and retains the pending proposal. Retry refresh explicitly reuses the
+approval command; Read stored text inspects the current derived state; Dismiss
+review rejects that proposal. The card warns that fragment/index refresh may
+have partially completed before failure. This is not an atomic extraction/index
+transaction, and no automatic retry is performed. Tests cover synthetic private
+diagnostics, pending status, and an explicit successful retry after reconstruction.
+
 When source-content browsing finds no stored fragments, `StewardReadApplication`
 returns a recovery card instead of inferring an empty document. The card offers
 the existing reviewed re-extraction command, source details, and original-file

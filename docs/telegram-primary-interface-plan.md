@@ -745,6 +745,12 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Reviewed re-extraction failures now preserve pending status and offer explicit
+retry/read/dismiss recovery without exposing parser diagnostics. The card warns
+about partially updated derived state; atomic parser/index refresh is not claimed.
+Focused tests verify secret-free failure and deliberate retry. Live validation
+with failing PDF/OCR dependencies remains open.
+
 Empty extracted-content views now provide reviewed re-extraction navigation and
 format-specific PDF/image/encoding guidance without claiming the original is
 empty. No parser/model runs merely to display the card. Persistent per-extractor
