@@ -806,12 +806,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not available:
             print("No Steward databases exist yet; there is nothing to back up.")
             return
+        snapshots = []
+        reserved = False
         try:
-            snapshots = tuple(snapshot_database(path, destination / path.name) for path in available)
+            destination.mkdir(parents=True, exist_ok=False)
+            reserved = True
+            for path in available:
+                snapshots.append(snapshot_database(path, destination / path.name))
         except (OSError, ValueError, sqlite3.Error) as error:
             print(f"Backup failed: {error}")
+            if reserved:
+                print("Backup set is incomplete. Do not treat this directory as a complete recovery point.")
+                if snapshots:
+                    print("Completed snapshots retained:\n" + "\n".join(str(path) for path in snapshots))
+                print("Retry with a new destination after resolving the failure.")
             return
         print("Backed up local Steward databases:\n" + "\n".join(str(path) for path in snapshots))
+        if len(snapshots) > 1:
+            print("Databases were copied sequentially. For a coordinated recovery point, stop Steward and other writers before backing up.")
         return
 
     if arguments.command == "restore":

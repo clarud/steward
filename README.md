@@ -89,8 +89,14 @@ steward backup --destination D:\Steward-backups\2026-09-10
 ```
 
 The command never overwrites an existing destination and snapshots both
-`steward.db` and `checkpoints.db` when present. Restore is deliberately local:
-stop Steward first, then name both the snapshot and a new write-once safety
+`steward.db` and `checkpoints.db` when present.
+The databases are copied sequentially, not as one cross-database transaction.
+Stop Steward and other writers first when creating a coordinated recovery point.
+If a later copy fails, completed snapshots are retained and the command reports
+an incomplete backup set. Resolve the failure and retry into a new directory;
+do not assume the partial set contains both databases.
+
+Restore is deliberately local: stop Steward first, then name both the snapshot and a new write-once safety
 backup for the database being replaced.
 
 ```powershell

@@ -1345,6 +1345,13 @@ behavior easy to edit and inspect in code review.
 
 ## Restore preflight
 
+The CLI backup command reserves the output directory exclusively and tracks
+successful copies individually. Failure reports an incomplete set and lists
+retained completed snapshots; it does not delete usable copies or report overall
+success. A corrupt-second-database regression exercises this path. Successful
+multi-database backups warn that copies are sequential: stop all writers for a
+coordinated recovery point. No cross-database atomicity is claimed.
+
 `tests/test_recovery_workflow.py` rehearses one complete operational recovery:
 create a synthetic source/claim/pending enrichment, snapshot the database, reject
 the review, restore the pending snapshot with a safety copy, and accept the

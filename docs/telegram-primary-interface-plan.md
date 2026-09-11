@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+CLI backup now explicitly reports partial sets, preserves completed copies, and
+requires a new destination for retry. A corrupt second database regression
+verifies this behavior. Successful paired copies warn that writers must be
+stopped for coordination; paired live-database atomicity is not implemented.
+
 A synthetic backup/restore workflow now passes across a fresh Python process:
 a pending enrichment is restored and accepted with one audit event while the
 safety copy preserves the later rejection and the original file stays unchanged.

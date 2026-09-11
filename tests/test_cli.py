@@ -39,10 +39,30 @@ def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, 
 
     output = capsys.readouterr().out
     assert "Backed up local Steward databases:" in output
+    assert "copied sequentially" in output
     assert (destination / "steward.db").is_file()
     assert (destination / "checkpoints.db").is_file()
     main(["backup", "--destination", str(destination)])
     assert "already exists" in capsys.readouterr().out
+
+
+def test_cli_backup_reports_and_preserves_partial_set(tmp_path: Path, monkeypatch, capsys) -> None:
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    initialize_database(data_dir / "steward.db")
+    (data_dir / "checkpoints.db").write_bytes(b"corrupt checkpoint")
+    destination = tmp_path / "partial"
+    main(["backup", "--destination", str(destination)])
+    output = capsys.readouterr().out
+    assert "Backup set is incomplete" in output
+    assert "Completed snapshots retained" in output
+    assert "Retry with a new destination" in output
+    assert "Backed up local Steward databases:" not in output
+    assert (destination / "steward.db").is_file()
+    assert not (destination / "checkpoints.db").exists()
+    with sqlite3.connect(destination / "steward.db") as connection:
+        assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+    assert (data_dir / "checkpoints.db").read_bytes() == b"corrupt checkpoint"
 
 
 def test_cli_restore_requires_confirmation_then_preserves_a_safety_backup(tmp_path: Path, monkeypatch, capsys) -> None:
