@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from enum import StrEnum
 import re
+import json
 from steward.activity import ActivityType
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +55,7 @@ class StoredKnowledgeEnrichmentProposal:
     status: str
     created_at: datetime
     reviewed_at: datetime | None
+    evidence_snapshot: str | None = None
 
 
 class KnowledgeEnrichmentProposalRepository:
@@ -62,15 +64,28 @@ class KnowledgeEnrichmentProposalRepository:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
 
+    @staticmethod
+    def _snapshot(connection: sqlite3.Connection, claim_id: int, fragment_id: int) -> str:
+        row = connection.execute(
+            "SELECT c.text, f.text, f.location, f.source_id, s.content_hash FROM claims c "
+            "JOIN source_fragments f ON f.id = ? JOIN sources s ON s.id = f.source_id WHERE c.id = ?",
+            (fragment_id, claim_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Claim or supporting evidence is unavailable.")
+        return json.dumps(list(row), ensure_ascii=False)
+
     def add(self, proposal: KnowledgeEnrichmentProposal) -> StoredKnowledgeEnrichmentProposal:
         created_at = datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            snapshot = self._snapshot(connection, proposal.claim_id, proposal.fragment_id)
             connection.execute(
                 """
                 INSERT OR IGNORE INTO knowledge_enrichment_proposals
-                (claim_id, fragment_id, operation, rationale, status, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?)
+                (claim_id, fragment_id, operation, rationale, status, created_at, evidence_snapshot)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     proposal.claim_id,
@@ -78,15 +93,16 @@ class KnowledgeEnrichmentProposalRepository:
                     proposal.operation.value,
                     proposal.rationale,
                     created_at.isoformat(),
+                    snapshot,
                 ),
             )
             row = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
                 FROM knowledge_enrichment_proposals
-                WHERE claim_id = ? AND fragment_id = ? AND operation = ? AND rationale = ?
+                WHERE claim_id = ? AND fragment_id = ? AND operation = ? AND rationale = ? AND evidence_snapshot = ?
                 """,
-                (proposal.claim_id, proposal.fragment_id, proposal.operation.value, proposal.rationale),
+                (proposal.claim_id, proposal.fragment_id, proposal.operation.value, proposal.rationale, snapshot),
             ).fetchone()
         if row is None:
             raise RuntimeError("Knowledge enrichment proposal was not persisted.")
@@ -96,7 +112,7 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
                 FROM knowledge_enrichment_proposals WHERE id = ?
                 """,
                 (proposal_id,),
@@ -107,7 +123,7 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
                 FROM knowledge_enrichment_proposals ORDER BY id
                 """
             ).fetchall()
@@ -120,7 +136,7 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at "
+                "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot "
                 "FROM knowledge_enrichment_proposals WHERE id = ?", (proposal_id,),
             ).fetchone()
             if row is None or row[5] != "pending":
@@ -132,6 +148,8 @@ class KnowledgeEnrichmentProposalRepository:
                 ).fetchone()
                 if evidence != ("active",):
                     raise ValueError("The supporting source is no longer available; the proposal remains pending.")
+                if row[8] is None or row[8] != self._snapshot(connection, int(row[1]), int(row[2])):
+                    raise ValueError("Claim or evidence changed, or this is a legacy review. Create a fresh enrichment proposal; this one remains pending.")
             cursor = connection.execute(
                 """
                 UPDATE knowledge_enrichment_proposals
@@ -163,6 +181,7 @@ class KnowledgeEnrichmentProposalRepository:
             str(row[5]),
             datetime.fromisoformat(str(row[6])),
             datetime.fromisoformat(str(row[7])) if row[7] else None,
+            str(row[8]) if row[8] else None,
         )
 
 class KnowledgeService:
@@ -174,7 +193,12 @@ class KnowledgeService:
         return tuple(int(row[0]) for row in rows)
 
     def accepted_reviews(self, claim_id: int) -> tuple[StoredKnowledgeEnrichmentProposal, ...]:
-        return tuple(item for item in KnowledgeEnrichmentProposalRepository(self._database_path).list_all() if item.claim_id == claim_id and item.status == "accepted")
+        repository = KnowledgeEnrichmentProposalRepository(self._database_path)
+        with sqlite3.connect(self._database_path) as connection:
+            return tuple(item for item in repository.list_all()
+                         if item.claim_id == claim_id and item.status == "accepted"
+                         and item.evidence_snapshot is not None
+                         and item.evidence_snapshot == repository._snapshot(connection, item.claim_id, item.fragment_id))
 
     def create_concept(self, name: str) -> Concept:
         concept = Concept(None, name.strip(), datetime.now(UTC))

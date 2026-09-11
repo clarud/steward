@@ -462,8 +462,13 @@ Stop older Steward versions before starting the upgraded runtime.
 Knowledge review reliability is covered separately by automated audit-failure
 injection: failed audit persistence must leave the proposal pending, and retry
 must produce one review event. Acceptance of a missing supporting source is
-refused. These checks do not prove that unchanged IDs still represent the exact
-claim/evidence text originally reviewed; content snapshots remain unfinished.
+refused. Snapshot regression tests also change claim text, evidence text,
+location, and source hash: old acceptance must fail, fresh proposals must be
+reviewable, and outdated accepted interpretations must not enter current lookup.
+Migration coverage preserves legacy IDs/status without inventing evidence versions.
+In Telegram, reopen a proposal after a local evidence change: the card must show
+its saved version, and acceptance must request a fresh proposal. Live acceptance
+of this scenario is still pending.
 
 ## Guided source-to-workspace linking
 

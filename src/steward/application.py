@@ -2223,6 +2223,10 @@ class StewardKnowledgeApplication:
             source = self._sources.get_by_id(fragment.source_id) if self._sources is not None else None
             provenance = f" from {source.path.name}" if source is not None else ""
             evidence = fragment.text[:600]
+        if proposal.evidence_snapshot is not None:
+            reviewed_claim, reviewed_evidence, reviewed_location, _, _ = json.loads(proposal.evidence_snapshot)
+            claim_text = reviewed_claim
+            evidence = f"{reviewed_evidence[:600]} (reviewed location: {reviewed_location})"
         operation = proposal.operation
         warning = (
             "\n\nPotential contradiction: accepting records your review only; it does not rewrite the existing claim."
@@ -2232,7 +2236,9 @@ class StewardKnowledgeApplication:
             f"Knowledge proposal {proposal.id}: {operation.value.upper()} claim {proposal.claim_id}\n"
             f"Existing claim {proposal.claim_id}: {claim_text}\n"
             f"Evidence fragment {proposal.fragment_id}{provenance}: {evidence}\n"
-            f"Rationale: {proposal.rationale}{warning}"
+            f"Rationale: {proposal.rationale}{warning}\n"
+            + ("This card shows the saved evidence version; changed evidence requires a fresh proposal."
+               if proposal.evidence_snapshot is not None else "Legacy review: evidence version was not saved. Create a fresh proposal before accepting.")
         )
 
 

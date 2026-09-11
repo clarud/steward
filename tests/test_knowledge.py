@@ -95,6 +95,70 @@ def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:
         KnowledgeService(database).create_claim(99, "Unsupported claim", [42])
 
 
+@pytest.mark.parametrize("change", ["claim", "fragment", "location", "hash"])
+def test_enrichment_snapshot_rejects_changes_and_allows_fresh_review(tmp_path: Path, change: str) -> None:
+    database = tmp_path / "db.sqlite"
+    initialize_database(database)
+    now = datetime.now(UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, "Queues buffer jobs.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    claim = knowledge.create_claim(concept.id, "Queues buffer jobs.", [fragment.id])
+    repository = KnowledgeEnrichmentProposalRepository(database)
+    derived = knowledge.compare_evidence(claim, fragment_id=fragment.id, evidence_text=fragment.text)
+    old = repository.add(derived)
+    statements = {
+        "claim": "UPDATE claims SET text = 'Queues buffer some jobs.'",
+        "fragment": "UPDATE source_fragments SET text = 'Queues may buffer jobs.'",
+        "location": "UPDATE source_fragments SET location = 'line 2'",
+        "hash": "UPDATE sources SET content_hash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'",
+    }
+    with sqlite3.connect(database) as connection:
+        connection.execute(statements[change])
+    with pytest.raises(ValueError, match="fresh enrichment"):
+        repository.review(old.id, "accepted")
+    assert repository.get(old.id).status == "pending"
+    fresh = repository.add(derived)
+    assert fresh.id != old.id
+    assert repository.add(derived).id == fresh.id
+    repository.review(fresh.id, "accepted")
+    assert knowledge.accepted_reviews(claim.id) == (repository.get(fresh.id),)
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE claims SET text = 'Changed after review'")
+    assert knowledge.accepted_reviews(claim.id) == ()
+    assert repository.get(fresh.id).status == "accepted"
+
+
+def test_legacy_enrichment_upgrade_preserves_reviews_without_inventing_snapshots(tmp_path: Path, monkeypatch) -> None:
+    from steward.storage import database as schema
+    database = tmp_path / "legacy.sqlite"
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", tuple(item for item in schema.MIGRATIONS if item[0] < 46))
+        initialize_database(database)
+    now = datetime.now(UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id, (
+        SourceFragment(None, source.id, None, 0, "Queues buffer jobs.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    claim = knowledge.create_claim(concept.id, "Queues buffer jobs.", [fragment.id])
+    with sqlite3.connect(database) as connection:
+        connection.execute("INSERT INTO knowledge_enrichment_proposals (claim_id,fragment_id,operation,rationale,status,created_at) VALUES (?,?,'confirm','Review','pending',?)",
+                           (claim.id, fragment.id, now.isoformat()))
+    initialize_database(database)
+    initialize_database(database)
+    repository = KnowledgeEnrichmentProposalRepository(database)
+    assert repository.get(1).evidence_snapshot is None
+    with pytest.raises(ValueError, match="legacy review"):
+        repository.review(1, "accepted")
+    repository.review(1, "rejected")
+    assert repository.get(1).status == "rejected"
+
+
 @pytest.mark.parametrize(
     ("evidence", "expected"),
     [

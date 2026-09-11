@@ -792,8 +792,14 @@ semantic links are explicitly distinguished from physical folders.
 Knowledge-enrichment review status and audit now commit atomically across CLI
 and Telegram. Acceptance rechecks that the supporting fragment belongs to an
 active source. Injected audit failure leaves the proposal pending and retryable.
-This does not yet bind the review to a snapshot of the original claim/evidence
-text: content-version protection remains required for the broader knowledge lifecycle.
+Migration 46 binds new reviews to saved claim text, fragment text/location,
+source identity, and content hash. Acceptance compares that snapshot within the
+write transaction; changed content requires a fresh proposal with a new ID.
+Reopened cards show the saved version. Legacy reviews retain their IDs/status
+without invented snapshots; pending legacy reviews cannot be accepted, but can
+be rejected and replaced. Outdated/legacy accepted reviews remain in review
+history but are excluded from current accepted-review lookup. This protects
+version identity, not factual correctness or model interpretation quality.
 Workspace-link review now rechecks the proposal and active objects inside a
 SQLite write transaction. Membership, review status, and audit events commit
 together. An injected audit failure verifies rollback to a pending proposal

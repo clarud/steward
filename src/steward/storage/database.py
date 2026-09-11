@@ -51,8 +51,9 @@ PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
 TASK_REMINDERS_SCHEMA_VERSION = 43
 TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
 TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
+KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
 
-MIGRATIONS: tuple[tuple[int, str], ...] = (
+MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         SOURCES_SCHEMA_VERSION,
         """
@@ -453,6 +454,21 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         TASK_REMINDER_CLAIM_SCHEMA_VERSION,
         "ALTER TABLE task_reminders ADD COLUMN claim_token TEXT",
     ),
+    (KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION, (
+        """CREATE TABLE knowledge_enrichment_versions (
+            id INTEGER PRIMARY KEY,
+            claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+            fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            operation TEXT NOT NULL CHECK (operation IN ('confirm', 'extend', 'refine', 'qualify', 'contradict')),
+            rationale TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL, reviewed_at TEXT, evidence_snapshot TEXT,
+            UNIQUE (claim_id, fragment_id, operation, rationale, evidence_snapshot)
+        )""",
+        "INSERT INTO knowledge_enrichment_versions SELECT *, NULL FROM knowledge_enrichment_proposals",
+        "DROP TABLE knowledge_enrichment_proposals",
+        "ALTER TABLE knowledge_enrichment_versions RENAME TO knowledge_enrichment_proposals",
+    )),
 )
 
 
@@ -489,7 +505,8 @@ def initialize_database(database_path: Path) -> None:
             if migration_applied is not None:
                 continue
 
-            connection.execute(statement)
+            for sql in ((statement,) if isinstance(statement, str) else statement):
+                connection.execute(sql)
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (version, datetime.now(UTC).isoformat()),
