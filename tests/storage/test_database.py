@@ -198,6 +198,23 @@ def test_failed_snapshot_cleans_up_only_its_reserved_destination(tmp_path: Path)
     assert source.read_bytes() == b"not SQLite"
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_restore_refuses_swapped_operational_and_checkpoint_databases(tmp_path: Path, reverse: bool) -> None:
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    from contextlib import closing
+    operational = tmp_path / "first.db"
+    checkpoints = tmp_path / "second.db"
+    initialize_database(operational)
+    with closing(sqlite3.connect(checkpoints)) as connection:
+        SqliteSaver(connection).setup()
+    snapshot, destination = (operational, checkpoints) if reverse else (checkpoints, operational)
+    original = destination.read_bytes()
+    with pytest.raises(ValueError, match="database role"):
+        restore_database(snapshot, destination, tmp_path / "safety.db")
+    assert destination.read_bytes() == original
+    assert not (tmp_path / "safety.db").exists()
+
+
 @pytest.mark.parametrize("contents", [b"", b"not a SQLite database", b"SQLite format 3\x00" + b"\x00" * 90], ids=["empty", "not-sqlite", "truncated"])
 def test_restore_refuses_invalid_snapshot_without_touching_active_state(tmp_path: Path, contents: bytes) -> None:
     active = tmp_path / "active.db"

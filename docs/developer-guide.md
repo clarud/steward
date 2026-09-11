@@ -1345,6 +1345,16 @@ behavior easy to edit and inspect in code review.
 
 ## Restore preflight
 
+Restore also compares recognized schema roles: `schema_migrations` plus
+`sources` identify operational state, while `checkpoints` plus `writes` identify
+the installed SQLite LangGraph saver format. A recognized destination refuses
+a different or unrecognized candidate role before safety-copy writes. Tests use
+real saver tables and non-descriptive filenames in both swap directions.
+An unreadable/unrecognized destination cannot establish its role, so this guard
+does not prevent recovery solely on that basis. Operators must still verify
+installation identity, backup date, and matching backup pairs; marker tables
+are a mistake-prevention check, not authentication or full schema validation.
+
 The organization graph recovery regression uses real SQLite checkpoints and
 operational repositories. With writers stopped it snapshots both databases at
 an interrupt, completes a rejection, restores the paused pair, and reconstructs

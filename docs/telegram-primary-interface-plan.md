@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Restore now refuses recognized operational/checkpoint role swaps before writing
+the destination or safety copy. Tests use actual LangGraph saver tables in both
+directions. This is not installation identity validation; unreadable destinations
+and same-role backup selection still require operator care.
+
 Paired stopped-writer recovery is now covered for an interrupted organization
 workflow using real SQLite checkpoints: restore returns both proposal and graph
 to pending, reconstructing/inspecting state does not move the original, and only

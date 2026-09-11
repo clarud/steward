@@ -110,6 +110,9 @@ before replacing the destination.
 Empty or structurally invalid SQLite snapshots are rejected before any restore
 writes. A valid SQLite file is not necessarily the intended backup: check the
 database identity and backup date yourself, and keep Steward stopped throughout.
+Restore refuses a checkpoint backup over a recognized operational database (and
+vice versa), based on schema markers rather than filenames. This does not verify
+that two same-role databases belong to the same Steward installation.
 
 ## Search a vault
 

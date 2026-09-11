@@ -547,6 +547,17 @@ def snapshot_database(source_path: Path, destination_path: Path) -> Path:
     return destination
 
 
+def _database_role(connection: sqlite3.Connection) -> str | None:
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    operational = {"schema_migrations", "sources"} <= tables
+    checkpoints = {"checkpoints", "writes"} <= tables
+    if operational and not checkpoints:
+        return "operational"
+    if checkpoints and not operational:
+        return "checkpoints"
+    return None
+
+
 def restore_database(snapshot_path: Path, destination_path: Path, safety_backup_path: Path) -> Path:
     """Restore a SQLite snapshot after first creating a write-once safety copy.
 
@@ -570,15 +581,24 @@ def restore_database(snapshot_path: Path, destination_path: Path, safety_backup_
     # quick_check alone accepts a zero-byte file as an empty database, so also
     # require an application table before any destination/safety-copy writes.
     try:
-        with sqlite3.connect(snapshot.as_uri() + "?mode=ro", uri=True) as candidate:
+        with closing(sqlite3.connect(snapshot.as_uri() + "?mode=ro", uri=True)) as candidate:
             integrity = candidate.execute("PRAGMA quick_check").fetchall()
             table = candidate.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1"
             ).fetchone()
             if integrity != [("ok",)] or table is None:
                 raise ValueError("Restore snapshot is empty or failed its SQLite integrity check. No restore was performed.")
+            candidate_role = _database_role(candidate)
     except sqlite3.Error as error:
         raise ValueError("Restore snapshot could not be validated as a readable SQLite database. No restore was performed.") from error
+    try:
+        with closing(sqlite3.connect(destination.as_uri() + "?mode=ro", uri=True)) as current:
+            destination_role = _database_role(current)
+    except sqlite3.Error:
+        # A damaged destination may need recovery; it cannot establish a role.
+        destination_role = None
+    if destination_role is not None and candidate_role != destination_role:
+        raise ValueError("Restore snapshot has a different or unrecognized database role. No restore was performed.")
     snapshot_database(destination, safety_backup)
     try:
         with sqlite3.connect(snapshot) as source_connection, sqlite3.connect(destination) as destination_connection:
