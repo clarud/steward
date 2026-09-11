@@ -745,6 +745,16 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Verification checkpoint (2026-09-12): the full automated pytest suite passed
+after the Calendar and generic tool-error privacy changes at `5bcf802`. An
+expanded interrupt regression also passed in the 22-test agent-graph file:
+explicit resume produces one successful result with the original tool-call ID,
+and post-interrupt work does not run before approval. The full run began before
+that test expansion; the expanded test file was verified separately. These are
+automated checks, not live provider/Telegram acceptance or completion of the
+delivery program. Remaining priorities include representative provider routing,
+the real Telegram acceptance checklist, and broader intake/knowledge workflows.
+
 The agent tool node now converts handled validation/execution failures into
 fixed secret-free error results. Graph tests verify model continuation without
 exception diagnostics and preserve intentional LangGraph interrupts. Successful

@@ -65,19 +65,32 @@ def test_tool_graph_returns_secret_free_errors_to_model(invalid_arguments: bool)
 
 
 def test_tool_error_boundary_preserves_langgraph_interrupts() -> None:
-    from langgraph.types import interrupt
+    from langgraph.types import Command, interrupt
     from langgraph.checkpoint.memory import InMemorySaver
+    completed = []
 
     @tool
     def search_sources(query: str) -> str:
         """Synthetic tool that pauses for a decision."""
-        return interrupt("Review before continuing")
+        decision = interrupt("Review before continuing")
+        completed.append((query, decision))
+        return f"Reviewed result: {decision}"
 
     graph = build_tool_agent_graph(ToolCallingFakeModel(), [search_sources], checkpointer=InMemorySaver())
     result = graph.invoke({"messages": [HumanMessage("Inspect") ]},
                           {"configurable": {"thread_id": "interrupt-test"}})
     assert "__interrupt__" in result
     assert not any(isinstance(message, ToolMessage) for message in result["messages"])
+    assert completed == []
+    resumed = graph.invoke(Command(resume="accepted"),
+                           {"configurable": {"thread_id": "interrupt-test"}})
+    replies = [message for message in resumed["messages"] if isinstance(message, ToolMessage)]
+    assert len(replies) == 1
+    assert replies[0].status == "success"
+    assert replies[0].content == "Reviewed result: accepted"
+    assert replies[0].tool_call_id == "call-1"
+    assert completed == [("TLB", "accepted")]
+    assert isinstance(resumed["messages"][-1], AIMessage)
 
 
 def test_tool_agent_runs_model_tool_model_loop() -> None:

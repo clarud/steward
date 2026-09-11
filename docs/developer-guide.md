@@ -1430,7 +1430,12 @@ The error is marked as a failed ToolMessage
 and explicitly warns against claiming success or assuming no side effects;
 the graph may then synthesize a bounded explanation. No automatic write retry
 is introduced. Tests verify both invalid arguments and execution errors through
-the graph, and that LangGraph interrupts still propagate as pauses. This guard
+the graph, and that LangGraph interrupts still propagate as pauses. The interrupt
+regression also resumes with `Command(resume="accepted")`, checks that work after
+the interrupt has not run before the decision, and observes one successful
+ToolMessage retaining the original call ID before the model answers. This is an
+in-memory synthetic tool test; it does not establish exactly-once external writes
+or durable recovery for every tool. This guard
 does not sanitize successful tool return values or replace per-tool privacy
 policy. It also does not by itself diagnose the underlying local failure.
 
