@@ -1343,6 +1343,19 @@ needed for a future deterministic or model-backed evaluator. This avoids
 claiming model quality from one-off manual examples while keeping the expected
 behavior easy to edit and inspect in code review.
 
+## Restore preflight
+
+`restore_database()` validates the candidate using a read-only SQLite connection,
+`PRAGMA quick_check`, and the presence of an application table before creating
+the safety copy or opening the destination for restore. A zero-byte file is
+explicitly rejected: SQLite otherwise treats it as an empty database. Invalid,
+truncated, or unreadable candidates produce a bounded error with no restore.
+Tests verify byte-for-byte preservation of the input and destination and no
+safety-copy creation on preflight failure. Valid restoration retains its existing
+write-once safety-copy behavior. This is structural validation, not proof that
+the operator selected the correct database or backup date; stop Steward and
+check those choices before an explicitly confirmed restore.
+
 ## Telegram runtime ownership verification
 
 `telegram_runtime_lock(data_dir)` holds an exclusive SQLite transaction in

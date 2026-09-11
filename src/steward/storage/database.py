@@ -559,6 +559,19 @@ def restore_database(snapshot_path: Path, destination_path: Path, safety_backup_
         raise ValueError("Database snapshot must differ from its restore destination.")
     if safety_backup in {snapshot, destination}:
         raise ValueError("Safety backup must differ from both snapshot and restore destination.")
+    # Read-only mode prevents SQLite from creating or initializing the input.
+    # quick_check alone accepts a zero-byte file as an empty database, so also
+    # require an application table before any destination/safety-copy writes.
+    try:
+        with sqlite3.connect(snapshot.as_uri() + "?mode=ro", uri=True) as candidate:
+            integrity = candidate.execute("PRAGMA quick_check").fetchall()
+            table = candidate.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1"
+            ).fetchone()
+            if integrity != [("ok",)] or table is None:
+                raise ValueError("Restore snapshot is empty or failed its SQLite integrity check. No restore was performed.")
+    except sqlite3.Error as error:
+        raise ValueError("Restore snapshot could not be validated as a readable SQLite database. No restore was performed.") from error
     snapshot_database(destination, safety_backup)
     try:
         with sqlite3.connect(snapshot) as source_connection, sqlite3.connect(destination) as destination_connection:

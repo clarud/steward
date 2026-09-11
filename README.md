@@ -101,6 +101,9 @@ steward restore --snapshot D:\Steward-backups\2026-09-10\steward.db `
 
 Steward refuses to restore without `--confirm` and creates the safety snapshot
 before replacing the destination.
+Empty or structurally invalid SQLite snapshots are rejected before any restore
+writes. A valid SQLite file is not necessarily the intended backup: check the
+database identity and backup date yourself, and keep Steward stopped throughout.
 
 ## Search a vault
 

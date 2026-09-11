@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Restore now rejects empty, non-SQLite, and truncated snapshots through read-only
+preflight before writing a safety copy or destination. Automated tests verify
+the active database remains byte-identical. This does not validate backup identity
+or replace the outstanding operator-led backup/restore rehearsal.
+
 Runtime coordination now has verified live-subprocess contention coverage:
 a confirmed lock owner excludes another process for the same temporary data
 directory, an independent directory remains usable, and killing the test owner

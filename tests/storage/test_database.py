@@ -168,3 +168,22 @@ def test_restore_database_replaces_active_state_only_after_a_safety_snapshot(tmp
         assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",)]
     with sqlite3.connect(safety_backup) as connection:
         assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",), ("after",)]
+
+
+@pytest.mark.parametrize("contents", [b"", b"not a SQLite database", b"SQLite format 3\x00" + b"\x00" * 90], ids=["empty", "not-sqlite", "truncated"])
+def test_restore_refuses_invalid_snapshot_without_touching_active_state(tmp_path: Path, contents: bytes) -> None:
+    active = tmp_path / "active.db"
+    initialize_database(active)
+    with sqlite3.connect(active) as connection:
+        connection.execute("INSERT INTO activity_events (event_type, details, occurred_at) VALUES ('source_captured', 'preserve me', '2026-09-10T00:00:00+00:00')")
+    original = active.read_bytes()
+    invalid = tmp_path / "invalid.db"
+    invalid.write_bytes(contents)
+    safety = tmp_path / "safety.db"
+    with pytest.raises(ValueError, match="No restore was performed"):
+        restore_database(invalid, active, safety)
+    assert active.read_bytes() == original
+    assert invalid.read_bytes() == contents
+    assert not safety.exists()
+    with sqlite3.connect(active) as connection:
+        assert connection.execute("SELECT details FROM activity_events").fetchall() == [("preserve me",)]
