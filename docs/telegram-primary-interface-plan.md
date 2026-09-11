@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Backup output now uses exclusive reservation rather than only an existence
+check. Fault injection verifies a competing destination is preserved, and a
+failed SQLite copy removes its own reserved output. Source access is read-only.
+These checks do not replace the outstanding end-to-end recovery rehearsal.
+
 Restore now rejects empty, non-SQLite, and truncated snapshots through read-only
 preflight before writing a safety copy or destination. Automated tests verify
 the active database remains byte-identical. This does not validate backup identity

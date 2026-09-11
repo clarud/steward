@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -531,8 +532,14 @@ def snapshot_database(source_path: Path, destination_path: Path) -> Path:
         raise ValueError(f"Database snapshot already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with sqlite3.connect(source) as source_connection, sqlite3.connect(destination) as destination_connection:
-            source_connection.backup(destination_connection)
+        with destination.open("xb"):
+            pass
+    except FileExistsError as error:
+        raise ValueError(f"Database snapshot already exists: {destination}") from error
+    try:
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as source_connection:
+            with closing(sqlite3.connect(destination)) as destination_connection:
+                source_connection.backup(destination_connection)
     except sqlite3.Error:
         if destination.exists():
             destination.unlink()

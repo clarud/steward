@@ -1345,6 +1345,15 @@ behavior easy to edit and inspect in code review.
 
 ## Restore preflight
 
+`snapshot_database()` reserves its output with exclusive file creation (`xb`)
+before SQLite opens it. A competing destination created after the initial
+existence check causes refusal rather than overwrite. Source connections use
+SQLite read-only mode, and explicit connection closing allows failed-copy cleanup
+on Windows. Regression tests inject a competing file at reservation time and
+verify its contents are untouched; a corrupt-source test verifies cleanup of
+the newly reserved output. This prevents cooperating backup operations from
+overwriting one another, not arbitrary filesystem replacement by another actor.
+
 `restore_database()` validates the candidate using a read-only SQLite connection,
 `PRAGMA quick_check`, and the presence of an application table before creating
 the safety copy or opening the destination for restore. A zero-byte file is

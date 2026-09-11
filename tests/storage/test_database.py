@@ -170,6 +170,34 @@ def test_restore_database_replaces_active_state_only_after_a_safety_snapshot(tmp
         assert connection.execute("SELECT details FROM activity_events ORDER BY id").fetchall() == [("before",), ("after",)]
 
 
+def test_snapshot_preserves_destination_created_after_initial_check(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.db"
+    initialize_database(source)
+    destination = tmp_path / "backup.db"
+    original_open = Path.open
+
+    def competing_open(path, mode="r", *args, **kwargs):
+        if path == destination and mode == "xb":
+            with original_open(path, "wb") as competing:
+                competing.write(b"owned by another backup operation")
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", competing_open)
+    with pytest.raises(ValueError, match="already exists"):
+        snapshot_database(source, destination)
+    assert destination.read_bytes() == b"owned by another backup operation"
+
+
+def test_failed_snapshot_cleans_up_only_its_reserved_destination(tmp_path: Path) -> None:
+    source = tmp_path / "corrupt.db"
+    source.write_bytes(b"not SQLite")
+    destination = tmp_path / "backup.db"
+    with pytest.raises(sqlite3.DatabaseError):
+        snapshot_database(source, destination)
+    assert not destination.exists()
+    assert source.read_bytes() == b"not SQLite"
+
+
 @pytest.mark.parametrize("contents", [b"", b"not a SQLite database", b"SQLite format 3\x00" + b"\x00" * 90], ids=["empty", "not-sqlite", "truncated"])
 def test_restore_refuses_invalid_snapshot_without_touching_active_state(tmp_path: Path, contents: bytes) -> None:
     active = tmp_path / "active.db"
