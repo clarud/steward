@@ -800,6 +800,9 @@ without invented snapshots; pending legacy reviews cannot be accepted, but can
 be rejected and replaced. Outdated/legacy accepted reviews remain in review
 history but are excluded from current accepted-review lookup. This protects
 version identity, not factual correctness or model interpretation quality.
+Stale knowledge acceptance now returns an actionable recovery card: create a
+fresh preview, inspect the saved review, or explicitly dismiss the old proposal.
+Refreshing does not approve either version or silently remove the older review.
 Workspace-link review now rechecks the proposal and active objects inside a
 SQLite write transaction. Membership, review status, and audit events commit
 together. An injected audit failure verifies rollback to a pending proposal

@@ -58,6 +58,16 @@ class StoredKnowledgeEnrichmentProposal:
     evidence_snapshot: str | None = None
 
 
+class StaleKnowledgeReviewError(ValueError):
+    """A review needs a fresh preview before its evidence can be accepted."""
+
+    def __init__(self, proposal_id: int, claim_id: int, fragment_id: int) -> None:
+        super().__init__("Claim or evidence changed, or this is a legacy review. Create a fresh enrichment proposal; this one remains pending.")
+        self.proposal_id = proposal_id
+        self.claim_id = claim_id
+        self.fragment_id = fragment_id
+
+
 class KnowledgeEnrichmentProposalRepository:
     """Persist proposed claim/evidence relationships without changing a claim."""
 
@@ -149,7 +159,7 @@ class KnowledgeEnrichmentProposalRepository:
                 if evidence != ("active",):
                     raise ValueError("The supporting source is no longer available; the proposal remains pending.")
                 if row[8] is None or row[8] != self._snapshot(connection, int(row[1]), int(row[2])):
-                    raise ValueError("Claim or evidence changed, or this is a legacy review. Create a fresh enrichment proposal; this one remains pending.")
+                    raise StaleKnowledgeReviewError(proposal_id, int(row[1]), int(row[2]))
             cursor = connection.execute(
                 """
                 UPDATE knowledge_enrichment_proposals

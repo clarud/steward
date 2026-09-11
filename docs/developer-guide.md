@@ -1283,6 +1283,42 @@ tool uses ordinary Python to load both IDs, computes the initial relationship
 deterministically, and persists a pending proposal. It does not receive model
 text as a command, and it cannot edit claims, concepts, or evidence.
 
+### Versioned knowledge reviews and stale-review recovery
+
+`KnowledgeEnrichmentProposalRepository.add()` saves an evidence snapshot with
+each new proposal: claim text, fragment text and location, source ID, and source
+content hash. Migration 46 preserves older review IDs/statuses without inventing
+snapshots. The uniqueness key includes the snapshot, so requesting the same
+proposal again is idempotent, while a changed evidence version gets a new ID.
+
+`review()` uses a SQLite write transaction to check pending status, source
+availability, and snapshot equality before accepting. Approval/rejection and
+the corresponding activity event commit together. An audit failure rolls the
+review back; accepted interpretations never silently rewrite canonical claims.
+Legacy proposals without snapshots can be rejected but require a fresh proposal
+before acceptance. Current accepted-review lookup excludes outdated snapshots;
+the stored historical review remains available while its referenced rows exist.
+
+`StaleKnowledgeReviewError` is a `ValueError` subclass carrying the proposal,
+claim, and fragment IDs. CLI callers retain their ordinary error handling.
+`StewardKnowledgeApplication.handle_command()` catches the specific subtype and
+returns a transport-neutral recovery card with three bounded actions:
+
+- **Fresh review** calls `/propose_enrichment CLAIM_ID FRAGMENT_ID`, comparing
+  current evidence and creating a preview only. This path uses the deterministic
+  comparison; it does not reproduce a previous model-assisted interpretation.
+- **View saved review** reopens the old snapshot for inspection.
+- **Dismiss old review** explicitly rejects only the old proposal.
+
+Refreshing neither approves the replacement nor dismisses the old review.
+The test in `tests/test_application.py` follows these exact action commands,
+checks saved versus current text, and verifies the two proposal statuses remain
+independent. Knowledge repository tests cover version changes, migration, and
+transaction rollback. Live Telegram acceptance is still tracked separately in
+the manual checklist. Snapshot validation protects evidence identity, not the
+semantic accuracy of the interpretation; referenced-row deletion and long-term
+history retention require separate lifecycle consideration.
+
 Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
 `retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
 fixture. `product_cases.yaml` adds reviewable cases for organization (including

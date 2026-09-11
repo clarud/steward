@@ -469,6 +469,12 @@ Migration coverage preserves legacy IDs/status without inventing evidence versio
 In Telegram, reopen a proposal after a local evidence change: the card must show
 its saved version, and acceptance must request a fresh proposal. Live acceptance
 of this scenario is still pending.
+The stale-approval reply should offer **Fresh review**, **View saved review**,
+and **Dismiss old review**. Fresh review creates only a preview using current
+claim/evidence; inspect and accept it separately. The saved-review action must
+still show the previous version. Dismissing the old proposal must not reject
+the newly accepted one. Automated application coverage exercises these exact
+button commands; live Telegram acceptance is still required.
 
 ## Guided source-to-workspace linking
 

@@ -1055,6 +1055,27 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     accepted = application.handle(make_event(text="/review_enrichment 1 accepted"))
     assert accepted == "Knowledge enrichment proposal 1 accepted."
 
+    import sqlite3
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE claims SET text = 'A TLB may cache address translations.' WHERE id = 1")
+    new_preview = application.handle(make_event(text="/propose_enrichment 1 1"))
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE claims SET text = 'A TLB sometimes caches translations.' WHERE id = 1")
+    recovery = application.handle(make_event(text=new_preview.actions[0].command))
+    assert recovery.title == "Knowledge review needs updating"
+    assert "claim 1 and fragment 1" in recovery.text
+    proposals = KnowledgeEnrichmentProposalRepository(database_path)
+    assert proposals.get(2).status == "pending"
+    refreshed = application.handle(make_event(text=recovery.actions[0].command))
+    assert "sometimes" in refreshed.text
+    assert proposals.get(3).status == "pending"
+    assert proposals.get(2).status == "pending"
+    saved = application.handle(make_event(text=recovery.actions[1].command))
+    assert "may cache" in saved.text and "sometimes" not in saved.text
+    assert application.handle(make_event(text=refreshed.actions[0].command)) == "Knowledge enrichment proposal 3 accepted."
+    application.handle(make_event(text=recovery.actions[2].command))
+    assert proposals.get(2).status == "rejected"
+
 
 def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)

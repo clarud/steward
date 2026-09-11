@@ -52,6 +52,7 @@ from steward.knowledge import (
     KnowledgeEnrichmentProposalRepository,
     KnowledgeService,
     StoredKnowledgeEnrichmentProposal,
+    StaleKnowledgeReviewError,
 )
 from steward.knowledge_connector import KnowledgeConnector
 from steward.roots import SourceRootRepository
@@ -2204,6 +2205,16 @@ class StewardKnowledgeApplication:
                 return "Use /review_enrichment followed by a proposal ID and accepted or rejected."
             try:
                 proposal = self._proposals.review(int(parts[0]), parts[1])
+            except StaleKnowledgeReviewError as error:
+                return PresentedReply(
+                    f"Review {error.proposal_id} could not be accepted because its evidence version changed or was not saved.\n\n"
+                    f"Create a fresh preview for claim {error.claim_id} and fragment {error.fragment_id}. "
+                    "You will review it before acceptance. The old proposal remains pending until dismissed.",
+                    (ReplyAction("Fresh review", f"/propose_enrichment {error.claim_id} {error.fragment_id}"),
+                     ReplyAction("View saved review", f"/knowledge_proposal {error.proposal_id}"),
+                     ReplyAction("Dismiss old review", f"/review_enrichment {error.proposal_id} rejected")),
+                    title="Knowledge review needs updating", icon="⚠️",
+                )
             except ValueError as error:
                 return str(error)
             if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
