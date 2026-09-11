@@ -1127,6 +1127,21 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     last = application.handle(make_event(text=next_command))
     assert "Page 2 of 2" in last.text and "Additional review 7" in last.text
     assert "positive page" in application.handle(make_event(text="/knowledge_reviews 1 0"))
+    assert "Current evidence version" in last.text
+    import sqlite3
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'missing' WHERE id = ?", (source.id,))
+    stale_card = application.handle(make_event(text="/knowledge TLB"))
+    assert "Current reviewed evidence" not in stale_card.text
+    assert "9 historical review(s)" in stale_card.text
+    history = application.handle(make_event(text=stale_card.actions[0].command))
+    assert "Historical only" in history.text and "CONTRADICT" in history.text
+    assert "Current evidence version" not in history.text
+    assert repository.get(1).status == "accepted"
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'active' WHERE id = ?", (source.id,))
+    restored = application.handle(make_event(text="/knowledge TLB"))
+    assert "Current reviewed evidence: contradict" in restored.text
 
 
 def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:

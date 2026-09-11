@@ -807,6 +807,9 @@ Current accepted-review lookup now reads proposal/evidence/source state through
 one joined query and excludes unavailable sources or absent referenced rows.
 Regression coverage checks missing/restored sources and legacy orphan rows;
 historical approval status is not rewritten by a lookup.
+Telegram concept summaries now use current reviews only; accepted history stays
+browsable with explicit current/historical labels and revalidation counts.
+Availability/version labels are not claims of factual correctness.
 Workspace-link review now rechecks the proposal and active objects inside a
 SQLite write transaction. Membership, review status, and audit events commit
 together. An injected audit failure verifies rollback to a pending proposal

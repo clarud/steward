@@ -2107,9 +2107,13 @@ class StewardKnowledgeApplication:
             lines = [f"Concept {concept.id}: {concept.name}"]
             for claim in claims:
                 lines.append(f"Claim {claim.id}: {claim.text}")
-                operations = sorted({item.operation.value for item in accepted if item.claim_id == claim.id})
+                current = self._knowledge.accepted_reviews(claim.id)
+                operations = sorted({item.operation.value for item in current})
                 if operations:
-                    lines.append("Reviewed evidence: " + ", ".join(operations))
+                    lines.append("Current reviewed evidence: " + ", ".join(operations))
+                historical_count = sum(item.claim_id == claim.id for item in accepted) - len(current)
+                if historical_count:
+                    lines.append(f"{historical_count} historical review(s) need revalidation; inspect Evidence reviews.")
             if accepted:
                 lines.append("Accepted reviews do not establish truth or rewrite claims. Inspect disagreements before relying on a claim.")
             return PresentedReply("\n".join(lines), (
@@ -2128,6 +2132,7 @@ class StewardKnowledgeApplication:
             pages = (len(reviews) + 7) // 8
             page = min(int(parts[1]) if len(parts) == 2 else 1, pages)
             visible = reviews[(page - 1) * 8:page * 8]
+            current_ids = {item.id for claim_id in claim_ids for item in self._knowledge.accepted_reviews(claim_id)}
             actions = [ReplyAction(f"Inspect {index}", f"/knowledge_proposal {item.id}") for index, item in enumerate(visible, start=1)]
             if page > 1:
                 actions.append(ReplyAction("Previous", f"/knowledge_reviews {concept_id} {page - 1}"))
@@ -2135,7 +2140,8 @@ class StewardKnowledgeApplication:
                 actions.append(ReplyAction("Next", f"/knowledge_reviews {concept_id} {page + 1}"))
             return PresentedReply(
                 f"Page {page} of {pages}\n" + "\n".join(
-                    f"{index}. Claim {item.claim_id}: {item.operation.value.upper()} — {item.rationale}"
+                    f"{index}. Claim {item.claim_id}: {item.operation.value.upper()} — {item.rationale}\n"
+                    + ("Current evidence version" if item.id in current_ids else "Historical only — evidence changed, unavailable, or version not saved")
                     for index, item in enumerate(visible, start=1)
                 ), tuple(actions), title="Reviewed evidence", icon="🔎",
             )

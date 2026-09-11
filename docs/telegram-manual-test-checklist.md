@@ -459,6 +459,15 @@ Stop older Steward versions before starting the upgraded runtime.
 
 ## Knowledge review transaction coverage
 
+After accepting an enrichment, inspect its concept and Evidence reviews.
+Current interpretations should have a **Current evidence version** label. If
+the source becomes missing or the saved content changes, the concept should
+count the review as historical rather than summarize it as current evidence.
+The history entry must remain inspectable and labeled **Historical only**.
+Restoring unchanged evidence should restore its current label. Automated
+application tests cover missing/restored source transitions; live validation
+of these cards remains pending.
+
 Knowledge review reliability is covered separately by automated audit-failure
 injection: failed audit persistence must leave the proposal pending, and retry
 must produce one review event. Acceptance of a missing supporting source is
