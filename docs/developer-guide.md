@@ -1421,6 +1421,15 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+Calendar event projections retain optional location and description for Telegram
+detail cards. `CalendarService._event_from_api()` maps these fields without new
+database storage. `_event_card()` shows up to 500 location characters and 2,000
+description characters, explicitly labeling truncation. Existing card rendering
+handles escaping; provider text is not executed as markup or instructions.
+The model-facing Calendar tool projection remains its existing explicit field
+allowlist and does not include these additional details. Tests cover absent
+fields, populated fields, the unchanged tool projection, and bounded presentation.
+
 Calendar read failures return a transport-neutral recovery card with explicit
 Retry, Upcoming, and Integrations actions. `StewardCalendarApplication` preserves
 the selected opaque event ID on failure: a transport/OAuth exception does not

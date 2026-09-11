@@ -1441,10 +1441,15 @@ def test_telegram_preserves_calendar_reference_for_explicit_retry_after_failure(
         def get_event(self, identifier):
             calls.append(identifier)
             return type("Event", (), {"id": identifier, "summary": "Updated appointment",
+                "location": "Clinic, level 2", "description": "Bring appointment card. " + "x" * 2100,
                 "start": "2026-10-01", "end": "2026-10-02"})()
     restarted = StewardCalendarApplication(lambda: RecoveredCalendar(), contexts=ReviewContextRepository(database))
     recovered = restarted.handle_command(make_event(text=response.actions[0].command))
     assert recovered.title == "Updated appointment"
+    assert "Location: Clinic, level 2" in recovered.text
+    assert "Bring appointment card" in recovered.text
+    assert "Truncated; view full details in Calendar" in recovered.text
+    assert "x" * 2001 not in recovered.text
     assert calls == ["deleted-event"]
     assert recovered.actions[0].command == "/calendar_get deleted-event"
 

@@ -449,6 +449,11 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+Open a Calendar event with a location and description. Verify both appear below
+the date, Refresh fetches edits, and long descriptions are explicitly labeled
+as truncated. Missing optional fields should not show `None`. This uses current
+provider data; rendering with actual Telegram remains a manual acceptance item.
+
 For Calendar outage acceptance, open an event, temporarily disconnect the test
 runtime from the network, and ask “show that event”. Expect a generic recovery
 card, no private diagnostic path, and no claim that the event was deleted.

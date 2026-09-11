@@ -49,6 +49,16 @@ class FakeCalendarClient:
         return self.events_api
 
 
+def test_calendar_preserves_optional_details_without_expanding_model_tool_payload() -> None:
+    event = CalendarService._event_from_api({"id": "details", "summary": "Appointment",
+        "start": {"date": "2026-10-01"}, "end": {"date": "2026-10-02"},
+        "location": "Clinic", "description": "Bring the card"})
+    assert event.location == "Clinic"
+    assert event.description == "Bring the card"
+    payload = CalendarReadToolService._event(event)
+    assert "location" not in payload and "description" not in payload
+
+
 def test_calendar_search_requests_current_events_with_time_bounds() -> None:
     client = FakeCalendarClient()
     service = CalendarService(client)
@@ -61,6 +71,7 @@ def test_calendar_search_requests_current_events_with_time_bounds() -> None:
     )
 
     assert events[0].summary == "Flight"
+    assert events[0].location is None and events[0].description is None
     assert events[0].start == "2026-10-01T09:00:00+08:00"
     assert client.events_api.list_kwargs == {
         "calendarId": "primary", "singleEvents": True, "orderBy": "startTime",

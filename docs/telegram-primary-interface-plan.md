@@ -745,6 +745,10 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Calendar detail cards now display provider location and description when present,
+with labeled display limits. They do not expand the model-facing Calendar tool
+payload or persist a stale event mirror. Live Telegram rendering remains pending.
+
 Calendar reads now provide explicit retry/integration navigation and retain the
 selected event ID across transient failure. Event cards offer Refresh and
 Upcoming. Automated outage/recovery coverage verifies a fresh provider lookup

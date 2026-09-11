@@ -35,6 +35,8 @@ class CalendarEvent:
     start: str
     end: str
     html_link: str | None
+    location: str | None = None
+    description: str | None = None
 
 
 class CalendarService:
@@ -152,6 +154,8 @@ class CalendarService:
             start=str(start_value),
             end=str(end_value),
             html_link=str(item["htmlLink"]) if item.get("htmlLink") else None,
+            location=str(item["location"]) if item.get("location") else None,
+            description=str(item["description"]) if item.get("description") else None,
         )
 
 

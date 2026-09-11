@@ -2534,11 +2534,18 @@ class StewardCalendarApplication:
         """Render one current external event and retain only its opaque ID."""
 
         identifier = str(getattr(event_result, "id"))
+        details = []
+        for field, label, limit in (("location", "Location", 500), ("description", "Description", 2000)):
+            value = getattr(event_result, field, None)
+            if value:
+                text = str(value)
+                details.append(f"{label}: {text[:limit]}" + ("\n[Truncated; view full details in Calendar.]" if len(text) > limit else ""))
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
         return PresentedReply(
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
-            f"Calendar ID: {identifier}",
+            + ("\n\n".join(details) + "\n\n" if details else "")
+            + f"Calendar ID: {identifier}",
             actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search")),
             title=str(getattr(event_result, "summary")),
             icon="📅",
