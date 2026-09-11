@@ -1319,6 +1319,14 @@ the manual checklist. Snapshot validation protects evidence identity, not the
 semantic accuracy of the interpretation; referenced-row deletion and long-term
 history retention require separate lifecycle consideration.
 
+`KnowledgeService.accepted_reviews()` joins proposals, claims, fragments, and
+active sources in one SQL query, then compares the saved snapshot with those
+returned values. Missing/inactive sources and missing referenced rows are omitted
+without changing historical approval status. A restored active source becomes
+eligible again only when its evidence snapshot still matches. This avoids a
+two-connection read race and prevents a missing evidence row from crashing the
+lookup. Provider-specific privacy checks still apply separately before model use.
+
 Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
 `retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
 fixture. `product_cases.yaml` adds reviewable cases for organization (including

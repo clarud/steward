@@ -203,12 +203,22 @@ class KnowledgeService:
         return tuple(int(row[0]) for row in rows)
 
     def accepted_reviews(self, claim_id: int) -> tuple[StoredKnowledgeEnrichmentProposal, ...]:
-        repository = KnowledgeEnrichmentProposalRepository(self._database_path)
+        """Return current, available interpretations from one database read view."""
         with sqlite3.connect(self._database_path) as connection:
-            return tuple(item for item in repository.list_all()
-                         if item.claim_id == claim_id and item.status == "accepted"
-                         and item.evidence_snapshot is not None
-                         and item.evidence_snapshot == repository._snapshot(connection, item.claim_id, item.fragment_id))
+            rows = connection.execute(
+                """SELECT p.id, p.claim_id, p.fragment_id, p.operation, p.rationale,
+                          p.status, p.created_at, p.reviewed_at, p.evidence_snapshot,
+                          c.text, f.text, f.location, f.source_id, s.content_hash
+                   FROM knowledge_enrichment_proposals p
+                   JOIN claims c ON c.id = p.claim_id
+                   JOIN source_fragments f ON f.id = p.fragment_id
+                   JOIN sources s ON s.id = f.source_id
+                   WHERE p.claim_id = ? AND p.status = 'accepted'
+                     AND s.status = 'active' AND p.evidence_snapshot IS NOT NULL
+                   ORDER BY p.id""", (claim_id,),
+            ).fetchall()
+        return tuple(KnowledgeEnrichmentProposalRepository._from_row(row[:9])
+                     for row in rows if row[8] == json.dumps(list(row[9:]), ensure_ascii=False))
 
     def create_concept(self, name: str) -> Concept:
         concept = Concept(None, name.strip(), datetime.now(UTC))

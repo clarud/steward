@@ -803,6 +803,10 @@ version identity, not factual correctness or model interpretation quality.
 Stale knowledge acceptance now returns an actionable recovery card: create a
 fresh preview, inspect the saved review, or explicitly dismiss the old proposal.
 Refreshing does not approve either version or silently remove the older review.
+Current accepted-review lookup now reads proposal/evidence/source state through
+one joined query and excludes unavailable sources or absent referenced rows.
+Regression coverage checks missing/restored sources and legacy orphan rows;
+historical approval status is not rewritten by a lookup.
 Workspace-link review now rechecks the proposal and active objects inside a
 SQLite write transaction. Membership, review status, and audit events commit
 together. An injected audit failure verifies rollback to a pending proposal

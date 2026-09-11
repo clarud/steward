@@ -127,9 +127,21 @@ def test_enrichment_snapshot_rejects_changes_and_allows_fresh_review(tmp_path: P
     repository.review(fresh.id, "accepted")
     assert knowledge.accepted_reviews(claim.id) == (repository.get(fresh.id),)
     with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'missing' WHERE id = ?", (source.id,))
+    assert knowledge.accepted_reviews(claim.id) == ()
+    assert repository.get(fresh.id).status == "accepted"
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'active' WHERE id = ?", (source.id,))
+    assert knowledge.accepted_reviews(claim.id) == (repository.get(fresh.id),)
+    with sqlite3.connect(database) as connection:
         connection.execute("UPDATE claims SET text = 'Changed after review'")
     assert knowledge.accepted_reviews(claim.id) == ()
     assert repository.get(fresh.id).status == "accepted"
+    with sqlite3.connect(database) as connection:
+        # Simulate a legacy orphan without foreign-key enforcement. Lookup must
+        # degrade safely rather than raising while examining the stale review.
+        connection.execute("DELETE FROM source_fragments WHERE id = ?", (fragment.id,))
+    assert knowledge.accepted_reviews(claim.id) == ()
 
 
 def test_legacy_enrichment_upgrade_preserves_reviews_without_inventing_snapshots(tmp_path: Path, monkeypatch) -> None:
