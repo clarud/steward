@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Calendar reads now provide explicit retry/integration navigation and retain the
+selected event ID across transient failure. Event cards offer Refresh and
+Upcoming. Automated outage/recovery coverage verifies a fresh provider lookup
+after reconstruction; actual provider-outage Telegram acceptance remains open.
+
 Restore now refuses recognized operational/checkpoint role swaps before writing
 the destination or safety copy. Tests use actual LangGraph saver tables in both
 directions. This is not installation identity validation; unreadable destinations

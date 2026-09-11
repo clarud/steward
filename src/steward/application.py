@@ -2487,10 +2487,19 @@ class StewardCalendarApplication:
         try:
             return self._event_card(event, self._calendar_factory().get_event(str(context.identifier)))
         except Exception:
-            self._contexts.clear(event.platform, event.chat_id)
-            return "That Calendar event is unavailable. Search Calendar again for the current event."
+            return self._read_failure(f"/calendar_get {context.identifier}")
 
-    def handle_command(self, event: IncomingEvent) -> str | None:
+    @staticmethod
+    def _read_failure(retry_command: str) -> PresentedReply:
+        return PresentedReply(
+            "Calendar could not be read. This may be an authorization or connection problem, or the event may no longer exist. "
+            "No event was changed. Retry to fetch current data, or check local integration setup.",
+            (ReplyAction("Retry", retry_command), ReplyAction("Upcoming", "/calendar_search"),
+             ReplyAction("Integrations", "/integrations")),
+            title="Calendar unavailable", icon="⚠️",
+        )
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command not in {"/calendar", "/calendar_search", "/calendar_get"}:
@@ -2509,7 +2518,7 @@ class StewardCalendarApplication:
                 time_min=datetime.now(UTC) if not argument.strip() else None,
             )
         except Exception:
-            return "Calendar is temporarily unavailable. Verify local authorization, then try again."
+            return self._read_failure(command + (f" {argument.strip()}" if argument.strip() else ""))
         if not events:
             return "No current Calendar events matched."
         lines = []
@@ -2530,6 +2539,7 @@ class StewardCalendarApplication:
         return PresentedReply(
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
             f"Calendar ID: {identifier}",
+            actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search")),
             title=str(getattr(event_result, "summary")),
             icon="📅",
         )

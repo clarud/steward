@@ -1421,6 +1421,16 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+Calendar read failures return a transport-neutral recovery card with explicit
+Retry, Upcoming, and Integrations actions. `StewardCalendarApplication` preserves
+the selected opaque event ID on failure: a transport/OAuth exception does not
+prove deletion. Retrying fetches current provider data, never cached event text;
+event cards also expose Refresh. The failure boundary does not disclose provider
+exceptions or start browser authorization. Tests simulate outage then recovery
+with reconstructed application/context objects. Deleted events may keep failing
+until the user selects another event; differentiated provider error categories
+remain future work.
+
 - Capture supports Markdown, plain text, DOCX, HTML, images, and PDFs. PDFs use native text first;
   an image-only PDF falls back to local OCR at 200 DPI using separately installed Poppler (`pdftoppm`)
   and `tesseract`. Unavailable OCR never prevents preservation of the original: scanning logs the

@@ -1359,8 +1359,9 @@ def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None
         make_event(text="/calendar_search Tokyo")
     )
 
-    assert response == "Calendar is temporarily unavailable. Verify local authorization, then try again."
-    assert "C:/private" not in response
+    assert response.title == "Calendar unavailable"
+    assert "C:/private" not in response.text
+    assert response.actions[0].command == "/calendar_search Tokyo"
 
 
 def test_telegram_calendar_default_limits_to_upcoming_but_named_search_keeps_history() -> None:
@@ -1419,7 +1420,7 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
     assert graph.inputs == []
 
 
-def test_telegram_clears_a_stale_calendar_reference_when_current_read_fails(tmp_path: Path) -> None:
+def test_telegram_preserves_calendar_reference_for_explicit_retry_after_failure(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)
     contexts = ReviewContextRepository(database)
@@ -1432,8 +1433,20 @@ def test_telegram_clears_a_stale_calendar_reference_when_current_read_fails(tmp_
         make_event(text="show that event")
     )
 
-    assert response == "That Calendar event is unavailable. Search Calendar again for the current event."
-    assert contexts.get("telegram", "100") is None
+    assert response.title == "Calendar unavailable"
+    assert contexts.get("telegram", "100").identifier == "deleted-event"
+    assert response.actions[0].command == "/calendar_get deleted-event"
+    calls = []
+    class RecoveredCalendar:
+        def get_event(self, identifier):
+            calls.append(identifier)
+            return type("Event", (), {"id": identifier, "summary": "Updated appointment",
+                "start": "2026-10-01", "end": "2026-10-02"})()
+    restarted = StewardCalendarApplication(lambda: RecoveredCalendar(), contexts=ReviewContextRepository(database))
+    recovered = restarted.handle_command(make_event(text=response.actions[0].command))
+    assert recovered.title == "Updated appointment"
+    assert calls == ["deleted-event"]
+    assert recovered.actions[0].command == "/calendar_get deleted-event"
 
 
 def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path) -> None:

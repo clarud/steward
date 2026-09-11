@@ -449,6 +449,13 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+For Calendar outage acceptance, open an event, temporarily disconnect the test
+runtime from the network, and ask “show that event”. Expect a generic recovery
+card, no private diagnostic path, and no claim that the event was deleted.
+Restore connectivity and tap Retry: it should fetch the current event and show
+Refresh/Upcoming actions. This live procedure is not established by the mocked
+provider recovery test; do not alter OAuth tokens merely to simulate an outage.
+
 A disk-backed organization graph test now rehearses stopped-writer backup and
 restore of both operational and checkpoint databases. It confirms restored
 pending state does nothing until explicit approval. During live Telegram recovery,
