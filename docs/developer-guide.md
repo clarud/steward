@@ -1421,6 +1421,15 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+`CalendarReadToolService` returns fixed, secret-free error payloads when client
+creation, API requests, or event projection fails. Provider exception strings
+are deliberately excluded: they may contain OAuth paths, tokens, request URLs,
+or personal identifiers and would otherwise be sent back to the model as tool
+results. Search projection now runs inside the same exception boundary as the
+request. Tests call the actual LangChain tool wrappers with synthetic sensitive
+diagnostics at each failure stage. Responses explicitly say current event data
+was not retrieved; they do not fabricate empty calendars or attempt authorization.
+
 Calendar event projections retain optional location and description for Telegram
 detail cards. `CalendarService._event_from_api()` maps these fields without new
 database storage. `_event_card()` shows up to 500 location characters and 2,000

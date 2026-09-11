@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 import sqlite3
+import json
 
 import pytest
 
@@ -47,6 +48,42 @@ class FakeCalendarClient:
 
     def events(self):
         return self.events_api
+
+
+@pytest.mark.parametrize("failure_at", ["factory", "request", "projection"])
+def test_calendar_tool_failures_never_expose_provider_diagnostics(failure_at: str) -> None:
+    diagnostic = "token=synthetic-secret C:/private/oauth.json private-person@example.test"
+
+    class BadEvent:
+        @property
+        def id(self):
+            raise RuntimeError(diagnostic)
+
+    class FailingCalendar:
+        def search(self, *args, **kwargs):
+            if failure_at == "request":
+                raise RuntimeError(diagnostic)
+            return (BadEvent(),)
+
+        def get_event(self, *args, **kwargs):
+            if failure_at == "request":
+                raise RuntimeError(diagnostic)
+            return BadEvent()
+
+    def factory():
+        if failure_at == "factory":
+            raise OSError(diagnostic)
+        return FailingCalendar()
+
+    tools = {item.name: item for item in build_calendar_read_tools(CalendarReadToolService(factory))}
+    for name, arguments in (("calendar_search", {"query": "appointment"}),
+                            ("calendar_get_event", {"event_id": "event-1"})):
+        result = tools[name].invoke(arguments)
+        assert set(json.loads(result)) == {"error"}
+        assert "unavailable" in result and "No current event data" in result
+        assert "synthetic-secret" not in result
+        assert "C:/private" not in result
+        assert "private-person" not in result
 
 
 def test_calendar_preserves_optional_details_without_expanding_model_tool_payload() -> None:

@@ -745,6 +745,11 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Calendar model-tool failures no longer interpolate provider exceptions. Fixed
+errors cover factory, request, and projection failures; wrapper-level tests
+verify synthetic tokens, paths, and email diagnostics do not enter tool results.
+This closes the identified Calendar boundary leak, not an audit of every provider.
+
 Calendar detail cards now display provider location and description when present,
 with labeled display limits. They do not expand the model-facing Calendar tool
 payload or persist a stale event mirror. Live Telegram rendering remains pending.

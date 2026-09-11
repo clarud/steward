@@ -34,17 +34,17 @@ class CalendarReadToolService:
                 time_max=datetime.fromisoformat(before) if before else None,
                 limit=limit,
             )
+            return json.dumps([self._event(event) for event in events])
         # This is an external adapter boundary. A provider/credential failure
         # must become a ToolMessage payload, not terminate the agent graph.
-        except Exception as error:  # noqa: BLE001 - external Calendar client exceptions are provider-specific
-            return json.dumps({"error": f"Calendar search is unavailable: {error}"})
-        return json.dumps([self._event(event) for event in events])
+        except Exception:  # noqa: BLE001 - external Calendar client exceptions are provider-specific
+            return json.dumps({"error": "Calendar search is unavailable. Check the request dates and local Calendar authorization or retry later. No current event data was retrieved."})
 
     def get_event(self, event_id: str) -> str:
         try:
             return json.dumps(self._event(self._service().get_event(event_id)))
-        except Exception as error:  # noqa: BLE001 - see search above
-            return json.dumps({"error": f"Calendar event lookup is unavailable: {error}"})
+        except Exception:  # noqa: BLE001 - see search above
+            return json.dumps({"error": "Calendar event lookup is unavailable. The event may be inaccessible, or Calendar authorization or connectivity may need attention. No current event data was retrieved."})
 
     @staticmethod
     def _event(event) -> dict[str, str | None]:

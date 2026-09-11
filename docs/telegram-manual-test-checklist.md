@@ -449,6 +449,12 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+Calendar tool error privacy is now tested through real tool wrappers with
+synthetic secret-bearing failures. For live agent outage checks, expect an
+unavailability explanation—not an empty-calendar claim or provider traceback.
+Do not paste actual credentials to test redaction. Automated coverage does not
+establish the final provider-generated wording in a live Telegram conversation.
+
 Open a Calendar event with a location and description. Verify both appear below
 the date, Refresh fetches edits, and long descriptions are explicitly labeled
 as truncated. Missing optional fields should not show `None`. This uses current
