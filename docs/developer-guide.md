@@ -1453,9 +1453,15 @@ that local write fails, Steward logs a bounded warning and treats the already-se
 reply as delivered; retrying would duplicate the visible response. A mapping can
 therefore be absent after a database failure, pruning, or for cards sent before
 migration 47. In those cases the user should use the card's explicit button.
-Pending review cards still use the existing active-review context rather than an
-exact outbound-message mapping; supporting older simultaneous review-card replies
-without authorizing stale work remains future work.
+Actionable review cards receive a review reference derived from their own
+accept/reject command. This reference takes precedence if the same card also links
+to a source: replying `yes` must address the displayed proposal, not a secondary
+object. The adapter recognizes action, organization, provisional-intake, and
+knowledge reviews. A `/pending` list contains only navigation commands and neither
+changes the active review nor receives a message reference; the user must open one
+review before natural confirmation is possible. Repository status and the existing
+chat ownership checks are still revalidated before any decision executes, so an
+exact pointer is navigation context rather than durable authorization.
 
 ### Local readiness versus remote health
 

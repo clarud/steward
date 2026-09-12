@@ -275,13 +275,20 @@ class TelegramAdapter:
             _LOGGER.warning("Could not restore Steward's referenced Telegram card.")
 
     def _remember_message_reference(self, event: IncomingEvent, response: PresentedReply, sent: object) -> None:
-        if self._message_references is None or response.reference is None:
+        if self._message_references is None:
+            return
+        # A card that can approve/reject a proposal represents that review,
+        # even when it also links to a source. This makes a reply such as
+        # "yes" resolve to the exact displayed proposal rather than to a
+        # secondary object or the newest review in the chat.
+        reference = self._review_reference(response) or response.reference
+        if reference is None:
             return
         message_id = getattr(sent, "message_id", None)
         if message_id is None:
             return
         try:
-            kind, identifier = response.reference
+            kind, identifier = reference
             self._message_references.set(event.platform, event.chat_id, str(message_id), kind, identifier)
         except Exception:
             # Telegram already accepted the response. Retrying this update would
@@ -292,24 +299,36 @@ class TelegramAdapter:
         """Associate a displayed approval card with this chat, never with its text."""
         if self._review_contexts is None:
             return
+        reference = self._review_reference(response)
+        if reference is not None:
+            self._review_contexts.set(event.platform, event.chat_id, *reference)
+
+    @staticmethod
+    def _review_reference(response: PresentedReply) -> tuple[str, int] | None:
+        """Return the exact proposal represented by an actionable review card.
+
+        Navigation buttons such as ``/review action 7`` only open an item and
+        therefore do not select the first item on a list as an active review.
+        A card becomes confirmable only when it exposes that proposal's own
+        accept/reject command.
+        """
+
+        review_commands = {
+            "/approve_action": "action",
+            "/reject_action": "action",
+            "/organization_accept": "organization",
+            "/organization_reject": "organization",
+            "/intake_accept": "intake",
+            "/intake_discard": "intake",
+            "/review_enrichment": "knowledge",
+        }
         for action in response.actions:
             command, _, argument = action.command.partition(" ")
             parts = argument.split()
-            if command == "/approve_action" and parts and parts[0].isdigit():
-                self._review_contexts.set(event.platform, event.chat_id, "action", int(parts[0]))
-                return
-            if command == "/organization_accept" and parts and parts[0].isdigit():
-                self._review_contexts.set(event.platform, event.chat_id, "organization", int(parts[0]))
-                return
-            if command == "/intake_accept" and parts and parts[0].isdigit():
-                self._review_contexts.set(event.platform, event.chat_id, "intake", int(parts[0]))
-                return
-            if command == "/review_enrichment" and parts and parts[0].isdigit():
-                self._review_contexts.set(event.platform, event.chat_id, "knowledge", int(parts[0]))
-                return
-            if command == "/review" and len(parts) == 2 and parts[1].isdigit():
-                self._review_contexts.set(event.platform, event.chat_id, parts[0], int(parts[1]))
-                return
+            kind = review_commands.get(command)
+            if kind is not None and parts and parts[0].isdigit():
+                return kind, int(parts[0])
+        return None
 
     def _is_allowed(self, event: IncomingEvent) -> bool:
         return not self._allowed_chat_ids or event.chat_id in self._allowed_chat_ids

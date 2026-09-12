@@ -753,9 +753,11 @@ without rendered text or object content. A reply restores that exact object befo
 deterministic routing, survives restart, and remains chat-scoped. Calendar IDs stay
 opaque and are used to refetch current provider state. Storage is bounded to 500
 mappings per chat. Failures after Telegram delivery do not cause duplicate replies.
-Focused repository, migration, adapter, and application tests pass. Review-card
-mapping and live Telegram reply acceptance remain open; list cards intentionally
-never imply a selected item.
+Focused repository, migration, adapter, and application tests pass. Actionable
+action/organization/intake/knowledge review cards also persist their exact proposal
+reference, while `/pending` navigation cards neither select nor authorize their
+first item. Live Telegram reply acceptance remains open; all list cards
+intentionally never imply a selected item.
 
 Moved-root recovery is now an explicit local `relocate-root NAME PATH --confirm`
 operation. It requires the old root to be missing and the replacement to contain

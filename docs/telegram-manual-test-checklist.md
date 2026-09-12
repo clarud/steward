@@ -154,6 +154,14 @@ until a separate filesystem backup exists.
   card instead of using its button. Verify only that exact card is accepted
   (or rejected); a stale card or a card from another chat must not authorize a
   change.
+- Keep review card A, then open review card B. Reply `what is this?` to A and
+  verify A is redrawn. Reply `yes` or `no` to A only when its proposed effect is
+  safe to test; Steward must decide A rather than B, including after restart.
+  If A is stale or is no longer the one resumable organization workflow for the
+  chat, Steward must refuse it and must still never decide B. Repeat across an
+  action and one organization, intake, or knowledge review. Opening `/pending`
+  alone must not make its first item confirmable by a bare `yes`; choose
+  **Review 1** first.
 
 ## Capture, review, and restart
 

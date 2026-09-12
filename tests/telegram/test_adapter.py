@@ -225,13 +225,24 @@ def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:
     assert "".join(message.replies) == "evidence " * 700
 
 
-def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("command", "kind"),
+    [
+        ("/approve_action 9", "action"),
+        ("/organization_accept 9", "organization"),
+        ("/intake_accept 9", "intake"),
+        ("/review_enrichment 9 accepted", "knowledge"),
+    ],
+)
+def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(
+    tmp_path, command, kind
+) -> None:
     class ProposalHandler(FakeEventHandler):
         def handle(self, event: IncomingEvent) -> PresentedReply:
             self.events.append(event)
             return PresentedReply(
                 "No task has been saved yet.",
-                (ReplyAction("Accept", "/approve_action 9"), ReplyAction("Reject", "/reject_action 9")),
+                (ReplyAction("Accept", command),),
                 title="Save task: Compare OpenMP schedules",
             )
 
@@ -244,7 +255,80 @@ def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(tmp_path) -
 
     remembered = contexts.get("telegram", "100")
     assert remembered is not None
-    assert (remembered.kind, remembered.identifier) == ("action", 9)
+    assert (remembered.kind, remembered.identifier) == (kind, 9)
+
+
+def test_reply_to_older_review_card_restores_that_exact_proposal_after_restart(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"review one", "review two"}:
+                proposal_id = 1 if event.text.endswith("one") else 2
+                return PresentedReply(
+                    f"Review {proposal_id}",
+                    (ReplyAction("Accept", f"/approve_action {proposal_id}"),
+                     ReplyAction("Reject", f"/reject_action {proposal_id}")),
+                    reference=("source", 99),
+                )
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 200
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="review one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="review two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+    assert contexts.get("telegram", "100").identifier == 2
+
+    replied_card = type("Replied", (), {"message_id": 201, "text": "Review 1", "caption": None})()
+    reply = Message(text="yes", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=action:1"]
+
+
+def test_review_list_does_not_select_its_first_item_or_create_a_message_reference(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+    contexts.set("telegram", "100", "source", 7)
+
+    class Handler:
+        def handle(self, event):
+            return PresentedReply(
+                "Choose a review.",
+                (ReplyAction("Review 1", "/review action 9"),),
+                title="Pending",
+            )
+
+    class Message(FakeMessage):
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            return type("Sent", (), {"message_id": 301})()
+
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(Message()), None))
+
+    assert (contexts.get("telegram", "100").kind, contexts.get("telegram", "100").identifier) == ("source", 7)
+    assert references.get("telegram", "100", "301") is None
 
 
 def test_adapter_resolves_a_chat_scoped_callback_to_a_local_command(tmp_path) -> None:
