@@ -84,6 +84,20 @@ enabled-root availability, or Telegram token configuration are missing. It does
 not validate remote credentials or connectivity; zero registered roots is valid
 for an Inbox-only installation.
 
+If an authorized directory itself was moved, do not add its replacement as a
+second root. With Steward writers stopped, use the explicit recovery command:
+
+```powershell
+steward relocate-root "School Notes" "D:\Notes\School" --confirm
+steward scan-root "School Notes"
+```
+
+Relocation is refused while the old root still exists. It verifies every tracked
+source at the same relative destination and with the same SHA-256 hash, then
+atomically changes the root and source paths. It never moves or rewrites files.
+Missing, changed, escaping, already-authorized, or already-registered destinations
+abort the complete metadata change. A following scan detects any untracked files.
+
 ## Back up local Steward state
 
 Sources in your authorized roots are canonical and must be backed up by your

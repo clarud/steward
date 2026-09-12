@@ -256,6 +256,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude", action="append", type=Path, default=[],
         help="Root-relative directory to exclude (repeatable)",
     )
+    root_relocate = subcommands.add_parser("relocate-root", help="Rebind a missing root after verifying tracked source hashes")
+    root_relocate.add_argument("name", help="Existing authorized source-root name")
+    root_relocate.add_argument("path", type=Path, help="Existing replacement directory")
+    root_relocate.add_argument("--confirm", action="store_true", help="Confirm the authorization and registered-path change")
     subcommands.add_parser("roots", help="List locally authorized source roots")
     health_parser = subcommands.add_parser(
         "health", help="Report safe local runtime health without exposing paths or secrets"
@@ -897,6 +901,20 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        return
+
+    if arguments.command == "relocate-root":
+        if not arguments.confirm:
+            print("Refusing to relocate a source root without --confirm. No state was changed.")
+            return
+        database_path = settings.data_dir / "steward.db"
+        initialize_database(database_path)
+        try:
+            relocation = SourceRootRepository(database_path).relocate_missing(arguments.name, arguments.path)
+        except (ValueError, OSError) as error:
+            print(f"Source root was not relocated: {error}")
+            return
+        print(f"Relocated source root {relocation.root.name!r}; verified and updated {relocation.updated_sources} tracked source paths.")
         return
 
     if arguments.command in {"enable-root", "disable-root"}:

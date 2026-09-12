@@ -1423,6 +1423,32 @@ guard; run only one polling instance per bot, including on other machines.
 
 ### Local readiness versus remote health
 
+### Missing-root relocation
+
+`SourceRootRepository.relocate_missing(name, new_path)` is a strict recovery
+operation for a directory that moved outside Steward. It takes an immediate
+SQLite write transaction, reloads the named root under that lock, and refuses to
+proceed while the old directory remains available. For each registered source
+whose resolved path lies beneath the old root, it derives the same relative path
+under the resolved replacement, ensures the result cannot escape that directory,
+requires an existing file, and compares its exact SHA-256 bytes to registered
+provenance. It also refuses another authorized root or source already owning a
+destination path.
+
+Only after every preflight succeeds does the transaction update the root path and
+the matching source paths, sizes, modification timestamps, last-seen timestamps,
+and status. IDs, hashes, fragments, semantic relationships, and relative root
+exclusions remain unchanged. Failure rolls back the complete set; no filesystem
+object is changed. The CLI requires `relocate-root NAME PATH --confirm` and remains
+local-only. It is intentionally strict: a source edited during/after a physical
+move must be resolved manually instead of being silently accepted as the original.
+Run `scan-root NAME` afterwards to register previously untracked material.
+
+The transaction holds a write lock while hashing originals, so stop pollers,
+watchers, and other writers first. The operation validates registered files, not
+all bytes in the directory, and is not a backup, filesystem identity proof, or a
+way to merge roots. Symlinks resolving outside the replacement are rejected.
+
 `steward health --strict` uses the same safe report as `health`, but exits 1 if
 the operational/checkpoint table prerequisites are absent, an enabled root is
 missing, root metadata cannot be read, or the Telegram token is blank. No roots

@@ -227,6 +227,32 @@ def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_original
     assert note.read_text(encoding="utf-8") == "# Note"
 
 
+def test_cli_relocate_root_requires_confirmation_and_preserves_source_identity(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "data"; old = tmp_path / "old"; old.mkdir()
+    note = old / "note.md"; note.write_text("# Original", encoding="utf-8")
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(data))
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    main(["add-root", "School", str(old)]); capsys.readouterr()
+    main(["scan-root", "School"]); capsys.readouterr()
+    sources = SourceRepository(data / "steward.db")
+    source = sources.get_by_path(note.resolve())
+    new = tmp_path / "new"; old.rename(new)
+
+    main(["relocate-root", "School", str(new)])
+    assert "without --confirm" in capsys.readouterr().out
+    assert SourceRootRepository(data / "steward.db").get_by_name("School").path == old.resolve()
+    main(["relocate-root", "School", str(new), "--confirm"])
+    output = capsys.readouterr().out
+
+    assert "verified and updated 1 tracked source paths" in output
+    relocated = sources.get_by_id(source.id)
+    assert relocated.id == source.id
+    assert relocated.path == (new / "note.md").resolve()
+    assert relocated.content_hash == source.content_hash
+    main(["scan-root", "School"])
+    assert "new=0" in capsys.readouterr().out
+
+
 def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"; vault.mkdir()
     (vault / "note.md").write_text("# Note", encoding="utf-8")

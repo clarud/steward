@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from steward.sources.hashing import hash_file
+
 
 @dataclass(frozen=True, slots=True)
 class SourceRoot:
@@ -23,6 +25,12 @@ class SourceRoot:
         if not self.enabled:
             return "disabled"
         return "available" if self.path.is_dir() else "missing"
+
+
+@dataclass(frozen=True, slots=True)
+class RootRelocation:
+    root: SourceRoot
+    updated_sources: int
 
 
 class SourceRootRepository:
@@ -71,6 +79,59 @@ class SourceRootRepository:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("UPDATE source_roots SET enabled = ? WHERE id = ?", (int(enabled), root.id))
         return SourceRoot(root.id, root.name, root.path, enabled, root.created_at, root.exclusions)
+
+    def relocate_missing(self, name: str, new_path: Path) -> RootRelocation:
+        """Rebind a missing root only when all tracked originals match by hash."""
+        destination = new_path.resolve()
+        if not destination.is_dir():
+            raise ValueError("The replacement source root must be an existing directory.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT id, name, path, enabled, created_at, exclusions FROM source_roots WHERE name = ?",
+                (name.strip(),),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"No locally authorized source root named {name!r}.")
+            root = self._from_row(row)
+            old_path = root.path.resolve()
+            if old_path.is_dir():
+                raise ValueError("The existing source root is still available; disable competing copies before relocation.")
+            conflict = connection.execute(
+                "SELECT 1 FROM source_roots WHERE path = ? AND id <> ?", (str(destination), root.id)
+            ).fetchone()
+            if conflict is not None:
+                raise ValueError("The replacement directory is already authorized as another source root.")
+            rows = connection.execute(
+                "SELECT id, path, content_hash FROM sources ORDER BY id"
+            ).fetchall()
+            replacements: list[tuple[str, int, int, str, str]] = []
+            for source_id, raw_path, expected_hash in rows:
+                source_path = Path(str(raw_path)).resolve()
+                if not source_path.is_relative_to(old_path):
+                    continue
+                candidate = (destination / source_path.relative_to(old_path)).resolve()
+                if not candidate.is_relative_to(destination) or not candidate.is_file():
+                    raise ValueError(f"Replacement root is missing tracked source {source_id} at its relative location.")
+                if hash_file(candidate) != str(expected_hash):
+                    raise ValueError(f"Replacement root source {source_id} does not match its registered content hash.")
+                path_conflict = connection.execute(
+                    "SELECT 1 FROM sources WHERE path = ? AND id <> ?", (str(candidate), source_id)
+                ).fetchone()
+                if path_conflict is not None:
+                    raise ValueError(f"Replacement path for source {source_id} is already registered to another source.")
+                stat = candidate.stat()
+                replacements.append((str(candidate), int(source_id), stat.st_size,
+                                     datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+                                     datetime.now(UTC).isoformat()))
+            for candidate, source_id, size_bytes, modified_at, last_seen_at in replacements:
+                connection.execute(
+                    "UPDATE sources SET path = ?, size_bytes = ?, modified_at = ?, last_seen_at = ?, status = 'active' WHERE id = ?",
+                    (candidate, size_bytes, modified_at, last_seen_at, source_id),
+                )
+            connection.execute("UPDATE source_roots SET path = ? WHERE id = ?", (str(destination), root.id))
+        relocated = SourceRoot(root.id, root.name, destination, root.enabled, root.created_at, root.exclusions)
+        return RootRelocation(relocated, len(replacements))
 
     @staticmethod
     def _normalize_exclusions(root: Path, exclusions: tuple[Path, ...]) -> tuple[Path, ...]:

@@ -745,6 +745,16 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Moved-root recovery is now an explicit local `relocate-root NAME PATH --confirm`
+operation. It requires the old root to be missing and the replacement to contain
+every tracked source at the same relative path with the registered SHA-256 hash.
+One SQLite transaction rebinds the root, preserves exclusions/IDs/derived links,
+and marks verified sources active; any mismatch or path/authorization collision
+rolls back everything. It never moves files and is intentionally absent from
+Telegram. Repository and CLI tests cover success, confirmation, rescan identity,
+hash/missing mismatch, available roots, and destination collisions. Real moved
+OneDrive/mount recovery with all writers stopped remains a manual acceptance gate.
+
 Local operational readiness now has an opt-in `health --strict` exit contract.
 It checks expected database tables, enabled-root availability and a nonblank
 Telegram token; it permits Inbox-only setups and disabled roots. Schema reads

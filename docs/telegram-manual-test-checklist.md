@@ -30,6 +30,19 @@ source-specific buttons instead; do not assume `that` changed its meaning.
 
 ## Before testing
 
+### Local moved-root recovery
+
+Using a disposable test root, scan at least two harmless files and record their
+source IDs. Stop Telegram/watchers, rename the root directory outside Steward,
+then run `steward health --strict`; it should exit 1. Confirm `relocate-root`
+without `--confirm` changes nothing. Make one replacement file differ and confirm
+the approved command rolls back without changing any root/source path. Restore
+the exact bytes, run `steward relocate-root NAME NEW_PATH --confirm`, then
+`steward scan-root NAME` and `steward health --strict`. The same source IDs and
+hashes should remain and the scan should create no duplicates. Restart Telegram
+and read one relocated source. Do not perform this rehearsal on the real vault
+until a separate filesystem backup exists.
+
 1. Activate the project virtual environment.
 2. Confirm `.env` contains a Telegram bot token and an allowlisted chat ID.
 3. Use a separate `STEWARD_DATA_DIR` and `STEWARD_INBOX_DIR` for testing.

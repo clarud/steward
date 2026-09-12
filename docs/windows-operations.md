@@ -111,6 +111,13 @@ at a broader directory simply to suppress a missing-root error. Do not share liv
 SQLite databases between machines via file synchronization; keep runtime metadata
 local and use explicit snapshots for backup.
 
+If the directory was deliberately moved and the old path no longer exists, keep
+all Steward writers stopped and use `steward relocate-root NAME NEW_PATH --confirm`.
+The command rebinds only when every tracked relative file has the registered hash;
+it changes metadata, not files. Then run `steward scan-root NAME` and `steward
+health --strict`. A mismatch requires manual inspection; do not weaken the root
+boundary or edit the database to make it pass.
+
 After updates or recovery, run foreground preflight again, stop that foreground
 instance, then explicitly re-enable scheduled operation:
 
