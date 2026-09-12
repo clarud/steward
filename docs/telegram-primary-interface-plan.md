@@ -759,6 +759,14 @@ reference, while `/pending` navigation cards neither select nor authorize their
 first item. Live Telegram reply acceptance remains open; all list cards
 intentionally never imply a selected item.
 
+Calendar object context is no longer consumed by review explanation routing.
+After opening or replying to an event card, bounded phrases such as `what is
+this?`, `when is it?`, `where is it?`, and `show details` refetch the selected
+event without entering the model or implying a write. Calendar list, detail,
+empty-result, and failure cards now provide the applicable compact Home, Upcoming,
+Refresh, Retry, and Integrations next actions. Automated application coverage
+passes; real Telegram wording and button-layout acceptance remains open.
+
 Moved-root recovery is now an explicit local `relocate-root NAME PATH --confirm`
 operation. It requires the old root to be missing and the replacement to contain
 every tracked source at the same relative path with the registered SHA-256 hash.

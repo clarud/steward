@@ -128,6 +128,11 @@ until a separate filesystem backup exists.
   again. If it was deleted or Calendar becomes unavailable, it must preserve the
   selected event ID for an explicit retry and offer Calendar/integration recovery
   actions rather than showing old event details.
+- After opening an event, try `what is this?`, `when is it?`, `where is it?`,
+  and `show details`. Each must refetch that event without invoking a model or
+  creating a Calendar write. The response must remain a Calendar card rather than
+  saying the review type is unavailable. Verify detail, result, empty-result, and
+  failure cards offer only applicable compact navigation/recovery actions.
 - Send `/tasks`, open one task with its compact button, restart the bot, then
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.

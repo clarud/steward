@@ -1463,6 +1463,15 @@ review before natural confirmation is possible. Repository status and the existi
 chat ownership checks are still revalidated before any decision executes, so an
 exact pointer is navigation context rather than durable authorization.
 
+Review explanation routing accepts only review kinds. Because object navigation
+and reviews deliberately share the same narrow chat-context table, this guard is
+important: `what is this?` after opening a Calendar event must continue to Calendar
+instead of producing an unknown-review response. Calendar recognizes a bounded set
+of event follow-ups (`what is this?`, `when is it?`, `where is it?`, and explicit
+detail variants), then refetches the selected event. Search, detail, empty-result,
+and failure cards expose Home/Upcoming/Refresh/Retry/Integrations actions as
+applicable. These phrases do not create, edit, or delete an event.
+
 ### Local readiness versus remote health
 
 ### Missing-root relocation

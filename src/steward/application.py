@@ -278,7 +278,7 @@ class StewardReviewInboxApplication:
         if text not in {"what is this", "what is this proposal", "why", "details", "show details"}:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
-        if context is None:
+        if context is None or context.kind not in {"action", "organization", "intake", "knowledge"}:
             return None
         return self.detail(event, context.kind, context.identifier)
 
@@ -2502,6 +2502,9 @@ class StewardCalendarApplication:
         if normalized not in {
             "show that event", "open that event", "show the last event",
             "open the last event", "show that calendar event", "open that calendar event",
+            "what is this", "what is that event", "what is this event",
+            "when is it", "when is that event", "what time is it", "what time is that event",
+            "where is it", "where is that event", "show details", "show event details",
         }:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
@@ -2520,7 +2523,7 @@ class StewardCalendarApplication:
             "Calendar could not be read. This may be an authorization or connection problem, or the event may no longer exist. "
             "No event was changed. Retry to fetch current data, or check local integration setup.",
             (ReplyAction("Retry", retry_command), ReplyAction("Upcoming", "/calendar_search"),
-             ReplyAction("Integrations", "/integrations")),
+             ReplyAction("Integrations", "/integrations"), ReplyAction("Home", "/home")),
             title="Calendar unavailable", icon="⚠️",
         )
 
@@ -2545,12 +2548,17 @@ class StewardCalendarApplication:
         except Exception:
             return self._read_failure(command + (f" {argument.strip()}" if argument.strip() else ""))
         if not events:
-            return "No current Calendar events matched."
+            return PresentedReply(
+                "No current Calendar events matched this search. No event was changed.",
+                (ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")),
+                title="No Calendar matches", icon="📅",
+            )
         lines = []
         actions: list[ReplyAction] = []
         for index, item in enumerate(events, start=1):
             lines.append(f"{index}. {item.summary}\n{calendar_time_label(item.start, item.end)}")
             actions.append(ReplyAction(f"Open {index}", f"/calendar_get {item.id}"))
+        actions.append(ReplyAction("Home", "/home"))
         return PresentedReply(
             "\n\n".join(lines), tuple(actions), title="Calendar events", icon="📅"
         )
@@ -2571,7 +2579,8 @@ class StewardCalendarApplication:
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
             + ("\n\n".join(details) + "\n\n" if details else "")
             + f"Calendar ID: {identifier}",
-            actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search")),
+            actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search"),
+                     ReplyAction("Home", "/home")),
             title=str(getattr(event_result, "summary")),
             icon="📅",
             reference=("calendar", identifier),

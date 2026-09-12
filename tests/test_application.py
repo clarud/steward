@@ -828,6 +828,21 @@ def test_active_review_does_not_confirm_a_stale_action(tmp_path: Path) -> None:
     assert actions.get(proposal.id or 0).status == "rejected"
 
 
+def test_review_followup_does_not_consume_a_non_review_object_reference(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    contexts.set("telegram", "100", "calendar", "event-1")
+    reviews = StewardReviewInboxApplication(
+        ActionProposalRepository(database),
+        OrganizationProposalRepository(database),
+        SourceRepository(database),
+        contexts=contexts,
+    )
+
+    assert reviews.handle_followup(make_event(text="what is this?")) is None
+
+
 def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None:
     class LoopingToolGraph:
         def invoke(self, input, config):
@@ -1399,6 +1414,20 @@ def test_telegram_calendar_default_limits_to_upcoming_but_named_search_keeps_his
     assert calls[1][0] == "dentist" and calls[1][1]["time_min"] is None
 
 
+def test_empty_calendar_search_is_an_actionable_card() -> None:
+    class Reader:
+        def search(self, _query, **_kwargs):
+            return ()
+
+    response = StewardCalendarApplication(lambda: Reader()).handle_command(
+        make_event(text="/calendar_search missing")
+    )
+
+    assert isinstance(response, PresentedReply)
+    assert response.title == "No Calendar matches"
+    assert [action.command for action in response.actions] == ["/calendar_search", "/home"]
+
+
 def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) -> None:
     class Events:
         def get(self, **kwargs):
@@ -1431,12 +1460,15 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
         ),
     )
     reopened = restarted.handle(make_event(text="show that event"))
+    natural_followup = restarted.handle(make_event(text="when is it?"))
 
     assert isinstance(opened, PresentedReply)
     assert opened.reference == ("calendar", "event-opaque-1")
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "Flight"
     assert "Calendar ID: event-opaque-1" in reopened.text
+    assert isinstance(natural_followup, PresentedReply)
+    assert natural_followup.title == "Flight"
     assert graph.inputs == []
 
 
