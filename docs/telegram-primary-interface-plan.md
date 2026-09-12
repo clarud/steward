@@ -745,6 +745,63 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Local operational readiness now has an opt-in `health --strict` exit contract.
+It checks expected database tables, enabled-root availability and a nonblank
+Telegram token; it permits Inbox-only setups and disabled roots. Schema reads
+replace `SELECT 1` so malformed SQLite files are not reported available merely
+because a constant expression succeeds. This is not remote-service health or
+full database integrity validation. The Windows preflight uses the strict check.
+
+Windows start-at-login now has a concrete operator runbook in
+`docs/windows-operations.md`: absolute virtual-environment executable and working
+directory, ordinary interactive-user task, bounded restart policy, explicit
+enable/disable, readiness caveats and quiet-period maintenance. No scheduled task
+has been registered or launched by this work. Machine logon/outage acceptance
+remains open; documented commands are not evidence of a deployed service.
+
+Verification checkpoint: all six runbook PowerShell blocks parsed successfully
+without execution, and Task Scheduler command signatures were inspected locally.
+The full pytest suite passed again after the import cards and durable import
+selection changes. This does not establish scheduled-task or live Telegram health.
+
+Drive/Gmail result browsing now requests five metadata results per provider page,
+with explicit More results and Restart search actions. Numbered import buttons
+select exact external IDs; browsing does not import content. Query/cursor pairs
+use the existing durable, chat-scoped callback storage. Automated coverage checks
+empty intermediate pages, restart reconstruction, malformed continuations, and
+secret-free provider failure/retry. The affected application, Drive/Gmail, CLI and
+Telegram suites and the full pytest suite passed on 2026-09-12 for this release.
+Live OAuth pagination acceptance remains open; no live account content was read
+or imported by these tests.
+
+Additional configured-service integration coverage traverses twelve synthetic
+results over three pages for each provider. It rebuilds the application between
+clicks, resolves persisted callbacks, asserts one list request per click and exact
+ordered result IDs, and verifies Gmail requests metadata only. Both cases passed
+in `tests/test_external_search_navigation.py`; OAuth is replaced with a fake API,
+so this strengthens wiring verification without claiming live-account acceptance.
+
+Import completion now offers Read content, Source details, and Link workspace
+for the exact retained local source. Duplicate imports link to the existing source
+without claiming a new copy or an Inbox location. These cards do not automatically
+run a model or organize files. New and duplicate result cards have automated
+coverage; real-chat presentation and end-to-end follow-up acceptance remain open.
+
+Successful and duplicate imports now persist the selected source in chat-scoped
+reference context. Failed imports retain the prior selection; a context-write
+failure after capture still returns source buttons and a warning, not an import
+failure. Tests cover both providers, new/duplicate results, context reconstruction,
+chat isolation, and failures. This is the existing bounded reference resolver,
+not arbitrary conversational anaphora resolution.
+
+Release handoff: this pagination change is verified but not committed. Automatic
+approval for Git staging failed due to an approval-service usage limit; staging
+and committing were not retried through another route. The last confirmed commit
+is `4825c6f`. Intended commit message: `Add cursor-based Telegram Drive and Gmail
+search navigation`. Preserve unrelated `.gitignore`, `changes.patch`, and `vault/`
+changes. Before committing, recheck the diff and stage only this feature's source,
+tests, and three updated developer/Telegram documentation files.
+
 Reviewed re-extraction failures now preserve pending status and offer explicit
 retry/read/dismiss recovery without exposing parser diagnostics. The card warns
 about partially updated derived state; atomic parser/index refresh is not claimed.

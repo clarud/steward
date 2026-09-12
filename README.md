@@ -76,6 +76,14 @@ at logon with the project virtual environment available, restarts on failure,
 and writes no secrets into the task arguments. Run `steward health` after a
 restart before relying on the bot.
 
+Follow the [Windows operations runbook](docs/windows-operations.md) for explicit
+Task Scheduler setup, foreground preflight, stop/recovery, and acceptance checks.
+
+For scripts, `steward health --strict` exits 1 if required database tables,
+enabled-root availability, or Telegram token configuration are missing. It does
+not validate remote credentials or connectivity; zero registered roots is valid
+for an Inbox-only installation.
+
 ## Back up local Steward state
 
 Sources in your authorized roots are canonical and must be backed up by your

@@ -48,6 +48,18 @@ def test_gmail_search_validates_limit() -> None:
         GmailService(Client()).search(limit=101)
 
 
+def test_gmail_search_page_preserves_empty_page_continuation() -> None:
+    client = Client()
+    def listed(**kwargs):
+        assert kwargs == {"userId": "me", "maxResults": 5, "q": "subject:notes", "pageToken": "previous"}
+        return Request({"messages": [], "nextPageToken": "next/opaque=="})
+    client.messages_api.list = listed
+    page = GmailService(client).search_page("subject:notes", page_token="previous")
+    assert page.items == ()
+    assert page.next_page_token == "next/opaque=="
+    assert client.messages_api.get_kwargs == []
+
+
 def test_gmail_download_raw_decodes_an_explicit_message() -> None:
     client = Client()
     raw = b"Subject: Flight\n\nChanged"

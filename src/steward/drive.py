@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
+from steward.search_page import SearchPage
 
 
 GOOGLE_DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
@@ -41,19 +42,25 @@ class GoogleDriveService:
         self._client = client
 
     def search(self, query: str = "", *, limit: int = 10) -> tuple[DriveFile, ...]:
+        return self.search_page(query, limit=limit).items
+
+    def search_page(self, query: str = "", *, limit: int = 5, page_token: str | None = None) -> SearchPage[DriveFile]:
         if not 1 <= limit <= 100:
             raise ValueError("Drive result limit must be between 1 and 100.")
         clauses = ["trashed = false"]
         if query.strip():
             escaped = query.strip().replace("\\", "\\\\").replace("'", "\\'")
             clauses.append(f"name contains '{escaped}'")
-        result = self._client.files().list(
+        request = dict(
             q=" and ".join(clauses),
             pageSize=limit,
             orderBy="modifiedTime desc",
-            fields="files(id,name,mimeType,modifiedTime,webViewLink,size)",
-        ).execute()
-        return tuple(self._from_api(item) for item in result.get("files", []))
+            fields="nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,size)",
+        )
+        if page_token:
+            request["pageToken"] = page_token
+        result = self._client.files().list(**request).execute()
+        return SearchPage(tuple(self._from_api(item) for item in result.get("files", [])), result.get("nextPageToken") or None)
 
     def get_file(self, file_id: str) -> DriveFile:
         if not file_id.strip():

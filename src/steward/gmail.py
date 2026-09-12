@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
+from steward.search_page import SearchPage
 
 
 GOOGLE_GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
@@ -40,14 +41,22 @@ class GmailService:
         self._user_id = user_id
 
     def search(self, query: str = "", *, limit: int = 10) -> tuple[GmailMessage, ...]:
+        return self.search_page(query, limit=limit).items
+
+    def search_page(self, query: str = "", *, limit: int = 5, page_token: str | None = None) -> SearchPage[GmailMessage]:
         if not 1 <= limit <= 100:
             raise ValueError("Gmail result limit must be between 1 and 100.")
         request: dict[str, object] = {"userId": self._user_id, "maxResults": limit}
         if query.strip():
             request["q"] = query.strip()
+        if page_token:
+            request["pageToken"] = page_token
         listed = self._client.users().messages().list(**request).execute()
         messages = listed.get("messages", [])
-        return tuple(self._get_metadata(str(item["id"])) for item in messages if item.get("id"))
+        return SearchPage(
+            tuple(self._get_metadata(str(item["id"])) for item in messages if item.get("id")),
+            listed.get("nextPageToken") or None,
+        )
 
     def _get_metadata(self, message_id: str) -> GmailMessage:
         item = self._client.users().messages().get(

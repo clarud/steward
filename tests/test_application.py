@@ -3423,7 +3423,7 @@ def test_telegram_can_explicitly_import_one_drive_file() -> None:
         def import_file(self, file_id: str) -> CaptureResult:
             self.file_ids.append(file_id)
             return CaptureResult(
-                type("Source", (), {"path": Path("vault/inbox/drive-import-file-42-note.pdf")})(),
+                type("Source", (), {"id": 42, "path": Path("vault/inbox/drive-import-file-42-note.pdf")})(),
                 False,
             )
 
@@ -3437,7 +3437,12 @@ def test_telegram_can_explicitly_import_one_drive_file() -> None:
     response = application.handle(make_event(text="/drive_import file-42"))
 
     assert importer.file_ids == ["file-42"]
-    assert response == "Imported Drive file to Inbox: drive-import-file-42-note.pdf"
+    assert isinstance(response, PresentedReply)
+    assert response.title == "drive-import-file-42-note.pdf"
+    assert "Imported from Drive to Inbox" in response.text
+    assert [action.command for action in response.actions] == [
+        "/source_content 42", "/source 42", "/source_workspaces 42",
+    ]
 
 
 def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
@@ -3456,10 +3461,11 @@ def test_telegram_drive_import_requires_an_explicit_single_file_id() -> None:
 
 
 def test_telegram_drive_search_offers_explicit_individual_imports() -> None:
+    from steward.search_page import SearchPage
     class Importer:
-        def search(self, query):
+        def search_page(self, query, *, page_token=None):
             assert query == "parallel"
-            return (type("DriveFile", (), {"id": "file-42", "name": "Parallel Notes.pdf"})(),)
+            return SearchPage((type("DriveFile", (), {"id": "file-42", "name": "Parallel Notes.pdf"})(),))
 
     response = StewardDriveImportApplication(Importer()).handle_command(make_event(text="/drive_search parallel"))
 
@@ -3472,13 +3478,17 @@ def test_telegram_can_explicitly_import_one_gmail_message() -> None:
     class Importer:
         def import_message(self, message_id: str) -> CaptureResult:
             assert message_id == "mail-42"
-            return CaptureResult(type("Source", (), {"path": Path("vault/inbox/gmail-import-mail-42.eml")})(), False)
+            return CaptureResult(type("Source", (), {"id": 43, "path": Path("vault/inbox/gmail-import-mail-42.eml")})(), False)
 
     application = StewardGmailImportApplication(Importer())
 
-    assert application.handle_command(make_event(text="/gmail_import mail-42")) == (
-        "Imported Gmail message to Inbox: gmail-import-mail-42.eml"
-    )
+    response = application.handle_command(make_event(text="/gmail_import mail-42"))
+    assert isinstance(response, PresentedReply)
+    assert response.title == "gmail-import-mail-42.eml"
+    assert "Imported from Gmail to Inbox" in response.text
+    assert [action.command for action in response.actions] == [
+        "/source_content 43", "/source 43", "/source_workspaces 43",
+    ]
     assert application.handle_command(make_event(text="/gmail_import")) == (
         "Use /gmail_import followed by one Gmail message ID."
     )
@@ -3489,14 +3499,14 @@ def test_telegram_external_import_failures_do_not_disclose_local_diagnostics() -
         def import_file(self, _file_id: str) -> CaptureResult:
             raise OSError("C:/private/google-drive-token.json is unreadable")
 
-        def search(self, _query: str):
+        def search_page(self, _query: str, *, page_token=None):
             raise RuntimeError("C:/private/client-secret.json was rejected")
 
     class GmailImporter:
         def import_message(self, _message_id: str) -> CaptureResult:
             raise OSError("C:/private/gmail-token.json is unreadable")
 
-        def search(self, _query: str):
+        def search_page(self, _query: str, *, page_token=None):
             raise RuntimeError("C:/private/client-secret.json was rejected")
 
     drive = StewardDriveImportApplication(DriveImporter())
@@ -3518,13 +3528,66 @@ def test_telegram_external_import_failures_do_not_disclose_local_diagnostics() -
 
 
 def test_telegram_gmail_search_offers_explicit_individual_imports() -> None:
+    from steward.search_page import SearchPage
     class Importer:
-        def search(self, query):
+        def search_page(self, query, *, page_token=None):
             assert query == "OpenMP"
-            return (type("GmailMessage", (), {"id": "mail-42", "subject": "OpenMP assignment"})(),)
+            return SearchPage((type("GmailMessage", (), {"id": "mail-42", "subject": "OpenMP assignment"})(),))
 
     response = StewardGmailImportApplication(Importer()).handle_command(make_event(text="/gmail_search OpenMP"))
 
     assert isinstance(response, PresentedReply)
     assert "mail-42: OpenMP assignment" in response.text
     assert response.actions[0].command == "/gmail_import mail-42"
+
+
+def test_external_search_continuation_survives_restart_and_does_not_import(tmp_path) -> None:
+    from steward.search_page import SearchPage
+    from steward.telegram.callbacks import TelegramCallbackRepository
+
+    database = tmp_path / "callbacks.db"
+    initialize_database(database)
+    query = 'subject:"parallel notes" 日本語'
+    cursor = 'opaque/+= "cursor"'
+    for prefix, application_type in (("drive", StewardDriveImportApplication), ("gmail", StewardGmailImportApplication)):
+        calls = []
+        class Importer:
+            fail = False
+            def search_page(self, search_query, *, page_token=None):
+                calls.append((search_query, page_token))
+                assert search_query == query
+                if self.fail:
+                    raise RuntimeError("secret-token at C:/private/token.json")
+                if page_token is None:
+                    return SearchPage((), cursor)
+                assert page_token == cursor
+                item = type("Item", (), {"id": "selected-6", "name": "Notes.pdf", "subject": "Notes"})()
+                return SearchPage((item,))
+            def import_file(self, _identifier):
+                raise AssertionError("Browsing must not download")
+            import_message = import_file
+
+        first = application_type(Importer()).handle_command(make_event(text=f"/{prefix}_search {query}"))
+        assert "No items on this page" in first.text
+        more = next(action for action in first.actions if action.label == "More results")
+        saved = TelegramCallbackRepository(database).create("test-chat", more.command)
+        repository = TelegramCallbackRepository(database)
+        assert repository.resolve(saved.token, "another-chat") is None
+        restored = repository.resolve(saved.token, "test-chat")
+        importer = Importer()
+        application = application_type(importer)
+        page = application.handle_command(make_event(text=restored.command))
+        assert page.actions[0].label == "Import 1"
+        assert page.actions[0].command == f"/{prefix}_import selected-6"
+        assert not any(action.label == "More results" for action in page.actions)
+        assert calls == [(query, None), (query, cursor)]
+        importer.fail = True
+        failure = application.handle_command(make_event(text=restored.command))
+        assert "secret-token" not in failure.text and "C:/private" not in failure.text
+        assert failure.actions[0].command == restored.command
+        assert failure.actions[-1].command == f"/{prefix}_search {query}"
+        before = len(calls)
+        for malformed in ('null', '{}', '[1,2]', '["query"]'):
+            invalid = application.handle_command(make_event(text=f"/{prefix}_page {malformed}"))
+            assert "invalid" in invalid
+        assert len(calls) == before

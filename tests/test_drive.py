@@ -37,7 +37,7 @@ def test_drive_search_requests_current_metadata_without_downloading_content() ->
     assert files[0].size_bytes == 42
     assert client.files_api.kwargs == {
         "q": "trashed = false and name contains 'itinerary'", "pageSize": 3,
-        "orderBy": "modifiedTime desc", "fields": "files(id,name,mimeType,modifiedTime,webViewLink,size)",
+        "orderBy": "modifiedTime desc", "fields": "nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,size)",
     }
 
 
@@ -48,6 +48,21 @@ def test_drive_search_escapes_query_and_validates_limit() -> None:
     assert "Claire\\'s \\\\ notes" in client.files_api.kwargs["q"]
     with pytest.raises(ValueError, match="between"):
         service.search(limit=0)
+
+
+def test_drive_search_page_preserves_empty_page_continuation() -> None:
+    client = FakeDrive()
+    class Request:
+        def execute(self):
+            return {"files": [], "nextPageToken": "next/opaque=="}
+    def listed(**kwargs):
+        assert kwargs["pageToken"] == "previous"
+        assert kwargs["pageSize"] == 5
+        return Request()
+    client.files_api.list = listed
+    page = GoogleDriveService(client).search_page("notes", page_token="previous")
+    assert page.items == ()
+    assert page.next_page_token == "next/opaque=="
 
 
 def test_explicit_drive_import_downloads_then_captures_with_a_stable_event(tmp_path) -> None:

@@ -4,6 +4,30 @@ Use a non-sensitive test vault for this checklist. Automated tests verify
 service and transport behavior, but only a local run can prove the real bot
 token, OAuth credentials, model provider, and machine filesystem work together.
 
+## Drive/Gmail pagination acceptance
+
+With locally authorized test accounts, search for a term matching more than five
+items using `/drive_search` and `/gmail_search`. Confirm each card has at most five
+numbered results and compact Import buttons. Tap More results until the final page;
+confirm later items are reachable and only the selected ID is imported when you
+explicitly tap its Import button. Merely browsing must not add Inbox sources.
+Restart Steward while a More results button is still within its callback lifetime
+(15 minutes by default), then use that button. Confirm continuation retains the
+original query. On a provider failure, check Retry and Restart search; no credential,
+local token path, or raw provider diagnostic should appear. These checks remain
+manual acceptance, separate from the synthetic automated cursor tests.
+
+After importing an item, use its Read content and Source details buttons. Confirm
+they open that exact local source. Link workspace should open a selection/review
+flow, not move or link anything merely by displaying the import card. Import the
+same external item again: the duplicate card should open the existing local source
+without claiming that an already organized file has returned to Inbox.
+
+Immediately after import, say `give me the content` without first opening another
+card. Repeat after a restart and verify that the imported source remains selected.
+If the import reports that conversation selection could not be updated, use the
+source-specific buttons instead; do not assume `that` changed its meaning.
+
 ## Before testing
 
 1. Activate the project virtual environment.

@@ -2927,6 +2927,68 @@ class StewardProvisionalIntakeApplication:
         )
 
 
+def _external_search_page(importer, provider: str, argument: str, *, continuation: bool = False) -> str | PresentedReply:
+    """Read one remote page; callbacks retain the exact query and opaque cursor."""
+    prefix = provider.lower()
+    query, token = argument.strip(), None
+    if continuation:
+        try:
+            payload = json.loads(argument)
+            if not isinstance(payload, list) or len(payload) != 2 or not all(isinstance(value, str) for value in payload):
+                raise ValueError("Invalid cursor")
+            query, token = payload
+        except (ValueError, TypeError):
+            return f"This search continuation is invalid. Start again with /{prefix}_search."
+    if importer is None or not hasattr(importer, "search_page"):
+        return f"{provider} search is not configured on this Steward process. Authorize {provider} locally first."
+    restart = ReplyAction("Restart search", f"/{prefix}_search {query}")
+    retry = f"/{prefix}_page {json.dumps([query, token])}" if continuation else restart.command
+    try:
+        page = importer.search_page(query, page_token=token)
+        items = page.items
+        lines = [f"{item.id}: {str(item.name if prefix == 'drive' else item.subject)[:300]}" for item in items]
+        actions = [ReplyAction(f"Import {index}", f"/{prefix}_import {item.id}") for index, item in enumerate(items, 1)]
+        if page.next_page_token:
+            actions.append(ReplyAction("More results", f"/{prefix}_page {json.dumps([query, page.next_page_token])}"))
+    except Exception:
+        failure = _external_import_failure(f"{provider} search", retry)
+        return replace(failure, actions=failure.actions + (restart,))
+    if continuation:
+        actions.append(restart)
+    description = "\n".join(f"{index}. {line}" for index, line in enumerate(lines, 1))
+    if not items:
+        description = "No items on this page." if page.next_page_token else "No more matching items."
+    return PresentedReply(
+        f"{provider} results (metadata only):\n{description}\n\nSelect one item to import. Searching does not save content.",
+        tuple(actions), title=f"{provider} search", icon="🔎",
+    )
+
+
+def _external_import_success(
+    result: CaptureResult, provider: str, event: IncomingEvent,
+    contexts: ReviewContextRepository | None,
+) -> PresentedReply:
+    """Offer explicit follow-ups for the exact retained source, including duplicates."""
+    source = result.source
+    message = (
+        "Already imported. Open the existing source below; no new copy was saved."
+        if result.duplicate else f"Imported from {provider} to Inbox. Choose what to do next."
+    )
+    if contexts is not None and source.id is not None:
+        try:
+            contexts.set(event.platform, event.chat_id, "source", source.id)
+        except Exception:
+            # The original has already been retained. Do not misreport this as
+            # an import failure or invite a download retry for a context failure.
+            message += "\nConversation selection could not be updated. Use the buttons below instead of referring to 'that'."
+    actions = (
+        ReplyAction("Read content", f"/source_content {source.id}"),
+        ReplyAction("Source details", f"/source {source.id}"),
+        ReplyAction("Link workspace", f"/source_workspaces {source.id}"),
+    ) if source.id is not None else ()
+    return PresentedReply(message, actions, title=source.path.name, icon="✅")
+
+
 class DriveInboxImporter(Protocol):
     """Narrow boundary used by a transport command to import an explicit Drive ID."""
 
@@ -2936,14 +2998,17 @@ class DriveInboxImporter(Protocol):
 class StewardDriveImportApplication:
     """Turn a precise Telegram command into an explicit, local Drive import."""
 
-    def __init__(self, importer: DriveInboxImporter | None) -> None:
+    def __init__(self, importer: DriveInboxImporter | None, *, contexts: ReviewContextRepository | None = None) -> None:
         self._importer = importer
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/drive_search":
             return self._search(argument)
+        if command == "/drive_page":
+            return _external_search_page(self._importer, "Drive", argument, continuation=True)
         if command != "/drive_import":
             return None
         file_id = argument.strip()
@@ -2958,23 +3023,10 @@ class StewardDriveImportApplication:
             result = self._importer.import_file(file_id)
         except Exception:
             return _external_import_failure("Drive import", f"/drive_import {file_id}")
-        status = "Already imported" if result.duplicate else "Imported Drive file to Inbox"
-        return f"{status}: {result.source.path.name}"
+        return _external_import_success(result, "Drive", event, self._contexts)
 
     def _search(self, query: str) -> str | PresentedReply:
-        if self._importer is None or not hasattr(self._importer, "search"):
-            return "Drive search is not configured on this Steward process. Authorize Drive locally first."
-        try:
-            results = self._importer.search(query.strip())
-        except Exception:
-            return _external_import_failure("Drive search", f"/drive_search {query}")
-        if not results:
-            return "No Drive files matched."
-        visible = results[:5]
-        return PresentedReply(
-            "Drive files (metadata only):\n" + "\n".join(f"{item.id}: {item.name}" for item in visible),
-            tuple(ReplyAction(f"Import {item.name[:32]}", f"/drive_import {item.id}") for item in visible),
-        )
+        return _external_search_page(self._importer, "Drive", query)
 
 
 class GmailInboxImporter(Protocol):
@@ -2986,14 +3038,17 @@ class GmailInboxImporter(Protocol):
 class StewardGmailImportApplication:
     """Turn a precise Telegram command into an explicit Gmail Inbox import."""
 
-    def __init__(self, importer: GmailInboxImporter | None) -> None:
+    def __init__(self, importer: GmailInboxImporter | None, *, contexts: ReviewContextRepository | None = None) -> None:
         self._importer = importer
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/gmail_search":
             return self._search(argument)
+        if command == "/gmail_page":
+            return _external_search_page(self._importer, "Gmail", argument, continuation=True)
         if command != "/gmail_import":
             return None
         message_id = argument.strip()
@@ -3008,23 +3063,10 @@ class StewardGmailImportApplication:
             result = self._importer.import_message(message_id)
         except Exception:
             return _external_import_failure("Gmail import", f"/gmail_import {message_id}")
-        status = "Already imported" if result.duplicate else "Imported Gmail message to Inbox"
-        return f"{status}: {result.source.path.name}"
+        return _external_import_success(result, "Gmail", event, self._contexts)
 
     def _search(self, query: str) -> str | PresentedReply:
-        if self._importer is None or not hasattr(self._importer, "search"):
-            return "Gmail search is not configured on this Steward process. Authorize Gmail locally first."
-        try:
-            results = self._importer.search(query.strip())
-        except Exception:
-            return _external_import_failure("Gmail search", f"/gmail_search {query}")
-        if not results:
-            return "No Gmail messages matched."
-        visible = results[:5]
-        return PresentedReply(
-            "Gmail messages (metadata only):\n" + "\n".join(f"{item.id}: {item.subject}" for item in visible),
-            tuple(ReplyAction(f"Import {item.subject[:32]}", f"/gmail_import {item.id}") for item in visible),
-        )
+        return _external_search_page(self._importer, "Gmail", query)
 
 
 class OrganizationApprovalGraph(Protocol):

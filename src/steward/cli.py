@@ -9,6 +9,7 @@ import re
 import sys
 import sqlite3
 from collections.abc import Sequence
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -256,9 +257,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Root-relative directory to exclude (repeatable)",
     )
     subcommands.add_parser("roots", help="List locally authorized source roots")
-    subcommands.add_parser(
+    health_parser = subcommands.add_parser(
         "health", help="Report safe local runtime health without exposing paths or secrets"
     )
+    health_parser.add_argument("--strict", action="store_true", help="Exit 1 when local Telegram prerequisites are unavailable (does not test network services)")
     scan_root_parser = subcommands.add_parser("scan-root", help="Scan one locally authorized source root")
     scan_root_parser.add_argument("name", help="Authorized source-root name")
     for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
@@ -593,13 +595,13 @@ class _ConfiguredDriveInboxImporter:
         )
         return DriveInboxImportService(drive, self._capture_service).import_file(file_id)
 
-    def search(self, query: str):
+    def search_page(self, query: str, *, page_token: str | None = None):
         configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
         if not configured:
             raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before searching Drive.")
         return GoogleDriveService(
             authorize_google_drive(Path(configured), self._settings.data_dir / "config" / "google-drive-token.json")
-        ).search(query)
+        ).search_page(query, page_token=page_token)
 
 
 def _drive_inbox_importer(
@@ -630,13 +632,13 @@ class _ConfiguredGmailInboxImporter:
         )
         return GmailInboxImportService(gmail, self._capture_service).import_message(message_id)
 
-    def search(self, query: str):
+    def search_page(self, query: str, *, page_token: str | None = None):
         configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
         if not configured:
             raise ValueError("Set STEWARD_GOOGLE_CLIENT_SECRETS before searching Gmail.")
         return GmailService(
             authorize_gmail(Path(configured), self._settings.data_dir / "config" / "gmail-token.json")
-        ).search(query)
+        ).search_page(query, page_token=page_token)
 
 
 def _gmail_inbox_importer(
@@ -742,26 +744,29 @@ def _print_scan_database_error(operation: str, error: sqlite3.Error) -> None:
     print(f"{operation} stopped because the local Steward database reported an error: {error}")
 
 
-def _database_health(database_path: Path) -> str:
+def _database_health(database_path: Path, *, required_tables: tuple[str, ...] = ()) -> str:
     """Read a database without creating it, because health checks must be non-mutating."""
     if not database_path.is_file():
         return "not initialized"
     try:
-        with sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True) as connection:
-            connection.execute("SELECT 1").fetchone()
+        with closing(sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            if not tables or not set(required_tables).issubset(tables):
+                return "not initialized"
     except sqlite3.Error as error:
         message = str(error).casefold()
         return "busy" if "locked" in message or "busy" in message else "unavailable"
     return "available"
 
 
-def _health_report(settings: Settings) -> str:
-    """Render only operator-safe local health metadata."""
+def _health_report(settings: Settings) -> tuple[str, bool]:
+    """Return safe status text and local readiness; never test remote credentials."""
     database_path = settings.data_dir / "steward.db"
     checkpoint_path = settings.data_dir / "checkpoints.db"
-    database_health = _database_health(database_path)
-    checkpoint_health = _database_health(checkpoint_path)
+    database_health = _database_health(database_path, required_tables=("sources", "schema_migrations"))
+    checkpoint_health = _database_health(checkpoint_path, required_tables=("checkpoints", "writes"))
     root_summary = "not initialized"
+    roots_ready = False
     if database_health == "available":
         try:
             roots = SourceRootRepository(database_path).list_all()
@@ -772,15 +777,18 @@ def _health_report(settings: Settings) -> str:
             missing = sum(root.health == "missing" for root in roots)
             disabled = sum(root.health == "disabled" for root in roots)
             root_summary = f"{available} available, {missing} missing, {disabled} disabled"
+            roots_ready = missing == 0
     # Keep this aligned with the variable read by the ``telegram`` command.
-    telegram = "configured" if os.environ.get("TELEGRAM_BOT_TOKEN") else "not configured"
-    return (
+    telegram = "configured" if os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() else "not configured"
+    report = (
         "Steward health:\n"
         f"Operational database: {database_health}\n"
         f"Conversation checkpoints: {checkpoint_health}\n"
         f"Authorized roots: {root_summary}\n"
         f"Telegram token: {telegram}"
     )
+    ready = database_health == checkpoint_health == "available" and roots_ready and telegram == "configured"
+    return report, ready
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -792,7 +800,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     configure_logging(settings)
 
     if arguments.command == "health":
-        print(_health_report(settings))
+        report, ready = _health_report(settings)
+        print(report)
+        if arguments.strict and not ready:
+            raise SystemExit(1)
         return
 
     if arguments.command == "backup":
@@ -1507,10 +1518,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                 semantic_index_rebuilder=rebuild_semantic_index,
             ),
             drive_import_application=StewardDriveImportApplication(
-                _drive_inbox_importer(settings, capture_service)
+                _drive_inbox_importer(settings, capture_service), contexts=review_contexts
             ),
             gmail_import_application=StewardGmailImportApplication(
-                _gmail_inbox_importer(settings, capture_service)
+                _gmail_inbox_importer(settings, capture_service), contexts=review_contexts
             ),
             read_application=StewardReadApplication(
                 sources,

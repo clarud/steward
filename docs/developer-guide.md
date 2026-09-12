@@ -1421,6 +1421,50 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+### Local readiness versus remote health
+
+`steward health --strict` uses the same safe report as `health`, but exits 1 if
+the operational/checkpoint table prerequisites are absent, an enabled root is
+missing, root metadata cannot be read, or the Telegram token is blank. No roots
+and deliberately disabled roots are allowed. SQLite availability now reads the
+schema instead of using `SELECT 1`, which did not necessarily inspect the file.
+Connections are read-only and explicitly closed; missing databases are not created.
+This does not run `quick_check`, validate all migrations, probe Telegram/OAuth/model
+servers, or prove write access. Logging setup remains part of CLI startup. Keep
+live acceptance separate from this local prerequisite check.
+
+### External search pagination
+
+Successful Drive/Gmail imports return a source-specific card with Read content,
+Source details, and Link workspace. These actions use the retained local source
+ID, not the external ID. Duplicate results point to the existing source and do
+not claim it is still in Inbox (it may already have been organized). Rendering
+the confirmation triggers no model call or organization change; each follow-up
+uses the existing read or reviewed workspace-link workflow.
+
+Imports also select the retained source in the shared durable chat context,
+including duplicate imports. Existing source-reference phrases therefore target
+the imported source after restart. Failed imports leave the prior selection alone.
+If the import succeeds but context persistence fails, the confirmation still
+reports the retained result and offers exact-ID buttons, with a warning not to use
+pronouns; it does not claim the import failed or suggest repeating the download.
+
+Drive and Gmail expose `search_page(query, limit=5, page_token=None)` returning
+`SearchPage(items, next_page_token)`. Their existing `search()` methods retain
+tuple results for CLI callers. Telegram fetches only one page per explicit action;
+it does not traverse the account automatically or discard results after item five.
+Gmail reads metadata for the selected page, not message bodies. Each import button
+contains the exact external ID, with a short numbered label matching the card.
+
+Continuation commands encode the query and opaque provider cursor as JSON. The
+Telegram adapter stores that command locally behind an expiring, chat-scoped
+callback token, so reconstruction after restart needs no in-memory search cache.
+Empty pages can still offer continuation. Provider errors offer both retry and
+restart without exposing exception diagnostics. Expired callbacks require a fresh
+search, and rejected provider cursors may also require restarting. Results are
+live remote pages, not a consistent frozen snapshot; files/mail may change between
+clicks. No new dependency, OAuth scope, or database migration is required.
+
 Re-extraction approval failures return a fixed recovery card rather than parser
 exception text. The adapter boundary catches library-specific extraction/index
 failures and retains the pending proposal. Retry refresh explicitly reuses the

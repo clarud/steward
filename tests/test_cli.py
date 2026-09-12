@@ -127,7 +127,10 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     assert not (data_dir / "steward.db").exists()
 
     database = data_dir / "steward.db"; checkpoints = data_dir / "checkpoints.db"
-    initialize_database(database); initialize_database(checkpoints)
+    initialize_database(database)
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    with SqliteSaver.from_conn_string(str(checkpoints)) as saver:
+        saver.setup()
     available = tmp_path / "available"; available.mkdir()
     missing = tmp_path / "missing"; missing.mkdir()
     disabled = tmp_path / "disabled"; disabled.mkdir()
@@ -145,6 +148,52 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
         "Authorized roots: 1 available, 1 missing, 1 disabled\n"
         "Telegram token: configured\n"
     )
+
+
+def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, capsys):
+    import pytest
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    from steward.cli import _database_health
+
+    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    with pytest.raises(SystemExit) as failure:
+        main(["health", "--strict"])
+    assert failure.value.code == 1
+    assert not (tmp_path / "steward.db").exists()
+    initialize_database(tmp_path / "steward.db")
+    with SqliteSaver.from_conn_string(str(tmp_path / "checkpoints.db")) as saver:
+        saver.setup()
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "synthetic-token")
+    # No registered roots is valid for an Inbox-only installation.
+    main(["health", "--strict"])
+    assert "synthetic-token" not in capsys.readouterr().out
+    root = tmp_path / "notes"
+    root.mkdir()
+    roots = SourceRootRepository(tmp_path / "steward.db")
+    roots.add("Notes", root)
+    root.rmdir()
+    with pytest.raises(SystemExit):
+        main(["health", "--strict"])
+    roots.set_enabled("Notes", False)
+    main(["health", "--strict"])
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "   ")
+    with pytest.raises(SystemExit):
+        main(["health", "--strict"])
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "synthetic-token")
+    checkpoint = tmp_path / "checkpoints.db"
+    original = checkpoint.read_bytes()
+    checkpoint.write_bytes(b"not a SQLite database")
+    assert _database_health(checkpoint) == "unavailable"
+    with pytest.raises(SystemExit):
+        main(["health", "--strict"])
+    assert checkpoint.read_bytes() == b"not a SQLite database"
+    checkpoint.write_bytes((tmp_path / "steward.db").read_bytes())
+    with pytest.raises(SystemExit):
+        main(["health", "--strict"])
+    checkpoint.write_bytes(original)
+    main(["health", "--strict"])
 
 
 def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_originals(
