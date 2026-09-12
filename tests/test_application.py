@@ -757,6 +757,7 @@ def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -
     detail = first.handle(make_event(text=f"/workspace {workspace.id}"))
     assert isinstance(detail, PresentedReply)
     assert detail.title == "CS3210"
+    assert detail.reference == ("workspace", workspace.id)
 
     restarted = StewardEventApplication(
         StewardQuestionApplication(QuestionMustNotRun()),
@@ -877,6 +878,7 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert "flight: SQ638 (source fragment 1)" in detail.text
     assert "arrival: Tokyo (source fragment 1)" in detail.text
     assert detail.actions[0].command == f"/source {source.id}"
+    assert detail.reference == ("record:travel", record.id)
 
     records.correct_travel_field(record.id or 0, "arrival", "Osaka")
     corrected = application.handle_command(make_event(text=f"/record travel {record.id}"))
@@ -1365,6 +1367,7 @@ def test_calendar_reads_are_available_in_telegram_without_a_model() -> None:
     assert isinstance(detail, PresentedReply)
     assert detail.title == "Flight"
     assert "Calendar ID: event-1" in detail.text
+    assert detail.reference == ("calendar", "event-1")
 
 
 def test_telegram_calendar_failure_does_not_disclose_local_diagnostics() -> None:
@@ -1430,6 +1433,7 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
     reopened = restarted.handle(make_event(text="show that event"))
 
     assert isinstance(opened, PresentedReply)
+    assert opened.reference == ("calendar", "event-opaque-1")
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "Flight"
     assert "Calendar ID: event-opaque-1" in reopened.text
@@ -1522,6 +1526,7 @@ def test_telegram_task_card_and_reference_survive_restart(tmp_path: Path) -> Non
     detail = first.handle(make_event(text=f"/task {task.id}"))
     assert isinstance(detail, PresentedReply)
     assert detail.actions[0].command == f"/complete_task {task.id}"
+    assert detail.reference == ("task", task.id)
 
     restarted = StewardEventApplication(
         StewardQuestionApplication(QuestionMustNotRun()),

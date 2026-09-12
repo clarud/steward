@@ -957,6 +957,7 @@ class StewardReadApplication:
             "\n".join(lines),
             tuple(actions),
             title=workspace.name, icon="📁",
+            reference=("workspace", workspace_id),
         )
 
     def activity(self, query: str) -> str:
@@ -1504,6 +1505,7 @@ class StewardRecordApplication:
             (ReplyAction("Open source", f"/source {record.source_id}"), ReplyAction("Records", "/records")),
             title=f"{record_type.title()} record {identifier}",
             icon="✈️" if record_type == "travel" else "🧾" if record_type == "receipt" else "🛡️",
+            reference=(f"record:{record_type}", int(identifier)),
         )
 
     def _list_records(self) -> str | PresentedReply:
@@ -1665,7 +1667,8 @@ class StewardTaskApplication:
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
         return PresentedReply(
-            "\n".join(lines), tuple(actions), title=f"Task {task_id}", icon="✅"
+            "\n".join(lines), tuple(actions), title=f"Task {task_id}", icon="✅",
+            reference=("task", task_id),
         )
 
     def propose(self, text: str, *, chat_id: str | None = None) -> str | PresentedReply:
@@ -2571,6 +2574,7 @@ class StewardCalendarApplication:
             actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search")),
             title=str(getattr(event_result, "summary")),
             icon="📅",
+            reference=("calendar", identifier),
         )
 
 class StewardOperationsApplication:

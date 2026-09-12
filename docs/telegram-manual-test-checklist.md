@@ -68,6 +68,19 @@ until a separate filesystem backup exists.
   pruned after the latest 500 mappings, or not durably recorded may require their
   explicit Open/Read button. Do not count automated tests as this live acceptance.
 
+- Repeat the older-card test with two workspace details, two task details, and two
+  details of the same record type. Reply to the first card after opening the second
+  and after restarting Steward. Use `show that workspace`, `show that task`, and
+  the matching `show that flight`, `show that receipt`, or `show that warranty`
+  phrase. Steward must reopen the object attached to the replied-to message, not
+  the newest chat-wide selection. List cards must not select their first entry.
+
+- Repeat with two Calendar event detail cards, including an event whose ID is
+  numeric-looking if available. Reply `show that event` to the older card after
+  opening the newer card and after restart. Steward must preserve the ID as text
+  and fetch current Calendar state for the older event; it must not replay the old
+  rendered card as cached truth.
+
 - Try a harmless long note containing emoji and a long title. Each delivered
   part should render correctly, the complete title/text should remain readable,
   and action buttons should appear only on the final part.
@@ -112,9 +125,9 @@ until a separate filesystem backup exists.
   equivalent for a receipt or warranty only after opening a card of that type.
 - Search Calendar, open one event card, restart the bot, then send `show that
   event`. Verify Steward fetches and shows that same current Calendar event
-  again. If it was deleted or Calendar becomes unavailable, it must clear the
-  stale reference and direct you to search Calendar again rather than showing
-  old event details.
+  again. If it was deleted or Calendar becomes unavailable, it must preserve the
+  selected event ID for an explicit retry and offer Calendar/integration recovery
+  actions rather than showing old event details.
 - Send `/tasks`, open one task with its compact button, restart the bot, then
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.

@@ -31,15 +31,31 @@ def test_review_context_preserves_an_opaque_external_identifier(tmp_path: Path, 
     assert (restored.kind, restored.identifier) == ("calendar", external_id)
 
 
-@pytest.mark.parametrize("identifier", [7, "000123", "int:7", "text:7"])
-def test_message_reference_is_chat_scoped_restart_safe_and_type_preserving(tmp_path, identifier):
+@pytest.mark.parametrize(
+    ("kind", "identifier"),
+    [
+        ("source", 7),
+        ("workspace", 8),
+        ("task", 9),
+        ("record:travel", 10),
+        ("record:receipt", 11),
+        ("record:warranty", 12),
+        ("calendar", "000123"),
+        ("calendar", "int:7"),
+        ("calendar", "text:7"),
+    ],
+)
+def test_message_reference_is_chat_scoped_restart_safe_and_type_preserving(
+    tmp_path, kind, identifier
+):
     database = tmp_path / "steward.db"; initialize_database(database)
     references = MessageReferenceRepository(database)
-    references.set("telegram", "chat-1", "message-5", "source", identifier)
+    references.set("telegram", "chat-1", "message-5", kind, identifier)
 
     restored = MessageReferenceRepository(database).get("telegram", "chat-1", "message-5")
 
     assert restored is not None
+    assert restored.kind == kind
     assert restored.identifier == identifier
     assert type(restored.identifier) is type(identifier)
     assert references.get("telegram", "chat-2", "message-5") is None

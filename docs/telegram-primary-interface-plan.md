@@ -745,15 +745,17 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
-Telegram replies can now resolve an exact previously delivered source card rather
-than relying only on the newest chat-wide selection. Source cards carry an opaque
-source reference; after Telegram confirms delivery, migration 47 persists the
-outbound message-ID mapping without card/source text. A reply restores that source
-before deterministic routing, survives restart, and remains chat-scoped. Storage
-is bounded to 500 mappings per chat. Failures after Telegram delivery do not cause
-duplicate replies. Focused repository, migration, adapter, application, and CLI
-tests pass. Task/record/workspace/Calendar/review cards and live Telegram reply
-acceptance remain open; list cards intentionally never imply a selected item.
+Telegram replies can now resolve exact previously delivered source, workspace,
+task, typed-record, and Calendar detail cards instead of relying only on the newest
+chat-wide selection. Each single-object card carries a narrow pointer; after
+Telegram confirms delivery, migration 47 persists its outbound message-ID mapping
+without rendered text or object content. A reply restores that exact object before
+deterministic routing, survives restart, and remains chat-scoped. Calendar IDs stay
+opaque and are used to refetch current provider state. Storage is bounded to 500
+mappings per chat. Failures after Telegram delivery do not cause duplicate replies.
+Focused repository, migration, adapter, and application tests pass. Review-card
+mapping and live Telegram reply acceptance remain open; list cards intentionally
+never imply a selected item.
 
 Moved-root recovery is now an explicit local `relocate-root NAME PATH --confirm`
 operation. It requires the old root to be missing and the replacement to contain
