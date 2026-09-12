@@ -53,6 +53,7 @@ TASK_REMINDERS_SCHEMA_VERSION = 43
 TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
 TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
 KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
+TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION = 47
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -470,6 +471,18 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
         "DROP TABLE knowledge_enrichment_proposals",
         "ALTER TABLE knowledge_enrichment_versions RENAME TO knowledge_enrichment_proposals",
     )),
+    (
+        TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
+        """CREATE TABLE telegram_message_references (
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            reference_kind TEXT NOT NULL,
+            reference_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (platform, chat_id, message_id)
+        )""",
+    ),
 )
 
 

@@ -15,7 +15,7 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
 from steward.telegram.presentation import TelegramPresenter
-from steward.reviews import ReviewContextRepository
+from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.tasks import TaskReminderService
 from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
@@ -92,12 +92,14 @@ class TelegramAdapter:
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
         callback_repository: TelegramCallbackRepository | None = None,
         review_contexts: ReviewContextRepository | None = None,
+        message_references: MessageReferenceRepository | None = None,
     ) -> None:
         self._event_handler = event_handler
         self._allowed_chat_ids = allowed_chat_ids
         self._deliveries = delivery_repository
         self._callbacks = callback_repository
         self._review_contexts = review_contexts
+        self._message_references = message_references
         self._presenter = TelegramPresenter()
 
     async def handle_update(
@@ -116,6 +118,7 @@ class TelegramAdapter:
         if not self._claim(event):
             return
         try:
+            self._restore_reply_reference(event)
             response = await asyncio.to_thread(self._event_handler.handle, event)
             await self._reply(message, event, response)
         except BaseException:
@@ -234,13 +237,16 @@ class TelegramAdapter:
         if isinstance(response, PresentedReply):
             self._remember_review(event, response)
             if response.document is not None:
-                await message.reply_document(document=response.document.content, filename=response.document.filename)  # type: ignore[attr-defined]
+                sent_document = await message.reply_document(document=response.document.content, filename=response.document.filename)  # type: ignore[attr-defined]
+                self._remember_message_reference(event, response, sent_document)
         rendered_messages = self._presenter.render_many(
             response if isinstance(response, PresentedReply) else str(response)
         )
         for rendered in rendered_messages:
             if not rendered.rows or self._callbacks is None:
-                await message.reply_text(rendered.text, parse_mode="HTML")  # type: ignore[attr-defined]
+                sent = await message.reply_text(rendered.text, parse_mode="HTML")  # type: ignore[attr-defined]
+                if isinstance(response, PresentedReply):
+                    self._remember_message_reference(event, response, sent)
                 continue
             buttons = [
                 [
@@ -252,9 +258,35 @@ class TelegramAdapter:
                 ]
                 for row in rendered.rows
             ]
-            await message.reply_text(  # type: ignore[attr-defined]
+            sent = await message.reply_text(  # type: ignore[attr-defined]
                 rendered.text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
             )
+            if isinstance(response, PresentedReply):
+                self._remember_message_reference(event, response, sent)
+
+    def _restore_reply_reference(self, event: IncomingEvent) -> None:
+        if self._message_references is None or self._review_contexts is None or event.reply_to_id is None:
+            return
+        try:
+            reference = self._message_references.get(event.platform, event.chat_id, event.reply_to_id)
+            if reference is not None:
+                self._review_contexts.set(event.platform, event.chat_id, reference.kind, reference.identifier)
+        except Exception:
+            _LOGGER.warning("Could not restore Steward's referenced Telegram card.")
+
+    def _remember_message_reference(self, event: IncomingEvent, response: PresentedReply, sent: object) -> None:
+        if self._message_references is None or response.reference is None:
+            return
+        message_id = getattr(sent, "message_id", None)
+        if message_id is None:
+            return
+        try:
+            kind, identifier = response.reference
+            self._message_references.set(event.platform, event.chat_id, str(message_id), kind, identifier)
+        except Exception:
+            # Telegram already accepted the response. Retrying this update would
+            # duplicate the visible message without repairing the reference.
+            _LOGGER.warning("Could not persist Steward's outbound message reference.")
 
     def _remember_review(self, event: IncomingEvent, response: PresentedReply) -> None:
         """Associate a displayed approval card with this chat, never with its text."""
@@ -314,6 +346,7 @@ def run_telegram_polling(
     delivery_repository: TelegramUpdateDeliveryRepository | None = None,
     callback_repository: TelegramCallbackRepository | None = None,
     review_contexts: ReviewContextRepository | None = None,
+    message_references: MessageReferenceRepository | None = None,
     task_reminders: TaskReminderService | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
@@ -358,6 +391,7 @@ def run_telegram_polling(
         delivery_repository=delivery_repository,
         callback_repository=callback_repository,
         review_contexts=review_contexts,
+        message_references=message_references,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
@@ -460,6 +494,7 @@ def run_telegram_polling(
         delivery_repository=delivery_repository,
         callback_repository=callback_repository,
         review_contexts=review_contexts,
+        message_references=message_references,
     )
     application.add_handler(CommandHandler("save", capture_adapter.handle_update))
     # Keep this after every known command (especially /save). Unknown slash

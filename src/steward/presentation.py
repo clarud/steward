@@ -52,3 +52,4 @@ class PresentedReply:
     title: str | None = None
     icon: str | None = None
     document: OriginalDocument | None = None
+    reference: tuple[str, int | str] | None = None

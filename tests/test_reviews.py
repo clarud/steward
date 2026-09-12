@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-from steward.reviews import ReviewContextRepository
+from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.storage import initialize_database
 
 
@@ -29,3 +29,31 @@ def test_review_context_preserves_an_opaque_external_identifier(tmp_path: Path, 
 
     assert restored is not None
     assert (restored.kind, restored.identifier) == ("calendar", external_id)
+
+
+@pytest.mark.parametrize("identifier", [7, "000123", "int:7", "text:7"])
+def test_message_reference_is_chat_scoped_restart_safe_and_type_preserving(tmp_path, identifier):
+    database = tmp_path / "steward.db"; initialize_database(database)
+    references = MessageReferenceRepository(database)
+    references.set("telegram", "chat-1", "message-5", "source", identifier)
+
+    restored = MessageReferenceRepository(database).get("telegram", "chat-1", "message-5")
+
+    assert restored is not None
+    assert restored.identifier == identifier
+    assert type(restored.identifier) is type(identifier)
+    assert references.get("telegram", "chat-2", "message-5") is None
+    assert references.get("telegram", "chat-1", "other-message") is None
+
+
+def test_message_reference_retention_is_bounded_per_chat(tmp_path):
+    database = tmp_path / "steward.db"; initialize_database(database)
+    references = MessageReferenceRepository(database, retained_per_chat=2)
+    for message_id in ("1", "2", "3"):
+        references.set("telegram", "chat", message_id, "source", int(message_id))
+    references.set("telegram", "other-chat", "1", "source", 99)
+
+    assert references.get("telegram", "chat", "1") is None
+    assert references.get("telegram", "chat", "2").identifier == 2
+    assert references.get("telegram", "chat", "3").identifier == 3
+    assert references.get("telegram", "other-chat", "1").identifier == 99

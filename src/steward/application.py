@@ -782,6 +782,7 @@ class StewardReadApplication:
                 ReplyAction("Link workspace", f"/source_workspaces {source_id}")) if source.status.value == "active" else ()),
             title=source.path.name,
             icon="📄",
+            reference=("source", source_id),
         )
 
     def source_memberships(self, source_id: int, page: int = 1) -> str | PresentedReply:
@@ -806,7 +807,8 @@ class StewardReadApplication:
         if page < pages:
             actions.append(ReplyAction("Next", f"/source_memberships {source_id} {page + 1}"))
         actions.extend((ReplyAction("Link workspace", f"/source_workspaces {source_id}"), ReplyAction("Back", f"/source {source_id}")))
-        return PresentedReply("\n\n".join(lines), tuple(actions), title="Source workspaces", icon="📁")
+        return PresentedReply("\n\n".join(lines), tuple(actions), title="Source workspaces", icon="📁",
+                              reference=("source", source_id))
 
     def summarize_source(self, source_id: int, *, question: str | None = None) -> str | PresentedReply:
         """Summarize only the selected registered source after its privacy check."""
@@ -832,7 +834,7 @@ class StewardReadApplication:
                 input_text=(f"Question: {question}\n\nEvidence:\n" if question else "") + evidence,
             )
         except DocumentSynthesisError as error:
-            return PresentedReply(str(error), (ReplyAction("Read content", f"/source_content {source_id}"),), title="Summary incomplete", icon="⚠️")
+            return PresentedReply(str(error), (ReplyAction("Read content", f"/source_content {source_id}"),), title="Summary incomplete", icon="⚠️", reference=("source", source_id))
         except ModelGatewayError:
             return "The summary model is temporarily unavailable. Please retry or use Read content."
         if not still_permitted():
@@ -848,7 +850,7 @@ class StewardReadApplication:
                 "Please retry or read the extracted content directly.",
                 (ReplyAction("Read content", f"/source_content {source_id}"),
                  ReplyAction("Retry summary", f"/summarize_source {source_id}")),
-                title="Summary needs verification", icon="📄",
+                title="Summary needs verification", icon="📄", reference=("source", source_id),
             )
         return PresentedReply(
             (f"Question: {question}\nGenerated answer from {len(fragments)} extracted sections:\n\n" if question else f"Generated summary of {len(fragments)} extracted sections:\n\n")
@@ -856,6 +858,7 @@ class StewardReadApplication:
             + "Evidence locations:\n" + "\n".join(f"[F{part.id}] {part.location}" for part in fragments),
             (ReplyAction("Read content", f"/source_content {source_id}"),),
             title=f"{'Answer' if question else 'Summary'}: {source.path.name}", icon="📄",
+            reference=("source", source_id),
         )
 
     def source_content(self, source_id: int, section: int = 1) -> str | PresentedReply:
@@ -884,7 +887,7 @@ class StewardReadApplication:
         return PresentedReply(
             f"Extracted section {section} of {len(fragments)} · {fragment.location}\n"
             f"{fragment.heading or ''}\n\n{fragment.text}",
-            tuple(actions), title=source.path.name, icon="📖",
+            tuple(actions), title=source.path.name, icon="📖", reference=("source", source_id),
         )
 
     def _extraction_recovery(self, source: Source) -> PresentedReply:
@@ -903,6 +906,7 @@ class StewardReadApplication:
             "No extracted text is stored for this source. This does not establish that the document is empty.\n\n"
             + guidance + "\n\nReview re-extraction before running a parser again. Opening this card does not modify the original or invoke a model.",
             tuple(actions), title=source.path.name, icon="📄",
+            reference=("source", source.id) if source.id is not None else None,
         )
 
     def workspaces(self, page: int = 1) -> str | PresentedReply:
@@ -2986,7 +2990,8 @@ def _external_import_success(
         ReplyAction("Source details", f"/source {source.id}"),
         ReplyAction("Link workspace", f"/source_workspaces {source.id}"),
     ) if source.id is not None else ()
-    return PresentedReply(message, actions, title=source.path.name, icon="✅")
+    return PresentedReply(message, actions, title=source.path.name, icon="✅",
+                          reference=("source", source.id) if source.id is not None else None)
 
 
 class DriveInboxImporter(Protocol):

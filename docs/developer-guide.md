@@ -1421,6 +1421,35 @@ guard; run only one polling instance per bot, including on other machines.
 
 ## Known limitations
 
+### Exact replies to delivered source cards
+
+`PresentedReply.reference` is an optional transport-neutral `(kind, identifier)`
+pointer. Source detail, extracted-content, summary/recovery, workspace-membership,
+and completed Drive/Gmail import cards set it to `("source", source_id)`. List
+cards deliberately do not: a source list has no single selected source.
+
+After each successful Telegram send, `TelegramAdapter` receives the outbound
+Telegram message ID and stores the pointer through `MessageReferenceRepository`.
+Schema migration 47 adds `telegram_message_references`, keyed by platform, chat,
+and message ID. It contains no rendered text or source content. Integer and opaque
+string IDs use explicit prefixes to survive SQLite round trips. Every write keeps
+only the newest 500 mappings for that chat to bound growth.
+
+When an authorized, newly claimed update replies to a mapped message, the adapter
+restores that exact pointer into the existing chat-scoped `ReviewContextRepository`
+before invoking the application. The normal deterministic source-reference route
+then handles phrases such as `give me the content`, even if another source card was
+opened later or the process restarted. Cross-chat lookups fail. Duplicate updates
+are discarded before reference restoration.
+
+The mapping is written only after Telegram acknowledges the outgoing message. If
+that local write fails, Steward logs a bounded warning and treats the already-sent
+reply as delivered; retrying would duplicate the visible response. A mapping can
+therefore be absent after a database failure, pruning, or for cards sent before
+migration 47. In those cases the user should use the card's explicit button.
+This release tags source cards only; exact reply mapping for task, record,
+workspace, Calendar, and review cards remains future work.
+
 ### Local readiness versus remote health
 
 ### Missing-root relocation

@@ -627,6 +627,7 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
 
     assert isinstance(opened, PresentedReply)
     assert opened.title == "parallel-computing.md"
+    assert opened.reference == ("source", source.id)
     context = contexts.get("telegram", "100")
     assert context is not None and context.kind == "source"
 
@@ -641,6 +642,7 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert reopened.title == "parallel-computing.md"
     empty_content = restarted.handle(make_event(text="give me the content"))
     assert isinstance(empty_content, PresentedReply)
+    assert empty_content.reference == ("source", source.id)
     assert "does not establish that the document is empty" in empty_content.text
     assert empty_content.actions[0].command == f"/propose_reextract {source.id}"
     assert fragments.list_for_source(source.id) == ()
@@ -672,6 +674,7 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     )))
     content = restarted.handle(make_event(text="give me the content"))
     assert isinstance(content, PresentedReply)
+    assert content.reference == ("source", source.id)
     assert "Parallel loops" in content.text and "page 1" in content.text
     assert "Static scheduling" not in content.text
     next_action = next(action for action in content.actions if action.label == "Next")
@@ -701,6 +704,7 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     )
     reader.handle_command(make_event(text=f"/source {source.id}"))
     summary = reader.resolve_source_reference(make_event(text="summarize it"))
+    assert summary.reference == ("source", source.id)
     assert "Generated summary of 2 extracted sections" in summary.text
     assert "Parallel loops" in model.inputs[0] and "Static scheduling" in model.inputs[0]
     assert str(tmp_path) not in model.inputs[0]

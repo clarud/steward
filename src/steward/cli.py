@@ -40,7 +40,7 @@ from steward.application import (
     StewardIntegrationStatusApplication,
 )
 from steward.capture import InboxCaptureService
-from steward.reviews import ReviewContextRepository
+from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.answer import (
     AnswerService,
     ContextBuilder,
@@ -1643,6 +1643,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     delivery_repository=TelegramUpdateDeliveryRepository(database_path),
                     callback_repository=TelegramCallbackRepository(database_path),
                     review_contexts=review_contexts,
+                    message_references=MessageReferenceRepository(database_path),
                     task_reminders=task_reminders,
                 )
         except RuntimeAlreadyRunningError as error:

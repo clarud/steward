@@ -42,6 +42,7 @@ from steward.storage.database import (
     TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION,
     TASK_REMINDER_CLAIM_SCHEMA_VERSION,
     KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION,
+    TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -64,6 +65,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             "SELECT version, applied_at FROM schema_migrations ORDER BY version"
         ).fetchall()
         source_columns = connection.execute("PRAGMA table_info(sources)").fetchall()
+        message_reference_columns = connection.execute("PRAGMA table_info(telegram_message_references)").fetchall()
 
     assert [migration[0] for migration in migrations] == [
         INITIAL_SCHEMA_VERSION,
@@ -112,6 +114,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
                 TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION,
                 TASK_REMINDER_CLAIM_SCHEMA_VERSION,
                 KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION,
+                TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -124,6 +127,9 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         "first_seen_at",
         "last_seen_at",
         "status",
+    ]
+    assert [column[1] for column in message_reference_columns] == [
+        "platform", "chat_id", "message_id", "reference_kind", "reference_id", "created_at",
     ]
 
 
@@ -138,7 +144,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION
+    assert migration_count == TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:

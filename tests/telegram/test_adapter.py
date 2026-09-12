@@ -1,13 +1,14 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+import sqlite3
 
 import pytest
 import steward.telegram.adapter as telegram_adapter
 
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply, ReplyAction
-from steward.reviews import ReviewContextRepository
+from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.activity import ActivityService, ActivityType
 from steward.storage import initialize_database
 from steward.tasks import TaskReminderService, TaskService
@@ -143,6 +144,71 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
     assert handler.events[0].id == "telegram:42"
     assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_reply_to_older_source_card_restores_exact_durable_reference(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"source one", "source two"}:
+                source_id = 1 if event.text.endswith("one") else 2
+                contexts.set("telegram", "100", "source", source_id)
+                return PresentedReply(f"Source {source_id}", reference=("source", source_id))
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 100
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="source one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="source two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+    assert contexts.get("telegram", "100").identifier == 2
+
+    replied_card = type("Replied", (), {"message_id": 101, "text": "Source 1", "caption": None})()
+    reply = Message(text="give me the content", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=1"]
+    assert contexts.get("telegram", "100").identifier == 1
+    assert references.get("telegram", "other-chat", "101") is None
+
+
+def test_reference_write_failure_after_send_does_not_repeat_visible_reply(tmp_path) -> None:
+    class BrokenReferences:
+        def set(self, *args):
+            raise sqlite3.OperationalError("C:/private/steward.db locked")
+
+    class Message(FakeMessage):
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            return type("Sent", (), {"message_id": 101})()
+
+    class Handler:
+        def handle(self, event):
+            return PresentedReply("Source card", reference=("source", 1))
+
+    message = Message()
+    asyncio.run(TelegramAdapter(Handler(), message_references=BrokenReferences()).handle_update(FakeUpdate(message), None))
+
+    assert len(message.replies) == 1
 
 
 def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:

@@ -59,6 +59,15 @@ until a separate filesystem backup exists.
 
 ## Core reads and routing
 
+- Open source A and keep its Telegram card. Open source B so it becomes the most
+  recent selection. Reply directly to source A's detail/content/summary card with
+  `give me the content`; Steward must read A, not B. Restart the bot after opening
+  B and repeat against A's existing card. Try the same reply from another test
+  chat if authorized; it must not reuse chat A's message mapping. A source-list
+  card itself must not select its first result. Cards created before this feature,
+  pruned after the latest 500 mappings, or not durably recorded may require their
+  explicit Open/Read button. Do not count automated tests as this live acceptance.
+
 - Try a harmless long note containing emoji and a long title. Each delivered
   part should render correctly, the complete title/text should remain readable,
   and action buttons should appear only on the final part.
