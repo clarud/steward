@@ -92,6 +92,7 @@ from steward.records import RecordService
 from steward.tasks import TaskReminderService, TaskService
 from steward.calendar import (
     CalendarEventProposalService,
+    CalendarLinkRepository,
     CalendarService,
     CalendarWriteService,
     GOOGLE_CALENDAR_EVENTS_SCOPE,
@@ -1593,6 +1594,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             task_application=StewardTaskApplication(
                 tasks, ActionProposalRepository(database_path), activity, task_reminders,
                 contexts=review_contexts,
+                calendar_links=CalendarLinkRepository(database_path),
             ),
             research_application=StewardResearchApplication(
                 lambda: _research_provider_from_settings(settings, "auto"),

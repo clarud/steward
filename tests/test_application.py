@@ -29,7 +29,7 @@ from steward.application import (
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
-from steward.calendar import CalendarEventProposalService, CalendarService
+from steward.calendar import CalendarEventProposalService, CalendarLinkRepository, CalendarService
 from steward.records import ReceiptRecord, ReceiptRecordProposal, RecordService, TravelRecord
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
@@ -1528,6 +1528,7 @@ def test_telegram_task_proposal_requires_review_before_persisting(tmp_path: Path
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task saved"
+    assert accepted.reference == ("task", 1)
     assert "compare OpenMP scheduling" in accepted.text
     assert tasks.list_open()[0].due_hint == "before Tuesday"
     assert application.handle(make_event(text="/complete_task 1")) == "Task 1 completed: compare OpenMP scheduling."
@@ -1568,6 +1569,35 @@ def test_telegram_task_card_and_reference_survive_restart(tmp_path: Path) -> Non
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == f"Task {task.id}"
     assert "compare OpenMP scheduling" in reopened.text
+
+
+def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database)
+    task = tasks.create(
+        "submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
+    )
+    links = CalendarLinkRepository(database)
+    application = StewardTaskApplication(
+        tasks, ActionProposalRepository(database), ActivityService(database),
+        calendar_links=links,
+    )
+
+    unlinked = application.handle_command(make_event(text=f"/task {task.id}"))
+
+    assert isinstance(unlinked, PresentedReply)
+    assert "Calendar: no linked event" in unlinked.text
+    assert unlinked.actions[0].command == f"/calendar_task {task.id}"
+    assert tasks.get(task.id or 0).status == "open"
+
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "event-opaque-7") is True
+    linked = application.handle_command(make_event(text=f"/task {task.id}"))
+
+    assert isinstance(linked, PresentedReply)
+    assert "Calendar: linked deadline marker" in linked.text
+    assert linked.actions[0].command == "/calendar_get event-opaque-7"
+    assert all(action.command != f"/calendar_task {task.id}" for action in linked.actions)
+    assert tasks.get(task.id or 0).status == "open"
 
 
 def test_deterministic_natural_task_phrase_creates_the_same_reviewable_proposal(tmp_path: Path) -> None:

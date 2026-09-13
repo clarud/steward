@@ -1142,6 +1142,16 @@ also closes the crash window after Google accepts an event but before the link
 is saved by reconciling the remote event with its deterministic private
 idempotency key on retry.
 
+Tasks remain canonical task records rather than Calendar events.
+`CalendarLinkRepository` exposes only the local relationship between a persisted
+task/travel record and an opaque external event ID; reading that link does not call
+Google. A reopened task with a precise deadline and no link offers **Add to
+calendar**, which still creates only a review. Once an approved write records the
+link, the task card says `Calendar: linked deadline marker` and offers **View
+calendar**. That button performs the normal fresh Calendar lookup. Tasks without a
+precise deadline and completed unlinked tasks do not offer automatic scheduling.
+The task remains independently completable whether or not its marker exists.
+
 ## Ephemeral external research
 
 Phase 25 adds `ResearchService` and a provider boundary. `GeminiGoogleSearchProvider`

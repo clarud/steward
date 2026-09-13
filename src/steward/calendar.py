@@ -159,6 +159,50 @@ class CalendarService:
         )
 
 
+class CalendarLinkRepository:
+    """Persist narrow local links to externally authoritative Calendar events."""
+
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+
+    def travel_event_id(self, record_id: int) -> str | None:
+        return self._event_id("calendar_event_links", "travel_record_id", record_id)
+
+    def task_event_id(self, task_id: int) -> str | None:
+        return self._event_id("calendar_task_event_links", "task_id", task_id)
+
+    def link_travel_event(self, key: str, record_id: int, event_id: str) -> bool:
+        return self._link("calendar_event_links", "travel_record_id", key, record_id, event_id)
+
+    def link_task_event(self, key: str, task_id: int, event_id: str) -> bool:
+        return self._link("calendar_task_event_links", "task_id", key, task_id, event_id)
+
+    def _event_id(self, table: str, owner_column: str, owner_id: int) -> str | None:
+        if owner_id <= 0:
+            raise ValueError("Calendar link owner ID must be positive.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                f"SELECT external_event_id FROM {table} WHERE {owner_column} = ?",
+                (owner_id,),
+            ).fetchone()
+        return str(row[0]) if row else None
+
+    def _link(
+        self, table: str, owner_column: str, key: str, owner_id: int, event_id: str
+    ) -> bool:
+        if owner_id <= 0 or not key.strip() or not event_id.strip():
+            raise ValueError("Calendar links require a key, positive owner ID, and event ID.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            cursor = connection.execute(
+                f"INSERT OR IGNORE INTO {table} "
+                f"(idempotency_key, {owner_column}, external_event_id, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (key, owner_id, event_id, datetime.now(UTC).isoformat()),
+            )
+        return bool(cursor.rowcount)
+
+
 def authorize_google_calendar(
     client_secrets_path: Path,
     token_path: Path,
@@ -195,6 +239,7 @@ class CalendarWriteService:
         self._calendar = calendar
         self._database_path = database_path
         self._activity = activity
+        self._links = CalendarLinkRepository(database_path)
 
     def create_travel_event(self, record: TravelRecord) -> CalendarEvent:
         if record.id is None:
@@ -253,39 +298,20 @@ class CalendarWriteService:
         return event
 
     def _link(self, key: str, record_id: int, event_id: str) -> None:
-        with sqlite3.connect(self._database_path) as connection:
-            connection.execute("PRAGMA foreign_keys = ON")
-            cursor = connection.execute(
-                "INSERT OR IGNORE INTO calendar_event_links (idempotency_key, travel_record_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
-                (key, record_id, event_id, datetime.now().astimezone().isoformat()),
-            )
-        if cursor.rowcount:
+        if self._links.link_travel_event(key, record_id, event_id):
             self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event_id, details=key)
 
     def _existing(self, key: str) -> str | None:
-        with sqlite3.connect(self._database_path) as connection:
-            row = connection.execute(
-                "SELECT external_event_id FROM calendar_event_links WHERE idempotency_key = ?", (key,)
-            ).fetchone()
-        return str(row[0]) if row else None
+        record_id = int(key.removeprefix("travel-record:"))
+        return self._links.travel_event_id(record_id)
 
     def _link_task_event(self, key: str, task_id: int, event_id: str) -> None:
-        with sqlite3.connect(self._database_path) as connection:
-            connection.execute("PRAGMA foreign_keys = ON")
-            cursor = connection.execute(
-                "INSERT OR IGNORE INTO calendar_task_event_links "
-                "(idempotency_key, task_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
-                (key, task_id, event_id, datetime.now(UTC).isoformat()),
-            )
-        if cursor.rowcount:
+        if self._links.link_task_event(key, task_id, event_id):
             self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event_id, details=key)
 
     def _existing_task_event(self, key: str) -> str | None:
-        with sqlite3.connect(self._database_path) as connection:
-            row = connection.execute(
-                "SELECT external_event_id FROM calendar_task_event_links WHERE idempotency_key = ?", (key,)
-            ).fetchone()
-        return str(row[0]) if row else None
+        task_id = int(key.removeprefix("task:"))
+        return self._links.task_event_id(task_id)
 
 
 class CalendarEventProposalService:

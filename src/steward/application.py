@@ -30,7 +30,7 @@ from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
-from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
+from steward.calendar import CalendarEventProposalService, CalendarLinkRepository, CalendarService, CalendarWriteService
 from steward.drive import GOOGLE_DRIVE_READONLY_SCOPE
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.gmail import GOOGLE_GMAIL_READONLY_SCOPE
@@ -1553,12 +1553,14 @@ class StewardTaskApplication:
         activity: ActivityService,
         reminders: TaskReminderService | None = None,
         contexts: ReviewContextRepository | None = None,
+        calendar_links: CalendarLinkRepository | None = None,
     ) -> None:
         self._tasks = tasks
         self._proposals = proposals
         self._activity = activity
         self._reminders = reminders
         self._contexts = contexts
+        self._calendar_links = calendar_links
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -1666,6 +1668,16 @@ class StewardTaskApplication:
         actions = [ReplyAction("Tasks", "/tasks")]
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
+        calendar_event_id = (
+            self._calendar_links.task_event_id(task_id)
+            if self._calendar_links is not None else None
+        )
+        if calendar_event_id is not None:
+            lines.append("Calendar: linked deadline marker")
+            actions.insert(0, ReplyAction("View calendar", f"/calendar_get {calendar_event_id}"))
+        elif task.status == "open" and task.due_at is not None and self._calendar_links is not None:
+            lines.append("Calendar: no linked event")
+            actions.insert(0, ReplyAction("Add to calendar", f"/calendar_task {task_id}"))
         return PresentedReply(
             "\n".join(lines), tuple(actions), title=f"Task {task_id}", icon="✅",
             reference=("task", task_id),
@@ -3774,7 +3786,8 @@ class StewardActionProposalApplication:
             f"\nDue cue: {task.due_hint}" if task.due_hint else ""
         )
         return PresentedReply(
-            f"{task.title}{due}", tuple(actions), title="Task saved", icon="✅"
+            f"{task.title}{due}", tuple(actions), title="Task saved", icon="✅",
+            reference=("task", task.id) if task.id is not None else None,
         )
 
     def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:

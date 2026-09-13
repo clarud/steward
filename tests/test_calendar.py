@@ -5,7 +5,7 @@ import json
 import pytest
 
 from steward.activity import ActivityService, ActivityType
-from steward.calendar import CalendarEventProposalService, CalendarService, CalendarWriteService
+from steward.calendar import CalendarEventProposalService, CalendarLinkRepository, CalendarService, CalendarWriteService
 from steward.action_proposals import ActionProposalRepository
 from steward.records import RecordService, TravelRecord
 from steward.sources import Source, SourceRepository, SourceType
@@ -20,6 +20,27 @@ class FakeRequest:
 
     def execute(self):
         return self._result
+
+
+def test_calendar_links_are_queryable_without_reading_the_external_calendar(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    task = TaskService(database).create("Submit lab")
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    record = RecordService(database).create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", None, None, None)
+    )
+    links = CalendarLinkRepository(database)
+
+    assert links.task_event_id(task.id or 0) is None
+    assert links.travel_event_id(record.id or 0) is None
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "task-event") is True
+    assert links.link_travel_event(f"travel-record:{record.id}", record.id or 0, "travel-event") is True
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "task-event") is False
+    assert links.task_event_id(task.id or 0) == "task-event"
+    assert links.travel_event_id(record.id or 0) == "travel-event"
 
 
 class FakeEvents:

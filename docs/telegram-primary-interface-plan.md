@@ -745,6 +745,16 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Task details now expose the existing local task-to-Calendar relationship without
+turning tasks into events. A precise, open, unlinked task offers a separate
+**Add to calendar** review action. After an approved marker is linked, reopening
+the task displays the relationship and offers **View calendar**, which fetches
+current provider state. Tasks without precise deadlines and completed unlinked
+tasks do not acquire Calendar actions. `CalendarLinkRepository` centralizes the
+local opaque-ID lookup without contacting Google. Automated repository,
+application, Calendar, and composition tests pass; live Calendar link navigation
+remains open.
+
 Organization edit-target UX now exposes a paginated existing-workspace picker
 and a durable new-workspace naming prompt. Compact numbered choices use local
 workspace IDs only inside callback commands; selecting or typing a target rejects
@@ -1012,7 +1022,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture | More extractor-specific review |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, and safe recursion-limit failure replies | Broader provider-failure evaluations |
-| 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, and reviewable idempotent Calendar deadline markers; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer task/Calendar integration |
+| 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with an explicit claim/evidence conflict card, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Broader conflict-resolution lifecycle UX |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |

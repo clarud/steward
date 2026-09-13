@@ -376,6 +376,13 @@ until a separate filesystem backup exists.
   Verify it is a review card and that accepting it creates only one short
   `Due: ...` deadline marker in Calendar; repeating approval must not duplicate
   the event.
+- Reopen that task. It must show a linked Calendar marker and **View calendar**
+  instead of offering another creation proposal. The button must fetch current
+  Calendar data. Complete the task and verify the task can still be viewed and
+  completed independently; this flow does not delete or edit its Calendar event.
+- Open an unlinked task with a precise deadline and verify **Add to calendar**
+  creates a review rather than an event. A task with only a vague due cue, a task
+  without a deadline, and a completed unlinked task must not be silently scheduled.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
   `/propose_receipt_record SOURCE_ID`, and `/propose_warranty_record SOURCE_ID`.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
