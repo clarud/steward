@@ -766,6 +766,8 @@ tasks do not acquire Calendar actions. `CalendarLinkRepository` centralizes the
 local opaque-ID lookup without contacting Google. An opened reviewed deadline
 marker can now answer `what task is this for?` with a local linked-task card and
 an **Open task** action; ordinary Calendar events explicitly remain unlinked.
+After an explicit task card, bounded natural completion phrasing resolves only to
+that durable task context and does not alter any linked Calendar marker.
 Automated repository, application, Calendar, and composition tests pass; live
 Calendar link navigation remains open.
 
@@ -1041,7 +1043,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery, bounded SQLite-busy scan recovery, and disposable moved-root/backup/restore/process-outage rehearsal | Register and accept start-at-login; live Telegram/provider outage recovery |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |
-| 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; contextual review confirmations; compact buttons; source, record, task, workspace, root, and Calendar browsing; durable explicit follow-ups for recently opened source/record/task/workspace cards; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across remaining review/Calendar workflows; validate the full daily-use checklist on Telegram |
+| 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; contextual review confirmations; compact buttons; source, record, task, workspace, root, and Calendar browsing; durable explicit follow-ups and exact-card task completion; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across remaining review/Calendar workflows; validate the full daily-use checklist on Telegram |
 
 ### Goal 10 — Telegram companion experience
 

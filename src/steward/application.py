@@ -1660,14 +1660,36 @@ class StewardTaskApplication:
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
-        if normalized not in {"show that task", "open that task", "show the last task", "open the last task"}:
+        if normalized not in {
+            "show that task", "open that task", "show the last task", "open the last task",
+            "mark that task complete", "mark this task complete", "complete that task",
+            "complete this task", "i completed that task", "i completed this task",
+        }:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != "task":
             return None
-        if self._tasks.get(context.identifier) is None:
+        task = self._tasks.get(context.identifier)
+        if task is None:
             self._contexts.clear(event.platform, event.chat_id)
             return "That previously opened task is no longer available. Open another task to continue."
+        if normalized in {
+            "mark that task complete", "mark this task complete", "complete that task",
+            "complete this task", "i completed that task", "i completed this task",
+        }:
+            if task.status == "completed":
+                return PresentedReply(
+                    f"Task {task.id} was already completed: {task.title}.",
+                    (ReplyAction("Completed tasks", "/completed_tasks"), ReplyAction("Open task", f"/task {task.id}")),
+                    title="Task already completed",
+                )
+            completed = self._tasks.complete(context.identifier)
+            self._activity.record(ActivityType.TASK_COMPLETED, object_id=str(completed.id), details=completed.title)
+            return PresentedReply(
+                f"Task {completed.id} completed: {completed.title}.\n\nNo Calendar event was changed.",
+                (ReplyAction("Completed tasks", "/completed_tasks"), ReplyAction("Open task", f"/task {completed.id}")),
+                title="Task completed",
+            )
         return self._task_detail(context.identifier)
 
     def _list_tasks(self, page: int = 1, *, completed: bool = False) -> str | PresentedReply:

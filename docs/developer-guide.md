@@ -1156,6 +1156,12 @@ deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as
 a task merely because it appears in Calendar.
 
+After explicitly opening a task, bounded phrases such as **mark that task
+complete** resolve only against that durable task-card context. They perform the
+same local completion as the visible button, append one activity event, and say
+explicitly that no linked Calendar marker changed. Steward does not infer a task
+to complete from a general conversational phrase.
+
 ## Ephemeral external research
 
 Phase 25 adds `ResearchService` and a provider boundary. `GeminiGoogleSearchProvider`

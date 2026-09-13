@@ -381,6 +381,10 @@ until a separate filesystem backup exists.
   want the reminder to be delivered as soon as the bot is running.
 - Accept it, inspect `/tasks`, then use `/complete_task ID` twice. The second
   response should say it is already completed, not create another audit event.
+- Open an explicit task card, then say `mark that task complete`. Verify it
+  completes that exact task, reports that no Calendar event changed, and the
+  repeated phrase reports it was already completed. Do not expect a phrase like
+  `done` in ordinary chat to select or complete a task.
 - For a task with an explicit `--due-at` value, use `/calendar_task ID`.
   Verify it is a review card and that accepting it creates only one short
   `Due: ...` deadline marker in Calendar; repeating approval must not duplicate

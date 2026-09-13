@@ -1700,6 +1700,35 @@ def test_telegram_task_card_and_reference_survive_restart(tmp_path: Path) -> Non
     assert "compare OpenMP scheduling" in reopened.text
 
 
+def test_opened_task_allows_a_narrow_natural_completion_followup_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database); activity = ActivityService(database)
+    task = tasks.create("Compare OpenMP scheduling")
+    contexts = ReviewContextRepository(database)
+    first = StewardTaskApplication(
+        tasks, ActionProposalRepository(database), activity, contexts=contexts
+    )
+
+    opened = first.handle_command(make_event(text=f"/task {task.id}"))
+    restarted = StewardTaskApplication(
+        TaskService(database), ActionProposalRepository(database), ActivityService(database),
+        contexts=ReviewContextRepository(database),
+    )
+    completed = restarted.resolve_task_reference(make_event(text="mark that task complete"))
+
+    assert isinstance(opened, PresentedReply)
+    assert isinstance(completed, PresentedReply)
+    assert completed.title == "Task completed"
+    assert "No Calendar event was changed" in completed.text
+    assert TaskService(database).get(task.id or 0).status == "completed"
+    assert [event.event_type for event in ActivityService(database).list_recent()].count("task_completed") == 1
+
+    repeated = restarted.resolve_task_reference(make_event(text="complete this task"))
+    assert isinstance(repeated, PresentedReply)
+    assert repeated.title == "Task already completed"
+    assert [event.event_type for event in ActivityService(database).list_recent()].count("task_completed") == 1
+
+
 def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database)
