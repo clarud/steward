@@ -60,7 +60,7 @@ from steward.roots import SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
-from steward.research import ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
+from steward.research import EphemeralResearchCardRepository, ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
 from steward.reviews import ReviewContextRepository
 
 
@@ -1916,9 +1916,11 @@ class StewardResearchApplication:
         self,
         provider_factory: Callable[[], ResearchProvider | None],
         retention: ResearchRetentionService,
+        ephemeral_cards: EphemeralResearchCardRepository | None = None,
     ) -> None:
         self._provider_factory = provider_factory
         self._retention = retention
+        self._ephemeral_cards = ephemeral_cards
         self._ephemeral_bundles: dict[str, tuple[str, datetime, ResearchBundle]] = {}
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
@@ -1977,11 +1979,16 @@ class StewardResearchApplication:
     def _cache_bundle(self, chat_id: str, bundle: ResearchBundle) -> str:
         self._purge_expired()
         token = secrets.token_urlsafe(12)
+        if self._ephemeral_cards is not None:
+            self._ephemeral_cards.add(token, chat_id, bundle, datetime.now(UTC) + self._CACHE_TTL)
+            return token
         self._ephemeral_bundles[token] = (chat_id, datetime.now(UTC) + self._CACHE_TTL, bundle)
         return token
 
     def _take_ephemeral_bundle(self, token: str, chat_id: str) -> ResearchBundle | None:
         self._purge_expired()
+        if self._ephemeral_cards is not None:
+            return self._ephemeral_cards.take(token, chat_id)
         item = self._ephemeral_bundles.pop(token, None)
         if item is None or item[0] != chat_id:
             return None
@@ -1990,12 +1997,17 @@ class StewardResearchApplication:
     def _get_ephemeral_bundle(self, token: str, chat_id: str) -> ResearchBundle | None:
         """Read a chat-bound card without consuming it, for multiple selections."""
         self._purge_expired()
+        if self._ephemeral_cards is not None:
+            return self._ephemeral_cards.get(token, chat_id)
         item = self._ephemeral_bundles.get(token)
         if item is None or item[0] != chat_id:
             return None
         return item[2]
 
     def _purge_expired(self) -> None:
+        if self._ephemeral_cards is not None:
+            self._ephemeral_cards.purge_expired()
+            return
         now = datetime.now(UTC)
         for token in [key for key, (_, expires_at, _) in self._ephemeral_bundles.items() if expires_at <= now]:
             del self._ephemeral_bundles[token]

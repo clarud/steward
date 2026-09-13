@@ -58,6 +58,7 @@ KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION = 48
 CLAIM_REVISIONS_SCHEMA_VERSION = 49
 PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION = 50
 ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION = 51
+EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION = 52
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -512,6 +513,19 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
         "ALTER TABLE organization_proposals ADD COLUMN user_guidance TEXT",
+    ),
+    (
+        EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
+        """CREATE TABLE ephemeral_research_cards (
+            token TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL,
+            query TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            sources_json TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""",
     ),
 )
 

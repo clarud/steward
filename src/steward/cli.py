@@ -103,6 +103,7 @@ from steward.gmail import GmailInboxImportService, GmailService, authorize_gmail
 from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
 from steward.research import (
     DuckDuckGoSearchProvider,
+    EphemeralResearchCardRepository,
     GeminiGoogleSearchProvider,
     ResearchProvider,
     ResearchProviderError,
@@ -1600,6 +1601,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             research_application=StewardResearchApplication(
                 lambda: _research_provider_from_settings(settings, "auto"),
                 ResearchRetentionService(capture_service),
+                EphemeralResearchCardRepository(database_path),
             ),
             curated_note_application=StewardCuratedNoteApplication(
                 ActionProposalRepository(database_path),

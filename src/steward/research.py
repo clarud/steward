@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from html.parser import HTMLParser
+import json
+from pathlib import Path
+import sqlite3
 from typing import Callable, Protocol
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -36,6 +39,71 @@ class ResearchProvider(Protocol):
 
 class ResearchProviderError(RuntimeError):
     """An explicitly requested external research provider was unavailable."""
+
+
+class EphemeralResearchCardRepository:
+    """Keep a reviewed research card briefly across local process restarts.
+
+    This is an operational cache, not a Source, Knowledge object, or activity
+    record. Callers must still invoke explicit retention before any material
+    enters the durable personal-information layer.
+    """
+
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+
+    def add(self, token: str, chat_id: str, bundle: ResearchBundle, expires_at: datetime) -> None:
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "INSERT INTO ephemeral_research_cards "
+                "(token, chat_id, query, answer, sources_json, provider, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    token, chat_id, bundle.query, bundle.answer,
+                    json.dumps([
+                        {"title": source.title, "url": source.url, "excerpt": source.excerpt}
+                        for source in bundle.sources
+                    ]), bundle.provider,
+                    datetime.now(UTC).isoformat(), expires_at.isoformat(),
+                ),
+            )
+
+    def get(self, token: str, chat_id: str) -> ResearchBundle | None:
+        self.purge_expired()
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT query, answer, sources_json, provider FROM ephemeral_research_cards "
+                "WHERE token = ? AND chat_id = ?",
+                (token, chat_id),
+            ).fetchone()
+        return self._bundle(row) if row is not None else None
+
+    def take(self, token: str, chat_id: str) -> ResearchBundle | None:
+        bundle = self.get(token, chat_id)
+        if bundle is None:
+            return None
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "DELETE FROM ephemeral_research_cards WHERE token = ? AND chat_id = ?",
+                (token, chat_id),
+            )
+        return bundle
+
+    def purge_expired(self) -> None:
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "DELETE FROM ephemeral_research_cards WHERE expires_at <= ?",
+                (datetime.now(UTC).isoformat(),),
+            )
+
+    @staticmethod
+    def _bundle(row: tuple[object, ...]) -> ResearchBundle:
+        raw_sources = json.loads(str(row[2]))
+        sources = tuple(
+            ResearchSource(str(item["title"]), str(item["url"]), item.get("excerpt"))
+            for item in raw_sources
+        )
+        return ResearchBundle(str(row[0]), str(row[1]), sources, provider=str(row[3]))
 
 
 class ResearchService:

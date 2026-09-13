@@ -58,7 +58,7 @@ from steward.privacy import PrivacyRule, PrivacyService
 from steward.reviews import ReviewContextRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
-from steward.research import ResearchBundle, ResearchProviderError, ResearchRetentionService, ResearchSource
+from steward.research import EphemeralResearchCardRepository, ResearchBundle, ResearchProviderError, ResearchRetentionService, ResearchSource
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.errors import GraphRecursionError
@@ -2111,6 +2111,30 @@ def test_telegram_research_card_retains_the_exact_reviewed_bundle_once(tmp_path:
     assert application.handle(make_event(text=token_command)) == (
         "That research card is no longer available. Run /research again before retaining it."
     )
+
+
+def test_telegram_research_retention_card_survives_a_local_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database))
+
+    class Provider:
+        def research(self, query: str) -> ResearchBundle:
+            return ResearchBundle(query, "Reviewed answer", (ResearchSource("Example", "https://example.com"),), provider="fake")
+
+    first = StewardResearchApplication(
+        lambda: Provider(), ResearchRetentionService(capture), EphemeralResearchCardRepository(database)
+    )
+    preview = first.handle_command(make_event(text="/research TLB"))
+    assert isinstance(preview, PresentedReply)
+    token_command = preview.actions[0].command
+
+    restarted = StewardResearchApplication(
+        lambda: None, ResearchRetentionService(capture), EphemeralResearchCardRepository(database)
+    )
+    retained = restarted.handle_command(make_event(text=token_command))
+
+    assert "Retained the reviewed external research note" in retained
+    assert "Reviewed answer" in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
 
 
 def test_telegram_research_card_can_retain_one_selected_source_without_the_full_answer(tmp_path: Path) -> None:
