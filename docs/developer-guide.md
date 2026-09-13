@@ -1157,7 +1157,9 @@ The task remains independently completable whether or not its marker exists.
 Calendar event cards can also use **what task is this for?** after a reviewed
 deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as
-a task merely because it appears in Calendar.
+a task merely because it appears in Calendar. If legacy or damaged local metadata
+contains more than one task link for one event, Steward refuses to choose between
+them and leaves the external event unchanged.
 
 After explicitly opening a task, bounded phrases such as **mark that task
 complete** resolve only against that durable task-card context. They perform the

@@ -338,3 +338,13 @@ def test_task_calendar_links_can_be_followed_in_both_directions(tmp_path) -> Non
 
     with pytest.raises(ValueError, match="must not be empty"):
         links.task_id_for_event(" ")
+
+    other = TaskService(database).create("Submit another report")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO calendar_task_event_links "
+            "(idempotency_key, task_id, external_event_id, created_at) VALUES (?, ?, ?, ?)",
+            (f"task:{other.id}", other.id, "calendar-event-opaque", datetime.now(UTC).isoformat()),
+        )
+    with pytest.raises(ValueError, match="multiple"):
+        links.task_id_for_event("calendar-event-opaque")

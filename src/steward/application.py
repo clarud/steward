@@ -2871,13 +2871,13 @@ class StewardCalendarApplication:
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
         actions: list[ReplyAction] = [ReplyAction("Refresh", f"/calendar_get {identifier}")]
-        if (
-            self._calendar_links is not None
-            and self._tasks is not None
-            and (task_id := self._calendar_links.task_id_for_event(identifier)) is not None
-            and self._tasks.get(task_id) is not None
-        ):
-            actions.append(ReplyAction("Linked task", "/calendar_linked_task"))
+        if self._calendar_links is not None and self._tasks is not None:
+            try:
+                task_id = self._calendar_links.task_id_for_event(identifier)
+            except ValueError:
+                task_id = None
+            if task_id is not None and self._tasks.get(task_id) is not None:
+                actions.append(ReplyAction("Linked task", "/calendar_linked_task"))
         actions.extend((ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")))
         return PresentedReply(
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
@@ -2905,7 +2905,14 @@ class StewardCalendarApplication:
             return None
         if self._calendar_links is None or self._tasks is None:
             return "Task-to-Calendar links are not configured for this Steward process."
-        task_id = self._calendar_links.task_id_for_event(str(context.identifier))
+        try:
+            task_id = self._calendar_links.task_id_for_event(str(context.identifier))
+        except ValueError:
+            return PresentedReply(
+                "This Calendar event has more than one local Steward task link, so Steward will not choose one. The Calendar event was not changed.",
+                (ReplyAction("Back to event", f"/calendar_get {context.identifier}"), ReplyAction("Home", "/home")),
+                title="Linked task needs review",
+            )
         if task_id is None:
             return PresentedReply(
                 "This Calendar event is not linked to a Steward task. Calendar events and tasks stay separate unless you explicitly add a precise task deadline to Calendar.",

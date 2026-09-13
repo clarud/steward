@@ -183,11 +183,13 @@ class CalendarLinkRepository:
         if not event_id.strip():
             raise ValueError("Calendar event ID must not be empty.")
         with sqlite3.connect(self._database_path) as connection:
-            row = connection.execute(
+            rows = connection.execute(
                 "SELECT task_id FROM calendar_task_event_links WHERE external_event_id = ?",
                 (event_id,),
-            ).fetchone()
-        return int(row[0]) if row else None
+            ).fetchall()
+        if len(rows) > 1:
+            raise ValueError("Calendar event is linked to multiple Steward tasks.")
+        return int(rows[0][0]) if rows else None
 
     def link_travel_event(self, key: str, record_id: int, event_id: str) -> bool:
         return self._link("calendar_event_links", "travel_record_id", key, record_id, event_id)
