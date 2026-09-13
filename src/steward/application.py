@@ -3269,6 +3269,7 @@ class StewardProvisionalIntakeApplication:
         }[intake.analysis_mode]
         return PresentedReply(
             f"Type: {intake.category}\nSummary: {intake.summary}\n\n"
+            f"Assessment: {intake.diagnostic}\n\n"
             f"{description}\n\nIt is staged locally and has not been saved.",
             self._actions(intake),
             title=f"Review {intake.original_name}",

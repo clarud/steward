@@ -56,6 +56,7 @@ KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
 TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION = 47
 KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION = 48
 CLAIM_REVISIONS_SCHEMA_VERSION = 49
+PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION = 50
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -502,6 +503,10 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             replacement_claim_id INTEGER NOT NULL UNIQUE REFERENCES claims(id),
             created_at TEXT NOT NULL
         )""",
+    ),
+    (
+        PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION,
+        "ALTER TABLE provisional_intakes ADD COLUMN diagnostic TEXT NOT NULL DEFAULT ''",
     ),
 )
 

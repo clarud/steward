@@ -50,6 +50,7 @@ class ProvisionalIntake:
     status: str
     created_at: datetime
     decided_at: datetime | None = None
+    diagnostic: str = ""
 
 
 class ProvisionalIntakeRepository:
@@ -66,14 +67,15 @@ class ProvisionalIntakeRepository:
                 """
                 INSERT INTO provisional_intakes (
                     event_id, platform, chat_id, message_id, kind, staged_path,
-                    original_name, category, summary, analysis_mode, status, created_at, decided_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     intake.event_id, intake.platform, intake.chat_id, intake.message_id,
                     intake.kind, str(intake.staged_path), intake.original_name, intake.category,
                     intake.summary, intake.analysis_mode.value, intake.status, intake.created_at.isoformat(),
                     intake.decided_at.isoformat() if intake.decided_at else None,
+                    intake.diagnostic,
                 ),
             )
         return replace(intake, id=int(cursor.lastrowid))
@@ -83,7 +85,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
                 FROM provisional_intakes WHERE id = ?
                 """,
                 (intake_id,),
@@ -95,7 +97,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
                 FROM provisional_intakes WHERE event_id = ?
                 """,
                 (event_id,),
@@ -116,7 +118,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
                 FROM provisional_intakes
                 WHERE platform = ? AND chat_id = ? AND message_id = ? AND status = 'pending'
                 """,
@@ -130,7 +132,7 @@ class ProvisionalIntakeRepository:
             rows = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
                 FROM provisional_intakes ORDER BY id
                 """
             ).fetchall()
@@ -211,6 +213,7 @@ class ProvisionalIntakeRepository:
             analysis_mode=IntakeAnalysisMode(str(row[10])), status=str(row[11]),
             created_at=datetime.fromisoformat(str(row[12])),
             decided_at=datetime.fromisoformat(str(row[13])) if row[13] else None,
+            diagnostic=str(row[14]),
         )
 
 
@@ -247,6 +250,7 @@ class ProvisionalIntakeService:
                 None, event.id, event.platform, event.chat_id, event.message_id, "file",
                 staged_path, original_name, category, summary,
                 IntakeAnalysisMode.NONE, "pending", datetime.now(UTC),
+                diagnostic="Staging used only the filename and supported file type. The file was not extracted or sent to a model yet.",
             )
         )
         self._activity.record(ActivityType.INTAKE_PROPOSED, object_id=str(intake.id), details=intake.summary)
@@ -268,6 +272,7 @@ class ProvisionalIntakeService:
                 None, event.id, event.platform, event.chat_id, event.message_id, "text",
                 staged_path, "message.md", *self._classify_text(text),
                 IntakeAnalysisMode.NONE, "pending", datetime.now(UTC),
+                diagnostic="Staging used the message text locally. No parser or model was used yet.",
             )
         )
         self._activity.record(ActivityType.INTAKE_PROPOSED, object_id=str(intake.id), details=intake.summary)

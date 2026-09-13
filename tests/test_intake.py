@@ -56,6 +56,12 @@ def test_file_is_staged_without_registering_a_source_until_accepted(tmp_path: Pa
     assert intake.category == "document"
     assert intake.analysis_mode is IntakeAnalysisMode.NONE
     assert "No content was sent to a model" in intake.summary
+    assert intake.diagnostic == (
+        "Staging used only the filename and supported file type. "
+        "The file was not extracted or sent to a model yet."
+    )
+    restarted = ProvisionalIntakeRepository(tmp_path / "steward.db").get(intake.id or 0)
+    assert restarted is not None and restarted.diagnostic == intake.diagnostic
 
     saved = service.accept(intake.id or 0, event)
 
@@ -100,6 +106,7 @@ def test_text_note_is_staged_until_the_user_accepts_it(tmp_path: Path) -> None:
 
     intake = service.stage_text(event)
     assert intake.staged_path.is_file()
+    assert intake.diagnostic == "Staging used the message text locally. No parser or model was used yet."
     saved = service.accept(intake.id or 0, make_event(event_id="telegram:accept"))
 
     assert saved.source.path.is_file()
