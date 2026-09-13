@@ -3387,6 +3387,40 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
 
 
+def test_ambiguous_organization_context_keeps_the_original_proposal_pending(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "notes.md"; source_path.write_text("notes", encoding="utf-8")
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "d" * 64, SourceType.MARKDOWN, 5, now, now, now))
+    workspaces = WorkspaceRepository(database)
+    workspaces.create("CS3210"); workspaces.create("CS4226")
+    proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
+    application = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(
+            proposals, checkpointer=InMemorySaver(),
+            review_proposal=OrganizationApprovalService(
+                proposals, sources, FileMutationService(sources, activity), activity, workspaces
+            ).review,
+        ),
+        source_repository=sources, contexts=ReviewContextRepository(database),
+    )
+    application.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+
+    response = application.handle_decision(
+        make_event(text="put it with my CS3210 and CS4226 course material")
+    )
+
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Change workspace"
+    assert "current proposal has not changed" in response.text
+    assert proposals.get(1).status == "pending"
+    assert proposals.get(2) is None
+    assert source_path.is_file()
+
+
 def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; checkpoints = tmp_path / "checkpoints.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

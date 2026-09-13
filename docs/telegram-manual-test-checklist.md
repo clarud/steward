@@ -217,6 +217,10 @@ until a separate filesystem backup exists.
   card may move the original. A workspace removed before selection must produce
   a safe retry message and leave the proposal and original unchanged. Typed
   `/organization_context ID CS3210` remains an advanced fallback.
+- With more than one matching workspace, say `put it with my CS3210 and CS4226
+  course material`. Verify the current proposal remains pending and Steward
+  opens the picker; it must not silently choose either workspace or discard the
+  review.
 - Choose **New workspace**, restart Steward before sending the name, then send a
   harmless new workspace name. Verify Steward first shows a replacement proposal:
   neither the workspace nor the move exists until that proposal is accepted.

@@ -979,7 +979,10 @@ The user may still type an exact existing name. **New workspace** starts a durab
 chat-scoped naming step, and its next ordinary message becomes the candidate name
 after restart. It likewise creates only a replacement proposal. **Keep in Inbox**
 remains a separately reviewed outcome. Invalid or deleted workspace targets leave
-the original proposal pending and the file unchanged.
+the original proposal pending and the file unchanged. Targeted natural wording
+such as `put it with ...` is permitted only while an organization review is
+pending; if it names zero or multiple existing workspaces, Steward preserves that
+review and opens the picker rather than selecting a target or discarding it.
 
 The first LangGraph approval graph demonstrates a durable pause with
 `interrupt()` and later resume. On acceptance it calls that same approval

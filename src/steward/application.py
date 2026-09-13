@@ -3572,9 +3572,15 @@ class StewardOrganizationApprovalApplication:
         normalized_response = response.casefold().rstrip("?!.").strip()
         command, _, argument = response.partition(" ")
         command = command.casefold()
+        is_targeted_workspace_guidance = response.casefold().startswith((
+            "put it in ", "move it to ", "put this in ", "put it with ", "keep it with ",
+        ))
         if self._contexts is not None and not response.startswith("/"):
             context = self._contexts.get(event.platform, event.chat_id)
-            if context is None or context.kind != "organization" or context.identifier != pending.proposal_id:
+            if (
+                not is_targeted_workspace_guidance
+                and (context is None or context.kind != "organization" or context.identifier != pending.proposal_id)
+            ):
                 if normalized_response in {"yes", "y", "okay", "ok", "accept", "accepted", "no", "n", "reject", "rejected"}:
                     return "Open the organization review from /pending before deciding, or use its Accept/Reject button."
                 return None
@@ -3655,14 +3661,13 @@ class StewardOrganizationApprovalApplication:
             decision = "accepted"
         elif normalized_response in {"no", "n"}:
             decision = "rejected"
-        elif response.casefold().startswith(("put it in ", "move it to ", "put this in ")):
-            guidance = response.partition(" ")[2]
-            if response.casefold().startswith("put it in "):
-                guidance = response[len("put it in "):]
-            elif response.casefold().startswith("move it to "):
-                guidance = response[len("move it to "):]
-            else:
-                guidance = response[len("put this in "):]
+        elif response.casefold().startswith((
+            "put it in ", "move it to ", "put this in ", "put it with ", "keep it with ",
+        )):
+            prefix = next(prefix for prefix in (
+                "put it in ", "move it to ", "put this in ", "put it with ", "keep it with ",
+            ) if response.casefold().startswith(prefix))
+            guidance = response[len(prefix):]
             return self._revise_with_context(event, pending, guidance)
         elif any(workspace.name.casefold() == normalized_response for workspace in self._workspaces.list_all()):
             return self._revise_with_context(event, pending, response)
@@ -3784,6 +3789,21 @@ class StewardOrganizationApprovalApplication:
     ) -> str | PresentedReply:
         if self._sources is None:
             return "Organization context revision is not configured for this Steward process."
+        normalized_guidance = " ".join(guidance.split()).casefold()
+        matching_workspaces = [
+            workspace for workspace in self._workspaces.list_all()
+            if workspace.name.casefold() in normalized_guidance
+        ]
+        if len(matching_workspaces) != 1:
+            picker = self._workspace_target_picker(event, pending, 1)
+            return replace(
+                picker,
+                text=(
+                    "I could not identify exactly one existing workspace from that context. "
+                    "Your current proposal has not changed; choose a target, create a workspace, "
+                    "or keep the source in Inbox.\n\n" + picker.text
+                ),
+            )
         previous = self._proposals.get(pending.proposal_id)
         source = self._sources.get_by_id(previous.source_id) if previous is not None else None
         if source is None:
