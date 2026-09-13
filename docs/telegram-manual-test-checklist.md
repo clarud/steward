@@ -541,14 +541,19 @@ regression.
 
 For a controlled extraction failure, approve re-extraction of a non-sensitive
 test source whose parser cannot complete. Expect Text refresh incomplete with
-Retry refresh, Read stored text, and Dismiss review, without local error paths.
+Retry refresh, Read stored text, Source details, and Dismiss review, without local
+error paths. The explanation should match the source type: PDF mentions native
+text/Poppler/Tesseract; images mention Tesseract and image quality/languages; DOCX
+mentions genuine Office Open XML; HTML mentions UTF-8/static content; email
+mentions body parts versus attachments; Markdown/text mention UTF-8; unsupported
+binary formats recommend conversion rather than repeated parsing.
 Repair the local dependency before retrying; inspect derived content because
 partial refresh is possible. Do not infer original deletion or successful
 indexing from this failure card. Actual parser-outage Telegram validation remains
 pending despite simulated application coverage.
 
 Open a source with no extracted fragments and choose Read content. Expect an
-explanation that no text is stored, relevant format guidance, and Review
+explanation that no text is stored, the same relevant format guidance, and Review
 re-extraction. Tapping that action should create a review, not immediately run
 extraction. Check the named source before approval; the original must remain
 unchanged. Live verification of this recovery card is still pending.

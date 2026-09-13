@@ -91,6 +91,52 @@ def _stale_record_review(action_type: str, source_id: int, proposal_id: int) -> 
     )
 
 
+def _extraction_recovery_guidance(source: Source) -> str:
+    """Explain likely local recovery paths without exposing parser diagnostics."""
+    suffix = source.path.suffix.casefold()
+    if source.source_type.value == "pdf" or suffix == ".pdf":
+        return (
+            "PDF recovery: native text is tried first. An image-only scan then needs both Poppler "
+            "(`pdftoppm`) and Tesseract available locally. Password-protected, damaged, or malformed "
+            "PDFs must be repaired or unlocked before retrying."
+        )
+    if source.source_type.value == "image" or suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp"}:
+        return (
+            "Image recovery: Tesseract must be installed and available locally. Small, blurred, "
+            "rotated, handwritten, or unsupported-language text may produce no usable output; "
+            "improve the image or local OCR language setup before retrying."
+        )
+    if source.source_type.value == "docx" or suffix == ".docx":
+        return (
+            "DOCX recovery: the file must be a genuine, readable Office Open XML `.docx`, not a "
+            "renamed legacy `.doc`, password-protected file, or damaged ZIP package. The current "
+            "extractor reads paragraphs; text only in images or some embedded objects is not recovered."
+        )
+    if source.source_type.value == "html" or suffix in {".html", ".htm"}:
+        return (
+            "HTML recovery: the current extractor expects UTF-8 and keeps visible document text while "
+            "ignoring scripts, styles, templates, and content loaded later by JavaScript. Save a static "
+            "UTF-8 page when the useful text is dynamic."
+        )
+    if suffix == ".eml":
+        return (
+            "Email recovery: the file must be a readable RFC 822 `.eml`. Steward extracts non-attachment "
+            "`text/plain` or `text/html` message bodies; text that exists only in attachments needs to be "
+            "imported as its own source."
+        )
+    if source.source_type.value in {"markdown", "plain_text"}:
+        return (
+            "Text recovery: Markdown and plain-text extraction expects UTF-8. Convert files saved as "
+            "UTF-16 or a legacy code page to UTF-8; an empty or whitespace-only file correctly produces "
+            "no extracted sections."
+        )
+    return (
+        "Format recovery: this registered file type has no supported text extractor. Preserve the "
+        "original, then convert or export a copy to PDF, DOCX, HTML, Markdown, plain text, email, or a "
+        "supported image format before importing that copy."
+    )
+
+
 TEXT_QUESTION_REQUIRED = "Send a text question and I will search your local knowledge."
 
 
@@ -900,13 +946,7 @@ class StewardReadApplication:
         )
 
     def _extraction_recovery(self, source: Source) -> PresentedReply:
-        suffix = source.path.suffix.casefold()
-        if suffix == ".pdf":
-            guidance = "For scanned PDFs, local OCR may require Tesseract and Poppler. Encrypted or damaged PDFs may need attention locally."
-        elif suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".bmp"}:
-            guidance = "Images need readable text and an available local OCR setup. Check Tesseract locally if extraction failed."
-        else:
-            guidance = "Check the source's format, encoding, and local extractor support. The file may also contain no extractable text."
+        guidance = _extraction_recovery_guidance(source)
         actions = [ReplyAction("Review re-extraction", f"/propose_reextract {source.id}"),
                    ReplyAction("Source details", f"/source {source.id}")]
         if self._source_export is not None:
@@ -3935,13 +3975,24 @@ class StewardActionProposalApplication:
             # Parser/index adapters may raise library-specific errors containing
             # local paths. Do not forward diagnostics through Telegram.
             source_id = proposal.payload["source_id"]
+            source = self._sources.get_by_id(int(source_id)) if self._sources is not None else None
+            guidance = (
+                _extraction_recovery_guidance(source)
+                if source is not None else
+                "Confirm that the source is still registered and available at its authorized local root."
+            )
+            actions = [
+                ReplyAction("Retry refresh", f"/approve_action {proposal_id}"),
+                ReplyAction("Read stored text", f"/source_content {source_id}"),
+            ]
+            if source is not None:
+                actions.append(ReplyAction("Source details", f"/source {source_id}"))
+            actions.append(ReplyAction("Dismiss review", f"/reject_action {proposal_id}"))
             return PresentedReply(
-                f"Could not complete text refresh for source {source_id}. Check source availability and local extractor/index setup. "
+                f"Could not complete text refresh for source {source_id}.\n\n{guidance}\n\n"
                 "The review remains pending. Derived text or index data may have partially refreshed; this does not mean nothing changed. "
                 "The original is not rewritten by this operation.",
-                (ReplyAction("Retry refresh", f"/approve_action {proposal_id}"),
-                 ReplyAction("Read stored text", f"/source_content {source_id}"),
-                 ReplyAction("Dismiss review", f"/reject_action {proposal_id}")),
+                tuple(actions),
                 title="Text refresh incomplete", icon="⚠️",
             )
         self._repository.set_status(proposal_id, decision)

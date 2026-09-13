@@ -1579,7 +1579,8 @@ Re-extraction approval failures return a fixed recovery card rather than parser
 exception text. The adapter boundary catches library-specific extraction/index
 failures and retains the pending proposal. Retry refresh explicitly reuses the
 approval command; Read stored text inspects the current derived state; Dismiss
-review rejects that proposal. The card warns that fragment/index refresh may
+review rejects that proposal. When the source still exists, Source details is
+also available. The card warns that fragment/index refresh may
 have partially completed before failure. This is not an atomic extraction/index
 transaction, and no automatic retry is performed. Tests cover synthetic private
 diagnostics, pending status, and an explicit successful retry after reconstruction.
@@ -1588,10 +1589,14 @@ When source-content browsing finds no stored fragments, `StewardReadApplication`
 returns a recovery card instead of inferring an empty document. The card offers
 the existing reviewed re-extraction command, source details, and original-file
 delivery when configured. PDF/image guidance identifies local OCR dependencies;
-other formats suggest encoding/parser checks. These are possible causes, not a
-persisted extraction diagnosis. Displaying the card runs neither parser nor
-model; a separate review controls re-extraction. Tests verify empty storage,
-source-specific commands, and format hints after reconstructed source navigation.
+DOCX distinguishes Office Open XML from legacy/renamed files; HTML explains UTF-8,
+ignored elements, and JavaScript-rendered content; email distinguishes message
+bodies from attachments; text explains UTF-8 and legitimate empty input; binary
+sources explain that conversion is required. These are recovery categories based
+on the registered type, not a persisted diagnosis of the caught exception.
+Displaying the card runs neither parser nor model; a separate review controls
+re-extraction. Tests verify empty storage, source-specific commands, secret-free
+failure cards, and every supported format category.
 
 The tool-agent `ToolNode` uses a fixed JSON error message for handled argument
 validation and execution exceptions. It does not return exception strings or

@@ -647,7 +647,14 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert empty_content.actions[0].command == f"/propose_reextract {source.id}"
     assert fragments.list_for_source(source.id) == ()
     from dataclasses import replace
-    for suffix, expected_hint in ((".pdf", "Poppler"), (".png", "Tesseract"), (".txt", "encoding")):
+    for suffix, expected_hint in (
+        (".pdf", "Poppler"),
+        (".png", "Tesseract"),
+        (".docx", "Office Open XML"),
+        (".html", "JavaScript"),
+        (".eml", "attachments"),
+        (".txt", "UTF-8"),
+    ):
         sources.update(replace(source, path=source.path.with_suffix(suffix)))
         recovery = restarted.handle(make_event(text="give me the content"))
         assert expected_hint in recovery.text
@@ -2356,6 +2363,38 @@ def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> No
     assert "0 fragments" in success
     assert proposals.get(proposal.id).status == "accepted"
     assert calls == [99, 99]
+
+
+def test_telegram_reextract_failure_explains_the_specific_extractor_without_leaking(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, tmp_path / "lecture.docx", "d" * 64, SourceType.DOCX, 20, now, now, now
+    ))
+    proposals = ActionProposalRepository(database)
+    proposal = proposals.add(StewardActionProposalApplication.REEXTRACT_SOURCE, {"source_id": str(source.id)})
+
+    class FailingExtractor:
+        def reextract_source(self, source_id):
+            raise RuntimeError("C:/private/lecture.docx secret parser diagnostic")
+
+    application = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), ActivityService(database)),
+        source_repository=sources,
+        source_service=FailingExtractor(),
+    )
+
+    recovery = application.handle_command(make_event(text=f"/approve_action {proposal.id}"))
+
+    assert isinstance(recovery, PresentedReply)
+    assert "Office Open XML" in recovery.text and "renamed legacy `.doc`" in recovery.text
+    assert "secret parser diagnostic" not in recovery.text and "C:/private" not in recovery.text
+    assert any(action.command == f"/source {source.id}" for action in recovery.actions)
+    assert proposals.get(proposal.id or 0).status == "pending"
 
 
 def test_telegram_semantic_rebuild_is_reviewed_and_uses_no_source_paths(tmp_path: Path) -> None:

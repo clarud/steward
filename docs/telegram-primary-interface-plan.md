@@ -854,23 +854,17 @@ failure. Tests cover both providers, new/duplicate results, context reconstructi
 chat isolation, and failures. This is the existing bounded reference resolver,
 not arbitrary conversational anaphora resolution.
 
-Release handoff: this pagination change is verified but not committed. Automatic
-approval for Git staging failed due to an approval-service usage limit; staging
-and committing were not retried through another route. The last confirmed commit
-is `4825c6f`. Intended commit message: `Add cursor-based Telegram Drive and Gmail
-search navigation`. Preserve unrelated `.gitignore`, `changes.patch`, and `vault/`
-changes. Before committing, recheck the diff and stage only this feature's source,
-tests, and three updated developer/Telegram documentation files.
-
 Reviewed re-extraction failures now preserve pending status and offer explicit
 retry/read/dismiss recovery without exposing parser diagnostics. The card warns
 about partially updated derived state; atomic parser/index refresh is not claimed.
-Focused tests verify secret-free failure and deliberate retry. Live validation
-with failing PDF/OCR dependencies remains open.
+Recovery cards now distinguish PDF native/OCR requirements, image OCR quality and
+languages, genuine DOCX packages, static UTF-8 HTML, email body parts, UTF-8 text,
+and unsupported binary conversion. Focused tests verify secret-free failure and
+deliberate retry. Live validation with failing parser/OCR dependencies remains open.
 
 Empty extracted-content views now provide reviewed re-extraction navigation and
-format-specific PDF/image/encoding guidance without claiming the original is
-empty. No parser/model runs merely to display the card. Persistent per-extractor
+extractor-specific recovery guidance without claiming the original is empty. No
+parser/model runs merely to display the card. Persisted exception-category
 diagnosis and live attachment-recovery acceptance remain unfinished.
 
 Verification checkpoint (2026-09-12): the full automated pytest suite passed
@@ -1028,7 +1022,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | --- | --- | --- | --- |
 | 0. Production-source integrity | Complete | Production fixture cleanup, isolated tests, explicit source removal | Keep enforcing root exclusions as roots evolve |
 | 1. Routing foundation | Substantially complete | Commands (including unknown-command fallback), deterministic natural-language reads, callbacks, pagination, path-redacted activity presentation, secret-free `/status` runtime readiness, and persisted `that`/`last source` reference context | Broader reply/reference-resolution cases |
-| 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture | More extractor-specific review |
+| 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture; recovery cards explain each supported extractor category | Persisted extraction diagnostics and live recovery acceptance |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, and safe recursion-limit failure replies | Broader provider-failure evaluations |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
