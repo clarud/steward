@@ -601,6 +601,22 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert RecordService(database).list_travel_records() == []
 
 
+def test_pending_task_review_uses_readable_offset_aware_schedule_labels(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    actions = ActionProposalRepository(database)
+    proposal = actions.add(StewardTaskApplication.CREATE_TASK, {
+        "title": "Submit CS3210 lab", "due_at": "2026-09-18T15:59:00+00:00",
+        "due_hint": "", "remind_at": "2026-09-18T01:00:00+00:00", "chat_id": "100",
+    })
+    reviews = StewardReviewInboxApplication(actions, OrganizationProposalRepository(database), SourceRepository(database))
+
+    card = reviews.handle_command(make_event(text=f"/review action {proposal.id}"))
+
+    assert isinstance(card, PresentedReply)
+    assert "Due: 18 Sep 2026 · 3:59 pm (UTC+00:00)" in card.text
+    assert "Telegram reminder: 18 Sep 2026 · 1:00 am (UTC+00:00)" in card.text
+
+
 def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

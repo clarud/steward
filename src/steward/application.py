@@ -473,12 +473,18 @@ class StewardReviewInboxApplication:
             return f"Create workspace {name}", f"A new workspace named {name} will be created."
         if action_type == StewardTaskApplication.CREATE_TASK:
             title = payload.get("title", "task")
+            def schedule_label(value: str) -> str:
+                try:
+                    return timestamp_label(datetime.fromisoformat(value))
+                except ValueError:
+                    return value
+
             due = payload.get("due_at") or payload.get("due_hint")
             reminder = payload.get("remind_at")
             return f"Save task: {title}", (
                 f"Task: {title}\nThis task will be saved."
-                + (f"\nDue: {due}" if due else "")
-                + (f"\nTelegram reminder: {reminder}" if reminder else "\nNo Telegram reminder is scheduled.")
+                + (f"\nDue: {schedule_label(due)}" if due else "")
+                + (f"\nTelegram reminder: {schedule_label(reminder)}" if reminder else "\nNo Telegram reminder is scheduled.")
             )
         if action_type.startswith("create_calendar"):
             if "snapshot" not in payload:
