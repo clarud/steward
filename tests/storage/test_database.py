@@ -46,6 +46,7 @@ from steward.storage.database import (
     KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
     CLAIM_REVISIONS_SCHEMA_VERSION,
     PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION,
+    ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -72,6 +73,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         enrichment_columns = connection.execute("PRAGMA table_info(knowledge_enrichment_proposals)").fetchall()
         claim_revision_columns = connection.execute("PRAGMA table_info(claim_revisions)").fetchall()
         intake_columns = connection.execute("PRAGMA table_info(provisional_intakes)").fetchall()
+        organization_columns = connection.execute("PRAGMA table_info(organization_proposals)").fetchall()
 
     assert [migration[0] for migration in migrations] == [
         INITIAL_SCHEMA_VERSION,
@@ -124,6 +126,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
                 KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
                 CLAIM_REVISIONS_SCHEMA_VERSION,
                 PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION,
+                ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -148,6 +151,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         "replacement_claim_id", "created_at",
     ]
     assert intake_columns[-1][1] == "diagnostic"
+    assert organization_columns[-1][1] == "user_guidance"
 
 
 def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
@@ -161,7 +165,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION
+    assert migration_count == ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:

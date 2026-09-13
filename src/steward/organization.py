@@ -21,6 +21,7 @@ class OrganizationProposal:
     confidence: float
     status: str = "pending"
     workspace_name: str | None = None
+    user_guidance: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +67,7 @@ class OrganizationService:
             vault_root / "projects" / workspace.name / source.path.name,
             f"Your added context selected the existing workspace '{workspace.name}'.",
             1.0,
+            user_guidance=" ".join(guidance.split())[:500],
         )
 
 
@@ -75,11 +77,11 @@ class OrganizationProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
                 "INSERT INTO organization_proposals "
-                "(source_id, workspace_id, suggested_path, rationale, score, status, created_at, proposal_type, confidence, workspace_name) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(source_id, workspace_id, suggested_path, rationale, score, status, created_at, proposal_type, confidence, workspace_name, user_guidance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (proposal.source_id, proposal.workspace_id, str(proposal.suggested_path) if proposal.suggested_path else None,
                  proposal.rationale, proposal.confidence, proposal.status, datetime.now(UTC).isoformat(),
-                 proposal.proposal_type, proposal.confidence, proposal.workspace_name),
+                 proposal.proposal_type, proposal.confidence, proposal.workspace_name, proposal.user_guidance),
             )
         return int(cursor.lastrowid)
     def set_status(self, proposal_id: int, status: str) -> None:
@@ -91,12 +93,12 @@ class OrganizationProposalRepository:
     def list_all(self) -> list[OrganizationProposal]:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                "SELECT id, source_id, proposal_type, workspace_id, suggested_path, rationale, confidence, status, workspace_name "
+                "SELECT id, source_id, proposal_type, workspace_id, suggested_path, rationale, confidence, status, workspace_name, user_guidance "
                 "FROM organization_proposals ORDER BY id"
             ).fetchall()
         return [OrganizationProposal(int(r[0]), int(r[1]), str(r[2]), int(r[3]) if r[3] is not None else None,
                                      Path(str(r[4])) if r[4] else None, str(r[5]), float(r[6]), str(r[7]),
-                                     str(r[8]) if r[8] else None) for r in rows]
+                                     str(r[8]) if r[8] else None, str(r[9]) if r[9] else None) for r in rows]
     def get(self, proposal_id: int) -> OrganizationProposal | None:
         return next((proposal for proposal in self.list_all() if proposal.id == proposal_id), None)
 

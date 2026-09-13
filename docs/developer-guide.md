@@ -983,6 +983,10 @@ the original proposal pending and the file unchanged. Targeted natural wording
 such as `put it with ...` is permitted only while an organization review is
 pending; if it names zero or multiple existing workspaces, Steward preserves that
 review and opens the picker rather than selecting a target or discarding it.
+When exactly one target is selected, the bounded user context is retained on the
+replacement proposal and displayed as **Your context**. It explains the user's
+choice during review but is not evidence from the source and cannot authorize a
+move by itself.
 
 The first LangGraph approval graph demonstrates a durable pause with
 `interrupt()` and later resume. On acceptance it calls that same approval

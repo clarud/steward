@@ -3554,8 +3554,9 @@ class StewardOrganizationApprovalApplication:
             f"workspace {workspace.name} ({proposal.suggested_path.name})"
             if workspace is not None else f"the proposed workspace ({proposal.suggested_path.name})"
         )
+        guidance = f"\nYour context: {proposal.user_guidance}" if proposal.user_guidance else ""
         return PresentedReply(
-            f"Suggested destination: {destination}\nWhy: {proposal.rationale}\n"
+            f"Suggested destination: {destination}\nWhy: {proposal.rationale}{guidance}\n"
             "Effect: accepting moves the original file.\n\n"
             "Reply with a workspace name to change this suggestion.",
             (

@@ -21,6 +21,12 @@ def test_explicit_context_selects_only_an_existing_workspace(tmp_path: Path) -> 
 
     assert proposal.workspace_id == 2
     assert proposal.suggested_path == tmp_path / "projects" / "CS3210" / "unrelated.md"
+    assert proposal.user_guidance == "These are CS3210 lecture notes"
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    stored = OrganizationProposalRepository(database)
+    proposal_id = stored.add(proposal)
+    assert stored.get(proposal_id).user_guidance == "These are CS3210 lecture notes"
 
 def test_proposal_status_changes_without_moving_file(tmp_path: Path) -> None:
     database = tmp_path / "db.sqlite"; initialize_database(database)

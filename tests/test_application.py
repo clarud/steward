@@ -3381,6 +3381,7 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     assert isinstance(revised, PresentedReply)
     assert revised.title == "Organize unrelated.md"
     assert "Suggested destination" in revised.text
+    assert "Your context: CS3210 lecture notes" in revised.text
     assert proposals.get(1).status == "rejected"
     accepted = app.handle_decision(make_event(text="/organization_accept 2"))
     assert accepted == "Moved unrelated.md to CS3210."
