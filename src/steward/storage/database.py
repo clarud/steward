@@ -55,6 +55,7 @@ TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
 KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
 TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION = 47
 KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION = 48
+CLAIM_REVISIONS_SCHEMA_VERSION = 49
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -491,6 +492,16 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             "CHECK (conflict_resolution IN ('keep_existing', 'disputed', 'needs_revision'))",
             "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN conflict_resolved_at TEXT",
         ),
+    ),
+    (
+        CLAIM_REVISIONS_SCHEMA_VERSION,
+        """CREATE TABLE claim_revisions (
+            action_proposal_id INTEGER PRIMARY KEY REFERENCES action_proposals(id),
+            conflict_proposal_id INTEGER NOT NULL UNIQUE REFERENCES knowledge_enrichment_proposals(id),
+            original_claim_id INTEGER NOT NULL REFERENCES claims(id),
+            replacement_claim_id INTEGER NOT NULL UNIQUE REFERENCES claims(id),
+            created_at TEXT NOT NULL
+        )""",
     ),
 )
 

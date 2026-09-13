@@ -28,6 +28,15 @@ class Claim:
     text: str
     created_at: datetime
 
+
+@dataclass(frozen=True, slots=True)
+class ClaimRevision:
+    action_proposal_id: int
+    conflict_proposal_id: int
+    original_claim_id: int
+    replacement_claim_id: int
+    created_at: datetime
+
 class EnrichmentOperation(StrEnum):
     CONFIRM = "confirm"
     EXTEND = "extend"
@@ -337,6 +346,121 @@ class KnowledgeService:
             Claim(int(row[0]), int(row[1]), str(row[2]), datetime.fromisoformat(str(row[3])))
             for row in rows
         )
+
+    def list_claim_revisions(self, concept_id: int) -> tuple[ClaimRevision, ...]:
+        """Return approved lineage while preserving both original and replacement claims."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT r.action_proposal_id, r.conflict_proposal_id, r.original_claim_id, "
+                "r.replacement_claim_id, r.created_at FROM claim_revisions r "
+                "JOIN claims c ON c.id = r.original_claim_id WHERE c.concept_id = ? ORDER BY r.created_at, r.action_proposal_id",
+                (concept_id,),
+            ).fetchall()
+        return tuple(
+            ClaimRevision(
+                int(row[0]), int(row[1]), int(row[2]), int(row[3]),
+                datetime.fromisoformat(str(row[4])),
+            )
+            for row in rows
+        )
+
+    def accept_claim_revision(self, action_proposal_id: int) -> Claim:
+        """Create a reviewed replacement claim and lineage in one SQLite transaction."""
+        reviewed_at = datetime.now(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            action = connection.execute(
+                "SELECT action_type, payload_json, status FROM action_proposals WHERE id = ?",
+                (action_proposal_id,),
+            ).fetchone()
+            if action is None or action[0] != "revise_knowledge_claim":
+                raise ValueError("Claim revision proposal was not found.")
+            if action[2] != "pending":
+                raise ValueError("Claim revision proposal was already reviewed.")
+            payload = json.loads(str(action[1]))
+            try:
+                conflict_id = int(payload["conflict_proposal_id"])
+                original_claim_id = int(payload["claim_id"])
+                fragment_id = int(payload["fragment_id"])
+                replacement_text = " ".join(str(payload["replacement_text"]).split())
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("Claim revision proposal is malformed.") from error
+            if not replacement_text or len(replacement_text) > 2_000:
+                raise ValueError("Replacement claim text must contain between 1 and 2,000 characters.")
+            conflict = connection.execute(
+                "SELECT p.claim_id, p.fragment_id, p.operation, p.status, p.conflict_resolution, "
+                "p.evidence_snapshot, c.concept_id, c.text "
+                "FROM knowledge_enrichment_proposals p JOIN claims c ON c.id = p.claim_id "
+                "WHERE p.id = ?",
+                (conflict_id,),
+            ).fetchone()
+            if conflict is None or int(conflict[0]) != original_claim_id or int(conflict[1]) != fragment_id:
+                raise ValueError("Claim revision no longer matches its reviewed conflict.")
+            if (
+                conflict[2] != EnrichmentOperation.CONTRADICT.value
+                or conflict[3] != "accepted"
+                or conflict[4] != ConflictResolution.NEEDS_REVISION.value
+            ):
+                raise ValueError("Claim revision requires an accepted conflict marked as needing revision.")
+            if replacement_text.casefold() == str(conflict[7]).strip().casefold():
+                raise ValueError("Replacement claim text must differ from the original claim.")
+            evidence = connection.execute(
+                "SELECT s.status FROM source_fragments f JOIN sources s ON s.id = f.source_id WHERE f.id = ?",
+                (fragment_id,),
+            ).fetchone()
+            if evidence != ("active",):
+                raise ValueError("The conflict evidence is no longer available; the revision remains pending.")
+            if conflict[5] is None or conflict[5] != KnowledgeEnrichmentProposalRepository._snapshot(
+                connection, original_claim_id, fragment_id
+            ):
+                raise ValueError("The claim or evidence changed; create a fresh conflict review before revising.")
+            if connection.execute(
+                "SELECT 1 FROM claim_revisions WHERE conflict_proposal_id = ?", (conflict_id,)
+            ).fetchone():
+                raise ValueError("This knowledge conflict already has an accepted replacement claim.")
+            cursor = connection.execute(
+                "INSERT INTO claims (concept_id, text, created_at) VALUES (?, ?, ?)",
+                (int(conflict[6]), replacement_text, reviewed_at.isoformat()),
+            )
+            replacement_claim_id = int(cursor.lastrowid)
+            connection.execute(
+                "INSERT INTO claim_evidence (claim_id, fragment_id) VALUES (?, ?)",
+                (replacement_claim_id, fragment_id),
+            )
+            connection.execute(
+                "INSERT INTO claim_revisions (action_proposal_id, conflict_proposal_id, original_claim_id, "
+                "replacement_claim_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                (action_proposal_id, conflict_id, original_claim_id, replacement_claim_id, reviewed_at.isoformat()),
+            )
+            updated = connection.execute(
+                "UPDATE action_proposals SET status = 'accepted', reviewed_at = ? "
+                "WHERE id = ? AND status = 'pending'",
+                (reviewed_at.isoformat(), action_proposal_id),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("Claim revision proposal was already reviewed.")
+            connection.executemany(
+                "INSERT INTO activity_events (event_type, object_id, details, occurred_at) VALUES (?, ?, ?, ?)",
+                (
+                    (
+                        ActivityType.KNOWLEDGE_CLAIM_REVISED.value,
+                        str(replacement_claim_id),
+                        f"replaces claim:{original_claim_id}; conflict:{conflict_id}",
+                        reviewed_at.isoformat(),
+                    ),
+                    (
+                        ActivityType.ACTION_ACCEPTED.value,
+                        str(action_proposal_id),
+                        "revise_knowledge_claim",
+                        reviewed_at.isoformat(),
+                    ),
+                ),
+            )
+        replacement = self.get_claim(replacement_claim_id)
+        if replacement is None:
+            raise RuntimeError("Replacement claim disappeared after acceptance.")
+        return replacement
     def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
         claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
         if {"not", "never", "false", "incorrect"} & evidence_words:

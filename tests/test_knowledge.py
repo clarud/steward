@@ -3,6 +3,7 @@ import json
 import sqlite3
 import pytest
 from steward.activity import ActivityService
+from steward.action_proposals import ActionProposalRepository
 from steward.knowledge import (
     Claim,
     ConflictResolution,
@@ -118,6 +119,67 @@ def test_accepted_conflict_requires_an_explicit_non_mutating_resolution(
     with pytest.raises(ValueError, match="already resolved"):
         repository.resolve_conflict(accepted.id, resolution)
     assert ActivityService(database).list_recent()[0].event_type.value == "knowledge_conflict_resolved"
+
+
+def test_reviewed_claim_revision_creates_evidence_lineage_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(
+        None, tmp_path / "note.md", "e" * 64, SourceType.MARKDOWN, 0, now, now, now
+    ))
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Queues do not always buffer jobs.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    original = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
+    conflicts = KnowledgeEnrichmentProposalRepository(database)
+    conflict = conflicts.add(knowledge.compare_evidence(
+        original, fragment_id=fragment.id or 0, evidence_text="Queues do not always buffer jobs."
+    ))
+    conflicts.review(conflict.id, "accepted")
+    conflicts.resolve_conflict(conflict.id, ConflictResolution.NEEDS_REVISION)
+    actions = ActionProposalRepository(database)
+    action = actions.add("revise_knowledge_claim", {
+        "conflict_proposal_id": str(conflict.id),
+        "claim_id": str(original.id),
+        "fragment_id": str(fragment.id),
+        "replacement_text": "Queues may buffer jobs depending on their implementation.",
+    })
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TRIGGER fail_claim_revision_audit BEFORE INSERT ON activity_events "
+            "WHEN NEW.event_type = 'knowledge_claim_revised' "
+            "BEGIN SELECT RAISE(ABORT, 'injected revision audit failure'); END"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="injected revision audit failure"):
+        knowledge.accept_claim_revision(action.id or 0)
+    assert knowledge.list_claims(concept.id or 0) == (original,)
+    assert knowledge.list_claim_revisions(concept.id or 0) == ()
+    assert actions.get(action.id or 0).status == "pending"
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER fail_claim_revision_audit")
+        connection.execute("UPDATE sources SET status = 'missing' WHERE id = ?", (source.id,))
+    with pytest.raises(ValueError, match="no longer available"):
+        knowledge.accept_claim_revision(action.id or 0)
+    assert actions.get(action.id or 0).status == "pending"
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE sources SET status = 'active' WHERE id = ?", (source.id,))
+
+    replacement = knowledge.accept_claim_revision(action.id or 0)
+
+    assert knowledge.get_claim(original.id or 0) == original
+    assert replacement.text == "Queues may buffer jobs depending on their implementation."
+    assert knowledge.evidence_fragment_ids(replacement.id or 0) == (fragment.id,)
+    assert knowledge.list_claim_revisions(concept.id or 0)[0].original_claim_id == original.id
+    assert knowledge.list_claim_revisions(concept.id or 0)[0].replacement_claim_id == replacement.id
+    assert actions.get(action.id or 0).status == "accepted"
+    assert [event.event_type.value for event in ActivityService(database).list_recent()[:2]] == [
+        "action_accepted", "knowledge_claim_revised",
+    ]
 
 
 def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:

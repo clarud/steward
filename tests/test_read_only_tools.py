@@ -4,8 +4,9 @@ from pathlib import Path
 from dataclasses import replace
 
 from steward.activity import ActivityService, ActivityType
+from steward.action_proposals import ActionProposalRepository
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
-from steward.knowledge import KnowledgeService, KnowledgeEnrichmentProposalRepository
+from steward.knowledge import ConflictResolution, KnowledgeService, KnowledgeEnrichmentProposalRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.records import (
     ReceiptRecord,
@@ -106,7 +107,24 @@ def test_knowledge_tool_respects_evidence_privacy_and_surfaces_reviewed_conflict
     result = json.loads(service.search_knowledge("TLB"))["concept"]["claims"][0]
     assert result["accepted_reviews"][0]["operation"] == "contradict"
     assert result["accepted_reviews"][0]["text"] == fragment.text
+    assert result["accepted_reviews"][0]["conflict_resolution"] is None
     assert "not proven truth" in result["review_caveat"]
+    proposals.resolve_conflict(review.id, ConflictResolution.NEEDS_REVISION)
+    actions = ActionProposalRepository(database)
+    revision = actions.add("revise_knowledge_claim", {
+        "conflict_proposal_id": str(review.id), "claim_id": str(claim.id),
+        "fragment_id": str(fragment.id), "replacement_text": "TLBs may cache translations.",
+    })
+    replacement = knowledge.accept_claim_revision(revision.id or 0)
+    revised = json.loads(service.search_knowledge("TLB"))["concept"]["claims"]
+    by_id = {item["id"]: item for item in revised}
+    assert by_id[claim.id]["lineage"] == {
+        "status": "superseded", "replaced_by_claim_id": replacement.id, "revises_claim_id": None,
+    }
+    assert by_id[replacement.id]["lineage"] == {
+        "status": "reviewed_revision", "replaced_by_claim_id": None, "revises_claim_id": claim.id,
+    }
+    assert by_id[claim.id]["accepted_reviews"][0]["conflict_resolution"] == "needs_revision"
     sources.update(replace(source, status=SourceStatus.MISSING))
     assert json.loads(service.search_knowledge("TLB"))["concept"] is None
     assert "error" in json.loads(service.read_source(source.id))
@@ -115,7 +133,11 @@ def test_knowledge_tool_respects_evidence_privacy_and_surfaces_reviewed_conflict
     privacy.set_rule(source.id, PrivacyRule.LOCAL_MODEL_ONLY)
     assert json.loads(service.search_knowledge("TLB"))["concept"] is None
     local = ReadOnlyToolService(sources, fragments, LexicalSearchService(sources, fragments), knowledge, RecordService(database), WorkspaceRepository(database), ActivityService(database), privacy, model_is_local=True)
-    assert len(json.loads(local.search_knowledge("TLB"))["concept"]["claims"]) == 1
+    local_claims = json.loads(local.search_knowledge("TLB"))["concept"]["claims"]
+    assert len(local_claims) == 2
+    assert {item["lineage"]["status"] for item in local_claims} == {
+        "superseded", "reviewed_revision",
+    }
     privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
     assert json.loads(local.search_knowledge("TLB"))["concept"] is None
 

@@ -38,6 +38,7 @@ class ActivityType(StrEnum):
     KNOWLEDGE_ENRICHMENT_ACCEPTED = "knowledge_enrichment_accepted"
     KNOWLEDGE_ENRICHMENT_REJECTED = "knowledge_enrichment_rejected"
     KNOWLEDGE_CONFLICT_RESOLVED = "knowledge_conflict_resolved"
+    KNOWLEDGE_CLAIM_REVISED = "knowledge_claim_revised"
 
 @dataclass(frozen=True, slots=True)
 class ActivityEvent:

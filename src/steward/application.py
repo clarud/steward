@@ -513,6 +513,15 @@ class StewardReviewInboxApplication:
                 "This exact draft will be saved to Inbox. You may edit it before approval.\n\n"
                 f"Origin: {payload.get('origin', 'user supplied')}\n\n{payload.get('text', '')}"
             )
+        if action_type == "revise_knowledge_claim":
+            return "Revise knowledge claim", (
+                f"Original claim: {payload.get('claim_id', 'unknown')}\n"
+                f"Conflict review: {payload.get('conflict_proposal_id', 'unknown')}\n"
+                f"Evidence fragment: {payload.get('fragment_id', 'unknown')}\n\n"
+                f"Proposed replacement:\n{payload.get('replacement_text', '')}\n\n"
+                "Approval creates a new evidence-linked claim and revision lineage. "
+                "The original claim and conflict history remain preserved."
+            )
         return "Review requested action", "Steward needs your approval before making this change."
 
 
@@ -2144,6 +2153,8 @@ class StewardCuratedNoteApplication:
 class StewardKnowledgeApplication:
     """Expose canonical knowledge inspection and evidence proposals in Telegram."""
 
+    REVISE_CLAIM = "revise_knowledge_claim"
+
     def __init__(
         self,
         knowledge: KnowledgeService,
@@ -2152,6 +2163,8 @@ class StewardKnowledgeApplication:
         activity: ActivityService,
         connector: KnowledgeConnector | None = None,
         source_repository: SourceRepository | None = None,
+        action_proposals: ActionProposalRepository | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._fragments = fragments
@@ -2159,6 +2172,8 @@ class StewardKnowledgeApplication:
         self._activity = activity
         self._connector = connector
         self._sources = source_repository
+        self._actions = action_proposals
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -2188,11 +2203,18 @@ class StewardKnowledgeApplication:
             if concept is None:
                 return f"No canonical concept matches {argument.strip()!r}."
             claims = self._knowledge.list_claims(concept.id or 0)
+            revisions = self._knowledge.list_claim_revisions(concept.id or 0)
+            replaced_by = {item.original_claim_id: item.replacement_claim_id for item in revisions}
+            replaces = {item.replacement_claim_id: item.original_claim_id for item in revisions}
             claim_ids = {claim.id for claim in claims}
             accepted = [item for item in self._proposals.list_all() if item.claim_id in claim_ids and item.status == "accepted"]
             lines = [f"Concept {concept.id}: {concept.name}"]
             for claim in claims:
-                lines.append(f"Claim {claim.id}: {claim.text}")
+                lineage = (
+                    f" [superseded by claim {replaced_by[claim.id]}]" if claim.id in replaced_by else
+                    f" [reviewed revision of claim {replaces[claim.id]}]" if claim.id in replaces else ""
+                )
+                lines.append(f"Claim {claim.id}{lineage}: {claim.text}")
                 current = self._knowledge.accepted_reviews(claim.id)
                 operations = sorted({item.operation.value for item in current})
                 if operations:
@@ -2346,15 +2368,114 @@ class StewardKnowledgeApplication:
                 ConflictResolution.NEEDS_REVISION: "The claim is marked as needing revision. No replacement wording was created automatically.",
             }
             claim = self._knowledge.get_claim(proposal.claim_id)
+            actions = [ReplyAction("View evidence", f"/knowledge_proposal {proposal.id}")]
+            if proposal.conflict_resolution is ConflictResolution.NEEDS_REVISION:
+                if self._contexts is not None and self._actions is not None:
+                    self._contexts.set(event.platform, event.chat_id, "knowledge_claim_revision", proposal.id)
+                    descriptions[ConflictResolution.NEEDS_REVISION] += (
+                        " Send the replacement claim wording as your next message, or cancel this prompt."
+                    )
+                    actions.insert(0, ReplyAction("Cancel prompt", "/cancel_claim_revision"))
+                else:
+                    actions.insert(0, ReplyAction("Draft revision", f"/draft_claim_revision {proposal.id}"))
+            if claim is not None:
+                actions.append(ReplyAction("View concept", f"/concept {claim.concept_id}"))
             return PresentedReply(
                 descriptions[proposal.conflict_resolution],
-                (
-                    ReplyAction("View evidence", f"/knowledge_proposal {proposal.id}"),
-                    ReplyAction("View concept", f"/concept {claim.concept_id}"),
-                ),
+                tuple(actions),
                 title="Conflict resolved", icon="🧠",
             )
+        if command == "/draft_claim_revision":
+            if not separator or not argument.strip().isdigit():
+                return "Use /draft_claim_revision followed by a knowledge conflict ID."
+            return self._begin_claim_revision(event, int(argument.strip()))
+        if command == "/cancel_claim_revision":
+            if self._contexts is not None:
+                context = self._contexts.get(event.platform, event.chat_id)
+                if context is not None and context.kind == "knowledge_claim_revision":
+                    self._contexts.clear(event.platform, event.chat_id)
+            return PresentedReply(
+                "No claim-revision draft was created.",
+                (ReplyAction("Knowledge", "/knowledge"),),
+                title="Revision prompt cancelled", icon="↩️",
+            )
+        if not command.startswith("/") and self._contexts is not None:
+            context = self._contexts.get(event.platform, event.chat_id)
+            if context is not None and context.kind == "knowledge_claim_revision":
+                return self._propose_claim_revision(event, int(context.identifier), event.text or "")
         return None
+
+    def _begin_claim_revision(
+        self, event: IncomingEvent, conflict_id: int
+    ) -> str | PresentedReply:
+        if self._contexts is None or self._actions is None:
+            return "Claim-revision drafting is not configured for this Steward process."
+        conflict = self._proposals.get(conflict_id)
+        if (
+            conflict is None
+            or conflict.operation is not EnrichmentOperation.CONTRADICT
+            or conflict.status != "accepted"
+            or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION
+        ):
+            return "Choose Draft revision from an accepted conflict marked as needing revision."
+        self._contexts.set(event.platform, event.chat_id, "knowledge_claim_revision", conflict_id)
+        return PresentedReply(
+            "Send the complete replacement claim as your next message. Steward will show a separate "
+            "review before creating it. The existing claim will remain in history.",
+            (
+                ReplyAction("View evidence", f"/knowledge_proposal {conflict_id}"),
+                ReplyAction("Cancel prompt", "/cancel_claim_revision"),
+            ),
+            title="Draft claim revision", icon="✍️",
+        )
+
+    def _propose_claim_revision(
+        self, event: IncomingEvent, conflict_id: int, replacement_text: str
+    ) -> str | PresentedReply:
+        if self._contexts is None or self._actions is None:
+            return "Claim-revision drafting is not configured for this Steward process."
+        normalized = " ".join(replacement_text.split())
+        if not normalized or len(normalized) > 2_000:
+            return "Send replacement claim text containing between 1 and 2,000 characters, or cancel the prompt."
+        conflict = self._proposals.get(conflict_id)
+        if conflict is None or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That knowledge conflict no longer needs a revision. No draft was created."
+        existing = next((
+            item for item in self._actions.list_all()
+            if item.action_type == self.REVISE_CLAIM
+            and item.status == "pending"
+            and item.payload.get("conflict_proposal_id") == str(conflict_id)
+        ), None)
+        payload = {
+            "conflict_proposal_id": str(conflict_id),
+            "claim_id": str(conflict.claim_id),
+            "fragment_id": str(conflict.fragment_id),
+            "replacement_text": normalized,
+        }
+        if existing is None:
+            existing = self._actions.add(self.REVISE_CLAIM, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(existing.id),
+                details=f"Revise knowledge claim:{conflict.claim_id} from conflict:{conflict_id}",
+            )
+        self._contexts.clear(event.platform, event.chat_id)
+        _, description = StewardReviewInboxApplication._action_summary(
+            existing.action_type, existing.payload
+        )
+        note = (
+            "\n\nA different draft is already pending; review or reject it before drafting another."
+            if existing.payload != payload else ""
+        )
+        return PresentedReply(
+            description + note,
+            (
+                ReplyAction("Create revised claim", f"/approve_action {existing.id}"),
+                ReplyAction("Reject draft", f"/reject_action {existing.id}"),
+            ),
+            title="Claim revision pending", icon="🧠",
+        )
 
     @staticmethod
     def _pending_enrichment_actions(
@@ -2374,6 +2495,8 @@ class StewardKnowledgeApplication:
     def _conflict_resolution_actions(
         proposal: StoredKnowledgeEnrichmentProposal,
     ) -> tuple[ReplyAction, ...]:
+        if proposal.conflict_resolution is ConflictResolution.NEEDS_REVISION:
+            return (ReplyAction("Draft revision", f"/draft_claim_revision {proposal.id}"),)
         if proposal.conflict_resolution is not None:
             return ()
         return (
@@ -3719,6 +3842,7 @@ class StewardActionProposalApplication:
         delivery_repository: TelegramUpdateDeliveryRepository | None = None,
         source_service: SourceService | None = None,
         semantic_index_rebuilder: Callable[[], int] | None = None,
+        knowledge_service: KnowledgeService | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -3735,6 +3859,7 @@ class StewardActionProposalApplication:
         self._delivery_repository = delivery_repository
         self._source_service = source_service
         self._semantic_index_rebuilder = semantic_index_rebuilder
+        self._knowledge = knowledge_service
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
@@ -3808,6 +3933,8 @@ class StewardActionProposalApplication:
             return self._review_unregister_source(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardKnowledgeApplication.REVISE_CLAIM:
+            return self._review_claim_revision(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
             return self._review_workspace_link(proposal_id, decision)
         if proposal is not None and proposal.action_type in {
@@ -3916,6 +4043,45 @@ class StewardActionProposalApplication:
         return PresentedReply(
             f"{task.title}{due}", tuple(actions), title="Task saved", icon="✅",
             reference=("task", task.id) if task.id is not None else None,
+        )
+
+    def _review_claim_revision(
+        self, proposal_id: int, decision: str
+    ) -> str | PresentedReply:
+        if self._knowledge is None:
+            return "Knowledge claim revision is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardKnowledgeApplication.REVISE_CLAIM:
+            return "Claim revision proposal was not found."
+        if proposal.status == decision:
+            return f"Claim revision proposal {proposal.id} {proposal.status}."
+        if proposal.status != "pending":
+            return f"Claim revision proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, "rejected")
+            if self._activity is not None:
+                self._activity.record(
+                    ActivityType.ACTION_REJECTED,
+                    object_id=str(proposal_id),
+                    details=proposal.action_type,
+                )
+            return PresentedReply(
+                "The replacement claim was not created. The original claim and conflict review remain available.",
+                (ReplyAction("View conflict", f"/knowledge_proposal {proposal.payload['conflict_proposal_id']}"),),
+                title="Claim revision rejected", icon="↩️",
+            )
+        try:
+            replacement = self._knowledge.accept_claim_revision(proposal_id)
+        except ValueError as error:
+            return str(error)
+        return PresentedReply(
+            f"Created claim {replacement.id}: {replacement.text}\n\n"
+            f"The original claim {proposal.payload['claim_id']} remains preserved as revision history.",
+            (
+                ReplyAction("View concept", f"/concept {replacement.concept_id}"),
+                ReplyAction("View conflict", f"/knowledge_proposal {proposal.payload['conflict_proposal_id']}"),
+            ),
+            title="Knowledge claim revised", icon="🧠",
         )
 
     def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:

@@ -308,6 +308,13 @@ until a separate filesystem backup exists.
   a selected outcome records the user's conclusion but does not prove the claim or
   rewrite canonical knowledge. Pending/rejected reviews are not presented as
   accepted evidence. Automated application coverage checks this navigation.
+- Repeat with **Needs revision**. Stop/restart the bot while it is asking for
+  wording, then send a complete replacement claim as ordinary text. Verify a
+  separate action-review card shows the exact wording, original claim ID,
+  conflict ID, and evidence fragment. Rejecting must create nothing. On a new
+  draft, approve and verify the concept card retains the original as superseded,
+  shows the replacement as its reviewed revision, and keeps the evidence review.
+  Changing or removing the evidence before approval must leave the action pending.
 
 ## Workspace navigation
 

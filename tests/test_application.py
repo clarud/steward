@@ -1197,6 +1197,75 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     assert "Current reviewed evidence: contradict" in restored.text
 
 
+def test_knowledge_revision_prompt_survives_restart_and_requires_separate_approval(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, tmp_path / "queues.md", "f" * 64, SourceType.MARKDOWN, 0, now, now, now
+    ))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, "Queues", 0, "Queues do not always buffer jobs.", "line 2"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    original = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
+    conflicts = KnowledgeEnrichmentProposalRepository(database)
+    conflict = conflicts.add(knowledge.compare_evidence(
+        original, fragment_id=fragment.id or 0, evidence_text="Queues do not always buffer jobs."
+    ))
+    conflicts.review(conflict.id, "accepted")
+    actions = ActionProposalRepository(database)
+    activity = ActivityService(database)
+    contexts = ReviewContextRepository(database)
+
+    def build_application() -> StewardEventApplication:
+        return StewardEventApplication(
+            StewardQuestionApplication(FakeGraph()),
+            StewardCaptureApplication(type("Capture", (), {})()),
+            knowledge_application=StewardKnowledgeApplication(
+                knowledge, fragments, conflicts, activity, source_repository=sources,
+                action_proposals=actions, contexts=ReviewContextRepository(database),
+            ),
+            action_proposal_application=StewardActionProposalApplication(
+                actions, ActionProposalService(actions, WorkspaceRepository(database), activity),
+                activity_service=activity, knowledge_service=knowledge,
+            ),
+        )
+
+    first = build_application()
+    prompt = first.handle(make_event(text=f"/resolve_knowledge_conflict {conflict.id} needs_revision"))
+
+    assert isinstance(prompt, PresentedReply)
+    assert "next message" in prompt.text
+    assert contexts.get("telegram", "100").kind == "knowledge_claim_revision"
+    assert knowledge.list_claims(concept.id or 0) == (original,)
+
+    restarted = build_application()
+    draft = restarted.handle(make_event(
+        text="Queues may buffer jobs depending on their implementation."
+    ))
+
+    assert isinstance(draft, PresentedReply)
+    assert draft.title == "Claim revision pending"
+    assert "Proposed replacement" in draft.text
+    assert knowledge.list_claims(concept.id or 0) == (original,)
+    assert contexts.get("telegram", "100") is None
+
+    accepted = restarted.handle(make_event(text=draft.actions[0].command))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Knowledge claim revised"
+    claims = knowledge.list_claims(concept.id or 0)
+    assert len(claims) == 2 and claims[0] == original
+    concept_card = restarted.handle(make_event(text=f"/concept {concept.id}"))
+    assert "superseded by claim 2" in concept_card.text
+    assert "reviewed revision of claim 1" in concept_card.text
+
+
 def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

@@ -1305,9 +1305,21 @@ adds the selected outcome and its timestamp to the evidence-review row.
 `KnowledgeEnrichmentProposalRepository.resolve_conflict()` accepts only an
 unresolved, accepted `contradict` review and stores the outcome and an audit event
 in one transaction. It never changes claim text or removes evidence. “Needs
-revision” is intentionally a visible work state, not permission for the model to
-invent replacement wording. Concept cards and evidence history distinguish
-unresolved, disputed, retained, and revision-needed conflicts.
+revision” starts a durable, chat-scoped wording prompt when Telegram composition
+provides the normal context and action repositories. The next ordinary message is
+saved only as a generic `revise_knowledge_claim` action proposal. Its card shows
+the original claim ID, conflict review, evidence fragment, and exact replacement
+wording before a separate approval. Cancelling or rejecting creates no claim.
+
+Approved wording is applied by `KnowledgeService.accept_claim_revision()` inside
+one SQLite transaction. It revalidates the accepted contradiction, its
+`needs_revision` outcome, active source, and evidence snapshot; inserts a new
+claim and evidence link; records `claim_revisions` lineage; accepts the action;
+and appends both audit events. Any failure rolls back all of those writes. The
+old claim is never edited or deleted. Concept cards label it as superseded and
+label the replacement as a reviewed revision. Migration 49 adds only the accepted
+lineage table; pending/rejected wording stays in the existing action-proposal
+history. The model never invents replacement wording in this workflow.
 
 The tool agent can also call `propose_knowledge_enrichment(claim_id,
 fragment_id)` when the user explicitly requests an evidence comparison. The

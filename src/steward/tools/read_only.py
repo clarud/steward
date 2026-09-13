@@ -116,6 +116,9 @@ class ReadOnlyToolService:
         concept = self._knowledge.find(query)
         claims = []
         candidate_claims = self._knowledge.list_claims(concept.id or 0) if concept else []
+        revisions = self._knowledge.list_claim_revisions(concept.id or 0) if concept else ()
+        replaced_by = {item.original_claim_id: item.replacement_claim_id for item in revisions}
+        replaces = {item.replacement_claim_id: item.original_claim_id for item in revisions}
         for claim in candidate_claims:
             evidence_ids = self._knowledge.evidence_fragment_ids(claim.id or 0)
             evidence = [self._fragments.get(identifier) for identifier in evidence_ids]
@@ -130,11 +133,23 @@ class ReadOnlyToolService:
                     "operation": review.operation.value, "rationale": review.rationale,
                     "fragment_id": part.id, "source_id": part.source_id,
                     "location": part.location, "text": part.text,
+                    "conflict_resolution": (
+                        review.conflict_resolution.value
+                        if review.conflict_resolution is not None else None
+                    ),
                 })
+            lineage_status = "superseded" if claim.id in replaced_by else (
+                "reviewed_revision" if claim.id in replaces else "current"
+            )
             claims.append({
                 "id": claim.id, "text": claim.text, "created_at": claim.created_at.isoformat(),
                 "evidence_fragment_ids": evidence_ids, "accepted_reviews": reviews,
-                "review_caveat": "Reviews record user assessment, not proven truth. Claims are unchanged. Respect contradictions and qualifications. Evidence may be withheld by privacy policy.",
+                "lineage": {
+                    "status": lineage_status,
+                    "replaced_by_claim_id": replaced_by.get(claim.id),
+                    "revises_claim_id": replaces.get(claim.id),
+                },
+                "review_caveat": "Reviews record user assessment, not proven truth. Revisions preserve prior claims through explicit lineage. Respect contradictions and qualifications. Evidence may be withheld by privacy policy.",
             })
         if candidate_claims and not claims:
             return self._json({"concept": None})

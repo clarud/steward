@@ -1535,6 +1535,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 delivery_repository=TelegramUpdateDeliveryRepository(database_path),
                 source_service=source_service,
                 semantic_index_rebuilder=rebuild_semantic_index,
+                knowledge_service=KnowledgeService(database_path),
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service), contexts=review_contexts
@@ -1618,6 +1619,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 KnowledgeService(database_path), fragments,
                 KnowledgeEnrichmentProposalRepository(database_path), activity,
                 KnowledgeConnector(database_path), sources,
+                action_proposals=ActionProposalRepository(database_path),
+                contexts=review_contexts,
             ),
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
             privacy_application=StewardPrivacyApplication(
