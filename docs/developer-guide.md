@@ -658,6 +658,12 @@ stable synthetic event ID; retaining an identical bundle again returns the
 existing source instead of creating another note. Original webpage download and
 archiving remain separate future work.
 
+Telegram review cards may hold the exact ephemeral bundle in a chat-scoped local
+SQLite cache for 30 minutes. That preserves an explicit **Keep** choice across a
+Steward restart without rerunning a provider. The cache is operational data only:
+expiry removes it, it creates no Source or Knowledge, and selecting **Keep** is
+still the only transition into normal Inbox capture.
+
 ### Google Drive search and explicit Inbox import
 
 `/integrations` is a metadata-only Telegram readiness card. It never calls a
