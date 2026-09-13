@@ -279,8 +279,9 @@ class StewardReviewInboxApplication:
                 f"workspace {proposal.workspace_id}" if proposal.workspace_id is not None else "Inbox"
             )
             effect = "The original remains in Inbox." if proposal.suggested_path is None else f"The original will move to {target}."
+            guidance = f"\nYour context: {proposal.user_guidance}" if proposal.user_guidance else ""
             return PresentedReply(
-                f"Suggested destination: {target}\nWhy: {proposal.rationale}\nEffect: {effect}",
+                f"Suggested destination: {target}\nWhy: {proposal.rationale}{guidance}\nEffect: {effect}",
                 (
                     ReplyAction("Accept", f"/organization_accept {identifier}"),
                     ReplyAction("Inbox", f"/organization_keep_inbox {identifier}"),
@@ -293,7 +294,9 @@ class StewardReviewInboxApplication:
             if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
                 return "That staged item is no longer waiting in this chat. Send /pending for the current list."
             return PresentedReply(
-                f"Type: {intake.category}\nSummary: {intake.summary}\nAnalysis: {intake.analysis_mode.value}\n\nIt is staged locally and has not been saved.",
+                f"Type: {intake.category}\nSummary: {intake.summary}\n"
+                f"Assessment: {intake.diagnostic}\nAnalysis: {intake.analysis_mode.value}\n\n"
+                "It is staged locally and has not been saved.",
                 (
                     ReplyAction("Save", f"/intake_accept {identifier}"),
                     ReplyAction("Use local", f"/intake_analysis {identifier} local"),
