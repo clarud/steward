@@ -281,6 +281,18 @@ def test_enrichment_can_propose_each_non_confirming_operation(tmp_path: Path, ev
     assert service.compare_evidence(claim, fragment_id=2, evidence_text=evidence).operation is expected
 
 
+def test_unrelated_negation_does_not_create_a_conflict_proposal(tmp_path: Path) -> None:
+    service = KnowledgeService(tmp_path / "unused.db")
+    claim = Claim(1, 1, "TLB caches translations.", datetime(2026, 9, 8, tzinfo=UTC))
+
+    proposal = service.compare_evidence(
+        claim, fragment_id=2,
+        evidence_text="This note does not discuss performance measurements. TLB caches translations.",
+    )
+
+    assert proposal.operation is EnrichmentOperation.CONFIRM
+
+
 def test_model_assisted_enrichment_validates_a_grounded_structured_proposal() -> None:
     class Model:
         def generate(self, **kwargs):

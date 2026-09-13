@@ -462,13 +462,30 @@ class KnowledgeService:
             raise RuntimeError("Replacement claim disappeared after acceptance.")
         return replacement
     def compare_evidence(self, claim: Claim, *, fragment_id: int, evidence_text: str) -> KnowledgeEnrichmentProposal:
-        claim_words=set(re.findall(r"\w+", claim.text.casefold())); evidence_words=set(re.findall(r"\w+", evidence_text.casefold()))
-        if {"not", "never", "false", "incorrect"} & evidence_words:
-            operation=EnrichmentOperation.CONTRADICT; rationale="The evidence contains an explicit negation."
-        elif {"may", "might", "sometimes", "usually", "typically", "depends"} & evidence_words:
-            operation=EnrichmentOperation.QUALIFY; rationale="The evidence limits the scope or certainty of the claim."
-        elif {"instead", "revised", "updated", "replace"} & evidence_words:
-            operation=EnrichmentOperation.REFINE; rationale="The evidence indicates a more specific or revised formulation."
+        def words(text: str) -> set[str]:
+            return {
+                token[:-1] if len(token) > 3 and token.endswith("s") else token
+                for token in re.findall(r"\w+", text.casefold())
+            }
+
+        claim_words=words(claim.text); evidence_words=words(evidence_text)
+        ignored = {"a", "an", "the", "and", "or", "is", "are", "of", "to", "in", "for", "that", "this"}
+        claim_terms = claim_words - ignored
+        overlap_needed = 1 if len(claim_terms) <= 1 else 2
+        sentences = [words(sentence) for sentence in re.split(r"[.!?]+", evidence_text)]
+
+        def refers_to_claim(markers: set[str], minimum_overlap: int = overlap_needed) -> bool:
+            return any(
+                markers & sentence and len(claim_terms & sentence) >= minimum_overlap
+                for sentence in sentences
+            )
+
+        if refers_to_claim({"not", "never", "false", "incorrect"}):
+            operation=EnrichmentOperation.CONTRADICT; rationale="The evidence explicitly negates terms shared with the claim."
+        elif refers_to_claim({"may", "might", "sometimes", "usually", "typically", "depends"}):
+            operation=EnrichmentOperation.QUALIFY; rationale="The evidence limits the scope or certainty of shared claim terms."
+        elif refers_to_claim({"instead", "revised", "updated", "replace"}, 1):
+            operation=EnrichmentOperation.REFINE; rationale="The evidence indicates a more specific or revised formulation of shared claim terms."
         elif claim_words <= evidence_words:
             operation=EnrichmentOperation.CONFIRM; rationale="The evidence contains the existing claim's terms."
         else:

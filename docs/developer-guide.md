@@ -1005,6 +1005,12 @@ point to supporting source fragments, and enrichment proposals classify new
 evidence as confirm, extend, refine, qualify, or contradict. These are
 evidence-backed proposals, not automatic truth changes.
 
+The deterministic fallback treats negation and qualification as a potential
+conflict only when the same evidence sentence overlaps the claim's meaningful
+terms (with a deliberately small plural normalization). An unrelated `not` is
+therefore not enough to create a contradiction review. This is conservative
+triage, not semantic entailment; the user still reviews every outcome.
+
 `RecordService` adds `TravelRecord` as the first concrete record. It proposes
 flight fields from source fragments and tracks the fragment that supports each
 extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
