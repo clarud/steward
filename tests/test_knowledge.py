@@ -5,6 +5,7 @@ import pytest
 from steward.activity import ActivityService
 from steward.knowledge import (
     Claim,
+    ConflictResolution,
     EnrichmentOperation,
     KnowledgeEnrichmentProposalRepository,
     KnowledgeService,
@@ -86,6 +87,37 @@ def test_enrichment_proposal_is_durable_and_requires_one_explicit_review(tmp_pat
     events = ActivityService(database).list_recent()
     assert len(events) == 1
     assert events[0].event_type.value == "knowledge_enrichment_accepted"
+
+
+@pytest.mark.parametrize("resolution", tuple(ConflictResolution))
+def test_accepted_conflict_requires_an_explicit_non_mutating_resolution(
+    tmp_path: Path, resolution: ConflictResolution
+) -> None:
+    database = tmp_path / "db.sqlite"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "c" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Queues do not buffer jobs.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    claim = knowledge.create_claim(concept.id or 0, "Queues buffer jobs.", [fragment.id or 0])
+    repository = KnowledgeEnrichmentProposalRepository(database)
+    pending = repository.add(knowledge.compare_evidence(
+        claim, fragment_id=fragment.id or 0, evidence_text=fragment.text
+    ))
+    accepted = repository.review(pending.id, "accepted")
+
+    resolved = repository.resolve_conflict(accepted.id, resolution)
+
+    assert resolved.conflict_resolution is resolution
+    assert resolved.conflict_resolved_at is not None
+    assert knowledge.get_claim(claim.id or 0) == claim
+    with pytest.raises(ValueError, match="already resolved"):
+        repository.resolve_conflict(accepted.id, resolution)
+    assert ActivityService(database).list_recent()[0].event_type.value == "knowledge_conflict_resolved"
 
 
 def test_claim_requires_existing_evidence_and_concept(tmp_path: Path) -> None:

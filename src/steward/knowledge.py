@@ -35,6 +35,12 @@ class EnrichmentOperation(StrEnum):
     QUALIFY = "qualify"
     CONTRADICT = "contradict"
 
+
+class ConflictResolution(StrEnum):
+    KEEP_EXISTING = "keep_existing"
+    DISPUTED = "disputed"
+    NEEDS_REVISION = "needs_revision"
+
 @dataclass(frozen=True, slots=True)
 class KnowledgeEnrichmentProposal:
     claim_id: int
@@ -56,6 +62,8 @@ class StoredKnowledgeEnrichmentProposal:
     created_at: datetime
     reviewed_at: datetime | None
     evidence_snapshot: str | None = None
+    conflict_resolution: ConflictResolution | None = None
+    conflict_resolved_at: datetime | None = None
 
 
 class StaleKnowledgeReviewError(ValueError):
@@ -108,7 +116,8 @@ class KnowledgeEnrichmentProposalRepository:
             )
             row = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at
                 FROM knowledge_enrichment_proposals
                 WHERE claim_id = ? AND fragment_id = ? AND operation = ? AND rationale = ? AND evidence_snapshot = ?
                 """,
@@ -122,7 +131,8 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at
                 FROM knowledge_enrichment_proposals WHERE id = ?
                 """,
                 (proposal_id,),
@@ -133,7 +143,8 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 """
-                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot
+                SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at
                 FROM knowledge_enrichment_proposals ORDER BY id
                 """
             ).fetchall()
@@ -146,7 +157,8 @@ class KnowledgeEnrichmentProposalRepository:
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, evidence_snapshot "
+                "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, "
+                "evidence_snapshot, conflict_resolution, conflict_resolved_at "
                 "FROM knowledge_enrichment_proposals WHERE id = ?", (proposal_id,),
             ).fetchone()
             if row is None or row[5] != "pending":
@@ -180,6 +192,53 @@ class KnowledgeEnrichmentProposalRepository:
             raise RuntimeError("Knowledge enrichment proposal disappeared after review.")
         return proposal
 
+    def resolve_conflict(
+        self, proposal_id: int, resolution: ConflictResolution | str
+    ) -> StoredKnowledgeEnrichmentProposal:
+        """Record the user's conclusion without rewriting either side of a conflict."""
+        try:
+            selected = ConflictResolution(resolution)
+        except ValueError as error:
+            raise ValueError(
+                "Conflict resolution must be keep_existing, disputed, or needs_revision."
+            ) from error
+        resolved_at = datetime.now(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT operation, status, conflict_resolution "
+                "FROM knowledge_enrichment_proposals WHERE id = ?",
+                (proposal_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Knowledge conflict was not found.")
+            if row[0] != EnrichmentOperation.CONTRADICT.value or row[1] != "accepted":
+                raise ValueError("Only an accepted contradiction can be resolved.")
+            if row[2] is not None:
+                raise ValueError("Knowledge conflict is already resolved.")
+            cursor = connection.execute(
+                "UPDATE knowledge_enrichment_proposals "
+                "SET conflict_resolution = ?, conflict_resolved_at = ? "
+                "WHERE id = ? AND conflict_resolution IS NULL",
+                (selected.value, resolved_at.isoformat(), proposal_id),
+            )
+            connection.execute(
+                "INSERT INTO activity_events (event_type, object_id, details, occurred_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    ActivityType.KNOWLEDGE_CONFLICT_RESOLVED.value,
+                    str(proposal_id),
+                    selected.value,
+                    resolved_at.isoformat(),
+                ),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("Knowledge conflict is already resolved.")
+        resolved = self.get(proposal_id)
+        if resolved is None:
+            raise RuntimeError("Knowledge conflict disappeared after resolution.")
+        return resolved
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> StoredKnowledgeEnrichmentProposal:
         return StoredKnowledgeEnrichmentProposal(
@@ -192,6 +251,8 @@ class KnowledgeEnrichmentProposalRepository:
             datetime.fromisoformat(str(row[6])),
             datetime.fromisoformat(str(row[7])) if row[7] else None,
             str(row[8]) if row[8] else None,
+            ConflictResolution(str(row[9])) if row[9] else None,
+            datetime.fromisoformat(str(row[10])) if row[10] else None,
         )
 
 class KnowledgeService:
@@ -208,6 +269,7 @@ class KnowledgeService:
             rows = connection.execute(
                 """SELECT p.id, p.claim_id, p.fragment_id, p.operation, p.rationale,
                           p.status, p.created_at, p.reviewed_at, p.evidence_snapshot,
+                          p.conflict_resolution, p.conflict_resolved_at,
                           c.text, f.text, f.location, f.source_id, s.content_hash
                    FROM knowledge_enrichment_proposals p
                    JOIN claims c ON c.id = p.claim_id
@@ -217,8 +279,8 @@ class KnowledgeService:
                      AND s.status = 'active' AND p.evidence_snapshot IS NOT NULL
                    ORDER BY p.id""", (claim_id,),
             ).fetchall()
-        return tuple(KnowledgeEnrichmentProposalRepository._from_row(row[:9])
-                     for row in rows if row[8] == json.dumps(list(row[9:]), ensure_ascii=False))
+        return tuple(KnowledgeEnrichmentProposalRepository._from_row(row[:11])
+                     for row in rows if row[8] == json.dumps(list(row[11:]), ensure_ascii=False))
 
     def create_concept(self, name: str) -> Concept:
         concept = Concept(None, name.strip(), datetime.now(UTC))

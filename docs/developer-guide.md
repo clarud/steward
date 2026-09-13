@@ -1297,6 +1297,18 @@ decision in the activity log. A contradiction is never silently added as claim
 support. The CLI checks the source privacy rule before sending evidence to a
 cloud or local model.
 
+Telegram treats contradiction review as a two-stage decision. The pending card
+uses **Flag conflict** and **Not a conflict**, making clear that accepting the
+comparison does not choose which statement is true. A flagged conflict then
+offers **Keep claim**, **Mark disputed**, and **Needs revision**. Migration 48
+adds the selected outcome and its timestamp to the evidence-review row.
+`KnowledgeEnrichmentProposalRepository.resolve_conflict()` accepts only an
+unresolved, accepted `contradict` review and stores the outcome and an audit event
+in one transaction. It never changes claim text or removes evidence. “Needs
+revision” is intentionally a visible work state, not permission for the model to
+invent replacement wording. Concept cards and evidence history distinguish
+unresolved, disputed, retained, and revision-needed conflicts.
+
 The tool agent can also call `propose_knowledge_enrichment(claim_id,
 fragment_id)` when the user explicitly requests an evidence comparison. The
 tool uses ordinary Python to load both IDs, computes the initial relationship
@@ -1346,7 +1358,8 @@ without changing historical approval status. A restored active source becomes
 eligible again only when its evidence snapshot still matches. This avoids a
 two-connection read race and prevents a missing evidence row from crashing the
 lookup. Provider-specific privacy checks still apply separately before model use.
-Telegram concept cards use this current-review lookup for operation summaries.
+Telegram concept cards use this current-review lookup for operation summaries
+and current conflict outcomes.
 They count other accepted reviews as historical and needing revalidation.
 The paginated Evidence reviews screen retains all accepted history but labels
 each entry as current or historical-only; a current label means matching,

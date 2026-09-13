@@ -745,6 +745,15 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Knowledge contradictions now have a complete non-destructive decision path.
+The evidence comparison is first flagged or rejected; a flagged conflict remains
+visibly unresolved until the user keeps the current claim, marks it disputed, or
+marks it as needing revision. The durable resolution and audit event never rewrite
+claim text or discard either side's provenance. Concept and evidence-review cards
+show the outcome. Automated migration, repository, application, and navigation
+tests pass; natural-language resolution and reviewed replacement wording remain
+future work.
+
 Task details now expose the existing local task-to-Calendar relationship without
 turning tasks into events. A precise, open, unlinked task offers a separate
 **Add to calendar** review action. After an approved marker is linked, reopening
@@ -1023,7 +1032,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, and safe recursion-limit failure replies | Broader provider-failure evaluations |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
-| 6. Curated knowledge/research | In progress | Concept/claim enrichment review with an explicit claim/evidence conflict card, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Broader conflict-resolution lifecycle UX |
+| 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Natural conflict follow-ups, reviewed claim-revision wording, and richer synthesis |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |

@@ -300,10 +300,12 @@ until a separate filesystem backup exists.
 
 - Accept a contradiction review, then open its concept with `/knowledge NAME`.
   The original claim must remain intact, with the accepted contradiction
-  visible and an Evidence reviews button. Open that history and inspect the
+  visible as unresolved and an Evidence reviews button. Choose **Keep claim**,
+  **Mark disputed**, or **Needs revision**; this must update the displayed
+  outcome without rewriting either text. Open that history and inspect the
   claim, rationale, and evidence. More than eight accepted reviews must be
   reachable through Next/Previous. Acceptance records the user's review;
-  it does not prove the claim, automatically resolve the contradiction, or
+  a selected outcome records the user's conclusion but does not prove the claim or
   rewrite canonical knowledge. Pending/rejected reviews are not presented as
   accepted evidence. Automated application coverage checks this navigation.
 
@@ -480,11 +482,14 @@ until a separate filesystem backup exists.
   be saved to Inbox. Repeat once after restarting the local bot between
   **Edit** and the replacement message.
 - Create a harmless contradiction enrichment proposal and verify the card shows
-  both the canonical claim and source-fragment evidence. Accepting it must log
-  the review while leaving the canonical claim text unchanged.
+  both the canonical claim and source-fragment evidence, with **Flag conflict**
+  and **Not a conflict**. Flagging it must log the review, leave the canonical
+  claim unchanged, and show the three separate resolution choices. Resolve it
+  as disputed and verify both the concept card and saved evidence review display
+  that outcome after a bot restart.
 - Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
-  same evidence plus **Accept** and **Reject** buttons, rather than requiring a
-  manually typed review command.
+  same evidence plus decision buttons (conflicts use **Flag conflict** and **Not
+  a conflict**), rather than requiring a manually typed review command.
 
 ## Failure and recovery checks
 

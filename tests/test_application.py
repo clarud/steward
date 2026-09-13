@@ -1138,17 +1138,30 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     assert "Existing claim 1: TLBs cache translations." in preview.text
     assert "contradiction.md" in preview.text and "TLBs do not cache translations." in preview.text
     assert "does not rewrite the existing claim" in preview.text
-    assert application.handle(make_event(text="/review_enrichment 1 accepted")) == (
-        "Knowledge contradiction proposal 1 accepted. Existing claim unchanged."
-    )
+    recorded = application.handle(make_event(text="/review_enrichment 1 accepted"))
+    assert isinstance(recorded, PresentedReply)
+    assert recorded.title == "Knowledge conflict recorded"
+    assert [action.label for action in recorded.actions] == [
+        "Keep claim", "Mark disputed", "Needs revision",
+    ]
     assert knowledge.get_claim(claim.id or 0) == claim
     concept_card = application.handle(make_event(text="/knowledge TLB"))
     assert isinstance(concept_card, PresentedReply)
     assert "contradict" in concept_card.text and "do not establish truth" in concept_card.text
+    assert "Conflict status: unresolved" in concept_card.text
+    resolved = application.handle(make_event(text=recorded.actions[1].command))
+    assert isinstance(resolved, PresentedReply)
+    assert resolved.title == "Conflict resolved"
+    assert "visibly disputed" in resolved.text
+    assert knowledge.get_claim(claim.id or 0) == claim
+    concept_card = application.handle(make_event(text="/knowledge TLB"))
+    assert "Conflict status: unresolved" not in concept_card.text
+    assert "Conflict outcomes: disputed" in concept_card.text
     reviews = application.handle(make_event(text=concept_card.actions[0].command))
     assert "CONTRADICT" in reviews.text
     detail = application.handle(make_event(text=reviews.actions[0].command))
-    assert "TLBs do not cache translations." in detail
+    assert "TLBs do not cache translations." in detail.text
+    assert "Conflict outcome: disputed" in detail.text
     from dataclasses import replace
     repository = KnowledgeEnrichmentProposalRepository(database)
     candidate = knowledge.compare_evidence(claim, fragment_id=fragment.id, evidence_text=fragment.text)

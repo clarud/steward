@@ -43,6 +43,7 @@ from steward.storage.database import (
     TASK_REMINDER_CLAIM_SCHEMA_VERSION,
     KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION,
     TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
+    KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -66,6 +67,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         ).fetchall()
         source_columns = connection.execute("PRAGMA table_info(sources)").fetchall()
         message_reference_columns = connection.execute("PRAGMA table_info(telegram_message_references)").fetchall()
+        enrichment_columns = connection.execute("PRAGMA table_info(knowledge_enrichment_proposals)").fetchall()
 
     assert [migration[0] for migration in migrations] == [
         INITIAL_SCHEMA_VERSION,
@@ -115,6 +117,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
                 TASK_REMINDER_CLAIM_SCHEMA_VERSION,
                 KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION,
                 TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
+                KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -131,6 +134,9 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
     assert [column[1] for column in message_reference_columns] == [
         "platform", "chat_id", "message_id", "reference_kind", "reference_id", "created_at",
     ]
+    assert [column[1] for column in enrichment_columns][-2:] == [
+        "conflict_resolution", "conflict_resolved_at",
+    ]
 
 
 def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
@@ -144,7 +150,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION
+    assert migration_count == KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:

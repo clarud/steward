@@ -54,6 +54,7 @@ TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
 TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
 KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
 TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION = 47
+KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION = 48
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -482,6 +483,14 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             created_at TEXT NOT NULL,
             PRIMARY KEY (platform, chat_id, message_id)
         )""",
+    ),
+    (
+        KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
+        (
+            "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN conflict_resolution TEXT "
+            "CHECK (conflict_resolution IN ('keep_existing', 'disputed', 'needs_revision'))",
+            "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN conflict_resolved_at TEXT",
+        ),
     ),
 )
 

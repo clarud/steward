@@ -48,6 +48,7 @@ from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGateway, ModelGatewayError
 from steward.records import RecordService, record_review_snapshot
 from steward.knowledge import (
+    ConflictResolution,
     EnrichmentOperation,
     KnowledgeEnrichmentProposalRepository,
     KnowledgeService,
@@ -259,12 +260,20 @@ class StewardReviewInboxApplication:
             proposal = self._knowledge.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That knowledge review is no longer waiting. Send /pending for the current list."
-            return PresentedReply(
-                f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",
+            actions = (
+                (
+                    ReplyAction("Flag conflict", f"/review_enrichment {identifier} accepted"),
+                    ReplyAction("Not a conflict", f"/review_enrichment {identifier} rejected"),
+                )
+                if proposal.operation is EnrichmentOperation.CONTRADICT else
                 (
                     ReplyAction("Accept", f"/review_enrichment {identifier} accepted"),
                     ReplyAction("Reject", f"/review_enrichment {identifier} rejected"),
-                ),
+                )
+            )
+            return PresentedReply(
+                f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",
+                actions,
                 title="Knowledge update", icon="🧠"
             )
         return "That review type is unavailable. Send /pending for the current list."
@@ -2148,6 +2157,17 @@ class StewardKnowledgeApplication:
                 operations = sorted({item.operation.value for item in current})
                 if operations:
                     lines.append("Current reviewed evidence: " + ", ".join(operations))
+                conflicts = [item for item in current if item.operation is EnrichmentOperation.CONTRADICT]
+                if any(item.conflict_resolution is None for item in conflicts):
+                    lines.append("Conflict status: unresolved")
+                resolutions = sorted({
+                    item.conflict_resolution.value
+                    for item in conflicts if item.conflict_resolution is not None
+                })
+                if resolutions:
+                    lines.append("Conflict outcomes: " + ", ".join(
+                        resolution.replace("_", " ") for resolution in resolutions
+                    ))
                 historical_count = sum(item.claim_id == claim.id for item in accepted) - len(current)
                 if historical_count:
                     lines.append(f"{historical_count} historical review(s) need revalidation; inspect Evidence reviews.")
@@ -2179,6 +2199,7 @@ class StewardKnowledgeApplication:
                 f"Page {page} of {pages}\n" + "\n".join(
                     f"{index}. Claim {item.claim_id}: {item.operation.value.upper()} — {item.rationale}\n"
                     + ("Current evidence version" if item.id in current_ids else "Historical only — evidence changed, unavailable, or version not saved")
+                    + self._conflict_status_line(item)
                     for index, item in enumerate(visible, start=1)
                 ), tuple(actions), title="Reviewed evidence", icon="🔎",
             )
@@ -2212,10 +2233,13 @@ class StewardKnowledgeApplication:
             if proposal.status == "pending":
                 return PresentedReply(
                     self._render_enrichment(proposal),
-                    (
-                        ReplyAction("Accept", f"/review_enrichment {proposal.id} accepted"),
-                        ReplyAction("Reject", f"/review_enrichment {proposal.id} rejected"),
-                    ),
+                    self._pending_enrichment_actions(proposal),
+                )
+            if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
+                return PresentedReply(
+                    self._render_enrichment(proposal),
+                    self._conflict_resolution_actions(proposal),
+                    title="Knowledge conflict", icon="⚠️",
                 )
             return self._render_enrichment(proposal)
         if command == "/propose_enrichment":
@@ -2237,10 +2261,7 @@ class StewardKnowledgeApplication:
             )
             return PresentedReply(
                 self._render_enrichment(stored),
-                (
-                    ReplyAction("Accept", f"/review_enrichment {stored.id} accepted"),
-                    ReplyAction("Reject", f"/review_enrichment {stored.id} rejected"),
-                ),
+                self._pending_enrichment_actions(stored),
             )
         if command == "/review_enrichment":
             parts = argument.split()
@@ -2261,9 +2282,75 @@ class StewardKnowledgeApplication:
             except ValueError as error:
                 return str(error)
             if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
-                return f"Knowledge contradiction proposal {proposal.id} accepted. Existing claim unchanged."
+                return PresentedReply(
+                    "Contradictory evidence is now recorded, but Steward has not changed the existing claim. "
+                    "Choose how this conflict should appear in your knowledge.",
+                    self._conflict_resolution_actions(proposal),
+                    title="Knowledge conflict recorded", icon="⚠️",
+                )
             return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."
+        if command == "/resolve_knowledge_conflict":
+            parts = argument.split()
+            if not separator or len(parts) != 2 or not parts[0].isdigit():
+                return (
+                    "Use /resolve_knowledge_conflict followed by a proposal ID and "
+                    "keep_existing, disputed, or needs_revision."
+                )
+            try:
+                proposal = self._proposals.resolve_conflict(int(parts[0]), parts[1])
+            except ValueError as error:
+                return str(error)
+            descriptions = {
+                ConflictResolution.KEEP_EXISTING: "The existing claim remains current; the opposing evidence stays attached to the review history.",
+                ConflictResolution.DISPUTED: "The claim is now visibly disputed; both the claim and opposing evidence remain available.",
+                ConflictResolution.NEEDS_REVISION: "The claim is marked as needing revision. No replacement wording was created automatically.",
+            }
+            claim = self._knowledge.get_claim(proposal.claim_id)
+            return PresentedReply(
+                descriptions[proposal.conflict_resolution],
+                (
+                    ReplyAction("View evidence", f"/knowledge_proposal {proposal.id}"),
+                    ReplyAction("View concept", f"/concept {claim.concept_id}"),
+                ),
+                title="Conflict resolved", icon="🧠",
+            )
         return None
+
+    @staticmethod
+    def _pending_enrichment_actions(
+        proposal: StoredKnowledgeEnrichmentProposal,
+    ) -> tuple[ReplyAction, ...]:
+        if proposal.operation is EnrichmentOperation.CONTRADICT:
+            return (
+                ReplyAction("Flag conflict", f"/review_enrichment {proposal.id} accepted"),
+                ReplyAction("Not a conflict", f"/review_enrichment {proposal.id} rejected"),
+            )
+        return (
+            ReplyAction("Accept", f"/review_enrichment {proposal.id} accepted"),
+            ReplyAction("Reject", f"/review_enrichment {proposal.id} rejected"),
+        )
+
+    @staticmethod
+    def _conflict_resolution_actions(
+        proposal: StoredKnowledgeEnrichmentProposal,
+    ) -> tuple[ReplyAction, ...]:
+        if proposal.conflict_resolution is not None:
+            return ()
+        return (
+            ReplyAction("Keep claim", f"/resolve_knowledge_conflict {proposal.id} keep_existing"),
+            ReplyAction("Mark disputed", f"/resolve_knowledge_conflict {proposal.id} disputed"),
+            ReplyAction("Needs revision", f"/resolve_knowledge_conflict {proposal.id} needs_revision"),
+        )
+
+    @staticmethod
+    def _conflict_status_line(proposal: StoredKnowledgeEnrichmentProposal) -> str:
+        if proposal.operation is not EnrichmentOperation.CONTRADICT:
+            return ""
+        status = (
+            proposal.conflict_resolution.value.replace("_", " ")
+            if proposal.conflict_resolution is not None else "unresolved"
+        )
+        return f"\nConflict outcome: {status}"
 
     def _render_enrichment(self, proposal: StoredKnowledgeEnrichmentProposal) -> str:
         """Render both sides of an evidence review without creating a synthesis."""
@@ -2286,11 +2373,12 @@ class StewardKnowledgeApplication:
             "\n\nPotential contradiction: accepting records your review only; it does not rewrite the existing claim."
             if operation is EnrichmentOperation.CONTRADICT else ""
         )
+        resolution = self._conflict_status_line(proposal)
         return (
             f"Knowledge proposal {proposal.id}: {operation.value.upper()} claim {proposal.claim_id}\n"
             f"Existing claim {proposal.claim_id}: {claim_text}\n"
             f"Evidence fragment {proposal.fragment_id}{provenance}: {evidence}\n"
-            f"Rationale: {proposal.rationale}{warning}\n"
+            f"Rationale: {proposal.rationale}{warning}{resolution}\n"
             + ("This card shows the saved evidence version; changed evidence requires a fresh proposal."
                if proposal.evidence_snapshot is not None else "Legacy review: evidence version was not saved. Create a fresh proposal before accepting.")
         )
