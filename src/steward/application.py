@@ -36,7 +36,7 @@ from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.gmail import GOOGLE_GMAIL_READONLY_SCOPE
 from steward.retrieval import HybridRetriever, LexicalSearchService, SemanticSearchService
 from steward.sources import SourceRepository
-from steward.presentation import PresentedReply, ReplyAction, calendar_time_label
+from steward.presentation import PresentedReply, ReplyAction, calendar_time_label, timestamp_label
 from steward.intake import (
     IntakeAnalysisMode,
     ProvisionalIntake,
@@ -1526,8 +1526,8 @@ class StewardRecordApplication:
                 ("flight", "flight_number", record.flight_number),
                 ("departure", "departure", record.departure),
                 ("arrival", "arrival", record.arrival),
-                ("departure time", "departure_time", record.departure_time.isoformat() if record.departure_time else None),
-                ("arrival time", "arrival_time", record.arrival_time.isoformat() if record.arrival_time else None),
+                ("departure time", "departure_time", timestamp_label(record.departure_time) if record.departure_time else None),
+                ("arrival time", "arrival_time", timestamp_label(record.arrival_time) if record.arrival_time else None),
                 ("booking reference", "booking_reference", record.booking_reference),
             )
         elif record_type == "receipt":
@@ -1535,7 +1535,7 @@ class StewardRecordApplication:
                 ("merchant", "merchant", record.merchant),
                 ("total", "total_cents", f"{record.total_cents / 100:.2f}" if record.total_cents is not None else None),
                 ("currency", "currency", record.currency),
-                ("purchased at", "purchased_at", record.purchased_at.isoformat() if record.purchased_at else None),
+                ("purchased at", "purchased_at", timestamp_label(record.purchased_at) if record.purchased_at else None),
                 ("receipt number", "receipt_number", record.receipt_number),
             )
         else:
@@ -1543,7 +1543,7 @@ class StewardRecordApplication:
                 ("product", "product_name", record.product_name),
                 ("provider", "provider", record.provider),
                 ("warranty number", "warranty_number", record.warranty_number),
-                ("coverage ends", "coverage_ends_at", record.coverage_ends_at.isoformat() if record.coverage_ends_at else None),
+                ("coverage ends", "coverage_ends_at", timestamp_label(record.coverage_ends_at) if record.coverage_ends_at else None),
             )
         evidence = self._records.field_evidence(record_type, int(identifier))
         lines: list[str] = []
@@ -1555,7 +1555,9 @@ class StewardRecordApplication:
             # An explicit correction can supersede an extracted field. Do not
             # claim stale source support merely because an old evidence link
             # remains in the audit trail.
-            supported = fragment is not None and str(value).casefold() in fragment.text.casefold()
+            raw_value = getattr(record, field)
+            evidence_value = raw_value.isoformat() if isinstance(raw_value, datetime) else str(value)
+            supported = fragment is not None and evidence_value.casefold() in fragment.text.casefold()
             provenance = f"source fragment {fragment_id}" if supported else "not source-evidenced"
             lines.append(f"{label}: {value} ({provenance})")
         return PresentedReply(

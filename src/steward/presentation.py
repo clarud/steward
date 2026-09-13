@@ -35,6 +35,17 @@ def calendar_time_label(start: str, end: str) -> str:
         return f"{start} → {end}"
 
 
+def timestamp_label(value: datetime) -> str:
+    """Render one timezone-aware timestamp without silently changing its zone."""
+
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.isoformat()
+    offset = value.strftime("%z")
+    zone = f"UTC{offset[:3]}:{offset[3:]}" if offset else "timezone unspecified"
+    clock = f"{value.hour % 12 or 12}:{value.minute:02d} {'am' if value.hour < 12 else 'pm'}"
+    return f"{value.day} {value:%b %Y} · {clock} ({zone})"
+
+
 @dataclass(frozen=True, slots=True)
 class ReplyAction:
     """One explicitly permitted follow-up action presented by a transport."""
