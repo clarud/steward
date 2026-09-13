@@ -1823,7 +1823,7 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
     )
 
     assert isinstance(preview, PresentedReply)
-    assert "Due at: 2026-09-18T15:59:00+00:00" in preview.text
+    assert "Due at: 18 Sep 2026 · 3:59 pm (UTC+00:00)" in preview.text
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task saved"
@@ -1849,7 +1849,7 @@ def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_pa
     )
 
     assert isinstance(preview, PresentedReply)
-    assert "Reminder at: 2026-09-18T01:00:00+00:00" in preview.text
+    assert "Reminder at: 18 Sep 2026 · 1:00 am (UTC+00:00)" in preview.text
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task saved"
@@ -1857,7 +1857,7 @@ def test_telegram_task_reminder_requires_review_then_is_durably_scheduled(tmp_pa
     assert reminder is not None and reminder.chat_id == "100"
     task_list = application.handle(make_event(text="/tasks"))
     assert isinstance(task_list, PresentedReply)
-    assert "reminder 2026-09-18T01:00:00+00:00" in task_list.text
+    assert "reminder 18 Sep 2026 · 1:00 am (UTC+00:00)" in task_list.text
 
 
 def test_workspace_pages_reach_every_workspace_and_linked_source(tmp_path: Path) -> None:

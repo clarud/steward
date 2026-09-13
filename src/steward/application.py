@@ -1719,10 +1719,10 @@ class StewardTaskApplication:
         lines = [f"Page {page} of {pages}"]
         lines.extend(
             f"{index}: {task.title}"
-            + (f" (due {task.due_at.isoformat()})" if task.due_at else "")
+            + (f" (due {timestamp_label(task.due_at)})" if task.due_at else "")
             + (f" ({task.due_hint})" if task.due_hint else "")
             + (
-                f" (reminder {reminder.remind_at.isoformat()})"
+                f" (reminder {timestamp_label(reminder.remind_at)})"
                 if not completed and self._reminders is not None
                 and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
                 else ""
@@ -1742,11 +1742,11 @@ class StewardTaskApplication:
             return f"Task {task_id} was not found."
         lines = [task.title, f"Status: {task.status}"]
         if task.due_at:
-            lines.append(f"Due at: {task.due_at.isoformat()}")
+            lines.append(f"Due at: {timestamp_label(task.due_at)}")
         elif task.due_hint:
             lines.append(f"Due cue: {task.due_hint}")
         if task.status == "open" and self._reminders is not None and (reminder := self._reminders.reminder_for_task(task_id)) is not None:
-            lines.append(f"Reminder: {reminder.remind_at.isoformat()}")
+            lines.append(f"Reminder: {timestamp_label(reminder.remind_at)}")
         actions = [ReplyAction("Tasks", "/tasks")]
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
@@ -1785,9 +1785,9 @@ class StewardTaskApplication:
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create task: {title}")
         due_line = f"\nDue cue: {due_hint}" if due_hint else ""
         if due_at:
-            due_line += f"\nDue at: {due_at.isoformat()}"
+            due_line += f"\nDue at: {timestamp_label(due_at)}"
         if remind_at:
-            due_line += f"\nReminder at: {remind_at.isoformat()}"
+            due_line += f"\nReminder at: {timestamp_label(remind_at)}"
         return PresentedReply(
             f"{due_line.lstrip()}\n\nNo task has been saved yet.",
             (ReplyAction("Accept", f"/approve_action {pending.id}"), ReplyAction("Discard", f"/reject_action {pending.id}")),
