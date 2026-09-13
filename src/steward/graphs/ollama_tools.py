@@ -66,6 +66,8 @@ class OllamaToolCallingModel:
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
             raise ModelGatewayError("The local Ollama tool-agent request could not be completed.") from error
 
+        if not isinstance(body, dict):
+            raise ModelGatewayError("The local Ollama model returned an invalid chat response.")
         message = body.get("message")
         if not isinstance(message, dict):
             raise ModelGatewayError("The local Ollama model returned an invalid chat response.")

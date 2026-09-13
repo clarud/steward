@@ -64,7 +64,7 @@ class OpenAICompatibleToolCallingModel:
             response = self._client.responses.create(**payload)
         except Exception as error:
             logger.warning(
-                "OpenAI-compatible tool request failed (%s): %s", type(error).__name__, error
+                "OpenAI-compatible tool request failed (%s).", type(error).__name__
             )
             raise ModelGatewayError("The OpenAI-compatible tool-agent request could not be completed.") from error
 

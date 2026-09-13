@@ -867,15 +867,13 @@ extractor-specific recovery guidance without claiming the original is empty. No
 parser/model runs merely to display the card. Persisted exception-category
 diagnosis and live attachment-recovery acceptance remain unfinished.
 
-Verification checkpoint (2026-09-12): the full automated pytest suite passed
-after the Calendar and generic tool-error privacy changes at `5bcf802`. An
-expanded interrupt regression also passed in the 22-test agent-graph file:
-explicit resume produces one successful result with the original tool-call ID,
-and post-interrupt work does not run before approval. The full run began before
-that test expansion; the expanded test file was verified separately. These are
-automated checks, not live provider/Telegram acceptance or completion of the
-delivery program. Remaining priorities include representative provider routing,
-the real Telegram acceptance checklist, and broader intake/knowledge workflows.
+Representative failure paths are now covered for every configured provider.
+SoCLaaS, Ollama, and Gemini adapter failures produce bounded model-gateway errors;
+Ollama also rejects valid JSON with an invalid top-level/message shape instead of
+leaking `AttributeError`. SoCLaaS local warnings omit raw provider diagnostics.
+Calendar tests cover factory/request/projection failures, while Drive/Gmail tests
+cover search/import/cursor recovery cards. All use synthetic diagnostics and no
+real account. Live provider outage and recovery remain operator rehearsals.
 
 The agent tool node now converts handled validation/execution failures into
 fixed secret-free error results. Graph tests verify model continuation without
@@ -1024,7 +1022,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 1. Routing foundation | Substantially complete | Commands (including unknown-command fallback), deterministic natural-language reads, callbacks, pagination, path-redacted activity presentation, secret-free `/status` runtime readiness, and persisted `that`/`last source` reference context | Broader reply/reference-resolution cases |
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture; recovery cards explain each supported extractor category | Persisted extraction diagnostics and live recovery acceptance |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
-| 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, and safe recursion-limit failure replies | Broader provider-failure evaluations |
+| 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, safe recursion-limit replies, and synthetic failure matrices for SoCLaaS/Ollama/Gemini/Calendar/Drive/Gmail | Live provider outage and recovery acceptance |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Natural conflict follow-ups, reviewed claim-revision wording, and richer synthesis |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |

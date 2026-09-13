@@ -410,6 +410,77 @@ def test_openai_compatible_tool_adapter_replays_tool_messages_as_response_items(
     ]
 
 
+def test_soclaas_transport_failure_is_a_secret_free_gateway_error(caplog) -> None:
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            raise RuntimeError("Bearer synthetic-secret at C:/private/soclaas.json")
+
+    class Client:
+        responses = Responses()
+
+    adapter = OpenAICompatibleToolCallingModel(
+        api_key="test", model="model", base_url="https://gateway.example/v1", client=Client()
+    )
+
+    with pytest.raises(ModelGatewayError) as failure:
+        adapter.invoke([HumanMessage("Find notes")])
+
+    assert str(failure.value) == "The OpenAI-compatible tool-agent request could not be completed."
+    assert "synthetic-secret" not in str(failure.value) and "C:/private" not in str(failure.value)
+    assert "synthetic-secret" not in caplog.text and "C:/private" not in caplog.text
+
+
+@pytest.mark.parametrize("payload", [b"not-json", b"[]", b'{"response": "wrong shape"}'])
+def test_ollama_transport_and_malformed_responses_are_bounded(payload: bytes) -> None:
+    class Response:
+        def read(self):
+            return payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    adapter = OllamaToolCallingModel(model="qwen3", opener=lambda *_args, **_kwargs: Response())
+
+    with pytest.raises(ModelGatewayError) as failure:
+        adapter.invoke([HumanMessage("Find notes")])
+
+    assert "Ollama" in str(failure.value)
+    assert payload.decode("utf-8", errors="ignore") not in str(failure.value)
+
+
+def test_ollama_transport_diagnostic_is_not_returned_to_the_caller() -> None:
+    def unavailable(*_args, **_kwargs):
+        raise OSError("C:/private/ollama.sock token=synthetic-secret")
+
+    with pytest.raises(ModelGatewayError) as failure:
+        OllamaToolCallingModel(model="qwen3", opener=unavailable).invoke([HumanMessage("Find notes")])
+
+    assert str(failure.value) == "The local Ollama tool-agent request could not be completed."
+    assert "synthetic-secret" not in str(failure.value) and "C:/private" not in str(failure.value)
+
+
+def test_gemini_provider_diagnostic_is_not_returned_to_the_caller() -> None:
+    class Models:
+        @staticmethod
+        def generate_content(**_kwargs):
+            raise RuntimeError("C:/private/gemini-token.json contains synthetic-secret")
+
+    class Client:
+        models = Models()
+
+    adapter = GeminiToolCallingModel(api_key="test", model="gemini-test", client=Client())
+
+    with pytest.raises(ModelGatewayError) as failure:
+        adapter.invoke([HumanMessage("Find notes")])
+
+    assert str(failure.value) == "The Gemini tool-agent request could not be completed."
+    assert "synthetic-secret" not in str(failure.value) and "C:/private" not in str(failure.value)
+
+
 def test_ollama_tool_adapter_replays_tool_calls_and_results() -> None:
     messages = OllamaToolCallingModel._messages(
         [

@@ -1616,6 +1616,23 @@ or durable recovery for every tool. This guard
 does not sanitize successful tool return values or replace per-tool privacy
 policy. It also does not by itself diagnose the underlying local failure.
 
+Representative provider-failure tests now cover every configured boundary without
+using real accounts. SoCLaaS/OpenAI-compatible request exceptions become a fixed
+`ModelGatewayError`, and the local warning records only the exception class—not a
+provider message that could contain a token or path. Ollama covers connection
+failure, invalid JSON, a valid non-object JSON response, and a missing `message`
+object; all become bounded gateway errors. Gemini covers SDK/request exceptions and
+message-conversion incompatibility, while an empty successful completion returns a
+safe final message. The graph converts these model gateway failures into its normal
+temporary-unavailability answer.
+
+Calendar's existing matrix covers client construction, request execution, and
+event projection through the actual tool wrappers. Drive and Gmail tests cover
+search/import exceptions, cursor retry after reconstructed application state, and
+removal of provider paths/tokens from Telegram recovery cards. These tests prove
+the local failure contracts, not live quota behavior, OAuth-provider wording, or
+service recovery. Real outage rehearsal remains a separate operator checklist.
+
 `CalendarReadToolService` returns fixed, secret-free error payloads when client
 creation, API requests, or event projection fails. Provider exception strings
 are deliberately excluded: they may contain OAuth paths, tokens, request URLs,

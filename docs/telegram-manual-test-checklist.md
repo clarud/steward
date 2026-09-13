@@ -539,6 +539,17 @@ daily-use problem into a reproducible evaluation case rather than a vague
 regression.
 ## Runtime ownership verification
 
+Before a live outage rehearsal, run the synthetic provider matrix:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\graphs\test_tool_agent.py tests\test_calendar.py tests\test_external_search_navigation.py tests\test_application.py -q
+```
+
+It must cover bounded SoCLaaS, Ollama, and Gemini adapter failures; Calendar
+factory/request/projection failures; and Drive/Gmail search/import recovery. The
+tests use synthetic secret-bearing diagnostics and must not print those values.
+They do not contact providers or prove live OAuth/quota recovery.
+
 For a controlled extraction failure, approve re-extraction of a non-sensitive
 test source whose parser cannot complete. Expect Text refresh incomplete with
 Retry refresh, Read stored text, Source details, and Dismiss review, without local
