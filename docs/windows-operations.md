@@ -130,3 +130,25 @@ Deployment acceptance is still required on the actual machine: log out/in, verif
 one poller, check available roots, resume a pending review, and exercise outage
 recovery using the Telegram manual checklist. This runbook does not certify those
 checks as completed.
+
+## 5. Rehearsal record
+
+On 2026-09-13, the repository's disposable local rehearsal passed the following
+real code paths without touching the user's operational database or vault:
+
+- a temporary source directory was moved, the old root became unavailable, and
+  relocation verified the replacement bytes before preserving the source ID;
+- CLI backup and confirmed restore produced write-once snapshots plus the required
+  pre-restore safety copy;
+- restored knowledge state was reopened and reviewed from a fresh Python process;
+- a runtime-lock owner process was terminated and a later process safely acquired
+  the same lock;
+- an actual refused loopback connection reached the Ollama adapter and returned
+  its bounded `ModelGatewayError` without raw socket diagnostics.
+
+The installation's `steward health --strict` preflight passed: both databases were
+available, one authorized root was available, and a Telegram token was configured.
+A read-only Task Scheduler inspection found no task named `Steward Telegram`.
+Therefore Task Scheduler registration, logon triggering, one-poller verification,
+and live Telegram/provider outage recovery remain unperformed. Do not interpret
+the disposable recovery rehearsal as start-at-login acceptance.

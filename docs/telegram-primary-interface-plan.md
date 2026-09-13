@@ -875,6 +875,14 @@ Calendar tests cover factory/request/projection failures, while Drive/Gmail test
 cover search/import/cursor recovery cards. All use synthetic diagnostics and no
 real account. Live provider outage and recovery remain operator rehearsals.
 
+The 2026-09-13 local operations rehearsal exercised temporary root relocation,
+CLI backup/restore with a safety copy, restored state in a fresh process, runtime
+lock recovery after a killed owner, and a real refused loopback request through
+the Ollama adapter. The installation also passed `steward health --strict`. A
+read-only Windows check found no registered `Steward Telegram` task, so actual
+start-at-login, one-poller, and live external-provider outage acceptance remain
+open and are not represented as completed.
+
 The agent tool node now converts handled validation/execution failures into
 fixed secret-free error results. Graph tests verify model continuation without
 exception diagnostics and preserve intentional LangGraph interrupts. Successful
@@ -1025,7 +1033,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, safe recursion-limit replies, and synthetic failure matrices for SoCLaaS/Ollama/Gemini/Calendar/Drive/Gmail | Live provider outage and recovery acceptance |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Natural conflict follow-ups, reviewed claim-revision wording, and richer synthesis |
-| 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery coverage, and bounded SQLite-busy scan recovery | Recovery rehearsal, start-at-login and broader fault-injection coverage |
+| 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery, bounded SQLite-busy scan recovery, and disposable moved-root/backup/restore/process-outage rehearsal | Register and accept start-at-login; live Telegram/provider outage recovery |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |
 | 10. Telegram companion experience | In progress | Durable callbacks; escaped, styled cards; contextual review confirmations; compact buttons; source, record, task, workspace, root, and Calendar browsing; durable explicit follow-ups for recently opened source/record/task/workspace cards; and a read-only tool agent for ordinary read requests | Broaden contextual follow-ups and next-action cards across remaining review/Calendar workflows; validate the full daily-use checklist on Telegram |
