@@ -763,9 +763,11 @@ turning tasks into events. A precise, open, unlinked task offers a separate
 the task displays the relationship and offers **View calendar**, which fetches
 current provider state. Tasks without precise deadlines and completed unlinked
 tasks do not acquire Calendar actions. `CalendarLinkRepository` centralizes the
-local opaque-ID lookup without contacting Google. Automated repository,
-application, Calendar, and composition tests pass; live Calendar link navigation
-remains open.
+local opaque-ID lookup without contacting Google. An opened reviewed deadline
+marker can now answer `what task is this for?` with a local linked-task card and
+an **Open task** action; ordinary Calendar events explicitly remain unlinked.
+Automated repository, application, Calendar, and composition tests pass; live
+Calendar link navigation remains open.
 
 Organization edit-target UX now exposes a paginated existing-workspace picker
 and a durable new-workspace naming prompt. Compact numbered choices use local
@@ -1034,7 +1036,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture; recovery cards explain each supported extractor category | Persisted extraction diagnostics and live recovery acceptance |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, safe recursion-limit replies, and synthetic failure matrices for SoCLaaS/Ollama/Gemini/Calendar/Drive/Gmail | Live provider outage and recovery acceptance |
-| 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, and task-card links to current Calendar events; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
+| 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, bidirectional task/Calendar card navigation for explicit links, travel/receipt/warranty record proposal/review, approved duplicate-protected Calendar-event proposal/write, and reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes and durable reviewed user-authored claim revisions; explicit or reply-selected curated-note proposals; local/external model synthesis of a selected reply; reviewable note edits; and ephemeral research cards that retain exact reviewed material | Model-assisted revision drafting, richer synthesis, and broader conflict evaluation |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery, bounded SQLite-busy scan recovery, and disposable moved-root/backup/restore/process-outage rehearsal | Register and accept start-at-login; live Telegram/provider outage recovery |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |

@@ -1561,6 +1561,46 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
     assert graph.inputs == []
 
 
+def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 10, 1, 9, tzinfo=UTC))
+    links = CalendarLinkRepository(database)
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "event-opaque-1") is True
+    contexts = ReviewContextRepository(database)
+    contexts.set("telegram", "100", "calendar", "event-opaque-1")
+    application = StewardCalendarApplication(
+        None, contexts=contexts, calendar_links=links, tasks=tasks
+    )
+
+    linked = application.resolve_calendar_reference(make_event(text="what task is this for?"))
+
+    assert isinstance(linked, PresentedReply)
+    assert linked.title == "Linked task"
+    assert "Submit CS3210 lab" in linked.text
+    assert linked.actions[0].command == f"/task {task.id}"
+    assert linked.actions[1].command == "/calendar_get event-opaque-1"
+
+    event_card = application._event_card(
+        make_event(text="/calendar_get event-opaque-1"),
+        type("Event", (), {
+            "id": "event-opaque-1", "summary": "Due: Submit CS3210 lab",
+            "start": "2026-10-01T09:00:00+00:00", "end": "2026-10-01T09:15:00+00:00",
+            "location": None, "description": None,
+        })(),
+    )
+    assert any(action.command == "/calendar_linked_task" for action in event_card.actions)
+    button_linked = application.resolve_calendar_reference(make_event(text="/calendar_linked_task"))
+    assert isinstance(button_linked, PresentedReply)
+    assert button_linked.title == "Linked task"
+
+    contexts.set("telegram", "100", "calendar", "unlinked-event")
+    unlinked = application.resolve_calendar_reference(make_event(text="show linked task"))
+
+    assert isinstance(unlinked, PresentedReply)
+    assert unlinked.title == "No linked task"
+
+
 def test_telegram_preserves_calendar_reference_for_explicit_retry_after_failure(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

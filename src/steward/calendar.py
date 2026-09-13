@@ -171,6 +171,24 @@ class CalendarLinkRepository:
     def task_event_id(self, task_id: int) -> str | None:
         return self._event_id("calendar_task_event_links", "task_id", task_id)
 
+    def task_id_for_event(self, event_id: str) -> int | None:
+        """Return Steward's optional local task link for one opaque Calendar ID.
+
+        This is deliberately a local relationship lookup, not a Calendar
+        search. Google Calendar remains authoritative for the event itself;
+        the link merely lets a user move from an event Steward created as a
+        reviewed deadline marker back to its independent task.
+        """
+
+        if not event_id.strip():
+            raise ValueError("Calendar event ID must not be empty.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT task_id FROM calendar_task_event_links WHERE external_event_id = ?",
+                (event_id,),
+            ).fetchone()
+        return int(row[0]) if row else None
+
     def link_travel_event(self, key: str, record_id: int, event_id: str) -> bool:
         return self._link("calendar_event_links", "travel_record_id", key, record_id, event_id)
 

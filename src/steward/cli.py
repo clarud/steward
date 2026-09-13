@@ -1635,7 +1635,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 activity,
             ),
             calendar_application=StewardCalendarApplication(
-                _calendar_reader_factory(settings), contexts=review_contexts
+                _calendar_reader_factory(settings), contexts=review_contexts,
+                calendar_links=CalendarLinkRepository(database_path),
+                tasks=TaskService(database_path),
             ),
         )
         try:

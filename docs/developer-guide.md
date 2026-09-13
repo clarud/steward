@@ -1151,6 +1151,10 @@ link, the task card says `Calendar: linked deadline marker` and offers **View
 calendar**. That button performs the normal fresh Calendar lookup. Tasks without a
 precise deadline and completed unlinked tasks do not offer automatic scheduling.
 The task remains independently completable whether or not its marker exists.
+Calendar event cards can also use **what task is this for?** after a reviewed
+deadline marker is opened: Steward looks up only the local opaque-ID link and
+offers **Open task**. An unlinked event explicitly says so; it is never treated as
+a task merely because it appears in Calendar.
 
 ## Ephemeral external research
 

@@ -324,3 +324,17 @@ def test_task_calendar_event_requires_review_and_is_idempotent(tmp_path) -> None
         assert connection.execute(
             "SELECT task_id, external_event_id FROM calendar_task_event_links"
         ).fetchall() == [(task.id, "created-event")]
+
+
+def test_task_calendar_links_can_be_followed_in_both_directions(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    links = CalendarLinkRepository(database)
+    task = TaskService(database).create("Submit report")
+
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "calendar-event-opaque") is True
+    assert links.task_event_id(task.id or 0) == "calendar-event-opaque"
+    assert links.task_id_for_event("calendar-event-opaque") == task.id
+    assert links.task_id_for_event("unlinked-event") is None
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        links.task_id_for_event(" ")

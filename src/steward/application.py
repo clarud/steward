@@ -2747,9 +2747,13 @@ class StewardCalendarApplication:
         calendar_factory: Callable[[], CalendarService] | None,
         *,
         contexts: ReviewContextRepository | None = None,
+        calendar_links: CalendarLinkRepository | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self._calendar_factory = calendar_factory
         self._contexts = contexts
+        self._calendar_links = calendar_links
+        self._tasks = tasks
 
     def resolve_calendar_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Reopen only the exact Calendar event deliberately viewed in this chat.
@@ -2762,6 +2766,12 @@ class StewardCalendarApplication:
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized in {
+            "show linked task", "open linked task", "show the linked task",
+            "open the linked task", "what task is this for", "what task is that for",
+            "/calendar_linked_task",
+        }:
+            return self._linked_task_card(event)
         if normalized not in {
             "show that event", "open that event", "show the last event",
             "open the last event", "show that calendar event", "open that calendar event",
@@ -2838,16 +2848,62 @@ class StewardCalendarApplication:
                 details.append(f"{label}: {text[:limit]}" + ("\n[Truncated; view full details in Calendar.]" if len(text) > limit else ""))
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
+        actions: list[ReplyAction] = [ReplyAction("Refresh", f"/calendar_get {identifier}")]
+        if (
+            self._calendar_links is not None
+            and self._tasks is not None
+            and (task_id := self._calendar_links.task_id_for_event(identifier)) is not None
+            and self._tasks.get(task_id) is not None
+        ):
+            actions.append(ReplyAction("Linked task", "/calendar_linked_task"))
+        actions.extend((ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")))
         return PresentedReply(
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
             + ("\n\n".join(details) + "\n\n" if details else "")
             + f"Calendar ID: {identifier}",
-            actions=(ReplyAction("Refresh", f"/calendar_get {identifier}"), ReplyAction("Upcoming", "/calendar_search"),
-                     ReplyAction("Home", "/home")),
+            actions=tuple(actions),
             title=str(getattr(event_result, "summary")),
             icon="📅",
             reference=("calendar", identifier),
         )
+
+    def _linked_task_card(self, event: IncomingEvent) -> PresentedReply | str | None:
+        """Expose an existing reviewed deadline-marker relationship safely.
+
+        A Calendar event does not imply a task. Only a link previously stored
+        when an approved task deadline marker was created enables this narrow
+        follow-up. The user can then open the ordinary task card, whose
+        lifecycle remains independent from the Calendar event.
+        """
+
+        if self._contexts is None:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "calendar":
+            return None
+        if self._calendar_links is None or self._tasks is None:
+            return "Task-to-Calendar links are not configured for this Steward process."
+        task_id = self._calendar_links.task_id_for_event(str(context.identifier))
+        if task_id is None:
+            return PresentedReply(
+                "This Calendar event is not linked to a Steward task. Calendar events and tasks stay separate unless you explicitly add a precise task deadline to Calendar.",
+                (ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")),
+                title="No linked task",
+            )
+        task = self._tasks.get(task_id)
+        if task is None:
+            return PresentedReply(
+                "This Calendar event has a local Steward task link, but that task is no longer available. The Calendar event was not changed.",
+                (ReplyAction("Refresh", f"/calendar_get {context.identifier}"), ReplyAction("Home", "/home")),
+                title="Linked task unavailable",
+            )
+        due = f"\nDue: {task.due_at.isoformat()}" if task.due_at else ""
+        return PresentedReply(
+            f"{task.title}\nStatus: {task.status}{due}\n\nThis is Steward's local link to the Calendar deadline marker; completing the task does not change the Calendar event.",
+            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Back to event", f"/calendar_get {context.identifier}")),
+            title="Linked task",
+        )
+
 
 class StewardOperationsApplication:
     """Expose delivery diagnostics and reviewable recovery to the owner chat."""

@@ -389,6 +389,10 @@ until a separate filesystem backup exists.
   instead of offering another creation proposal. The button must fetch current
   Calendar data. Complete the task and verify the task can still be viewed and
   completed independently; this flow does not delete or edit its Calendar event.
+- From that opened Calendar marker, say `what task is this for?` or use the
+  linked-task follow-up. Verify it offers **Open task** for the original task.
+  Repeat the phrase on an ordinary unlinked Calendar event: Steward must say it
+  has no linked task, rather than inventing one.
 - Open an unlinked task with a precise deadline and verify **Add to calendar**
   creates a review rather than an event. A task with only a vague due cue, a task
   without a deadline, and a completed unlinked task must not be silently scheduled.
