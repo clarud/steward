@@ -1,6 +1,11 @@
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+import sqlite3
+
 import pytest
 
-from steward.research import DuckDuckGoSearchProvider, GeminiGoogleSearchProvider, ResearchBundle, ResearchProviderError, ResearchService, ResearchSource
+from steward.research import DuckDuckGoSearchProvider, EphemeralResearchCardRepository, GeminiGoogleSearchProvider, ResearchBundle, ResearchProviderError, ResearchService, ResearchSource
+from steward.storage import initialize_database
 
 
 class FakeProvider:
@@ -24,6 +29,21 @@ def test_research_service_keeps_external_results_ephemeral() -> None:
 def test_research_service_rejects_empty_question() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         ResearchService(FakeProvider()).research(" ")
+
+
+def test_corrupt_ephemeral_research_card_is_dropped_without_becoming_a_source(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    cards = EphemeralResearchCardRepository(database)
+    cards.add(
+        "temporary", "100", ResearchBundle("TLB", "answer", (ResearchSource("Example", "https://example.com"),)),
+        datetime.now(UTC) + timedelta(minutes=1),
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE ephemeral_research_cards SET sources_json = 'not json' WHERE token = 'temporary'")
+
+    assert cards.get("temporary", "100") is None
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM ephemeral_research_cards").fetchone()[0] == 0
 
 
 def test_gemini_provider_collects_grounded_web_sources() -> None:

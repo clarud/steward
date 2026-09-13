@@ -76,7 +76,20 @@ class EphemeralResearchCardRepository:
                 "WHERE token = ? AND chat_id = ?",
                 (token, chat_id),
             ).fetchone()
-        return self._bundle(row) if row is not None else None
+        if row is None:
+            return None
+        try:
+            return self._bundle(row)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            # A temporary card is never canonical material. Drop an unreadable
+            # cache row rather than exposing a database/parsing error or trying
+            # to retain an ambiguously reconstructed external bundle.
+            with sqlite3.connect(self._database_path) as connection:
+                connection.execute(
+                    "DELETE FROM ephemeral_research_cards WHERE token = ? AND chat_id = ?",
+                    (token, chat_id),
+                )
+            return None
 
     def take(self, token: str, chat_id: str) -> ResearchBundle | None:
         bundle = self.get(token, chat_id)

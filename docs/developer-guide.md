@@ -663,6 +663,8 @@ SQLite cache for 30 minutes. That preserves an explicit **Keep** choice across a
 Steward restart without rerunning a provider. The cache is operational data only:
 expiry removes it, it creates no Source or Knowledge, and selecting **Keep** is
 still the only transition into normal Inbox capture.
+If a temporary cache row cannot be decoded, Steward drops it and asks for fresh
+research rather than reconstructing or retaining uncertain external material.
 
 ### Google Drive search and explicit Inbox import
 
