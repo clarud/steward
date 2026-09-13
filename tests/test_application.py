@@ -598,6 +598,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert "flight_number: SQ638" in record_card.text and "arrival: Tokyo" in record_card.text
     assert "fragment" in record_card.text and "resume.pdf" in record_card.text
     assert str(tmp_path) not in record_card.text
+    assert any(action.command == f"/source {source.id}" for action in record_card.actions)
     assert RecordService(database).list_travel_records() == []
 
 

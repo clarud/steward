@@ -238,6 +238,7 @@ class StewardReviewInboxApplication:
             if proposal is None or proposal.status != "pending":
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
             title, description = self._action_summary(proposal.action_type, proposal.payload)
+            source_action: ReplyAction | None = None
             if proposal.action_type in {"create_travel_record", "create_receipt_record", "create_warranty_record"}:
                 if self._records is None or self._fragments is None:
                     return "Record preview is unavailable. Open the original record proposal before approving."
@@ -260,7 +261,10 @@ class StewardReviewInboxApplication:
                     f"{field}: {getattr(preview.record, field)} (fragment {fragment_id})"
                     for field, fragment_id in preview.field_evidence.items()
                 )
+                source_action = ReplyAction("Open source", f"/source {source_id}")
             actions = [ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")]
+            if source_action is not None:
+                actions.insert(0, source_action)
             if proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
                 actions.insert(1, ReplyAction("Edit", f"/curate_edit {identifier}"))
             return PresentedReply(
