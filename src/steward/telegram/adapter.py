@@ -498,6 +498,7 @@ def run_telegram_polling(
     application.add_handler(CommandHandler("recover_dead_letter", adapter.handle_update))
     application.add_handler(CommandHandler("calendar_search", adapter.handle_update))
     application.add_handler(CommandHandler("calendar_get", adapter.handle_update))
+    application.add_handler(CommandHandler("calendar_linked_task", adapter.handle_update))
     application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
     application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
     application.add_handler(CommandHandler("organization_context", adapter.handle_update))
