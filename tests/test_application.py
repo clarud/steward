@@ -545,6 +545,11 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert detail.title == "Organize resume.pdf"
     assert "No match yet." in detail.text
     assert "Your context: This is for my job search." in detail.text
+    assert {action.command for action in detail.actions} == {
+        f"/organization_accept {organization}", f"/organization_context {organization}",
+        f"/organization_new_workspace {organization}", f"/organization_keep_inbox {organization}",
+        f"/organization_reject {organization}",
+    }
     followup = reviews.handle_followup(make_event(text="what is this proposal?"))
     assert isinstance(followup, PresentedReply)
     assert followup.title == "Organize resume.pdf"

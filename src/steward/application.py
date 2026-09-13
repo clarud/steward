@@ -284,6 +284,8 @@ class StewardReviewInboxApplication:
                 f"Suggested destination: {target}\nWhy: {proposal.rationale}{guidance}\nEffect: {effect}",
                 (
                     ReplyAction("Accept", f"/organization_accept {identifier}"),
+                    ReplyAction("Change workspace", f"/organization_context {identifier}"),
+                    ReplyAction("New workspace", f"/organization_new_workspace {identifier}"),
                     ReplyAction("Inbox", f"/organization_keep_inbox {identifier}"),
                     ReplyAction("Reject", f"/organization_reject {identifier}"),
                 ),

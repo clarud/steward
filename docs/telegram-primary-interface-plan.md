@@ -779,7 +779,8 @@ original. Ambiguous targeted natural guidance preserves the current proposal and
 opens the picker rather than selecting a target or discarding the review. Missing
 targets leave the proposal pending. The new-workspace input
 survives restart and creates neither workspace nor move until the replacement is
-explicitly approved. Focused application/Telegram tests pass; live Telegram
+explicitly approved. These correction actions are available from both a direct
+organization card and the unified `/pending` review card. Focused application/Telegram tests pass; live Telegram
 picker layout and correction acceptance remain open.
 
 Telegram replies can now resolve exact previously delivered source, workspace,
