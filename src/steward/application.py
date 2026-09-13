@@ -724,8 +724,8 @@ class StewardReadApplication:
             "/propose_reextract SOURCE_ID, /propose_rebuild_index, /propose_unregister_source SOURCE_ID â€” reviewed source maintenance\n\n"
             "Review-required writes use the buttons or /approve_action ID and "
             "/reject_action ID. /save remains an explicit immediate Inbox shortcut.\n\n"
-            "Inspect organization history with /organization_proposals. Refine a pending organization proposal with /organization_context ID EXISTING_WORKSPACE, "
-            "or /organization_keep_inbox ID.\n\n"
+            "Inspect organization history with /organization_proposals. Use an organization card's Change workspace or New workspace buttons, "
+            "or the advanced /organization_context ID EXISTING_WORKSPACE and /organization_keep_inbox ID commands.\n\n"
             "Admin diagnostics: /integrations, /deliveries, /delivery_history, /dead_letters\n"
             "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"
         )
@@ -3193,6 +3193,7 @@ class StewardOrganizationApprovalApplication:
                 (
                     ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
                     ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
+                    ReplyAction("New workspace", f"/organization_new_workspace {proposal_id}"),
                     ReplyAction("Reject", f"/organization_reject {proposal_id}"),
                 ),
                 title=f"Organize {filename}", icon="📁",
@@ -3211,6 +3212,7 @@ class StewardOrganizationApprovalApplication:
             (
                 ReplyAction("Accept", f"/organization_accept {proposal_id}"),
                 ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
+                ReplyAction("New workspace", f"/organization_new_workspace {proposal_id}"),
                 ReplyAction("Keep in Inbox", f"/organization_keep_inbox {proposal_id}"),
                 ReplyAction("Reject", f"/organization_reject {proposal_id}"),
             ),
@@ -3246,18 +3248,50 @@ class StewardOrganizationApprovalApplication:
                     return (
                         f"Use /organization_context {pending.proposal_id} followed by an existing workspace name."
                     )
-                self._contexts.set(event.platform, event.chat_id, "organization_context", pending.proposal_id)
-                return PresentedReply(
-                    "Tell me the existing workspace this source belongs to. I will show a revised proposal; "
-                    "nothing moves yet.",
-                    title="Change workspace",
-                    icon="💬",
-                )
+                return self._workspace_target_picker(event, pending, 1)
             return self._revise_with_context(event, pending, guidance)
+        if command == "/organization_targets":
+            proposal_identifier, separator, page_text = argument.partition(" ")
+            if (
+                not proposal_identifier.isdigit()
+                or int(proposal_identifier) != pending.proposal_id
+                or not separator
+                or not page_text.isdigit()
+                or int(page_text) < 1
+            ):
+                return f"Use /organization_targets {pending.proposal_id} followed by a positive page number."
+            return self._workspace_target_picker(event, pending, int(page_text))
+        if command == "/organization_target":
+            proposal_identifier, separator, workspace_identifier = argument.partition(" ")
+            if (
+                not proposal_identifier.isdigit()
+                or int(proposal_identifier) != pending.proposal_id
+                or not separator
+                or not workspace_identifier.isdigit()
+            ):
+                return f"Choose an existing workspace for organization proposal {pending.proposal_id}."
+            workspace = next(
+                (item for item in self._workspaces.list_all() if item.id == int(workspace_identifier)),
+                None,
+            )
+            if workspace is None:
+                return "That workspace is no longer available. Choose another target."
+            return self._revise_with_context(event, pending, workspace.name)
         if command == "/organization_new_workspace":
             proposal_identifier, separator, workspace_name = argument.partition(" ")
-            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id or not separator or not workspace_name.strip():
+            if not proposal_identifier.isdigit() or int(proposal_identifier) != pending.proposal_id:
                 return f"Use /organization_new_workspace {pending.proposal_id} followed by a new workspace name."
+            if not separator or not workspace_name.strip():
+                if self._contexts is None:
+                    return f"Use /organization_new_workspace {pending.proposal_id} followed by a new workspace name."
+                self._contexts.set(event.platform, event.chat_id, "organization_new_workspace", pending.proposal_id)
+                return PresentedReply(
+                    "Send the name for the new workspace. Steward will show a replacement proposal; "
+                    "the workspace and file move are not created yet.",
+                    (ReplyAction("Existing workspace", f"/organization_context {pending.proposal_id}"),
+                     ReplyAction("Back", f"/review organization {pending.proposal_id}")),
+                    title="Name new workspace", icon="💬",
+                )
             return self._revise_with_new_workspace(event, pending, workspace_name)
         if command == "/organization_keep_inbox":
             if not argument.isdigit() or int(argument) != pending.proposal_id:
@@ -3333,14 +3367,55 @@ class StewardOrganizationApprovalApplication:
         if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
             return None
         context = self._contexts.get(event.platform, event.chat_id)
-        if context is None or context.kind != "organization_context":
+        if context is None or context.kind not in {"organization_context", "organization_new_workspace"}:
             return None
         pending = self._threads.get_pending(event.platform, event.chat_id)
         if pending is None or pending.proposal_id != context.identifier:
             self._contexts.clear(event.platform, event.chat_id)
             return "That organization review is no longer pending. Send /pending to see current reviews."
         self._contexts.clear(event.platform, event.chat_id)
+        if context.kind == "organization_new_workspace":
+            return self._revise_with_new_workspace(event, pending, (event.text or "").strip())
         return self._revise_with_context(event, pending, (event.text or "").strip())
+
+    def _workspace_target_picker(
+        self, event: IncomingEvent, pending: PendingOrganizationApproval, page: int
+    ) -> PresentedReply:
+        """Offer compact existing targets without treating selection as approval."""
+
+        workspaces = self._workspaces.list_all()
+        page_size = 6
+        pages = max(1, (len(workspaces) + page_size - 1) // page_size)
+        page = min(max(page, 1), pages)
+        visible = workspaces[(page - 1) * page_size:page * page_size]
+        lines = [
+            f"Page {page} of {pages}",
+            "Choose an existing workspace or send its exact name. Steward will show a revised proposal; nothing moves yet.",
+        ]
+        actions: list[ReplyAction] = []
+        for index, workspace in enumerate(visible, start=1):
+            lines.append(f"{index}. {workspace.name}")
+            if workspace.id is not None:
+                actions.append(
+                    ReplyAction(
+                        f"Choose {index}",
+                        f"/organization_target {pending.proposal_id} {workspace.id}",
+                    )
+                )
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/organization_targets {pending.proposal_id} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/organization_targets {pending.proposal_id} {page + 1}"))
+        actions.extend(
+            (
+                ReplyAction("New workspace", f"/organization_new_workspace {pending.proposal_id}"),
+                ReplyAction("Keep in Inbox", f"/organization_keep_inbox {pending.proposal_id}"),
+                ReplyAction("Back", f"/review organization {pending.proposal_id}"),
+            )
+        )
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, "organization_context", pending.proposal_id)
+        return PresentedReply("\n".join(lines), tuple(actions), title="Change workspace", icon="📁")
 
     def list_proposals(self) -> str:
         """Show bounded, path-free organization history for Telegram review."""

@@ -2889,7 +2889,8 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert "workspace Steward" in paused.text
     assert str(tmp_path) not in paused.text
     assert [action.command for action in paused.actions] == [
-        "/organization_accept 1", "/organization_context 1", "/organization_keep_inbox 1", "/organization_reject 1"
+        "/organization_accept 1", "/organization_context 1", "/organization_new_workspace 1",
+        "/organization_keep_inbox 1", "/organization_reject 1"
     ]
     assert not (tmp_path / "vault" / "projects" / "Steward").exists()
 
@@ -3155,6 +3156,7 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     prompt = app.handle_decision(make_event(text="/organization_context 1"))
     assert isinstance(prompt, PresentedReply)
     assert prompt.title == "Change workspace"
+    assert prompt.actions[0].command == "/organization_target 1 1"
     revised = app.handle_followup(make_event(text="CS3210 lecture notes"))
     assert isinstance(revised, PresentedReply)
     assert revised.title == "Organize unrelated.md"
@@ -3166,7 +3168,7 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
 
 
 def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
+    database = tmp_path / "steward.db"; checkpoints = tmp_path / "checkpoints.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)
     inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
     path = inbox / "distributed-systems.md"; path.write_text("note", encoding="utf-8")
@@ -3174,21 +3176,84 @@ def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tm
     source = sources.add(Source(None, path, "e" * 64, SourceType.MARKDOWN, 4, now, now, now))
     workspaces = WorkspaceRepository(database); proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
     approval = OrganizationApprovalService(proposals, sources, FileMutationService(sources, activity), activity, workspaces)
+    first_connection = sqlite3.connect(checkpoints, check_same_thread=False)
     app = StewardOrganizationApprovalApplication(
         proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
-        build_organization_approval_graph(proposals, checkpointer=InMemorySaver(), review_proposal=approval.review),
+        build_organization_approval_graph(proposals, checkpointer=SqliteSaver(first_connection), review_proposal=approval.review),
         source_repository=sources,
+        contexts=ReviewContextRepository(database),
     )
 
     app.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
-    revised = app.handle_decision(make_event(text="/organization_new_workspace 1 Distributed Systems"))
+    prompt = app.handle_decision(make_event(text="/organization_new_workspace 1"))
+    assert isinstance(prompt, PresentedReply)
+    assert prompt.title == "Name new workspace"
+    assert WorkspaceRepository(database).list_all() == []
+    first_connection.close()
+    restarted_connection = sqlite3.connect(checkpoints, check_same_thread=False)
+    app = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(
+            proposals, checkpointer=SqliteSaver(restarted_connection), review_proposal=approval.review
+        ),
+        source_repository=sources,
+        contexts=ReviewContextRepository(database),
+    )
+    revised = app.handle_followup(make_event(text="Distributed Systems"))
 
     assert isinstance(revised, PresentedReply)
     assert proposals.get(2).workspace_name == "Distributed Systems"
     assert WorkspaceRepository(database).list_all() == []
     assert app.handle_decision(make_event(text="/organization_accept 2")) == "Moved distributed-systems.md to Distributed Systems."
+    restarted_connection.close()
     assert [workspace.name for workspace in WorkspaceRepository(database).list_all()] == ["Distributed Systems"]
     assert (tmp_path / "vault" / "projects" / "Distributed Systems" / "distributed-systems.md").is_file()
+
+
+def test_organization_workspace_picker_is_paginated_and_selection_only_revises(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    source_path = inbox / "notes.md"; source_path.write_text("notes", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "c" * 64, SourceType.MARKDOWN, 5, now, now, now))
+    workspaces = WorkspaceRepository(database)
+    for index in range(8):
+        workspaces.create(f"Workspace {index}")
+    proposals = OrganizationProposalRepository(database); activity = ActivityService(database)
+    approval = OrganizationApprovalService(
+        proposals, sources, FileMutationService(sources, activity), activity, workspaces
+    )
+    app = StewardOrganizationApprovalApplication(
+        proposals, workspaces, OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(
+            proposals, checkpointer=InMemorySaver(), review_proposal=approval.review
+        ),
+        source_repository=sources, contexts=ReviewContextRepository(database),
+    )
+    app.begin(make_event(text="/save"), CaptureResult(source, duplicate=False))
+
+    first = app.handle_decision(make_event(text="/organization_context 1"))
+    assert isinstance(first, PresentedReply)
+    assert "Page 1 of 2" in first.text
+    next_command = next(action.command for action in first.actions if action.label == "Next")
+    second = app.handle_decision(make_event(text=next_command))
+    assert isinstance(second, PresentedReply)
+    assert "Workspace 7" in second.text
+    choose_command = next(action.command for action in second.actions if action.label == "Choose 2")
+
+    missing = app.handle_decision(make_event(text="/organization_target 1 999"))
+    assert missing == "That workspace is no longer available. Choose another target."
+    assert proposals.get(1).status == "pending"
+    assert source_path.is_file()
+
+    revised = app.handle_decision(make_event(text=choose_command))
+
+    assert isinstance(revised, PresentedReply)
+    assert proposals.get(1).status == "rejected"
+    assert proposals.get(2).workspace_id == 8
+    assert source_path.is_file()
+    assert workspaces.list_source_ids(8) == ()
 
 
 def test_telegram_organization_can_replace_a_move_with_an_accepted_inbox_outcome(tmp_path: Path) -> None:

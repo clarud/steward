@@ -745,6 +745,15 @@ Every implementation goal contributes to this matrix:
 
 ## Delivery status and next priorities
 
+Organization edit-target UX now exposes a paginated existing-workspace picker
+and a durable new-workspace naming prompt. Compact numbered choices use local
+workspace IDs only inside callback commands; selecting or typing a target rejects
+the superseded proposal and displays a replacement proposal without moving the
+original. Missing targets leave the proposal pending. The new-workspace input
+survives restart and creates neither workspace nor move until the replacement is
+explicitly approved. Focused application/Telegram tests pass; live Telegram
+picker layout and correction acceptance remain open.
+
 Telegram replies can now resolve exact previously delivered source, workspace,
 task, typed-record, and Calendar detail cards instead of relying only on the newest
 chat-wide selection. Each single-object card carries a narrow pointer; after
@@ -1001,7 +1010,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 0. Production-source integrity | Complete | Production fixture cleanup, isolated tests, explicit source removal | Keep enforcing root exclusions as roots evolve |
 | 1. Routing foundation | Substantially complete | Commands (including unknown-command fallback), deterministic natural-language reads, callbacks, pagination, path-redacted activity presentation, secret-free `/status` runtime readiness, and persisted `that`/`last source` reference context | Broader reply/reference-resolution cases |
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture | More extractor-specific review |
-| 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, context revision to an existing workspace, reviewed new-workspace proposals, and explicit keep-Inbox target revision | Broader edit-target UX |
+| 3. Organization review | Substantially complete | Inbox review, durable organization decisions, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Richer proposal-rationale/evidence editing and live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, and safe recursion-limit failure replies | Broader provider-failure evaluations |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, and reviewable idempotent Calendar deadline markers; travel/receipt/warranty record proposal/review; approved, duplicate-protected Calendar-event proposal/write; reviewed travel/receipt/warranty corrections | Richer task/Calendar integration |
 | 6. Curated knowledge/research | In progress | Concept/claim enrichment review with an explicit claim/evidence conflict card, explicit or reply-selected curated-note proposals, local/external model synthesis of a selected reply, reviewable user edits that supersede rather than overwrite a note draft, and ephemeral research cards that retain either the exact reviewed result or one selected source reference to Inbox | Broader conflict-resolution lifecycle UX |
@@ -1069,9 +1078,11 @@ that no write occurs before explicit approval.
   restart because only the opaque pending-review reference is stored. Once
   saved, that explicit context can select one existing workspace for the
   first organization proposal; it never moves the original automatically.
-- Every organization card offers **Change workspace**. It opens the same
-  durable, chat-scoped plain-language correction step, supersedes the prior
-  proposal, and shows a new approval card before any physical move.
+- Every organization card offers **Change workspace** and **New workspace**.
+  Existing targets are paginated with compact numbered buttons and can still be
+  supplied by name. New-workspace naming is a durable chat-scoped input step.
+  Either choice supersedes the prior proposal and shows a new approval card
+  before creating a workspace or moving an original.
 - Saved records can be opened with `/record travel ID`, `/record receipt ID`,
   or `/record warranty ID`. Each current field identifies its supporting
   fragment only when the current value still occurs there; an explicit

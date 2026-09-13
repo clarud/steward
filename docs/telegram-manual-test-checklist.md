@@ -211,9 +211,15 @@ until a separate filesystem backup exists.
 - For a proposed move, choose **Keep in Inbox**. Verify it becomes a separate
   review card and accepting that card leaves the original in Inbox while
   recording the chosen outcome.
-- For an uncertain Inbox proposal, send `/organization_context ID CS3210` using
-  an existing workspace name. Verify Steward supersedes the old proposal with
-  a new review card; only accepting that new card may move the original file.
+- For an uncertain Inbox proposal, choose **Change workspace**. Browse more than
+  six workspaces with Next/Previous, choose a numbered target, and verify Steward
+  supersedes the old proposal with a new review card; only accepting that new
+  card may move the original. A workspace removed before selection must produce
+  a safe retry message and leave the proposal and original unchanged. Typed
+  `/organization_context ID CS3210` remains an advanced fallback.
+- Choose **New workspace**, restart Steward before sending the name, then send a
+  harmless new workspace name. Verify Steward first shows a replacement proposal:
+  neither the workspace nor the move exists until that proposal is accepted.
 
 ## Long-document synthesis
 

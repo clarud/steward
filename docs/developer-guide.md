@@ -971,6 +971,16 @@ destination from the validated workspace, and the normal approval flow remains
 required before a move. If the model is unavailable or uncertain, the source
 stays in Inbox through the existing conservative fallback.
 
+Telegram organization correction does not require the user to remember an
+internal workspace ID or exact command. **Change workspace** opens a six-item,
+paginated picker of existing workspaces with compact numbered buttons; choosing
+one supersedes the old proposal and renders a new review without moving the file.
+The user may still type an exact existing name. **New workspace** starts a durable
+chat-scoped naming step, and its next ordinary message becomes the candidate name
+after restart. It likewise creates only a replacement proposal. **Keep in Inbox**
+remains a separately reviewed outcome. Invalid or deleted workspace targets leave
+the original proposal pending and the file unchanged.
+
 The first LangGraph approval graph demonstrates a durable pause with
 `interrupt()` and later resume. On acceptance it calls that same approval
 service, so a resumed workflow executes the move rather than merely changing a
@@ -1655,9 +1665,10 @@ remain future work.
   source permits the configured model. The model sees source fragments and
   known workspace IDs, never constructs a path, and deterministic validation
   rejects invalid output. Telegram supports explicit `yes`/`no` decisions and
-  a durable **Change workspace** step that accepts an existing workspace name,
-  then redraws a fresh approval card. It still does not infer a filesystem path
-  or move an original without visible approval.
+  a durable **Change workspace** step with a paginated existing-workspace picker,
+  typed-name fallback, and durable **New workspace** naming prompt, then redraws
+  a fresh approval card. It still does not infer a filesystem path or move an
+  original without visible approval.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
   not a general airline-document parser; Calendar events require a travel
   record plus explicit proposal approval or an explicit CLI write command.
