@@ -13,6 +13,8 @@ safe test.
 - The run exposed a stale database migration-ledger expectation: schema version
   53 (`task_calendar_associations`) existed but was omitted from the test. The
   test was corrected and the full suite then passed.
+- Follow-up automated coverage passed for stable source IDs, revoked-token
+  recovery, and reviewed task-to-Calendar associations.
 
 ### Passed
 
@@ -89,6 +91,14 @@ safe test.
   policy remained unchanged until explicit approval.
 - Applying the review successfully updated the intended source privacy rule.
 
+#### Reviewed task-to-Calendar association
+
+- An existing harmless Calendar event could be selected from an event card and
+  proposed for an open local task.
+- Approval created only Steward's local association; it did not create, edit,
+  or delete a Google Calendar event.
+- The resulting task and event cards each exposed the same relationship.
+
 #### Guided Telegram acceptance batch
 
 - The review-context safety and staged-capture checks were completed in the
@@ -97,7 +107,11 @@ safe test.
   specialist recovery rehearsals below remain intentionally tracked rather than
   being treated as passed by this summary.
 
-### Errors and bugs
+### Errors, fixes, and follow-up rehearsals
+
+No unresolved functional defect was found in the completed 2026-09-16 manual
+acceptance batch. The issues below are retained as resolved history so their
+regression coverage and safe operating guidance remain discoverable.
 
 #### Source list pagination does not expose stable source IDs — open bug
 
@@ -145,8 +159,7 @@ pages. Source-detail cards show `Source ID: N`; list ordinals remain only
 page-local navigation positions. Automated pagination coverage verifies that
 source 11 appears as `ID 11` on page two.
 
-**Live check pending:** Restart Telegram, open `/sources` page two, and confirm
-the visible stable ID matches the source card opened by its button.
+**Live check:** Passed in the completed Telegram acceptance batch.
 
 ##### Revoked Google OAuth token recovery
 
@@ -165,7 +178,7 @@ One unthreaded `show that event` appeared to have two identical cards in the
 initial transcript. It was not reproduced and is not tracked as a defect. The
 misspelled `show deatils` clarification is expected behavior, not a defect.
 
-## Implemented, awaiting live Telegram acceptance
+## Historical acceptance instructions — completed
 
 ### Source privacy picker
 
@@ -195,13 +208,12 @@ The picker is covered by automated application tests.
 6. For a source currently blocked from the configured model, tap **Summarize**
    and confirm **Change privacy** reaches the same review-required picker.
 
-### Pending manual checks
+### Future specialist rehearsals
 
-- Test reviewed linking of one harmless existing Calendar event to one open
-  local task using the **Link task** card action. Confirm approval writes only
-  the local relationship, while rejection/outage leaves it pending or separate.
-  The review is chat-owned; a different authorized chat must not be able to
-  approve or reject it.
-- Test Drive/Gmail unavailable-provider recovery cards with a non-sensitive
-  test authorization.
-- Continue the Telegram manual checklist in safe batches.
+- Do not revoke a working OAuth token merely to test recovery. When a genuine
+  revoked/expired Calendar, Drive, or Gmail token occurs, confirm browser
+  consent opens without a traceback and Telegram displays only safe recovery
+  text.
+- Exercise Drive/Gmail unavailable-provider recovery cards only with a
+  non-sensitive test authorization.
+- Continue the broader Telegram manual checklist as new features are added.
