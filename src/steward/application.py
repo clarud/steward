@@ -287,6 +287,7 @@ class StewardReviewInboxApplication:
             return PresentedReply(
                 f"Suggested destination: {target}\nWhy: {proposal.rationale}{guidance}\nEffect: {effect}",
                 (
+                    ReplyAction("Open source", f"/source {proposal.source_id}"),
                     ReplyAction("Accept", f"/organization_accept {identifier}"),
                     ReplyAction("Change workspace", f"/organization_context {identifier}"),
                     ReplyAction("New workspace", f"/organization_new_workspace {identifier}"),
@@ -3617,11 +3618,12 @@ class StewardOrganizationApprovalApplication:
             else "saved source"
         )
         if proposal.suggested_path is None:
+            source_action = (ReplyAction("Open source", f"/source {proposal.source_id}"),) if source is not None else ()
             return PresentedReply(
                 f"Suggested destination: Inbox\nWhy: {proposal.rationale}\n"
                 "Effect: the original stays in Inbox.\n\n"
                 "Reply with a workspace name if you want to guide this suggestion.",
-                (
+                source_action + (
                     ReplyAction("Keep in Inbox", f"/organization_accept {proposal_id}"),
                     ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
                     ReplyAction("New workspace", f"/organization_new_workspace {proposal_id}"),
@@ -3637,11 +3639,12 @@ class StewardOrganizationApprovalApplication:
             if workspace is not None else f"the proposed workspace ({proposal.suggested_path.name})"
         )
         guidance = f"\nYour context: {proposal.user_guidance}" if proposal.user_guidance else ""
+        source_action = (ReplyAction("Open source", f"/source {proposal.source_id}"),) if source is not None else ()
         return PresentedReply(
             f"Suggested destination: {destination}\nWhy: {proposal.rationale}{guidance}\n"
             "Effect: accepting moves the original file.\n\n"
             "Reply with a workspace name to change this suggestion.",
-            (
+            source_action + (
                 ReplyAction("Accept", f"/organization_accept {proposal_id}"),
                 ReplyAction("Change workspace", f"/organization_context {proposal_id}"),
                 ReplyAction("New workspace", f"/organization_new_workspace {proposal_id}"),

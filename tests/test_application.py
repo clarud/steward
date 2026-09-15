@@ -546,7 +546,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert "No match yet." in detail.text
     assert "Your context: This is for my job search." in detail.text
     assert {action.command for action in detail.actions} == {
-        f"/organization_accept {organization}", f"/organization_context {organization}",
+        f"/source {source.id}", f"/organization_accept {organization}", f"/organization_context {organization}",
         f"/organization_new_workspace {organization}", f"/organization_keep_inbox {organization}",
         f"/organization_reject {organization}",
     }
@@ -3438,6 +3438,7 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
 
     assert isinstance(response, PresentedReply)
     assert "original stays in Inbox" in response.text
+    assert any(action.command == f"/source {source.id}" for action in response.actions)
     assert any(action.label == "Change workspace" for action in response.actions)
     assert proposals.get(1).status == "pending"
     prompt = app.handle_decision(make_event(text="/organization_context 1"))
