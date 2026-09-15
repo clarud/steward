@@ -1262,9 +1262,11 @@ pending and fails closed. Task and event cards expose the resulting relationship
 in both directions; completing the task still leaves Calendar untouched.
 
 Automated application coverage verifies the proposal/approval path, reverse
-navigation, local-only behavior, and Calendar-outage refusal. Live Telegram
-acceptance remains required for picker pagination, restart while pending,
-cross-chat isolation, and actual Calendar display behavior.
+navigation, local-only behavior, Calendar-outage refusal, picker pagination,
+and cross-chat approval refusal. Each association proposal is owned by the
+Telegram chat that created it; another chat cannot accept or reject it. Live
+Telegram acceptance remains required for restart while pending and actual
+Calendar display behavior.
 
 ## Explicitly local-only or browser-handoff operations
 

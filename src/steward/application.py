@@ -3156,6 +3156,7 @@ class StewardCalendarApplication:
         payload = {
             "task_id": str(task_id),
             "event_id": event_id,
+            "chat_id": event.chat_id,
             "task_title": task.title,
             "event_summary": str(getattr(current_event, "summary")),
             "event_start": str(getattr(current_event, "start")),
@@ -4387,7 +4388,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
             return self._review_workspace_link(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
-            return self._review_task_calendar_association(proposal_id, decision)
+            return self._review_task_calendar_association(proposal_id, decision, event)
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
@@ -4445,11 +4446,15 @@ class StewardActionProposalApplication:
             icon="✅" if proposal.status == "accepted" else "↩️",
         )
 
-    def _review_task_calendar_association(self, proposal_id: int, decision: str) -> str | PresentedReply:
+    def _review_task_calendar_association(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
         """Accept/reject a local task-to-existing-event relationship safely."""
         proposal = self._repository.get(proposal_id)
         if proposal is None or proposal.action_type != StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
             return "Task-to-Calendar association proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task-to-Calendar review belongs to a different Telegram chat."
         if proposal.status == decision:
             return f"Task-to-Calendar association proposal {proposal.id} was already {proposal.status}."
         if proposal.status != "pending":

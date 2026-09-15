@@ -1763,6 +1763,11 @@ def test_telegram_can_review_and_save_a_local_existing_task_calendar_association
     assert links.associated_event_id_for_task(task.id or 0) is None
     assert proposals.get(1).status == "pending"
 
+    from dataclasses import replace
+    cross_chat = application.handle(replace(make_event(text="/approve_action 1"), chat_id="200"))
+    assert cross_chat == "This task-to-Calendar review belongs to a different Telegram chat."
+    assert proposals.get(1).status == "pending"
+
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task linked to Calendar"
@@ -1793,7 +1798,7 @@ def test_existing_task_calendar_association_fails_closed_when_calendar_cannot_re
     links = CalendarLinkRepository(database)
     proposal = proposals.add(
         StewardCalendarApplication.ASSOCIATE_TASK_EVENT,
-        {"task_id": str(task.id), "event_id": "unavailable-event", "task_title": task.title,
+        {"task_id": str(task.id), "event_id": "unavailable-event", "chat_id": "100", "task_title": task.title,
          "event_summary": "Unavailable", "event_start": "2026-09-26T05:00:00+08:00",
          "event_end": "2026-09-26T06:00:00+08:00"},
     )

@@ -200,6 +200,8 @@ The picker is covered by automated application tests.
 - Test reviewed linking of one harmless existing Calendar event to one open
   local task using the **Link task** card action. Confirm approval writes only
   the local relationship, while rejection/outage leaves it pending or separate.
+  The review is chat-owned; a different authorized chat must not be able to
+  approve or reject it.
 - Test Drive/Gmail unavailable-provider recovery cards with a non-sensitive
   test authorization.
 - Continue the Telegram manual checklist in safe batches.
