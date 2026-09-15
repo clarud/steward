@@ -1814,6 +1814,35 @@ def test_existing_task_calendar_association_fails_closed_when_calendar_cannot_re
     assert links.associated_event_id_for_task(task.id or 0) is None
 
 
+def test_calendar_task_association_picker_paginates_and_excludes_linked_tasks(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    tasks = TaskService(database)
+    created = [tasks.create(f"Task {index}") for index in range(1, 12)]
+    links = CalendarLinkRepository(database)
+    assert links.link_task_event("task:1", created[0].id or 0, "deadline-marker") is True
+    assert links.associate_existing_event(created[1].id or 0, "other-existing-event") is True
+    contexts = ReviewContextRepository(database)
+    contexts.set("telegram", "100", "calendar", "ordinary-event")
+    application = StewardCalendarApplication(
+        None, contexts=contexts, calendar_links=links, tasks=tasks,
+        action_proposals=proposals, activity=activity,
+    )
+
+    first = application.handle_command(make_event(text="/calendar_link_task"))
+    second = application.handle_command(make_event(text="/calendar_link_task 2"))
+
+    assert isinstance(first, PresentedReply) and isinstance(second, PresentedReply)
+    assert "Page 1 of 2" in first.text
+    assert "1. Task 3" in first.text
+    assert "1. Task 1" not in first.text.splitlines()
+    assert "2. Task 2" not in first.text.splitlines()
+    assert "Page 2 of 2" in second.text
+    assert "Task 11" in second.text
+    assert any(action.command == f"/calendar_link_task_pick {created[-1].id}" for action in second.actions)
+
+
 def test_telegram_preserves_calendar_reference_for_explicit_retry_after_failure(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)
