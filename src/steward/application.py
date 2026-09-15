@@ -315,7 +315,7 @@ class StewardReviewInboxApplication:
             proposal = self._knowledge.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That knowledge review is no longer waiting. Send /pending for the current list."
-            actions = (
+            actions = list(
                 (
                     ReplyAction("Flag conflict", f"/review_enrichment {identifier} accepted"),
                     ReplyAction("Not a conflict", f"/review_enrichment {identifier} rejected"),
@@ -326,9 +326,13 @@ class StewardReviewInboxApplication:
                     ReplyAction("Reject", f"/review_enrichment {identifier} rejected"),
                 )
             )
+            if self._fragments is not None:
+                fragment = self._fragments.get(proposal.fragment_id)
+                if fragment is not None and self._sources.get_by_id(fragment.source_id) is not None:
+                    actions.append(ReplyAction("Open source", f"/source {fragment.source_id}"))
             return PresentedReply(
                 f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",
-                actions,
+                tuple(actions),
                 title="Knowledge update", icon="🧠"
             )
         return "That review type is unavailable. Send /pending for the current list."
@@ -2554,33 +2558,46 @@ class StewardKnowledgeApplication:
             title="Claim revision pending", icon="🧠",
         )
 
-    @staticmethod
     def _pending_enrichment_actions(
-        proposal: StoredKnowledgeEnrichmentProposal,
+        self, proposal: StoredKnowledgeEnrichmentProposal,
     ) -> tuple[ReplyAction, ...]:
         if proposal.operation is EnrichmentOperation.CONTRADICT:
-            return (
+            actions = (
                 ReplyAction("Flag conflict", f"/review_enrichment {proposal.id} accepted"),
                 ReplyAction("Not a conflict", f"/review_enrichment {proposal.id} rejected"),
             )
-        return (
-            ReplyAction("Accept", f"/review_enrichment {proposal.id} accepted"),
-            ReplyAction("Reject", f"/review_enrichment {proposal.id} rejected"),
-        )
+        else:
+            actions = (
+                ReplyAction("Accept", f"/review_enrichment {proposal.id} accepted"),
+                ReplyAction("Reject", f"/review_enrichment {proposal.id} rejected"),
+            )
+        return actions + self._evidence_source_action(proposal)
 
-    @staticmethod
     def _conflict_resolution_actions(
-        proposal: StoredKnowledgeEnrichmentProposal,
+        self, proposal: StoredKnowledgeEnrichmentProposal,
     ) -> tuple[ReplyAction, ...]:
         if proposal.conflict_resolution is ConflictResolution.NEEDS_REVISION:
-            return (ReplyAction("Draft revision", f"/draft_claim_revision {proposal.id}"),)
+            return (ReplyAction("Draft revision", f"/draft_claim_revision {proposal.id}"),) + self._evidence_source_action(proposal)
         if proposal.conflict_resolution is not None:
-            return ()
+            return self._evidence_source_action(proposal)
         return (
             ReplyAction("Keep claim", f"/resolve_knowledge_conflict {proposal.id} keep_existing"),
             ReplyAction("Mark disputed", f"/resolve_knowledge_conflict {proposal.id} disputed"),
             ReplyAction("Needs revision", f"/resolve_knowledge_conflict {proposal.id} needs_revision"),
-        )
+        ) + self._evidence_source_action(proposal)
+
+    def _evidence_source_action(
+        self, proposal: StoredKnowledgeEnrichmentProposal,
+    ) -> tuple[ReplyAction, ...]:
+        """Offer source inspection only for currently resolvable evidence."""
+
+        fragment = self._fragments.get(proposal.fragment_id)
+        if fragment is None:
+            return ()
+        # A fragment retains an opaque source ID even in a deliberately
+        # lightweight knowledge-only composition. The normal source reader
+        # validates current availability when the user follows this action.
+        return (ReplyAction("Open source", f"/source {fragment.source_id}"),)
 
     @staticmethod
     def _conflict_status_line(proposal: StoredKnowledgeEnrichmentProposal) -> str:
