@@ -761,7 +761,10 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
         assert invalid_answer not in unverified.text
     calls_before_denial = len(model.inputs)
     privacy.set_rule(source.id, PrivacyRule.NO_MODEL)
-    assert "privacy rule" in reader.resolve_source_reference(make_event(text="summarize it"))
+    denied = reader.resolve_source_reference(make_event(text="summarize it"))
+    assert isinstance(denied, PresentedReply)
+    assert "privacy rule" in denied.text
+    assert denied.actions[1].command == f"/privacy_options {source.id}"
     assert len(model.inputs) == calls_before_denial
 
 
@@ -1447,6 +1450,54 @@ def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_
     assert proposals.get(1).status == "accepted"
     repeated = application.handle(make_event(text="/approve_action 1"))
     assert repeated == "Privacy proposal 1 was already accepted."
+
+
+def test_telegram_source_privacy_picker_is_available_from_source_and_model_denial(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    path = tmp_path / "private.md"; path.write_text("private note", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    source = sources.add(Source(None, path, "c" * 64, SourceType.MARKDOWN, 12, now, now, now))
+    fragments = SourceFragmentRepository(database_path)
+    fragments.replace_for_source(ExtractionResult(
+        source.id or 0,
+        (SourceFragment(None, source.id or 0, "Private", 0, "private note", "lines 1-1"),),
+    ))
+    activity = ActivityService(database_path)
+    proposals = ActionProposalRepository(database_path)
+    privacy = PrivacyService(database_path)
+    privacy.set_rule(source.id or 0, PrivacyRule.NO_MODEL)
+    reads = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database_path),
+        activity, tmp_path, source_model=object(), source_model_allowed=privacy.permits_external_model,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=reads,
+        privacy_application=StewardPrivacyApplication(privacy, sources, activity, proposals),
+    )
+
+    source_card = application.handle(make_event(text=f"/source {source.id}"))
+    assert isinstance(source_card, PresentedReply)
+    assert ("Privacy", f"/privacy_options {source.id}") in {
+        (action.label, action.command) for action in source_card.actions
+    }
+    denied = application.handle(make_event(text=f"/summarize_source {source.id}"))
+    assert isinstance(denied, PresentedReply)
+    assert denied.title == "Model access blocked"
+    assert denied.actions[1].command == f"/privacy_options {source.id}"
+
+    picker = application.handle(make_event(text=f"/privacy_options {source.id}"))
+    assert isinstance(picker, PresentedReply)
+    assert picker.title == "Source privacy"
+    assert "Current rule: no_model" in picker.text
+    assert ("Allow cloud", f"/set_privacy {source.id} external_allowed") in {
+        (action.label, action.command) for action in picker.actions
+    }
+    review = application.handle(make_event(text=f"/set_privacy {source.id} external_allowed"))
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review privacy change"
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.NO_MODEL
 
 
 def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path: Path) -> None:

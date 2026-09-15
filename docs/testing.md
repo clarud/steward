@@ -1,0 +1,179 @@
+# Steward manual testing ledger
+
+This document records live local acceptance results. It complements automated
+tests; it does not replace them. Do not record tokens, credentials, private
+source content, or local absolute paths beyond what is necessary to reproduce a
+safe test.
+
+## Session: 2026-09-16
+
+### Automated verification
+
+- Full test suite: passed after the source privacy-picker change.
+- The run exposed a stale database migration-ledger expectation: schema version
+  53 (`task_calendar_associations`) existed but was omitted from the test. The
+  test was corrected and the full suite then passed.
+
+### Passed
+
+#### Local moved-root recovery
+
+- Registered root: `Telegram Test`.
+- A renamed/missing root caused `steward health --strict` to report one missing
+  root, as expected.
+- `relocate-root` without `--confirm` changed no state.
+- An invalid replacement directory was rejected without relocation.
+- The confirmed relocation verified and updated 19 tracked source paths.
+- Follow-up scan reported `new=0 updated=0 unchanged=19 missing=0`.
+- Strict health then reported one available root and no missing roots.
+
+#### Google Drive
+
+- Search was read-only and pagination showed at most five results per page.
+- More-results continuation survived a Telegram restart.
+- Explicit Drive import created an Inbox source and extracted DOCX content.
+- Read content, source details, and generated summary with fragment evidence
+  worked for the imported source.
+- Re-importing the same Drive item was idempotent: Steward opened the existing
+  local source and did not create a duplicate.
+
+#### Gmail
+
+- Search, pagination, restart continuation, explicit import, source reading,
+  and duplicate protection were manually verified as working.
+
+#### Durable Telegram source references
+
+- After opening source A and then source B, replying to source A's older card
+  with `give me the content` correctly read source A.
+- The same reply-to-card reference remained correct after a Telegram restart.
+
+#### Google Calendar reads and event references
+
+- Calendar authorization was renewed successfully after the expired-token
+  recovery described below.
+- `/calendar_search` displayed readable, local-time event dates and UTC offsets.
+- Opening event A, then event B, and replying `show that event` to event A's
+  older card correctly re-opened event A rather than the newer selection.
+- Unthreaded `show that event` also re-opened the selected event.
+- `when is it?`, `where is it?`, and `show details` re-fetched the selected
+  event and displayed its current time, location, and description.
+- A newly visible Calendar event appeared in a later search, consistent with
+  querying current provider state rather than replaying cached list content.
+
+#### Task navigation and explicit-write safety
+
+- Task detail reopened correctly through `show that task` after a Telegram
+  restart.
+- The **Tasks** action on a Calendar event opened only Steward's local task
+  list; it did not create a task, edit/create a Calendar event, or create a
+  task–Calendar link.
+- Task completion remained an explicit action rather than an inferred response
+  to ordinary conversational language.
+
+#### Workspace context and reviewed source linking
+
+- An opened workspace re-opened correctly through `show that workspace` after
+  a Telegram restart.
+- `show its sources` listed semantic source memberships without exposing local
+  root paths or moving files.
+- **Link workspace** opened a review that named the selected source and target
+  workspace; viewing the review did not create a membership or move a file.
+
+#### Source privacy picker
+
+- Source cards exposed **Privacy** and model-blocked summary cards exposed
+  **Change privacy**.
+- The picker displayed the current rule and compact replacement choices.
+- A selected replacement created a **Review privacy change** card; the active
+  policy remained unchanged until explicit approval.
+- Applying the review successfully updated the intended source privacy rule.
+
+#### Guided Telegram acceptance batch
+
+- The review-context safety and staged-capture checks were completed in the
+  guided local session and reported as working.
+- The current guided manual batch is complete. The open issues and remaining
+  specialist recovery rehearsals below remain intentionally tracked rather than
+  being treated as passed by this summary.
+
+### Errors and bugs
+
+#### Source list pagination does not expose stable source IDs — open bug
+
+**Observed:** `/sources` numbers results from `1` on each page. Those numbers
+are page-local navigation positions, but typed commands such as `/source`,
+`/privacy`, and reviewed source-maintenance commands require the stable source
+ID. A user viewing page two therefore cannot reliably infer the ID to type.
+
+**Current workaround:** Use the item's **Open** button, then the source card's
+**Privacy** action; this carries the stable ID internally.
+
+**Required product fix:** Show a compact stable identifier on every source list
+and source-detail card (for example, `S42`), while keeping list-position
+buttons for navigation. Commands should accept the documented stable identifier
+or provide a copy-friendly action. Add pagination tests proving that page-local
+positions never masquerade as source IDs.
+
+#### Calendar OAuth refresh recovery — open bug
+
+**Observed:** `steward calendar-search` failed because Google rejected the
+stored Calendar token as expired or revoked. The Telegram Calendar card safely
+reported Calendar as unavailable and made no Calendar change.
+
+**Root cause:** `authorize_google_calendar()` loads an existing token and calls
+`credentials.refresh(Request())`. A failed refresh is not caught, so
+`steward calendar-authorize CLIENT_SECRETS` exits with a traceback rather than
+opening the browser consent flow.
+
+**Temporary recovery:** Preserve the unusable token by renaming it (rather than
+deleting it), then run Calendar authorization again. Use the actual configured
+token and client-secret paths; do not commit either file.
+
+**Required product fix:** Catch the provider refresh exception, discard the
+in-memory credentials for that run, start the local browser OAuth flow, and
+write a new token only after authorization succeeds. Add automated coverage for
+an expired/revoked refresh token. Telegram must continue to hide raw provider
+diagnostics and all credential material.
+
+#### Calendar duplicate-reply observation — dismissed
+
+One unthreaded `show that event` appeared to have two identical cards in the
+initial transcript. It was not reproduced and is not tracked as a defect. The
+misspelled `show deatils` clarification is expected behavior, not a defect.
+
+## Implemented, awaiting live Telegram acceptance
+
+### Source privacy picker
+
+Source cards now include a compact **Privacy** action. When a source is blocked
+from the configured model, the denial card includes **Change privacy** alongside
+**Read content**. Both open a picker showing the current rule and compact
+replacement choices:
+
+- **Allow cloud** → `external_allowed`
+- **Local only** → `local_model_only`
+- **No model** → `no_model`
+- **Block external** → `external_redacted`
+
+Choosing a replacement creates the existing **Review privacy change** card; it
+does not alter the policy until **Apply privacy rule** is explicitly approved.
+The picker is covered by automated application tests.
+
+### Manual acceptance steps
+
+1. Open a harmless source with `/source SOURCE_ID` and tap **Privacy**.
+2. Confirm the current rule is shown and buttons are compact/readable.
+3. Choose **Allow cloud** (or another deliberate replacement) and confirm the
+   review names the source and old/new rule.
+4. Before approval, run `/privacy SOURCE_ID`; the old rule must remain active.
+5. Reject the review for a no-mutation test, or approve it and confirm the new
+   rule permits/blocks the configured model as expected.
+6. For a source currently blocked from the configured model, tap **Summarize**
+   and confirm **Change privacy** reaches the same review-required picker.
+
+### Pending manual checks
+
+- Test Drive/Gmail unavailable-provider recovery cards with a non-sensitive
+  test authorization.
+- Continue the Telegram manual checklist in safe batches.

@@ -906,7 +906,12 @@ class StewardReadApplication:
         return PresentedReply(
             f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
             f"Extracted sections: {len(fragments)}",
-            actions=(ReplyAction("Read content", f"/source_content {source_id}"), ReplyAction("Summarize", f"/summarize_source {source_id}"), ReplyAction("Ask about it", f"/ask_source {source_id}"))
+            actions=(
+                ReplyAction("Read content", f"/source_content {source_id}"),
+                ReplyAction("Summarize", f"/summarize_source {source_id}"),
+                ReplyAction("Ask about it", f"/ask_source {source_id}"),
+                ReplyAction("Privacy", f"/privacy_options {source_id}"),
+            )
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
             + ((ReplyAction("Workspaces", f"/source_memberships {source_id}"),
                 ReplyAction("Link workspace", f"/source_workspaces {source_id}")) if source.status.value == "active" else ()),
@@ -948,7 +953,17 @@ class StewardReadApplication:
         if self._source_model is None:
             return "A summary model is not configured. You can still use Read content."
         if self._source_model_allowed is None or not self._source_model_allowed(source_id):
-            return "This source's privacy rule does not permit the configured model. You can still use Read content."
+            return PresentedReply(
+                "This source's privacy rule does not permit the configured model. "
+                "You can still read its extracted content, or propose a reviewed privacy change.",
+                (
+                    ReplyAction("Read content", f"/source_content {source_id}"),
+                    ReplyAction("Change privacy", f"/privacy_options {source_id}"),
+                ),
+                title="Model access blocked",
+                icon="🔒",
+                reference=("source", source_id),
+            )
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
             return "No extracted text is available to summarize."
@@ -2808,6 +2823,10 @@ class StewardPrivacyApplication:
             if self._sources.get_by_id(source_id) is None:
                 return f"Source {source_id} was not found."
             return f"Source {source_id} privacy rule: {self._privacy.rule_for(source_id).value}"
+        if command == "/privacy_options":
+            if not separator or not argument.strip().isdigit():
+                return "Open a source and choose Privacy, or use /privacy_options followed by a numeric source ID."
+            return self._privacy_options(int(argument.strip()))
         if command in {"/approve_action", "/reject_action"}:
             return self._review_privacy_proposal(command, separator, argument)
         if command != "/set_privacy":
@@ -2879,6 +2898,32 @@ class StewardPrivacyApplication:
                 details=f"{previous_rule.value} -> {rule.value}",
             )
         return f"Source {source_id} privacy rule set to {rule.value}."
+
+    def _privacy_options(self, source_id: int) -> str | PresentedReply:
+        """Show compact, review-required replacement rules for one source."""
+        source = self._sources.get_by_id(source_id)
+        if source is None:
+            return f"Source {source_id} was not found."
+        current = self._privacy.rule_for(source_id)
+        options = (
+            ("Allow cloud", PrivacyRule.EXTERNAL_ALLOWED),
+            ("Local only", PrivacyRule.LOCAL_MODEL_ONLY),
+            ("No model", PrivacyRule.NO_MODEL),
+            ("Block external", PrivacyRule.EXTERNAL_REDACTED),
+        )
+        actions = tuple(
+            ReplyAction(label, f"/set_privacy {source_id} {rule.value}")
+            for label, rule in options
+            if rule is not current
+        ) + (ReplyAction("Back", f"/source {source_id}"),)
+        return PresentedReply(
+            f"Current rule: {current.value}\n\n"
+            "Choose a replacement rule. It remains unchanged until you approve the review.",
+            actions,
+            title="Source privacy",
+            icon="🔒",
+            reference=("source", source_id),
+        )
 
     def _review_privacy_proposal(
         self, command: str, separator: str, argument: str
