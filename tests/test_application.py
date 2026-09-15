@@ -1622,6 +1622,7 @@ def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path
         })(),
     )
     assert any(action.command == "/calendar_linked_task" for action in event_card.actions)
+    assert any(action.command == "/tasks" for action in event_card.actions)
     button_linked = application.resolve_calendar_reference(make_event(text="/calendar_linked_task"))
     assert isinstance(button_linked, PresentedReply)
     assert button_linked.title == "Linked task"

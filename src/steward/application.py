@@ -2952,7 +2952,11 @@ class StewardCalendarApplication:
                 task_id = None
             if task_id is not None and self._tasks.get(task_id) is not None:
                 actions.append(ReplyAction("Linked task", "/calendar_linked_task"))
-        actions.extend((ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")))
+        actions.extend((
+            ReplyAction("Tasks", "/tasks"),
+            ReplyAction("Upcoming", "/calendar_search"),
+            ReplyAction("Home", "/home"),
+        ))
         return PresentedReply(
             f"{calendar_time_label(getattr(event_result, 'start'), getattr(event_result, 'end'))}\n\n"
             + ("\n\n".join(details) + "\n\n" if details else "")
