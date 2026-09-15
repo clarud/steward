@@ -59,6 +59,7 @@ CLAIM_REVISIONS_SCHEMA_VERSION = 49
 PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION = 50
 ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION = 51
 EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION = 52
+TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION = 53
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -526,6 +527,16 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )""",
+    ),
+    (
+        TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
+        """
+        CREATE TABLE task_calendar_associations (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            external_event_id TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+        """,
     ),
 )
 

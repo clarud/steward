@@ -191,6 +191,49 @@ class CalendarLinkRepository:
             raise ValueError("Calendar event is linked to multiple Steward tasks.")
         return int(rows[0][0]) if rows else None
 
+    def associated_event_id_for_task(self, task_id: int) -> str | None:
+        """Return an explicitly reviewed existing-event association, if any."""
+
+        if task_id <= 0:
+            raise ValueError("Task ID must be positive.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT external_event_id FROM task_calendar_associations WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return str(row[0]) if row else None
+
+    def associated_task_id_for_event(self, event_id: str) -> int | None:
+        if not event_id.strip():
+            raise ValueError("Calendar event ID must not be empty.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT task_id FROM task_calendar_associations WHERE external_event_id = ?", (event_id,)
+            ).fetchone()
+        return int(row[0]) if row else None
+
+    def associate_existing_event(self, task_id: int, event_id: str) -> bool:
+        """Create one local 1:1 association without changing Calendar."""
+
+        if task_id <= 0 or not event_id.strip():
+            raise ValueError("An association requires a positive task ID and Calendar event ID.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing_task = connection.execute(
+                "SELECT external_event_id FROM task_calendar_associations WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            existing_event = connection.execute(
+                "SELECT task_id FROM task_calendar_associations WHERE external_event_id = ?", (event_id,)
+            ).fetchone()
+            if existing_task is not None or existing_event is not None:
+                if existing_task is not None and str(existing_task[0]) == event_id:
+                    return False
+                raise ValueError("The task or Calendar event already has an explicit association.")
+            connection.execute(
+                "INSERT INTO task_calendar_associations (task_id, external_event_id, created_at) VALUES (?, ?, ?)",
+                (task_id, event_id, datetime.now(UTC).isoformat()),
+            )
+        return True
+
     def link_travel_event(self, key: str, record_id: int, event_id: str) -> bool:
         return self._link("calendar_event_links", "travel_record_id", key, record_id, event_id)
 

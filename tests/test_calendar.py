@@ -348,3 +348,19 @@ def test_task_calendar_links_can_be_followed_in_both_directions(tmp_path) -> Non
         )
     with pytest.raises(ValueError, match="multiple"):
         links.task_id_for_event("calendar-event-opaque")
+
+
+def test_explicit_existing_event_associations_are_local_one_to_one(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    links = CalendarLinkRepository(database)
+    first = TaskService(database).create("Prepare slides")
+    second = TaskService(database).create("Print handout")
+
+    assert links.associate_existing_event(first.id or 0, "existing-event") is True
+    assert links.associate_existing_event(first.id or 0, "existing-event") is False
+    assert links.associated_event_id_for_task(first.id or 0) == "existing-event"
+    assert links.associated_task_id_for_event("existing-event") == first.id
+    with pytest.raises(ValueError, match="already has"):
+        links.associate_existing_event(second.id or 0, "existing-event")
+    with pytest.raises(ValueError, match="already has"):
+        links.associate_existing_event(first.id or 0, "another-event")

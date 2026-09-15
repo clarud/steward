@@ -1221,6 +1221,10 @@ It is intentionally not a general relationship model. In particular, its
 idempotency key is tied to the creation workflow, and reusing it for arbitrary
 existing Calendar events would make it unclear whether Steward owns the event.
 
+`task_calendar_associations` now provides the separate local one-to-one storage
+foundation. It does not yet expose a Telegram selection flow; that flow must
+create a review proposal before calling the repository.
+
 The next relationship capability must therefore use a separate local,
 reviewed association with these invariants:
 
