@@ -1065,6 +1065,7 @@ def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) 
     preview = application.handle(make_event(text=f"/correct_travel_record {record.id} arrival Osaka"))
 
     assert isinstance(preview, PresentedReply)
+    assert preview.actions[0].command == f"/source {source.id}"
     assert records.list_travel_records()[0].arrival == "Tokyo"
     assert application.handle(make_event(text="/approve_action 1")) == "Travel record 1 corrected: arrival."
     assert records.list_travel_records()[0].arrival == "Osaka"
@@ -1095,6 +1096,7 @@ def test_telegram_receipt_correction_is_reviewed_before_mutation(tmp_path: Path)
     preview = application.handle(make_event(text=f"/correct_receipt_record {receipt.id} total_cents 12.50"))
 
     assert isinstance(preview, PresentedReply)
+    assert preview.actions[0].command == f"/source {source.id}"
     assert records.list_receipt_records()[0].total_cents == 500
     assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 corrected: total_cents."
     assert records.list_receipt_records()[0].total_cents == 1250

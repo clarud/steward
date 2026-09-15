@@ -1510,7 +1510,11 @@ class StewardRecordApplication:
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Correct {record_type.casefold()} record {record_id} field {field}")
         return PresentedReply(
             f"{record_type} correction proposal {pending.id}: record {record_id} {field} → {value}.\n\nThe record is unchanged until approval.",
-            (ReplyAction("Apply correction", f"/approve_action {pending.id}"), ReplyAction("Reject", f"/reject_action {pending.id}")),
+            (
+                ReplyAction("Open source", f"/source {record.source_id}"),
+                ReplyAction("Apply correction", f"/approve_action {pending.id}"),
+                ReplyAction("Reject", f"/reject_action {pending.id}"),
+            ),
         )
 
     def _propose_document_record(self, command: str, separator: str, argument: str) -> str | PresentedReply:
