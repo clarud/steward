@@ -3,6 +3,7 @@ from pathlib import Path
 import sqlite3
 
 from steward.answer import AnswerCitation
+from steward.answer.gateway import ModelGatewayError
 from steward.application import (
     StewardActionProposalApplication,
     StewardCaptureApplication,
@@ -1323,6 +1324,109 @@ def test_knowledge_revision_prompt_survives_restart_and_requires_separate_approv
     concept_card = restarted.handle(make_event(text=f"/concept {concept.id}"))
     assert "superseded by claim 2" in concept_card.text
     assert "reviewed revision of claim 1" in concept_card.text
+
+
+def test_telegram_model_drafts_a_privacy_gated_claim_revision_for_separate_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, tmp_path / "queues.md", "d" * 64, SourceType.MARKDOWN, 0, now, now, now
+    ))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, "Queues", 0, "Queues do not always buffer jobs.", "line 2"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    original = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
+    conflicts = KnowledgeEnrichmentProposalRepository(database)
+    conflict = conflicts.add(knowledge.compare_evidence(
+        original, fragment_id=fragment.id or 0, evidence_text=fragment.text
+    ))
+    conflicts.review(conflict.id, "accepted")
+    actions = ActionProposalRepository(database)
+
+    class Model:
+        def __init__(self) -> None:
+            self.inputs: list[str] = []
+        def generate(self, *, instructions: str, input_text: str) -> str:
+            assert "untrusted reference data" in instructions
+            self.inputs.append(input_text)
+            return "Queues do not always buffer jobs."
+
+    model = Model()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=StewardKnowledgeApplication(
+            knowledge, fragments, conflicts, ActivityService(database), source_repository=sources,
+            action_proposals=actions, contexts=ReviewContextRepository(database),
+            revision_model=model, revision_model_allowed=lambda source_id: source_id == source.id,
+            revision_model_label="local model",
+        ),
+        action_proposal_application=StewardActionProposalApplication(
+            actions, ActionProposalService(actions, WorkspaceRepository(database), ActivityService(database)),
+            knowledge_service=knowledge,
+        ),
+    )
+
+    application.handle(make_event(text=f"/resolve_knowledge_conflict {conflict.id} needs_revision"))
+    draft = application.handle(make_event(text=f"/suggest_claim_revision {conflict.id}"))
+
+    assert isinstance(draft, PresentedReply)
+    assert draft.title == "Claim revision pending"
+    assert "model-generated (local model)" in draft.text
+    assert model.inputs and "Queues always buffer jobs." in model.inputs[0]
+    assert knowledge.list_claims(concept.id or 0) == (original,)
+    pending = actions.get(1)
+    assert pending is not None and pending.payload["draft_origin"] == "model-generated (local model)"
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Knowledge claim revised"
+    assert len(knowledge.list_claims(concept.id or 0)) == 2
+
+
+def test_telegram_model_claim_revision_fails_closed_for_privacy_and_provider_errors(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(
+        None, tmp_path / "private.md", "e" * 64, SourceType.MARKDOWN, 0, now, now, now
+    ))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Queues do not always buffer jobs.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("Queues")
+    claim = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
+    conflicts = KnowledgeEnrichmentProposalRepository(database)
+    conflict = conflicts.add(knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text))
+    conflicts.review(conflict.id, "accepted")
+
+    class OfflineModel:
+        def __init__(self) -> None: self.calls = 0
+        def generate(self, *, instructions: str, input_text: str) -> str:
+            self.calls += 1
+            raise ModelGatewayError("offline")
+
+    model = OfflineModel()
+    application = StewardKnowledgeApplication(
+        knowledge, fragments, conflicts, ActivityService(database),
+        action_proposals=ActionProposalRepository(database), contexts=ReviewContextRepository(database),
+        revision_model=model, revision_model_allowed=lambda _: False,
+    )
+    application.handle_command(make_event(text=f"/resolve_knowledge_conflict {conflict.id} needs_revision"))
+    blocked = application.handle_command(make_event(text=f"/suggest_claim_revision {conflict.id}"))
+    assert "privacy rule" in blocked and model.calls == 0
+
+    available = StewardKnowledgeApplication(
+        knowledge, fragments, conflicts, ActivityService(database),
+        action_proposals=ActionProposalRepository(database), contexts=ReviewContextRepository(database),
+        revision_model=model, revision_model_allowed=lambda _: True, revision_model_label="external model",
+    )
+    unavailable = available.handle_command(make_event(text=f"/suggest_claim_revision {conflict.id}"))
+    assert "temporarily unavailable" in unavailable and model.calls == 1
 
 
 def test_telegram_lists_evidence_backed_knowledge_connections_without_mutating(tmp_path: Path) -> None:

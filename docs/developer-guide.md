@@ -1372,7 +1372,19 @@ and appends both audit events. Any failure rolls back all of those writes. The
 old claim is never edited or deleted. Concept cards label it as superseded and
 label the replacement as a reviewed revision. Migration 49 adds only the accepted
 lineage table; pending/rejected wording stays in the existing action-proposal
-history. The model never invents replacement wording in this workflow.
+history. User-supplied wording remains the default path in this workflow.
+
+When a configured model is available, a conflict marked `needs_revision` may
+also expose **Suggest draft**. Steward sends only the saved, reviewed evidence
+snapshot and existing claim to that model, after checking the evidence source's
+privacy rule (`local_model_only` permits only a local model; `no_model` blocks
+all model drafting). The model produces one candidate sentence or declines with
+`INSUFFICIENT EVIDENCE`; it never writes a claim. The candidate is recorded as
+`model-generated` in the same reviewable action proposal as a user-written
+draft. Approval still runs `accept_claim_revision()` and therefore repeats all
+snapshot, active-source, conflict-status, and lineage checks. Provider failure,
+blocked privacy, stale evidence, an unchanged candidate, or insufficient
+evidence creates no proposal and leaves canonical knowledge unchanged.
 
 The tool agent can also call `propose_knowledge_enrichment(claim_id,
 fragment_id)` when the user explicitly requests an evidence comparison. The

@@ -217,3 +217,14 @@ The picker is covered by automated application tests.
 - Exercise Drive/Gmail unavailable-provider recovery cards only with a
   non-sensitive test authorization.
 - Continue the broader Telegram manual checklist as new features are added.
+
+## Post-session automated delivery: model-assisted claim revision drafts
+
+- A configured model can suggest one replacement only for an accepted,
+  `needs_revision` contradiction review with a saved evidence snapshot.
+- The suggestion is source-privacy-gated before any evidence is passed to a
+  model and is staged as a separately approved action proposal; it cannot
+  mutate canonical knowledge directly.
+- Focused application tests passed for a successful local-model suggestion,
+  zero-call denial under source privacy, and provider unavailability. The new
+  live Telegram steps are in `telegram-manual-test-checklist.md`.

@@ -753,9 +753,12 @@ claim text or discard either side's provenance. Concept and evidence-review card
 show the outcome. A `needs_revision` outcome now opens a durable ordinary-text
 prompt, creates a separate generic action proposal containing the exact user
 wording, and applies an approved replacement atomically with evidence and
-`claim_revisions` lineage. The old claim remains visible as superseded. Automated
-migration, rollback, restart, repository, application, and navigation tests pass;
-model-assisted synthesis of replacement wording remains future work.
+`claim_revisions` lineage. The old claim remains visible as superseded. A
+configured model may now make one privacy-gated wording suggestion from the
+saved evidence snapshot; it is explicitly labelled as model-generated and uses
+the same separate approval card. It cannot write knowledge directly. Automated
+migration, rollback, restart, repository, application, navigation, privacy, and
+provider-failure tests cover the flow.
 
 Task details now expose the existing local task-to-Calendar relationship without
 turning tasks into events. A precise, open, unlinked task offers a separate
@@ -1042,7 +1045,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, original-source inspection before a decision, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, safe ambiguous-guidance recovery, persistent user-context rationale on replacement proposals, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, safe recursion-limit replies, and synthetic failure matrices for SoCLaaS/Ollama/Gemini/Calendar/Drive/Gmail | Live provider outage and recovery acceptance |
 | 5. Tasks, records, Calendar | In progress | Reviewable Tasks with explicit completion, natural task phrasing, offset-aware deadlines, chat-bound explicit Telegram reminders with durable retry, reviewable idempotent Calendar deadline markers, Calendar cards with task-list navigation and bidirectional task/Calendar card navigation for explicit links, travel/receipt/warranty record proposal/review and correction cards with original-source actions and current-field evidence-section navigation, approved duplicate-protected Calendar-event proposal/write, and reviewed travel/receipt/warranty corrections | Richer scheduling semantics and record/Calendar navigation |
-| 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes, direct original-source inspection, and durable reviewed user-authored claim revisions; explicit or reply-selected curated-note proposals; local/external model synthesis of a selected reply; reviewable note edits; and short-lived restart-safe research review cards that retain exact reviewed material only after approval | Model-assisted revision drafting, richer synthesis, and broader conflict evaluation |
+| 6. Curated knowledge/research | In progress | Concept/claim enrichment review with explicit non-destructive conflict outcomes, direct original-source inspection, durable reviewed user-authored claim revisions, and privacy-gated model draft suggestions that remain separately reviewable; explicit or reply-selected curated-note proposals; local/external model synthesis of a selected reply; reviewable note edits; and short-lived restart-safe research review cards that retain exact reviewed material only after approval | Richer synthesis and broader conflict evaluation |
 | 7. Multi-root and reliability | In progress | Locally authorized roots, root health, enforced exclusions, root watches, delivery diagnostics, bounded local log rotation, write-once local SQLite snapshot/confirmed restore, corrupt-derived-index recovery, bounded SQLite-busy scan recovery, and disposable moved-root/backup/restore/process-outage rehearsal | Register and accept start-at-login; live Telegram/provider outage recovery |
 | 8. Imports and administration | In progress | Explicit Drive/Gmail search/select/import, audited source privacy controls, source inspection before source-affecting reviews, delivery inspection/status, and reviewed single-source re-extraction, metadata unregistering, and semantic-index rebuild | Broader confirmed maintenance flows |
 | 9. Daily-use hardening | In progress | Unit/integration coverage, safe aggregate `/metrics`, and a Telegram-shaped attachment intake → model-boundary choice → durable organization review → audited move acceptance flow | Real-vault/Telegram checklist, restart/outage evaluation and sustained trial |

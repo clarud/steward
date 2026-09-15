@@ -1625,6 +1625,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                 KnowledgeConnector(database_path), sources,
                 action_proposals=ActionProposalRepository(database_path),
                 contexts=review_contexts,
+                revision_model=model_gateway,
+                revision_model_allowed=(
+                    privacy.permits_local_model
+                    if settings.model_provider == "local"
+                    else privacy.permits_external_model
+                ),
+                revision_model_label=(
+                    "local model" if settings.model_provider == "local" else "external model"
+                ),
             ),
             roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
             privacy_application=StewardPrivacyApplication(

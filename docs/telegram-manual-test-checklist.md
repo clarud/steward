@@ -325,6 +325,15 @@ until a separate filesystem backup exists.
   draft, approve and verify the concept card retains the original as superseded,
   shows the replacement as its reviewed revision, and keeps the evidence review.
   Changing or removing the evidence before approval must leave the action pending.
+- With a harmless source whose privacy rule permits the configured model, open
+  the same `needs_revision` conflict and choose **Suggest draft**. The resulting
+  review must identify a model-generated origin, preserve the original claim and
+  conflict evidence, and create no claim before approval. Reject once, then
+  repeat and approve only if the proposed wording is accurate. Set the source to
+  **No model** or **Local only** while using an external model and confirm the
+  suggestion is hidden (and a typed `/suggest_claim_revision ID` request is
+  refused without calling a model). A temporarily unavailable model must also
+  produce no pending review or canonical change.
 
 ## Workspace navigation
 
