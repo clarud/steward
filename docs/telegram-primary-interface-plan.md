@@ -1213,6 +1213,36 @@ restart/duplicate cases, and manual Telegram checklist cases pass.
    routing, extraction, organization, and tool-loop failures as the next
    prioritized fixes.
 
+### Planned explicit task–Calendar association
+
+The existing `calendar_task_event_links` table records a narrow case: a
+reviewed Steward task deadline marker that Steward created in Google Calendar.
+It is intentionally not a general relationship model. In particular, its
+idempotency key is tied to the creation workflow, and reusing it for arbitrary
+existing Calendar events would make it unclear whether Steward owns the event.
+
+The next relationship capability must therefore use a separate local,
+reviewed association with these invariants:
+
+- Selecting an existing Calendar event and an existing Task creates only a
+  pending association proposal. It does not create, edit, delete, or claim
+  ownership of the Google Calendar event.
+- Approval writes an opaque local task/event association and an audit event;
+  rejection writes neither. Completing the task still does not alter Calendar.
+- The proposal shows the current Calendar event summary/time and task title,
+  then asks for explicit approval. If either local task disappears or Calendar
+  cannot re-fetch the selected event before approval, it fails closed.
+- A task or event already associated through this new relationship cannot be
+  silently reassigned. The user must inspect and explicitly replace/remove a
+  relationship in a later dedicated workflow.
+- The new association remains distinct from a Steward-created deadline marker
+  and from record-to-Calendar links. Calendar remains authoritative for event
+  content; SQLite stores only the opaque relationship and audit history.
+
+Required tests: selection pagination, restart while pending, stale/deleted
+task, Calendar read outage, duplicate approval, cross-chat isolation, and proof
+that neither acceptance nor task completion performs a Calendar write.
+
 ## Explicitly local-only or browser-handoff operations
 
 Some capabilities must not become unauthenticated chat commands:
