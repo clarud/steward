@@ -766,6 +766,12 @@ def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -
     sources = SourceRepository(database); fragments = SourceFragmentRepository(database)
     activity = ActivityService(database); workspaces = WorkspaceRepository(database)
     workspace = WorkspaceService(workspaces, activity).create("CS3210")
+    source = sources.add(Source(
+        None, tmp_path / "cs3210.md", "a" * 64, SourceType.MARKDOWN, 0,
+        datetime(2026, 9, 10, tzinfo=UTC), datetime(2026, 9, 10, tzinfo=UTC),
+        datetime(2026, 9, 10, tzinfo=UTC),
+    ))
+    workspaces.link_source(workspace.id or 0, source.id or 0)
 
     def reads() -> StewardReadApplication:
         return StewardReadApplication(
@@ -796,6 +802,9 @@ def test_telegram_workspace_card_and_reference_survive_restart(tmp_path: Path) -
     reopened = restarted.handle(make_event(text="show that workspace"))
     assert isinstance(reopened, PresentedReply)
     assert reopened.title == "CS3210"
+    sources_followup = restarted.handle(make_event(text="show its sources"))
+    assert isinstance(sources_followup, PresentedReply)
+    assert "cs3210.md" in sources_followup.text
 
 
 def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tmp_path: Path) -> None:

@@ -753,7 +753,11 @@ class StewardReadApplication:
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
-        if normalized not in {"show that workspace", "open that workspace", "show the last workspace", "open the last workspace"}:
+        if normalized not in {
+            "show that workspace", "open that workspace", "show the last workspace", "open the last workspace",
+            "show its sources", "show that workspace's sources", "what sources are in it",
+            "show its files", "show that workspace's files",
+        }:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != "workspace":
