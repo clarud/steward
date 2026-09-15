@@ -137,8 +137,8 @@ until a separate filesystem backup exists.
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.
 - Send `/workspaces`, open a workspace card, restart the bot, then send `show
-  that workspace`. Verify it lists only semantic source links and never moves
-  or exposes a local root path.
+  that workspace` or `show its sources`. Verify it lists only semantic source
+  links and never moves or exposes a local root path.
 - Send `/roots`, open a root card, and verify it reports only health and
   exclusion count. A missing/disabled root must direct you to local recovery;
   Telegram must never show its path or offer a scan/enable action.
@@ -178,7 +178,9 @@ until a separate filesystem backup exists.
 - Reopen a curated-note proposal through `/pending`: its full draft and origin
   must remain visible before approval. Reopen a record correction and check the
   record ID, field, and replacement value; it must not claim your correction
-  came from source evidence. Task reviews must retain any scheduled reminder.
+  came from source evidence. Its **Open source** action must return to the
+  original before you apply or reject the correction. Task reviews must retain
+  any scheduled reminder.
 
 - Leave an organization proposal pending, then open a source card. Send `yes`:
   the older organization proposal must remain pending. Reopen its review from
@@ -206,8 +208,8 @@ until a separate filesystem backup exists.
   `Ctrl+C`, start `steward telegram` again, then finish the decision. Verify
   the result happens once.
 - Run `/organize` against Inbox material. Read the suggested destination before
-  accepting; reject one proposal and accept one only when its physical move is
-  correct.
+  accepting. Use **Open source** to inspect the original, then reject one
+  proposal and accept one only when its physical move is correct.
 - For a proposed move, choose **Keep in Inbox**. Verify it becomes a separate
   review card and accepting that card leaves the original in Inbox while
   recording the chosen outcome.
@@ -401,6 +403,8 @@ until a separate filesystem backup exists.
   linked-task follow-up. Verify it offers **Open task** for the original task.
   Repeat the phrase on an ordinary unlinked Calendar event: Steward must say it
   has no linked task, rather than inventing one.
+- On any Calendar event card, use **Tasks**. It must only open Steward's local
+  task list; it must not create a task, Calendar event, or task-event link.
 - Open an unlinked task with a precise deadline and verify **Add to calendar**
   creates a review rather than an event. A task with only a vague due cue, a task
   without a deadline, and a completed unlinked task must not be silently scheduled.
@@ -413,6 +417,9 @@ until a separate filesystem backup exists.
   **Open source** returns to the original. Correct a field, then reopen the
   record: it must be labelled **not source-evidenced** instead of inheriting
   stale extraction provenance.
+- On a direct or `/pending` record proposal, use **Open source** before
+  accepting. Confirm it opens the exact original while the record remains
+  uncreated. This action must also be available on a correction proposal.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
 - For a staged flight message with `Flight`, `Departure`, `Arrival`, and
@@ -506,6 +513,9 @@ until a separate filesystem backup exists.
   claim unchanged, and show the three separate resolution choices. Resolve it
   as disputed and verify both the concept card and saved evidence review display
   that outcome after a bot restart.
+- Before choosing a conflict outcome, use **Open source** on the conflict card.
+  Verify it opens the source associated with the displayed evidence fragment;
+  inspection alone must not accept/reject the review or change the claim.
 - Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
   same evidence plus decision buttons (conflicts use **Flag conflict** and **Not
   a conflict**), rather than requiring a manually typed review command.
