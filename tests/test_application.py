@@ -2005,6 +2005,37 @@ def test_workspace_pages_reach_every_workspace_and_linked_source(tmp_path: Path)
     assert any(action.command == "/sources" for action in empty.actions)
 
 
+def test_paginated_source_cards_show_stable_source_ids(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    sources = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    workspaces = WorkspaceRepository(database)
+    now = datetime(2026, 9, 16, tzinfo=UTC)
+    for index in range(11):
+        sources.add(Source(
+            None, tmp_path / f"note-{index}.md", f"{index:064x}", SourceType.MARKDOWN,
+            0, now, now, now,
+        ))
+    reader = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), workspaces,
+        ActivityService(database), tmp_path / "inbox",
+    )
+
+    first = reader.handle_command(make_event(text="/sources"))
+    assert isinstance(first, PresentedReply)
+    assert "ID 1" in first.text
+    second = reader.handle_command(make_event(text="/sources 2"))
+    assert isinstance(second, PresentedReply)
+    assert "Page 2 of 2" in second.text
+    assert "note-10.md" in second.text and "ID 11" in second.text
+    assert any(action.command == "/source 11" for action in second.actions)
+
+    detail = reader.handle_command(make_event(text="/source 11"))
+    assert isinstance(detail, PresentedReply)
+    assert "Source ID: 11" in detail.text
+
+
 def test_knowledge_browser_reaches_all_concepts_without_name_commands(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

@@ -904,7 +904,7 @@ class StewardReadApplication:
             return f"Source {source_id} was not found."
         fragments = self._fragments.list_for_source(source_id)
         return PresentedReply(
-            f"Type: {source.source_type.value}\nStatus: {source.status.value}\n"
+            f"Source ID: {source_id}\nType: {source.source_type.value}\nStatus: {source.status.value}\n"
             f"Extracted sections: {len(fragments)}",
             actions=(
                 ReplyAction("Read content", f"/source_content {source_id}"),
@@ -1213,7 +1213,7 @@ class StewardReadApplication:
         pages = (len(sources) + self._PAGE_SIZE - 1) // self._PAGE_SIZE
         lines = [f"Page {page} of {pages}"]
         lines.extend(
-            f"{index}. {source.path.name} · {source.source_type.value} · {source.status.value}"
+            f"{index}. {source.path.name} · {source.source_type.value} · {source.status.value} · ID {source.id}"
             for index, source in enumerate(selected, start=1)
         )
         command = "/inbox" if title == "Inbox" else "/sources"

@@ -276,6 +276,7 @@ def authorize_google_calendar(
     if not client_secrets_path.is_file():
         raise FileNotFoundError(client_secrets_path)
     from google.auth.transport.requests import Request
+    from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
@@ -286,7 +287,12 @@ def authorize_google_calendar(
         if credentials and not credentials.has_scopes(scopes):
             credentials = None
     if credentials and credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+        try:
+            credentials.refresh(Request())
+        except RefreshError:
+            # A revoked refresh token cannot be repaired locally. Fall through
+            # to browser consent instead of leaking a provider traceback.
+            credentials = None
     if not credentials or not credentials.valid:
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_path), scopes)
         credentials = flow.run_local_server(port=0)

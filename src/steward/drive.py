@@ -162,6 +162,7 @@ def authorize_google_drive(client_secrets_path: Path, token_path: Path) -> Drive
     if not client_secrets_path.is_file():
         raise FileNotFoundError(client_secrets_path)
     from google.auth.transport.requests import Request
+    from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
@@ -174,7 +175,11 @@ def authorize_google_drive(client_secrets_path: Path, token_path: Path) -> Drive
         if credentials and not credentials.has_scopes((GOOGLE_DRIVE_READONLY_SCOPE,)):
             credentials = None
     if credentials and credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
+        try:
+            credentials.refresh(Request())
+        except RefreshError:
+            # Browser consent is the only safe recovery for a revoked token.
+            credentials = None
     if not credentials or not credentials.valid:
         flow = InstalledAppFlow.from_client_secrets_file(
             str(client_secrets_path), (GOOGLE_DRIVE_READONLY_SCOPE,)

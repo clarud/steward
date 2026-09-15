@@ -136,6 +136,29 @@ write a new token only after authorization succeeds. Add automated coverage for
 an expired/revoked refresh token. Telegram must continue to hide raw provider
 diagnostics and all credential material.
 
+#### Resolved after the initial session
+
+##### Stable source IDs on pagination
+
+Source lists now show `ID N` on every entry, including page two and later
+pages. Source-detail cards show `Source ID: N`; list ordinals remain only
+page-local navigation positions. Automated pagination coverage verifies that
+source 11 appears as `ID 11` on page two.
+
+**Live check pending:** Restart Telegram, open `/sources` page two, and confirm
+the visible stable ID matches the source card opened by its button.
+
+##### Revoked Google OAuth token recovery
+
+Calendar, Drive, and Gmail authorization now catch Google's revoked-token
+refresh exception, discard the in-memory credential, and start local browser
+consent. A new token is written only after consent succeeds. Parameterized
+automated tests cover all three integrations.
+
+**Live check pending:** Do not revoke a working real token solely for testing.
+The next genuine expired/revoked-token event should launch browser consent
+without a traceback. Telegram must continue to show only safe recovery text.
+
 #### Calendar duplicate-reply observation — dismissed
 
 One unthreaded `show that event` appeared to have two identical cards in the
