@@ -1297,11 +1297,38 @@ class StewardRecordApplication:
         return self._propose_travel_record_for_source(int(argument.strip()))
 
     def resolve_record_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
-        """Reopen one explicitly selected record for an exact navigation phrase."""
+        """Resolve a narrow navigation or provenance follow-up for one selected record."""
 
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        context = self._contexts.get(event.platform, event.chat_id)
+        if normalized in {
+            "show the original", "open the original", "show that original", "open that original",
+            "what source is this from", "what source was this from", "show the source",
+        }:
+            if context is None or not context.kind.startswith("record:"):
+                return None
+            record_type = context.kind.removeprefix("record:")
+            records = {
+                "travel": self._records.list_travel_records,
+                "receipt": self._records.list_receipt_records,
+                "warranty": self._records.list_warranty_records,
+            }.get(record_type)
+            record = next((item for item in records() if item.id == context.identifier), None) if records else None
+            if record is None:
+                self._contexts.clear(event.platform, event.chat_id)
+                return "That previously opened record is no longer available. Open another record to continue."
+            return PresentedReply(
+                "This record was extracted from one original source. Open it to inspect the evidence; no source or record will change.",
+                (
+                    ReplyAction("Open source", f"/source {record.source_id}"),
+                    ReplyAction("Open record", f"/record {record_type} {record.id}"),
+                ),
+                title="Record provenance",
+                icon="📎",
+                reference=(context.kind, context.identifier),
+            )
         requested_type = {
             "show that flight": "travel",
             "open that flight": "travel",
@@ -1320,7 +1347,6 @@ class StewardRecordApplication:
         }.get(normalized)
         if requested_type is None:
             return None
-        context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != f"record:{requested_type}":
             return None
         if not self._record_exists(requested_type, context.identifier):
