@@ -409,6 +409,15 @@ until a separate filesystem backup exists.
   has no linked task, rather than inventing one.
 - On any Calendar event card, use **Tasks**. It must only open Steward's local
   task list; it must not create a task, Calendar event, or task-event link.
+- On an ordinary unlinked Calendar event, choose **Link task**. Select one
+  harmless open task and verify the review names both objects and explicitly
+  says Google Calendar will not change. Before approval, neither card may show
+  a relationship. Approve, then confirm the event offers **Linked task**, the
+  task offers **View calendar**, and `what task is this for?` opens that exact
+  task. Completing it must not change the event. Rejecting a second test review
+  must leave both objects separate. Restart while the first review is pending;
+  it must remain reviewable. A Calendar outage during approval must leave the
+  proposal pending and create no local association or Calendar write.
 - Open an unlinked task with a precise deadline and verify **Add to calendar**
   creates a review rather than an event. A task with only a vague due cue, a task
   without a deadline, and a completed unlinked task must not be silently scheduled.

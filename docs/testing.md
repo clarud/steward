@@ -197,6 +197,9 @@ The picker is covered by automated application tests.
 
 ### Pending manual checks
 
+- Test reviewed linking of one harmless existing Calendar event to one open
+  local task using the **Link task** card action. Confirm approval writes only
+  the local relationship, while rejection/outage leaves it pending or separate.
 - Test Drive/Gmail unavailable-provider recovery cards with a non-sensitive
   test authorization.
 - Continue the Telegram manual checklist in safe batches.

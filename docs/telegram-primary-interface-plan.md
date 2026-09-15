@@ -1247,6 +1247,26 @@ Required tests: selection pagination, restart while pending, stale/deleted
 task, Calendar read outage, duplicate approval, cross-chat isolation, and proof
 that neither acceptance nor task completion performs a Calendar write.
 
+### Implemented reviewed task–Calendar association
+
+Calendar event cards now offer **Link task** only when the event has no existing
+Steward task relationship. The picker shows eligible open local tasks, excludes
+tasks that already have a deadline marker or an existing-event association, and
+paginates the selection. Selecting a task creates a durable review card with
+the refreshed event summary/time and task title.
+
+Approval re-fetches the current Calendar event, verifies the task remains open,
+then writes only the opaque one-to-one association in SQLite plus audit events.
+It does not create, edit, or delete a Google Calendar event. Rejection writes no
+association. A Calendar read failure or a conflicting link leaves the proposal
+pending and fails closed. Task and event cards expose the resulting relationship
+in both directions; completing the task still leaves Calendar untouched.
+
+Automated application coverage verifies the proposal/approval path, reverse
+navigation, local-only behavior, and Calendar-outage refusal. Live Telegram
+acceptance remains required for picker pagination, restart while pending,
+cross-chat isolation, and actual Calendar display behavior.
+
 ## Explicitly local-only or browser-handoff operations
 
 Some capabilities must not become unauthenticated chat commands:

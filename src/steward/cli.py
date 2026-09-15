@@ -1537,6 +1537,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 source_service=source_service,
                 semantic_index_rebuilder=rebuild_semantic_index,
                 knowledge_service=KnowledgeService(database_path),
+                calendar_reader_factory=_calendar_reader_factory(settings),
+                calendar_links=CalendarLinkRepository(database_path),
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service), contexts=review_contexts
@@ -1640,6 +1642,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 _calendar_reader_factory(settings), contexts=review_contexts,
                 calendar_links=CalendarLinkRepository(database_path),
                 tasks=TaskService(database_path),
+                action_proposals=ActionProposalRepository(database_path),
+                activity=activity,
             ),
         )
         try:

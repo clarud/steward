@@ -1715,6 +1715,105 @@ def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path
     assert unlinked.title == "No linked task"
 
 
+def test_telegram_can_review_and_save_a_local_existing_task_calendar_association(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    tasks = TaskService(database)
+    task = tasks.create("Prepare interview questions")
+    links = CalendarLinkRepository(database)
+    contexts = ReviewContextRepository(database)
+    calls: list[str] = []
+
+    class Calendar:
+        def get_event(self, event_id: str):
+            calls.append(event_id)
+            return type("Event", (), {
+                "id": event_id, "summary": "Interview", "start": "2026-09-26T05:00:00+08:00",
+                "end": "2026-09-26T06:00:00+08:00", "location": None, "description": None,
+            })()
+
+    calendar = Calendar()
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        calendar_application=StewardCalendarApplication(
+            lambda: calendar, contexts=contexts, calendar_links=links, tasks=tasks,
+            action_proposals=proposals, activity=activity,
+        ),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, task_service=tasks,
+            calendar_reader_factory=lambda: calendar, calendar_links=links,
+        ),
+        task_application=StewardTaskApplication(
+            tasks, proposals, activity, contexts=contexts, calendar_links=links,
+        ),
+    )
+
+    event_card = application.handle(make_event(text="/calendar_get existing-event"))
+    assert isinstance(event_card, PresentedReply)
+    assert any(action.command == "/calendar_link_task" for action in event_card.actions)
+    picker = application.handle(make_event(text="/calendar_link_task"))
+    assert isinstance(picker, PresentedReply)
+    assert picker.title == "Link task"
+    choose = next(action.command for action in picker.actions if action.label == "Task 1")
+    review = application.handle(make_event(text=choose))
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review task link"
+    assert links.associated_event_id_for_task(task.id or 0) is None
+    assert proposals.get(1).status == "pending"
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Task linked to Calendar"
+    assert links.associated_event_id_for_task(task.id or 0) == "existing-event"
+    assert links.associated_task_id_for_event("existing-event") == task.id
+    assert proposals.get(1).status == "accepted"
+    assert ActivityType.TASK_CALENDAR_ASSOCIATED in [item.event_type for item in activity.list_recent()]
+    assert calls == ["existing-event", "existing-event", "existing-event"]
+
+    linked_event = application.handle(make_event(text="/calendar_get existing-event"))
+    assert isinstance(linked_event, PresentedReply)
+    assert any(action.command == "/calendar_linked_task" for action in linked_event.actions)
+    linked_task = application.handle(make_event(text="what task is this for?"))
+    assert isinstance(linked_task, PresentedReply)
+    assert "reviewed existing-event association" in linked_task.text
+    task_card = application.handle(make_event(text=f"/task {task.id}"))
+    assert isinstance(task_card, PresentedReply)
+    assert "Calendar: linked existing event" in task_card.text
+    assert any(action.command == "/calendar_get existing-event" for action in task_card.actions)
+
+
+def test_existing_task_calendar_association_fails_closed_when_calendar_cannot_refetch(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    tasks = TaskService(database)
+    task = tasks.create("Prepare slides")
+    links = CalendarLinkRepository(database)
+    proposal = proposals.add(
+        StewardCalendarApplication.ASSOCIATE_TASK_EVENT,
+        {"task_id": str(task.id), "event_id": "unavailable-event", "task_title": task.title,
+         "event_summary": "Unavailable", "event_start": "2026-09-26T05:00:00+08:00",
+         "event_end": "2026-09-26T06:00:00+08:00"},
+    )
+
+    def unavailable_calendar():
+        raise OSError("authorization unavailable")
+
+    application = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity, task_service=tasks,
+        calendar_reader_factory=unavailable_calendar, calendar_links=links,
+    )
+
+    response = application.handle_command(make_event(text=f"/approve_action {proposal.id}"))
+
+    assert "proposal remains pending" in response
+    assert proposals.get(proposal.id or 0).status == "pending"
+    assert links.associated_event_id_for_task(task.id or 0) is None
+
+
 def test_telegram_preserves_calendar_reference_for_explicit_retry_after_failure(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

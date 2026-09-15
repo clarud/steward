@@ -551,6 +551,12 @@ class StewardReviewInboxApplication:
                 if item.get("booking_reference"):
                     details += f"\nBooking reference included in Calendar: {item['booking_reference']}"
             return "Review Calendar event", details + "\n\nDestination: configured Google Calendar. No event has been created. Existing linked events are reused, not updated."
+        if action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
+            return "Link task to Calendar event", (
+                f"Task: {payload.get('task_title', payload.get('task_id', 'unknown'))}\n"
+                f"Calendar event: {payload.get('event_summary', payload.get('event_id', 'unknown'))}\n\n"
+                "Approval creates only a local 1:1 Steward relationship. Google Calendar will not be changed."
+            )
         if action_type.startswith("create_") and "record" in action_type:
             return "Save extracted record", "A record will be created from the reviewed source evidence."
         if action_type.startswith("correct_"):
@@ -1911,6 +1917,13 @@ class StewardTaskApplication:
             self._calendar_links.task_event_id(task_id)
             if self._calendar_links is not None else None
         )
+        associated_event_id = (
+            self._calendar_links.associated_event_id_for_task(task_id)
+            if self._calendar_links is not None else None
+        )
+        if associated_event_id is not None:
+            lines.append("Calendar: linked existing event")
+            actions.insert(0, ReplyAction("View calendar", f"/calendar_get {associated_event_id}"))
         if calendar_event_id is not None:
             lines.append("Calendar: linked deadline marker")
             actions.insert(0, ReplyAction("View calendar", f"/calendar_get {calendar_event_id}"))
@@ -2979,6 +2992,8 @@ class StewardPrivacyApplication:
 class StewardCalendarApplication:
     """Read current Calendar state through a lazy, locally authorized adapter."""
 
+    ASSOCIATE_TASK_EVENT = "associate_existing_calendar_event_task"
+
     def __init__(
         self,
         calendar_factory: Callable[[], CalendarService] | None,
@@ -2986,11 +3001,15 @@ class StewardCalendarApplication:
         contexts: ReviewContextRepository | None = None,
         calendar_links: CalendarLinkRepository | None = None,
         tasks: TaskService | None = None,
+        action_proposals: ActionProposalRepository | None = None,
+        activity: ActivityService | None = None,
     ) -> None:
         self._calendar_factory = calendar_factory
         self._contexts = contexts
         self._calendar_links = calendar_links
         self._tasks = tasks
+        self._action_proposals = action_proposals
+        self._activity = activity
 
     def resolve_calendar_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Reopen only the exact Calendar event deliberately viewed in this chat.
@@ -3040,6 +3059,14 @@ class StewardCalendarApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
+        if command == "/calendar_link_task":
+            if argument.strip() and (not argument.strip().isdigit() or int(argument.strip()) < 1):
+                return "Use /calendar_link_task with an optional positive page number."
+            return self._task_association_picker(event, int(argument.strip()) if argument.strip() else 1)
+        if command == "/calendar_link_task_pick":
+            if not separator or not argument.strip().isdigit():
+                return "Choose a task from the Calendar event's Link task list."
+            return self._propose_task_association(event, int(argument.strip()))
         if command not in {"/calendar", "/calendar_search", "/calendar_get"}:
             return None
         if self._calendar_factory is None:
@@ -3073,6 +3100,88 @@ class StewardCalendarApplication:
             "\n\n".join(lines), tuple(actions), title="Calendar events", icon="📅"
         )
 
+    def _task_association_picker(self, event: IncomingEvent, page: int) -> str | PresentedReply:
+        """Choose an unlinked local task for the currently selected event."""
+        context = self._contexts.get(event.platform, event.chat_id) if self._contexts is not None else None
+        if context is None or context.kind != "calendar":
+            return "Open a Calendar event first, then choose Link task."
+        if self._calendar_links is None or self._tasks is None or self._action_proposals is None:
+            return "Existing task-to-Calendar associations are not configured on this Steward process."
+        event_id = str(context.identifier)
+        if self._calendar_links.task_id_for_event(event_id) is not None or self._calendar_links.associated_task_id_for_event(event_id) is not None:
+            return "This Calendar event already has a local Steward task link."
+        candidates = [
+            task for task in self._tasks.list_open()
+            if self._calendar_links.task_event_id(task.id or 0) is None
+            and self._calendar_links.associated_event_id_for_task(task.id or 0) is None
+        ]
+        if not candidates:
+            return PresentedReply(
+                "No open Steward tasks are eligible to link. Tasks with an existing Calendar relationship are excluded.",
+                (ReplyAction("Tasks", "/tasks"), ReplyAction("Back to event", f"/calendar_get {event_id}")),
+                title="Link task", icon="📅",
+            )
+        pages = max(1, (len(candidates) + 7) // 8)
+        page = min(max(page, 1), pages)
+        visible = candidates[(page - 1) * 8:page * 8]
+        lines = ["Select one existing local task. No Calendar event will be created or changed.", f"Page {page} of {pages}"]
+        lines.extend(f"{index}. {task.title}" for index, task in enumerate(visible, start=1))
+        actions = [ReplyAction(f"Task {index}", f"/calendar_link_task_pick {task.id}") for index, task in enumerate(visible, start=1)]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/calendar_link_task {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/calendar_link_task {page + 1}"))
+        actions.append(ReplyAction("Back to event", f"/calendar_get {event_id}"))
+        return PresentedReply("\n".join(lines), tuple(actions), title="Link task", icon="📅")
+
+    def _propose_task_association(self, event: IncomingEvent, task_id: int) -> str | PresentedReply:
+        """Persist a reviewable local link proposal after refreshing the event."""
+        context = self._contexts.get(event.platform, event.chat_id) if self._contexts is not None else None
+        if context is None or context.kind != "calendar":
+            return "Open a Calendar event first, then choose Link task."
+        if self._calendar_factory is None or self._calendar_links is None or self._tasks is None or self._action_proposals is None:
+            return "Existing task-to-Calendar associations are not configured on this Steward process."
+        event_id = str(context.identifier)
+        task = self._tasks.get(task_id)
+        if task is None or task.status != "open":
+            return "That task is no longer available to link. Choose another open task."
+        if self._calendar_links.task_event_id(task_id) is not None or self._calendar_links.associated_event_id_for_task(task_id) is not None:
+            return "That task already has a Calendar relationship. Choose another task."
+        if self._calendar_links.task_id_for_event(event_id) is not None or self._calendar_links.associated_task_id_for_event(event_id) is not None:
+            return "This Calendar event already has a local Steward task link."
+        try:
+            current_event = self._calendar_factory().get_event(event_id)
+        except Exception:
+            return self._read_failure(f"/calendar_get {event_id}")
+        payload = {
+            "task_id": str(task_id),
+            "event_id": event_id,
+            "task_title": task.title,
+            "event_summary": str(getattr(current_event, "summary")),
+            "event_start": str(getattr(current_event, "start")),
+            "event_end": str(getattr(current_event, "end")),
+        }
+        proposal = self._action_proposals.find_pending(self.ASSOCIATE_TASK_EVENT, payload)
+        if proposal is None:
+            proposal = self._action_proposals.add(self.ASSOCIATE_TASK_EVENT, payload)
+            if self._activity is not None:
+                self._activity.record(
+                    ActivityType.ACTION_PROPOSED,
+                    object_id=str(proposal.id),
+                    details=f"Associate task {task_id} with Calendar event {event_id}",
+                )
+        return PresentedReply(
+            f"Task: {task.title}\nCalendar event: {payload['event_summary']}\n"
+            f"{calendar_time_label(payload['event_start'], payload['event_end'])}\n\n"
+            "Approval creates only a local 1:1 Steward relationship. Google Calendar will not be changed.",
+            (
+                ReplyAction("Link task", f"/approve_action {proposal.id}"),
+                ReplyAction("Reject", f"/reject_action {proposal.id}"),
+                ReplyAction("Back to event", f"/calendar_get {event_id}"),
+            ),
+            title="Review task link", icon="📅",
+        )
+
     def _event_card(self, event: IncomingEvent, event_result: object) -> PresentedReply:
         """Render one current external event and retain only its opaque ID."""
 
@@ -3089,10 +3198,14 @@ class StewardCalendarApplication:
         if self._calendar_links is not None and self._tasks is not None:
             try:
                 task_id = self._calendar_links.task_id_for_event(identifier)
+                if task_id is None:
+                    task_id = self._calendar_links.associated_task_id_for_event(identifier)
             except ValueError:
                 task_id = None
             if task_id is not None and self._tasks.get(task_id) is not None:
                 actions.append(ReplyAction("Linked task", "/calendar_linked_task"))
+            elif self._action_proposals is not None:
+                actions.append(ReplyAction("Link task", "/calendar_link_task"))
         actions.extend((
             ReplyAction("Tasks", "/tasks"),
             ReplyAction("Upcoming", "/calendar_search"),
@@ -3126,6 +3239,10 @@ class StewardCalendarApplication:
             return "Task-to-Calendar links are not configured for this Steward process."
         try:
             task_id = self._calendar_links.task_id_for_event(str(context.identifier))
+            relationship = "deadline marker"
+            if task_id is None:
+                task_id = self._calendar_links.associated_task_id_for_event(str(context.identifier))
+                relationship = "reviewed existing-event association"
         except ValueError:
             return PresentedReply(
                 "This Calendar event has more than one local Steward task link, so Steward will not choose one. The Calendar event was not changed.",
@@ -3147,7 +3264,7 @@ class StewardCalendarApplication:
             )
         due = f"\nDue: {task.due_at.isoformat()}" if task.due_at else ""
         return PresentedReply(
-            f"{task.title}\nStatus: {task.status}{due}\n\nThis is Steward's local link to the Calendar deadline marker; completing the task does not change the Calendar event.",
+            f"{task.title}\nStatus: {task.status}{due}\n\nThis is Steward's local {relationship}; completing the task does not change the Calendar event.",
             (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Back to event", f"/calendar_get {context.identifier}")),
             title="Linked task",
         )
@@ -4171,6 +4288,8 @@ class StewardActionProposalApplication:
         source_service: SourceService | None = None,
         semantic_index_rebuilder: Callable[[], int] | None = None,
         knowledge_service: KnowledgeService | None = None,
+        calendar_reader_factory: Callable[[], CalendarService] | None = None,
+        calendar_links: CalendarLinkRepository | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -4188,6 +4307,8 @@ class StewardActionProposalApplication:
         self._source_service = source_service
         self._semantic_index_rebuilder = semantic_index_rebuilder
         self._knowledge = knowledge_service
+        self._calendar_reader_factory = calendar_reader_factory
+        self._calendar_links = calendar_links
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
@@ -4265,6 +4386,8 @@ class StewardActionProposalApplication:
             return self._review_claim_revision(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
             return self._review_workspace_link(proposal_id, decision)
+        if proposal is not None and proposal.action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
+            return self._review_task_calendar_association(proposal_id, decision)
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
@@ -4320,6 +4443,54 @@ class StewardActionProposalApplication:
             (ReplyAction("Pending", "/pending"), ReplyAction("Home", "/home")),
             title="Action complete" if proposal.status == "accepted" else "Action declined",
             icon="✅" if proposal.status == "accepted" else "↩️",
+        )
+
+    def _review_task_calendar_association(self, proposal_id: int, decision: str) -> str | PresentedReply:
+        """Accept/reject a local task-to-existing-event relationship safely."""
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
+            return "Task-to-Calendar association proposal was not found."
+        if proposal.status == decision:
+            return f"Task-to-Calendar association proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task-to-Calendar association proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The task and Calendar event remain separate. Google Calendar was not changed.",
+                (ReplyAction("Pending", "/pending"), ReplyAction("Home", "/home")),
+                title="Task link declined", icon="↩️",
+            )
+        if self._tasks is None or self._calendar_links is None or self._calendar_reader_factory is None:
+            return "Existing task-to-Calendar associations are not configured for this Steward process."
+        task_id = int(proposal.payload["task_id"])
+        event_id = proposal.payload["event_id"]
+        task = self._tasks.get(task_id)
+        if task is None or task.status != "open":
+            return "That task is no longer available to link. The proposal remains pending."
+        try:
+            self._calendar_reader_factory().get_event(event_id)
+        except Exception:
+            return "Calendar could not be read to verify this existing event. The proposal remains pending; retry after Calendar recovers."
+        try:
+            created = self._calendar_links.associate_existing_event(task_id, event_id)
+        except ValueError as error:
+            return f"This task link can no longer be applied: {error} The proposal remains pending."
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.TASK_CALENDAR_ASSOCIATED,
+                object_id=str(task_id),
+                details=f"Existing Calendar event {event_id}",
+            )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        result = "The existing local relationship was already present." if not created else "The local task-to-Calendar relationship was saved."
+        return PresentedReply(
+            f"{result}\n\nGoogle Calendar was not changed.",
+            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+            title="Task linked to Calendar", icon="📅",
         )
 
     def _review_task(self, proposal_id: int, decision: str) -> str | PresentedReply:
