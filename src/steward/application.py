@@ -239,6 +239,11 @@ class StewardReviewInboxApplication:
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
             title, description = self._action_summary(proposal.action_type, proposal.payload)
             source_action: ReplyAction | None = None
+            raw_source_id = proposal.payload.get("source_id")
+            if isinstance(raw_source_id, str) and raw_source_id.isdigit():
+                candidate = self._sources.get_by_id(int(raw_source_id))
+                if candidate is not None:
+                    source_action = ReplyAction("Open source", f"/source {candidate.id}")
             if proposal.action_type in {"create_travel_record", "create_receipt_record", "create_warranty_record"}:
                 if self._records is None or self._fragments is None:
                     return "Record preview is unavailable. Open the original record proposal before approving."
@@ -2812,9 +2817,10 @@ class StewardPrivacyApplication:
                 PrivacyRule.NO_MODEL: "No model may receive this source's raw extracted content.",
             }[rule]
             return PresentedReply(
-                f"Source {source_id}: {previous_rule.value} → {rule.value}\n\n{consequence}\n\n"
+                    f"Source {source_id}: {previous_rule.value} → {rule.value}\n\n{consequence}\n\n"
                 "The privacy rule is unchanged until you approve.",
                 (
+                    ReplyAction("Open source", f"/source {source_id}"),
                     ReplyAction("Apply privacy rule", f"/approve_action {proposal.id}"),
                     ReplyAction("Reject", f"/reject_action {proposal.id}"),
                 ),
@@ -4706,6 +4712,7 @@ class StewardActionProposalApplication:
             f"Re-extraction proposal {proposal.id} is pending for source {source_id}. "
             "This refreshes derived text only; the original file will not change.",
             (
+                ReplyAction("Open source", f"/source {source_id}"),
                 ReplyAction("Refresh derived text", f"/approve_action {proposal.id}"),
                 ReplyAction("Reject", f"/reject_action {proposal.id}"),
             ),
@@ -4753,6 +4760,7 @@ class StewardActionProposalApplication:
             f"Unregister proposal {proposal.id}: remove Steward metadata for source {source.id} ({source.path.name}). "
             "Its original file will not be deleted.",
             (
+                ReplyAction("Open source", f"/source {source.id}"),
                 ReplyAction("Unregister metadata", f"/approve_action {proposal.id}"),
                 ReplyAction("Keep registered", f"/reject_action {proposal.id}"),
             ),

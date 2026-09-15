@@ -463,25 +463,26 @@ until a separate filesystem backup exists.
   search or import returns a retry-oriented message without a local token path,
   client-secret filename, or provider diagnostic.
 - Set `/set_privacy SOURCE_ID no_model`. Verify it opens a **Review privacy
-  change** card, and `/privacy SOURCE_ID` still shows the previous rule until
-  you approve. After approval, confirm restricted source content is not sent
-  to a cloud-backed model. Reject a second proposed change and verify the
-  existing rule remains unchanged.
+  change** card with **Open source**, and `/privacy SOURCE_ID` still shows the
+  previous rule until you approve. After approval, confirm restricted source
+  content is not sent to a cloud-backed model. Reject a second proposed change
+  and verify the existing rule remains unchanged.
 - With `STEWARD_MODEL_PROVIDER=local`, set a harmless source to
   `local_model_only` and ask about it through the tool agent. Verify the local
   model can use it. Switch to an external provider and verify the same source
   is withheld from the tool result.
 - Choose a harmless Markdown source with a known ID and send
   `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
-  approval, accepting refreshes its fragments, and the original file remains
-  byte-for-byte unchanged.
+  approval, **Open source** inspects the same original, accepting refreshes its
+  fragments, and the original file remains byte-for-byte unchanged.
 - With the embedding model already installed locally, send
   `/propose_rebuild_index`. Verify that it is a review card; approval rebuilds
   vectors from existing fragments without reading or changing original files.
 - Choose a harmless registered source and send
   `/propose_unregister_source SOURCE_ID`. Verify that it remains registered
-  before approval, the review card shows only its filename, approval removes it
-  from `/sources`, and its original file remains on disk unchanged.
+  before approval, the review card offers **Open source** and shows only its
+  filename, approval removes it from `/sources`, and its original file remains
+  on disk unchanged.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.

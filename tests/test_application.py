@@ -1417,8 +1417,14 @@ def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_
 
     assert isinstance(proposed, PresentedReply)
     assert proposed.title == "Review privacy change"
+    assert proposed.actions[0].command == f"/source {source.id}"
     assert privacy.rule_for(source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
     assert proposals.get(1).status == "pending"
+    pending = StewardReviewInboxApplication(
+        proposals, OrganizationProposalRepository(database_path), sources,
+    ).handle_command(make_event(text="/review action 1"))
+    assert isinstance(pending, PresentedReply)
+    assert pending.actions[0].command == f"/source {source.id}"
 
     conflicting = application.handle(make_event(text=f"/set_privacy {source.id} local_model_only"))
     assert isinstance(conflicting, PresentedReply)
