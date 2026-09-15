@@ -1333,6 +1333,8 @@ class StewardRecordApplication:
             ):
                 self._contexts.set(event.platform, event.chat_id, f"record:{record_type.casefold()}", int(identifier))
             return response
+        if command == "/record_evidence":
+            return self._record_evidence(separator, argument)
         if command == "/travel_references":
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
@@ -1619,52 +1621,94 @@ class StewardRecordApplication:
         record = next((item for item in records() if item.id == int(identifier)), None)
         if record is None:
             return f"{record_type.title()} record {identifier} was not found."
-        if record_type == "travel":
-            fields = (
-                ("flight", "flight_number", record.flight_number),
-                ("departure", "departure", record.departure),
-                ("arrival", "arrival", record.arrival),
-                ("departure time", "departure_time", timestamp_label(record.departure_time) if record.departure_time else None),
-                ("arrival time", "arrival_time", timestamp_label(record.arrival_time) if record.arrival_time else None),
-                ("booking reference", "booking_reference", record.booking_reference),
-            )
-        elif record_type == "receipt":
-            fields = (
-                ("merchant", "merchant", record.merchant),
-                ("total", "total_cents", f"{record.total_cents / 100:.2f}" if record.total_cents is not None else None),
-                ("currency", "currency", record.currency),
-                ("purchased at", "purchased_at", timestamp_label(record.purchased_at) if record.purchased_at else None),
-                ("receipt number", "receipt_number", record.receipt_number),
-            )
-        else:
-            fields = (
-                ("product", "product_name", record.product_name),
-                ("provider", "provider", record.provider),
-                ("warranty number", "warranty_number", record.warranty_number),
-                ("coverage ends", "coverage_ends_at", timestamp_label(record.coverage_ends_at) if record.coverage_ends_at else None),
-            )
-        evidence = self._records.field_evidence(record_type, int(identifier))
+        fields = self._record_fields(record_type, record)
+        supported_evidence = self._supported_record_evidence(record_type, record, fields)
+        evidence = {field: fragment.id for field, fragment in supported_evidence if fragment.id is not None}
         lines: list[str] = []
         for label, field, value in fields:
             if value is None:
                 continue
             fragment_id = evidence.get(field)
-            fragment = self._fragments.get(fragment_id) if fragment_id is not None else None
-            # An explicit correction can supersede an extracted field. Do not
-            # claim stale source support merely because an old evidence link
-            # remains in the audit trail.
-            raw_value = getattr(record, field)
-            evidence_value = raw_value.isoformat() if isinstance(raw_value, datetime) else str(value)
-            supported = fragment is not None and evidence_value.casefold() in fragment.text.casefold()
-            provenance = f"source fragment {fragment_id}" if supported else "not source-evidenced"
+            provenance = f"source fragment {fragment_id}" if fragment_id is not None else "not source-evidenced"
             lines.append(f"{label}: {value} ({provenance})")
+        actions = [ReplyAction("Open source", f"/source {record.source_id}")]
+        if supported_evidence:
+            actions.append(ReplyAction("Evidence", f"/record_evidence {record_type} {record.id}"))
+        actions.append(ReplyAction("Records", "/records"))
         return PresentedReply(
             "\n".join(lines) + f"\n\nOriginal: source {record.source_id}",
-            (ReplyAction("Open source", f"/source {record.source_id}"), ReplyAction("Records", "/records")),
+            tuple(actions),
             title=f"{record_type.title()} record {identifier}",
             icon="✈️" if record_type == "travel" else "🧾" if record_type == "receipt" else "🛡️",
             reference=(f"record:{record_type}", int(identifier)),
         )
+
+    @staticmethod
+    def _record_fields(record_type: str, record: object) -> tuple[tuple[str, str, object | None], ...]:
+        if record_type == "travel":
+            return (
+                ("flight", "flight_number", getattr(record, "flight_number")),
+                ("departure", "departure", getattr(record, "departure")),
+                ("arrival", "arrival", getattr(record, "arrival")),
+                ("departure time", "departure_time", timestamp_label(getattr(record, "departure_time")) if getattr(record, "departure_time") else None),
+                ("arrival time", "arrival_time", timestamp_label(getattr(record, "arrival_time")) if getattr(record, "arrival_time") else None),
+                ("booking reference", "booking_reference", getattr(record, "booking_reference")),
+            )
+        if record_type == "receipt":
+            total = getattr(record, "total_cents")
+            return (
+                ("merchant", "merchant", getattr(record, "merchant")),
+                ("total", "total_cents", f"{total / 100:.2f}" if total is not None else None),
+                ("currency", "currency", getattr(record, "currency")),
+                ("purchased at", "purchased_at", timestamp_label(getattr(record, "purchased_at")) if getattr(record, "purchased_at") else None),
+                ("receipt number", "receipt_number", getattr(record, "receipt_number")),
+            )
+        return (
+            ("product", "product_name", getattr(record, "product_name")),
+            ("provider", "provider", getattr(record, "provider")),
+            ("warranty number", "warranty_number", getattr(record, "warranty_number")),
+            ("coverage ends", "coverage_ends_at", timestamp_label(getattr(record, "coverage_ends_at")) if getattr(record, "coverage_ends_at") else None),
+        )
+
+    def _supported_record_evidence(
+        self, record_type: str, record: object, fields: tuple[tuple[str, str, object | None], ...]
+    ) -> tuple[tuple[str, object], ...]:
+        stored = self._records.field_evidence(record_type, getattr(record, "id"))
+        supported: list[tuple[str, object]] = []
+        for _, field, display_value in fields:
+            if display_value is None:
+                continue
+            fragment_id = stored.get(field)
+            fragment = self._fragments.get(fragment_id) if fragment_id is not None else None
+            if fragment is not None and fragment.source_id == getattr(record, "source_id") and str(display_value).casefold() in fragment.text.casefold():
+                supported.append((field, fragment))
+        return tuple(supported)
+
+    def _record_evidence(self, separator: str, argument: str) -> str | PresentedReply:
+        record_type, identifier_separator, identifier = argument.strip().partition(" ")
+        record_type = record_type.casefold()
+        if not separator or not identifier_separator or not identifier.isdigit():
+            return "Use /record_evidence followed by travel, receipt, or warranty and a numeric record ID."
+        records = {
+            "travel": self._records.list_travel_records,
+            "receipt": self._records.list_receipt_records,
+            "warranty": self._records.list_warranty_records,
+        }.get(record_type)
+        record = next((item for item in records() if item.id == int(identifier)), None) if records else None
+        if record is None:
+            return f"{record_type.title()} record {identifier} was not found."
+        evidence = self._supported_record_evidence(record_type, record, self._record_fields(record_type, record))
+        if not evidence:
+            return "This record has no current source-supported fields. Open the original or review its correction history."
+        unique_fragments = {fragment.id: fragment for _, fragment in evidence if fragment.id is not None}
+        lines = ["Only fields whose current values still appear in their recorded fragment are listed."]
+        lines.extend(f"{field}: fragment {fragment.id} · {fragment.location}" for field, fragment in evidence)
+        actions = [
+            ReplyAction(f"Evidence {index}", f"/source_content {record.source_id} {fragment.ordinal + 1}")
+            for index, fragment in enumerate(unique_fragments.values(), start=1)
+        ]
+        actions.extend((ReplyAction("Open source", f"/source {record.source_id}"), ReplyAction("Open record", f"/record {record_type} {record.id}")))
+        return PresentedReply("\n".join(lines), tuple(actions), title="Record evidence", icon="📎", reference=(f"record:{record_type}", record.id))
 
     def _list_records(self) -> str | PresentedReply:
         lines: list[str] = []

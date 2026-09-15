@@ -418,9 +418,10 @@ until a separate filesystem backup exists.
 - After accepting one, use `/record travel ID`, `/record receipt ID`, or
   `/record warranty ID`. Verify each displayed current field identifies its
   supporting source fragment when that exact value is still present there, and
-  **Open source** returns to the original. Correct a field, then reopen the
-  record: it must be labelled **not source-evidenced** instead of inheriting
-  stale extraction provenance.
+  **Open source** returns to the original. Use **Evidence** to open the exact
+  extracted section for each currently supported field. Correct a field, then
+  reopen the record: it must be labelled **not source-evidenced** instead of
+  inheriting stale extraction provenance, and it must not appear in Evidence.
 - On a direct or `/pending` record proposal, use **Open source** before
   accepting. Confirm it opens the exact original while the record remains
   uncreated. This action must also be available on a correction proposal.

@@ -937,7 +937,12 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert "flight: SQ638 (source fragment 1)" in detail.text
     assert "arrival: Tokyo (source fragment 1)" in detail.text
     assert detail.actions[0].command == f"/source {source.id}"
+    assert detail.actions[1].command == f"/record_evidence travel {record.id}"
     assert detail.reference == ("record:travel", record.id)
+    evidence = application.handle_command(make_event(text=f"/record_evidence travel {record.id}"))
+    assert isinstance(evidence, PresentedReply)
+    assert "flight_number: fragment 1" in evidence.text
+    assert evidence.actions[0].command == f"/source_content {source.id} 1"
 
     records.correct_travel_field(record.id or 0, "arrival", "Osaka")
     corrected = application.handle_command(make_event(text=f"/record travel {record.id}"))
