@@ -167,6 +167,10 @@ until a separate filesystem backup exists.
   action and one organization, intake, or knowledge review. Opening `/pending`
   alone must not make its first item confirmable by a bare `yes`; choose
   **Review 1** first.
+- Reply `show the original` to a source-backed organization, record, or
+  knowledge review card. It must identify and offer the exact original source,
+  then let source follow-ups resolve against that source after restart. An
+  intake or non-source action review must not guess an original.
 
 ## Capture, review, and restart
 

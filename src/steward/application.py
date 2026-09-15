@@ -344,12 +344,49 @@ class StewardReviewInboxApplication:
         if self._contexts is None:
             return None
         text = (event.text or "").strip().casefold().rstrip("?!.")
+        if text in {
+            "show source", "open source", "show the source", "open the source",
+            "show original", "open original", "show the original", "open the original",
+            "what source is this from",
+        }:
+            context = self._contexts.get(event.platform, event.chat_id)
+            source_id = self._source_id_for_review(context.kind, context.identifier) if context is not None else None
+            if source_id is None:
+                return None
+            source = self._sources.get_by_id(source_id)
+            if source is None:
+                return "The original for this review is no longer registered. Open another review or source to continue."
+            return PresentedReply(
+                f"This review is based on {source.path.name}. Open the original to inspect it; no decision has been made.",
+                (ReplyAction("Open source", f"/source {source_id}"),),
+                title="Review source", icon="📎", reference=("source", source_id),
+            )
         if text not in {"what is this", "what is this proposal", "why", "details", "show details"}:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind not in {"action", "organization", "intake", "knowledge"}:
             return None
         return self.detail(event, context.kind, context.identifier)
+
+    def _source_id_for_review(self, kind: str, identifier: int | str) -> int | None:
+        """Return only a review's explicit source pointer; never infer one."""
+
+        if kind == "organization":
+            proposal = self._organizations.get(int(identifier))
+            return proposal.source_id if proposal is not None else None
+        if kind == "knowledge" and self._knowledge is not None and self._fragments is not None:
+            proposal = self._knowledge.get(int(identifier))
+            fragment = self._fragments.get(proposal.fragment_id) if proposal is not None else None
+            return fragment.source_id if fragment is not None else None
+        if kind == "action":
+            proposal = self._actions.get(int(identifier))
+            raw_source_id = proposal.payload.get("source_id") if proposal is not None else None
+            try:
+                source_id = int(raw_source_id)
+            except (TypeError, ValueError):
+                return None
+            return source_id if source_id > 0 else None
+        return None
 
     def contextual_confirmation_command(self, event: IncomingEvent) -> str | None:
         """Translate an unambiguous confirmation of the displayed review card.

@@ -553,6 +553,11 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     followup = reviews.handle_followup(make_event(text="what is this proposal?"))
     assert isinstance(followup, PresentedReply)
     assert followup.title == "Organize resume.pdf"
+    original = reviews.handle_followup(make_event(text="show the original"))
+    assert isinstance(original, PresentedReply)
+    assert original.title == "Review source"
+    assert original.actions[0].command == f"/source {source.id}"
+    assert original.reference == ("source", source.id)
 
     class QuestionMustNotRun:
         def invoke(self, input, config=None):
