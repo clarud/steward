@@ -949,6 +949,9 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
 
     assert isinstance(corrected, PresentedReply)
     assert "arrival: Osaka (not source-evidenced)" in corrected.text
+    corrected_evidence = application.handle_command(make_event(text=f"/record_evidence travel {record.id}"))
+    assert isinstance(corrected_evidence, PresentedReply)
+    assert "arrival: fragment" not in corrected_evidence.text
 
 
 def test_telegram_record_reference_reopens_the_last_explicitly_opened_flight_after_restart(tmp_path: Path) -> None:
