@@ -1416,6 +1416,7 @@ class StewardRecordApplication:
         return PresentedReply(
             f"{rendered}\n\nNo travel record has been saved yet.",
             (
+                ReplyAction("Open source", f"/source {source_id}"),
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Organize Inbox", "/organize"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
@@ -1541,6 +1542,7 @@ class StewardRecordApplication:
         return PresentedReply(
             "\n".join(fields) + f"\n\nNo {label} record has been saved yet.",
             (
+                ReplyAction("Open source", f"/source {source_id}"),
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Organize Inbox", "/organize"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
