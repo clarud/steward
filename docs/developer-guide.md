@@ -637,9 +637,29 @@ state. The Telegram application handles these exact commands:
 recognized proposal types to their deterministic reviewer. Workspace acceptance
 performs idempotent workspace creation; Calendar acceptance invokes its
 idempotent writer only after approval. The model has no route to either final
-action. This is a deliberately narrow first
-human-in-the-loop interface: all configured allowlisted chats are trusted
-administrators, and proposals are not yet owned by an individual Telegram user.
+action. This is a deliberately narrow first human-in-the-loop interface: most
+configured allowlisted chats are trusted administrators, and most legacy
+proposal types are not yet owned by an individual Telegram user.
+
+### Reviewed links to existing Calendar events
+
+Calendar events and Steward tasks remain independent objects. A reviewed task
+deadline marker is one special case where Steward creates a new Google Calendar
+event; it is not a general relationship model.
+
+For an existing Calendar event, the event card can instead offer **Link task**.
+The user selects an eligible open local task, sees a review containing the
+current event summary/time and task title, then explicitly approves or rejects
+it. Approval re-fetches the Calendar event and stores only an opaque one-to-one
+association in local SQLite. It never creates, edits, or deletes a Google
+Calendar event. The relationship appears in both task and event cards, while
+completing the task still leaves Calendar unchanged.
+
+These association proposals carry their originating Telegram chat ID. A
+different allowlisted chat cannot approve or reject one, which prevents an
+existing-event relationship proposed in one chat from being authorized in
+another. Calendar read failures, deleted tasks, and conflicting existing links
+leave the proposal pending rather than silently reassigning anything.
 
 ### Retained external research
 
