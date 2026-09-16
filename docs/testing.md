@@ -15,6 +15,19 @@ safe test.
   test was corrected and the full suite then passed.
 - Follow-up automated coverage passed for stable source IDs, revoked-token
   recovery, and reviewed task-to-Calendar associations.
+- Later focused automated coverage also passed for privacy-gated claim-revision
+  drafts, travel passenger provenance, and durable Telegram knowledge-card
+  references.
+
+### Session conclusion
+
+The 2026-09-16 local and Telegram acceptance batch is complete and passed for
+the exercised features. No unresolved functional defect was found in that
+batch. The remaining items in this ledger are deliberately deferred specialist
+rehearsals: a naturally revoked OAuth token, provider-unavailable recovery, and
+future feature-specific Telegram checks. They are not failures and should not
+be marked as passed until the relevant real condition occurs or a safe,
+non-sensitive test environment is available.
 
 ### Passed
 
