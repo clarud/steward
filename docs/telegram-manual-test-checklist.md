@@ -548,6 +548,11 @@ until a separate filesystem backup exists.
 - Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
   same evidence plus decision buttons (conflicts use **Flag conflict** and **Not
   a conflict**), rather than requiring a manually typed review command.
+- Open a concept and a knowledge-evidence card, then open other cards. Reply to
+  the older concept with `show that concept`, and to the older evidence card
+  with `show that evidence`. Restart Telegram and repeat. Each reply must reopen
+  the exact original object, never the newest concept/review in the chat or a
+  model-generated interpretation.
 
 ## Failure and recovery checks
 

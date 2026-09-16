@@ -239,3 +239,11 @@ The picker is covered by automated application tests.
 - Record/migration/application coverage passed for extraction, approval,
   persistence, user correction, and Telegram rendering. The harmless live
   itinerary exercise is recorded in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: durable knowledge-card references
+
+- Concept and knowledge-evidence cards now persist opaque Telegram references,
+  allowing exact `show that concept` and `show that evidence` follow-ups after
+  other cards have been opened or the bot restarts.
+- Focused application and adapter suites passed. The real Telegram restart and
+  older-card reply exercise is recorded in `telegram-manual-test-checklist.md`.

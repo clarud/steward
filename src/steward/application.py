@@ -2390,6 +2390,38 @@ class StewardKnowledgeApplication:
         self._revision_model_allowed = revision_model_allowed
         self._revision_model_label = revision_model_label
 
+    def resolve_knowledge_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Follow an exact concept or evidence card without broad inference.
+
+        The Telegram adapter restores only the opaque object ID that was placed
+        on a delivered card.  This method accepts a deliberately small set of
+        navigation phrases, then reuses the normal current-state renderers.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or not isinstance(context.identifier, int):
+            return None
+        if context.kind == "concept":
+            if normalized in {
+                "show that concept", "open that concept", "show this concept",
+                "open this concept", "what is this concept", "show concept details",
+            }:
+                return self.handle_command(replace(event, text=f"/concept {context.identifier}"))
+            if normalized in {
+                "show its evidence", "show that concept evidence", "show evidence reviews",
+                "open evidence reviews",
+            }:
+                return self.handle_command(replace(event, text=f"/knowledge_reviews {context.identifier}"))
+        if context.kind == "knowledge" and normalized in {
+            "show that evidence", "open that evidence", "show that review",
+            "open that review", "why is this a conflict", "show evidence details",
+        }:
+            return self.handle_command(replace(event, text=f"/knowledge_proposal {context.identifier}"))
+        return None
+
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
@@ -2453,7 +2485,7 @@ class StewardKnowledgeApplication:
             return PresentedReply("\n".join(lines), (
                 ReplyAction("Evidence reviews", f"/knowledge_reviews {concept.id}"),
                 ReplyAction("All concepts", "/knowledge"),
-            ), title=concept.name, icon="🧠")
+            ), title=concept.name, icon="🧠", reference=("concept", concept.id or 0))
         if command == "/knowledge_reviews":
             parts = argument.split()
             if not 1 <= len(parts) <= 2 or any(not part.isdigit() or int(part) < 1 for part in parts):
@@ -2479,6 +2511,7 @@ class StewardKnowledgeApplication:
                     + self._conflict_status_line(item)
                     for index, item in enumerate(visible, start=1)
                 ), tuple(actions), title="Reviewed evidence", icon="🔎",
+                reference=("concept", concept_id),
             )
         if command == "/connect_knowledge":
             if self._connector is None:
@@ -2511,12 +2544,14 @@ class StewardKnowledgeApplication:
                 return PresentedReply(
                     self._render_enrichment(proposal),
                     self._pending_enrichment_actions(proposal),
+                    reference=("knowledge", proposal.id or 0),
                 )
             if proposal.operation is EnrichmentOperation.CONTRADICT and proposal.status == "accepted":
                 return PresentedReply(
                     self._render_enrichment(proposal),
                     self._conflict_resolution_actions(proposal),
                     title="Knowledge conflict", icon="⚠️",
+                    reference=("knowledge", proposal.id or 0),
                 )
             return self._render_enrichment(proposal)
         if command == "/propose_enrichment":
@@ -2539,6 +2574,7 @@ class StewardKnowledgeApplication:
             return PresentedReply(
                 self._render_enrichment(stored),
                 self._pending_enrichment_actions(stored),
+                reference=("knowledge", stored.id or 0),
             )
         if command == "/review_enrichment":
             parts = argument.split()
@@ -2564,6 +2600,7 @@ class StewardKnowledgeApplication:
                     "Choose how this conflict should appear in your knowledge.",
                     self._conflict_resolution_actions(proposal),
                     title="Knowledge conflict recorded", icon="⚠️",
+                    reference=("knowledge", proposal.id or 0),
                 )
             return f"Knowledge enrichment proposal {proposal.id} {proposal.status}."
         if command == "/resolve_knowledge_conflict":
@@ -2602,6 +2639,7 @@ class StewardKnowledgeApplication:
                 descriptions[proposal.conflict_resolution],
                 tuple(actions),
                 title="Conflict resolved", icon="🧠",
+                reference=("knowledge", proposal.id or 0),
             )
         if command == "/draft_claim_revision":
             if not separator or not argument.strip().isdigit():
@@ -5209,6 +5247,9 @@ class StewardEventApplication:
             if roots_response is not None:
                 return roots_response
         if self._knowledge_application is not None:
+            knowledge_reference = self._knowledge_application.resolve_knowledge_reference(event)
+            if knowledge_reference is not None:
+                return knowledge_reference
             knowledge_response = self._knowledge_application.handle_command(event)
             if knowledge_response is not None:
                 return knowledge_response

@@ -1350,6 +1350,49 @@ def test_knowledge_revision_prompt_survives_restart_and_requires_separate_approv
     assert "reviewed revision of claim 1" in concept_card.text
 
 
+def test_telegram_knowledge_cards_keep_exact_concept_and_evidence_references(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 13, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(
+        None, tmp_path / "tlb.md", "b" * 64, SourceType.MARKDOWN, 0, now, now, now
+    ))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, "TLB", 0, "TLBs do not cache page contents.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache page contents.", [fragment.id or 0])
+    proposals = KnowledgeEnrichmentProposalRepository(database)
+    proposal = proposals.add(knowledge.compare_evidence(
+        claim, fragment_id=fragment.id or 0, evidence_text=fragment.text,
+    ))
+    contexts = ReviewContextRepository(database)
+    knowledge_application = StewardKnowledgeApplication(
+        knowledge, fragments, proposals, ActivityService(database), contexts=contexts,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=knowledge_application,
+    )
+
+    concept_card = application.handle(make_event(text=f"/concept {concept.id}"))
+    assert isinstance(concept_card, PresentedReply)
+    assert concept_card.reference == ("concept", concept.id)
+    contexts.set("telegram", "100", "concept", concept.id or 0)
+    reopened_concept = application.handle(make_event(text="show that concept"))
+    assert isinstance(reopened_concept, PresentedReply)
+    assert reopened_concept.title == "TLB"
+
+    evidence_card = application.handle(make_event(text=f"/knowledge_proposal {proposal.id}"))
+    assert isinstance(evidence_card, PresentedReply)
+    assert evidence_card.reference == ("knowledge", proposal.id)
+    contexts.set("telegram", "100", "knowledge", proposal.id or 0)
+    reopened_evidence = application.handle(make_event(text="show that evidence"))
+    assert isinstance(reopened_evidence, PresentedReply)
+    assert "Knowledge proposal" in reopened_evidence.text
+
+
 def test_telegram_model_drafts_a_privacy_gated_claim_revision_for_separate_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 13, tzinfo=UTC)

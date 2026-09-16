@@ -1389,6 +1389,13 @@ snapshot, active-source, conflict-status, and lineage checks. Provider failure,
 blocked privacy, stale evidence, an unchanged candidate, or insufficient
 evidence creates no proposal and leaves canonical knowledge unchanged.
 
+Concept and evidence-review cards also carry the same opaque Telegram
+message-reference mechanism used by source, task, record, workspace, and
+Calendar cards. After a restart, replying **show that concept** re-renders the
+current concept by ID; replying **show that evidence** reopens the exact
+knowledge proposal. These are narrow navigation phrases, not an implicit model
+query or permission to infer a different concept from the conversation.
+
 The tool agent can also call `propose_knowledge_enrichment(claim_id,
 fragment_id)` when the user explicitly requests an evidence comparison. The
 tool uses ordinary Python to load both IDs, computes the initial relationship
