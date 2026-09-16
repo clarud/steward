@@ -309,15 +309,21 @@ class StewardReviewInboxApplication:
             intake = self._intakes.get(identifier)
             if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
                 return "That staged item is no longer waiting in this chat. Send /pending for the current list."
+            analysis_description = {
+                IntakeAnalysisMode.EXTERNAL: "A configured external model may analyze extracted content after you save it.",
+                IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
+                IntakeAnalysisMode.NONE: "No model will analyze this item after you save it.",
+            }[intake.analysis_mode]
             return PresentedReply(
                 f"Type: {intake.category}\nSummary: {intake.summary}\n"
-                f"Assessment: {intake.diagnostic}\nAnalysis: {intake.analysis_mode.value}\n\n"
+                f"Assessment: {intake.diagnostic}\n\n{analysis_description}\n\n"
                 "It is staged locally and has not been saved.",
                 (
                     ReplyAction("Save", f"/intake_accept {identifier}"),
                     ReplyAction("Use local", f"/intake_analysis {identifier} local"),
                     ReplyAction("Use external", f"/intake_analysis {identifier} external"),
-                    ReplyAction("Discard", f"/intake_discard {identifier}"),
+                    ReplyAction("Add context", f"/intake_context {identifier}"),
+                    ReplyAction("Do not keep", f"/intake_discard {identifier}"),
                 ),
                 title=f"Review {intake.original_name}", icon="📄"
             )

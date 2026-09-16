@@ -214,6 +214,10 @@ until a separate filesystem backup exists.
 - While an intake or organization proposal is pending, stop the local bot with
   `Ctrl+C`, start `steward telegram` again, then finish the decision. Verify
   the result happens once.
+- Open a staged item through `/pending` rather than its original card. Verify
+  it offers the same **Save**, **Use local**, **Allow external**, **Add context**,
+  and **Do not keep** choices. Select **Add context**, supply a harmless course
+  or project hint, and confirm the revised card remains staged until Save.
 - Run `/organize` against Inbox material. Read the suggested destination before
   accepting. Use **Open source** to inspect the original, then reject one
   proposal and accept one only when its physical move is correct.

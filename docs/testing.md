@@ -297,3 +297,12 @@ The picker is covered by automated application tests.
 - Focused research coverage passed for one provider call, restart recovery,
   expiry behavior, and the retained note's exact reviewed answer. The harmless
   Telegram exercise is included in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: complete pending-intake controls
+
+- A staged item opened from `/pending` now exposes the same Save, local/external
+  model-boundary selection, Add context, and Do not keep actions as its original
+  intake card. Context selection revises only the staged review; it does not
+  save or move the original material.
+- Focused application coverage passed for displayed actions and unchanged source
+  state. The matching Telegram exercise is included in the manual checklist.

@@ -608,6 +608,38 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert RecordService(database).list_travel_records() == []
 
 
+def test_pending_intake_review_keeps_the_complete_safe_intake_controls(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    sources = SourceRepository(database)
+    activity = ActivityService(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    intakes = ProvisionalIntakeRepository(database)
+    service = ProvisionalIntakeService(
+        tmp_path / ".steward" / "cache" / "intake", intakes, capture, activity, PrivacyService(database)
+    )
+    event = make_event(text="note: compare OpenMP static and dynamic scheduling")
+    staged = service.stage_text(event)
+    reviews = StewardReviewInboxApplication(
+        ActionProposalRepository(database), OrganizationProposalRepository(database), sources,
+        intakes=intakes, contexts=ReviewContextRepository(database),
+    )
+
+    card = reviews.handle_command(make_event(text=f"/review intake {staged.id}"))
+
+    assert isinstance(card, PresentedReply)
+    assert card.title == f"Review {staged.original_name}"
+    assert "No model will analyze this item after you save it." in card.text
+    assert {action.command for action in card.actions} == {
+        f"/intake_accept {staged.id}",
+        f"/intake_analysis {staged.id} local",
+        f"/intake_analysis {staged.id} external",
+        f"/intake_context {staged.id}",
+        f"/intake_discard {staged.id}",
+    }
+    assert sources.list_all() == []
+    assert intakes.get(staged.id or 0).status == "pending"
+
+
 def test_pending_task_review_uses_readable_offset_aware_schedule_labels(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     actions = ActionProposalRepository(database)
