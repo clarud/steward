@@ -2262,8 +2262,16 @@ class StewardResearchApplication:
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, query = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/research", "/research_retain", "/research_retain_token", "/research_retain_source_token"}:
+        if command not in {"/research", "/research_sources", "/research_retain", "/research_retain_token", "/research_retain_source_token"}:
             return None
+        if command == "/research_sources":
+            token, separator, page_text = query.strip().partition(" ")
+            if not token or not separator or not page_text.isdigit() or int(page_text) < 1:
+                return "That research page is invalid. Run /research again and choose a listed source."
+            bundle = self._get_ephemeral_bundle(token, event.chat_id)
+            if bundle is None:
+                return "That research card is no longer available. Run /research again before retaining a source."
+            return self._research_card(bundle, token, int(page_text))
         if command == "/research_retain_source_token":
             token, separator, index_text = query.strip().partition(" ")
             bundle = self._get_ephemeral_bundle(token, event.chat_id)
@@ -2292,7 +2300,7 @@ class StewardResearchApplication:
             result = self._retention.retain(bundle)
             state = "Already retained" if result.duplicate else "Retained"
             return f"{state} external research note in Inbox: {result.source.path.name}"
-        sources = "\n".join(f"- {source.title}: {source.url}" for source in bundle.sources)
+        sources = "\n".join(f"- {source.title}: {source.url}" for source in bundle.sources[:8])
         text = f"External research — ephemeral, not saved:\n\n{bundle.answer}"
         if sources:
             text += f"\n\nExternal sources:\n{sources}"
@@ -2307,11 +2315,40 @@ class StewardResearchApplication:
             )
             for index, source in enumerate(bundle.sources[:8], start=1)
         )
+        if len(bundle.sources) > 8:
+            actions.append(ReplyAction("Next", f"/research_sources {token} 2"))
         return PresentedReply(
             text,
             tuple(actions),
             title="External research",
             icon="🔎",
+            reference=("research", token),
+        )
+
+    @staticmethod
+    def _research_card(bundle: ResearchBundle, token: str, page: int) -> PresentedReply:
+        """Render bounded source choices from an already-reviewed bundle."""
+
+        pages = max(1, (len(bundle.sources) + 7) // 8)
+        page = min(max(page, 1), pages)
+        start = (page - 1) * 8
+        visible = bundle.sources[start:start + 8]
+        sources = "\n".join(f"- {source.title}: {source.url}" for source in visible)
+        text = f"External research sources — page {page} of {pages}\n\n{sources}"
+        actions = [ReplyAction("Keep this reviewed note", f"/research_retain_token {token}")]
+        actions.extend(
+            ReplyAction(
+                f"Keep source {index}: {source.title[:32]}",
+                f"/research_retain_source_token {token} {index}",
+            )
+            for index, source in enumerate(visible, start=start + 1)
+        )
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/research_sources {token} {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/research_sources {token} {page + 1}"))
+        return PresentedReply(
+            text, tuple(actions), title="External research sources", icon="🔎",
             reference=("research", token),
         )
 

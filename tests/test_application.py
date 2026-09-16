@@ -2815,6 +2815,37 @@ def test_telegram_can_explicitly_retain_the_referenced_research_card_after_resta
     )
 
 
+def test_research_source_choices_paginate_without_rerunning_the_provider(tmp_path: Path) -> None:
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def research(self, query: str) -> ResearchBundle:
+            self.calls += 1
+            return ResearchBundle(
+                query, "Reviewed answer.",
+                tuple(ResearchSource(f"Source {index}", f"https://example.com/{index}") for index in range(1, 10)),
+                provider="fake",
+            )
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    provider = Provider()
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database))
+    application = StewardResearchApplication(lambda: provider, ResearchRetentionService(capture))
+
+    first = application.handle_command(make_event(text="/research TLB shootdowns"))
+
+    assert isinstance(first, PresentedReply)
+    next_command = next(action.command for action in first.actions if action.label == "Next")
+    second = application.handle_command(make_event(text=next_command))
+    assert isinstance(second, PresentedReply)
+    assert "page 2 of 2" in second.text and "Source 9" in second.text
+    assert "Source 1" not in second.text
+    keep_source = next(action.command for action in second.actions if action.label.startswith("Keep source 9"))
+    assert "/research_retain_source_token " in keep_source and keep_source.endswith(" 9")
+    assert provider.calls == 1
+
+
 def test_telegram_research_card_can_retain_one_selected_source_without_the_full_answer(tmp_path: Path) -> None:
     class Provider:
         def research(self, query: str) -> ResearchBundle:

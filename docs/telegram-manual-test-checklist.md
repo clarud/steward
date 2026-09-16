@@ -569,6 +569,10 @@ until a separate filesystem backup exists.
   Verify it creates a separate Inbox Markdown reference containing that source's
   URL, title, query, provider, and any search-result snippet—not a downloaded
   copy of the webpage.
+- With a harmless research result containing at least nine sources, use
+  **Next**. Verify later sources appear with their original source number and
+  can be retained, while the provider is not rerun and **Previous** returns to
+  the same reviewed bundle.
 - With the local embedding model installed, compare `/search TERMS`,
   `/semantic_search QUESTION`, and `/hybrid_search QUESTION`. Verify that all
   results identify only filenames, source IDs, and derived locations; none

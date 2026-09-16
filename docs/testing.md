@@ -403,3 +403,12 @@ production authorization merely to complete them.
 - Focused application coverage passes for nine pending reviews, page bounds,
   and a second-page review action. The optional Telegram exercise is in the
   manual checklist.
+
+## Post-session automated delivery: paginated research-source choices
+
+- Research cards now expose more than eight cited sources through local,
+  ephemeral Next/Previous pages. The provider is not rerun; source-retention
+  buttons preserve each source's original bundle index.
+- Focused application coverage passes for a nine-source bundle, page-two
+  retention commands, and exactly one provider request. The live harmless
+  exercise is in the manual checklist.

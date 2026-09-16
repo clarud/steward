@@ -712,6 +712,10 @@ research` or `save that research`: an opaque card token restored from an older
 reply identifies exactly one still-live, chat-scoped bundle. These phrases do
 not rerun research, choose among multiple results, or bypass expiry; they are
 only conversational forms of the existing Keep action.
+When a reviewed bundle has more than eight sources, Telegram presents compact
+source-choice pages from that same cached bundle. **Next** and **Previous** do
+not rerun the provider, and a source-retention action retains the source's
+original bundle position rather than a page-local number.
 If a temporary cache row cannot be decoded, Steward drops it and asks for fresh
 research rather than reconstructing or retaining uncertain external material.
 
