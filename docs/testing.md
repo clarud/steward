@@ -377,3 +377,11 @@ production authorization merely to complete them.
   refusal, cross-chat refusal, action-card context, audit recording, and zero
   additional Calendar calls during unlink. The live task-card exercise is in
   `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: travel-record Calendar navigation
+
+- A Travel record with an approved Calendar-event link now displays a
+  **View calendar** action and identifies the relationship without duplicating
+  Calendar fields locally. Opening it remains a fresh external Calendar read.
+- Focused record-card and CLI-composition coverage passed. The live harmless
+  travel-event exercise is in `telegram-manual-test-checklist.md`.

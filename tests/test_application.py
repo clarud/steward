@@ -1055,6 +1055,17 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert isinstance(corrected_evidence, PresentedReply)
     assert "arrival: fragment" not in corrected_evidence.text
 
+    links = CalendarLinkRepository(database)
+    assert links.link_travel_event(f"travel:{record.id}", record.id or 0, "flight-event-opaque") is True
+    linked_application = StewardRecordApplication(
+        records, fragments, ActionProposalRepository(database), ActivityService(database), calendar_links=links,
+    )
+    linked = linked_application.handle_command(make_event(text=f"/record travel {record.id}"))
+
+    assert isinstance(linked, PresentedReply)
+    assert "Calendar: linked event" in linked.text
+    assert linked.actions[0].command == "/calendar_get flight-event-opaque"
+
 
 def test_telegram_record_reference_reopens_the_last_explicitly_opened_flight_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"

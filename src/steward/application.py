@@ -1407,12 +1407,14 @@ class StewardRecordApplication:
         proposals: ActionProposalRepository,
         activity: ActivityService,
         contexts: ReviewContextRepository | None = None,
+        calendar_links: CalendarLinkRepository | None = None,
     ) -> None:
         self._records = records
         self._fragments = fragments
         self._proposals = proposals
         self._activity = activity
         self._contexts = contexts
+        self._calendar_links = calendar_links
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -1730,6 +1732,11 @@ class StewardRecordApplication:
             provenance = f"source fragment {fragment_id}" if fragment_id is not None else "not source-evidenced"
             lines.append(f"{label}: {value} ({provenance})")
         actions = [ReplyAction("Open source", f"/source {record.source_id}")]
+        if record_type == "travel" and self._calendar_links is not None:
+            event_id = self._calendar_links.travel_event_id(record.id)
+            if event_id is not None:
+                lines.append("Calendar: linked event")
+                actions.insert(0, ReplyAction("View calendar", f"/calendar_get {event_id}"))
         if supported_evidence:
             actions.append(ReplyAction("Evidence", f"/record_evidence {record_type} {record.id}"))
         actions.append(ReplyAction("Records", "/records"))

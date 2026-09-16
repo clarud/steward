@@ -1226,6 +1226,10 @@ link, the task card says `Calendar: linked deadline marker` and offers **View
 calendar**. That button performs the normal fresh Calendar lookup. Tasks without a
 precise deadline and completed unlinked tasks do not offer automatic scheduling.
 The task remains independently completable whether or not its marker exists.
+After an approved travel-event write, reopening that Travel record likewise
+shows `Calendar: linked event` and offers **View calendar** using the opaque
+local link. The button performs a fresh Calendar read; the local record is not
+treated as a stale copy of the external event.
 Calendar event cards can also use **what task is this for?** after a reviewed
 deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as

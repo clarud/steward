@@ -1593,7 +1593,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity,
-                contexts=review_contexts,
+                contexts=review_contexts, calendar_links=CalendarLinkRepository(database_path),
             ),
             task_application=StewardTaskApplication(
                 tasks, ActionProposalRepository(database_path), activity, task_reminders,

@@ -378,6 +378,10 @@ until a separate filesystem backup exists.
   the same reviewed snapshot. Change the record/task after proposing: approval
   must refuse the stale proposal before a Calendar write. Request a new preview.
   Existing linked Calendar events are reused, not updated by this flow.
+- After accepting a harmless travel-event proposal, reopen its Travel record.
+  It must show **Calendar: linked event** and **View calendar**; opening that
+  action must fetch the current event rather than rendering the saved travel
+  fields as if they were authoritative Calendar data.
 
 - Reopen a travel, receipt, or warranty extraction proposal through `/pending`.
   Check the source filename, current field values, and evidence fragment IDs.
