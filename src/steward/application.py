@@ -2850,6 +2850,7 @@ class StewardKnowledgeApplication:
                 ReplyAction("Reject draft", f"/reject_action {existing.id}"),
             ),
             title="Claim revision pending", icon="🧠",
+            reference=("action", existing.id) if existing.id is not None else None,
         )
 
     def _suggest_claim_revision(

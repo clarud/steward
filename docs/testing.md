@@ -357,3 +357,12 @@ production authorization merely to complete them.
 - Focused application coverage exercises nine authorized roots, page bounds,
   compact action labels, and path redaction. The optional live multi-root
   exercise is in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: durable claim-revision approval card
+
+- A staged claim-revision card now preserves only its opaque action-review ID
+  for Telegram. This lets an explicit `yes` reply resume the same pending
+  review after a restart; normal policy validation still decides whether the
+  revision can be created.
+- Focused application coverage asserts the exact reference. The corresponding
+  harmless Telegram restart exercise is in `telegram-manual-test-checklist.md`.

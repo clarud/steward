@@ -1434,6 +1434,7 @@ def test_knowledge_revision_prompt_survives_restart_and_requires_separate_approv
     assert isinstance(draft, PresentedReply)
     assert draft.title == "Claim revision pending"
     assert "Proposed replacement" in draft.text
+    assert draft.reference == ("action", 1)
     assert knowledge.list_claims(concept.id or 0) == (original,)
     assert contexts.get("telegram", "100") is None
 

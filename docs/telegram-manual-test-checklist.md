@@ -340,6 +340,10 @@ until a separate filesystem backup exists.
   draft, approve and verify the concept card retains the original as superseded,
   shows the replacement as its reviewed revision, and keeps the evidence review.
   Changing or removing the evidence before approval must leave the action pending.
+- Reply `yes` to that pending revision card after opening another card and after
+  restarting the bot. It must target the exact still-pending revision review;
+  it must not approve a different proposal or create a claim without the normal
+  review validation.
 - With a harmless source whose privacy rule permits the configured model, open
   the same `needs_revision` conflict and choose **Suggest draft**. The resulting
   review must identify a model-generated origin, preserve the original claim and

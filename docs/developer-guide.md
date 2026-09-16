@@ -551,6 +551,10 @@ explicit operations:
   occurrence time, event type, optional opaque object ID, and safe details, but
   never repeats its original operation. Its `show/open that activity` reference
   survives restart without exposing a local path or expanding object authority.
+- A pending claim-revision card also retains its opaque action-review identity.
+  A reply such as `yes` can therefore mean the same explicitly displayed
+  approval after a Telegram restart; it still follows the normal action-policy
+  validation and cannot create a claim without that approval.
 - Attachments and substantial text are staged as provisional intake. Saving,
   discarding, or adding context is explicit; an attachment is not silently
   retained merely because it arrived in chat. Provisional material defaults to
