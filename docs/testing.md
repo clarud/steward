@@ -385,3 +385,12 @@ production authorization merely to complete them.
   Calendar fields locally. Opening it remains a fresh external Calendar read.
 - Focused record-card and CLI-composition coverage passed. The live harmless
   travel-event exercise is in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: paginated record browsing
+
+- `/records [page]` now follows the same compact navigation pattern as Sources,
+  Tasks, and Roots. It renders at most eight records per page while each action
+  retains the exact record type and opaque local ID.
+- Focused application coverage passes for nine records, page bounds, and the
+  second-page record action. The optional harmless Telegram exercise is in the
+  manual checklist.

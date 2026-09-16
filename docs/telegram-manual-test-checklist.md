@@ -473,6 +473,9 @@ until a separate filesystem backup exists.
   extracted section for each currently supported field. Correct a field, then
   reopen the record: it must be labelled **not source-evidenced** instead of
   inheriting stale extraction provenance, and it must not appear in Evidence.
+- With at least nine harmless saved records, use `/records`. Verify **Next** and
+  **Previous** show at most eight compact rows per page, and an **Open** action
+  from page two opens the exact record type and ID displayed there.
 - For a labelled timestamp such as `Departure Time: 2026-10-01T09:00:00+08:00`,
   verify the human-readable record time still shows a source fragment and
   appears under **Evidence**. Formatting the timestamp for Telegram must not

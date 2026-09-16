@@ -1067,6 +1067,34 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert linked.actions[0].command == "/calendar_get flight-event-opaque"
 
 
+def test_records_command_paginates_all_saved_records(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 16, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "itineraries.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    records = RecordService(database)
+    for index in range(9):
+        records.create_travel_record(
+            TravelRecord(None, source.id or 0, f"SQ{index + 1}", "Singapore", f"City {index + 1}", None, None, None)
+        )
+    application = StewardRecordApplication(
+        records, SourceFragmentRepository(database), ActionProposalRepository(database), ActivityService(database),
+    )
+
+    first_page = application.handle_command(make_event(text="/records"))
+    second_page = application.handle_command(make_event(text="/records 2"))
+
+    assert isinstance(first_page, PresentedReply)
+    assert first_page.text.startswith("Page 1 of 2\nTravel 1: SQ1")
+    assert "SQ9" not in first_page.text
+    assert any(action.label == "Next" and action.command == "/records 2" for action in first_page.actions)
+    assert isinstance(second_page, PresentedReply)
+    assert second_page.text == "Page 2 of 2\nTravel 9: SQ9 Singapore \N{RIGHTWARDS ARROW} City 9"
+    assert [action.command for action in second_page.actions] == ["/record travel 9", "/records 1"]
+    assert application.handle_command(make_event(text="/records zero")) == "Use /records with an optional positive page number."
+
+
 def test_telegram_record_reference_reopens_the_last_explicitly_opened_flight_after_restart(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

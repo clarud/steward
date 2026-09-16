@@ -1420,7 +1420,9 @@ class StewardRecordApplication:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command == "/records":
-            return self._list_records()
+            if argument.strip() and (not argument.strip().isdigit() or int(argument.strip()) < 1):
+                return "Use /records with an optional positive page number."
+            return self._list_records(int(argument.strip()) if argument.strip() else 1)
         if command == "/record":
             response = self._record_detail(separator, argument)
             record_type, _, identifier = argument.strip().partition(" ")
@@ -1826,7 +1828,7 @@ class StewardRecordApplication:
         actions.extend((ReplyAction("Open source", f"/source {record.source_id}"), ReplyAction("Open record", f"/record {record_type} {record.id}")))
         return PresentedReply("\n".join(lines), tuple(actions), title="Record evidence", icon="📎", reference=(f"record:{record_type}", record.id))
 
-    def _list_records(self) -> str | PresentedReply:
+    def _list_records(self, page: int = 1) -> str | PresentedReply:
         lines: list[str] = []
         lines.extend(
             f"Travel {record.id}: {record.flight_number or '(flight unknown)'} "
@@ -1850,10 +1852,17 @@ class StewardRecordApplication:
         ] + [
             ("warranty", record.id or 0) for record in self._records.list_warranty_records()
         ]
-        visible = record_links[:8]
+        pages = max(1, (len(record_links) + 7) // 8)
+        page = min(max(page, 1), pages)
+        visible = record_links[(page - 1) * 8:page * 8]
+        actions = [ReplyAction(f"Open {kind} {identifier}", f"/record {kind} {identifier}") for kind, identifier in visible]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/records {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/records {page + 1}"))
         return PresentedReply(
-            "\n".join(lines[:8]),
-            tuple(ReplyAction(f"Open {kind} {identifier}", f"/record {kind} {identifier}") for kind, identifier in visible),
+            f"Page {page} of {pages}\n" + "\n".join(lines[(page - 1) * 8:page * 8]),
+            tuple(actions),
             title="Saved records",
             icon="🗂️",
         )

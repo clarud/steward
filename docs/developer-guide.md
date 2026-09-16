@@ -544,7 +544,7 @@ The Telegram router intentionally distinguishes read-only inspection from
 explicit operations:
 
 - `/search`, `/source`, `/sources`, `/inbox`, `/workspaces`, `/activity`,
-  `/records`, `/tasks`, `/roots [page]`, and Calendar reads inspect current local or
+  `/records [page]`, `/tasks`, `/roots [page]`, and Calendar reads inspect current local or
   authoritative external state.
 - `/activity` is progressively disclosed: each recent redacted audit row has
   an **Open** action for one immutable audit-event card. The card includes the
@@ -820,10 +820,12 @@ intentionally contains no write controls, model calls, OAuth credentials, or
 external integrations. This gives Steward a locally inspectable UI surface
 without silently expanding its trust boundary.
 
-`/records` is a second read-only local page. It renders travel, receipt, and
-warranty metadata from `RecordService`, marks each row by record type, and links
-back to `/sources/{source_id}`. It never renders source text itself, accepts no
-write requests, and keeps the source rather than its derived record authoritative.
+`/records [page]` is a second read-only local page. It renders travel, receipt,
+and warranty metadata from `RecordService`, marks each row by record type, and
+uses compact Next/Previous pages after eight entries. Buttons retain the exact
+record type and ID, so a later page does not require a user to infer an ID from
+its visible row number. It never renders source text itself, accepts no write
+requests, and keeps the source rather than its derived record authoritative.
 
 ### Retrieval path filtering
 
