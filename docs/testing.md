@@ -278,3 +278,13 @@ The picker is covered by automated application tests.
   Telegram any scan, enablement, relocation, or other root-management action.
 - Focused application coverage passed. The manual restart exercise is included
   in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: read-only tool-workflow recovery
+
+- Unexpected exceptions crossing the Telegram tool-agent boundary now produce a
+  generic, secret-free temporary-unavailability reply. The local log records
+  only the exception class; raw provider diagnostics and filesystem paths are
+  not returned to Telegram.
+- Focused tests passed for recursion recovery, known model-gateway recovery,
+  and an unexpected exception containing deliberately private-looking text.
+  The manual non-sensitive provider-outage rehearsal remains in the checklist.

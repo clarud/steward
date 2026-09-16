@@ -502,6 +502,10 @@ until a separate filesystem backup exists.
   `local_model_only` and ask about it through the tool agent. Verify the local
   model can use it. Switch to an external provider and verify the same source
   is withheld from the tool result.
+- With a deliberately unavailable non-sensitive tool-model/provider test
+  setup, send `/agent find my CS3210 notes`. Verify Telegram returns a short
+  retry-oriented read-only-workflow message without a local path, token, or raw
+  provider diagnostic. No source, task, Calendar, or proposal state may change.
 - Choose a harmless Markdown source with a known ID and send
   `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
   approval, **Open source** inspects the same original, accepting refreshes its

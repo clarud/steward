@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import secrets
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Callable, NotRequired, Protocol, TypedDict
@@ -62,6 +63,9 @@ from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
 from steward.research import EphemeralResearchCardRepository, ResearchBundle, ResearchProvider, ResearchProviderError, ResearchRetentionService, ResearchService
 from steward.reviews import ReviewContextRepository
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _external_import_failure(operation: str, retry_command: str) -> PresentedReply:
@@ -1308,6 +1312,16 @@ class StewardToolAgentApplication:
             )
         except ModelGatewayError:
             return "The configured model is temporarily unavailable. Please retry later or use a local model."
+        except Exception as error:
+            # The tool graph joins provider adapters, SQLite-backed read tools,
+            # and LangGraph.  An unexpected adapter failure must not crash the
+            # Telegram update handler or expose diagnostics such as paths,
+            # tokens, or provider payloads.  The graph has no write tools.
+            _LOGGER.warning("Read-only tool workflow failed (%s).", type(error).__name__)
+            return (
+                "The read-only tool workflow is temporarily unavailable. "
+                "No change was made; please retry later or use a narrower question."
+            )
         messages = result.get("messages")
         if not isinstance(messages, list) or not messages:
             return "The tool agent returned no final response."

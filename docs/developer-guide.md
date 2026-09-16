@@ -1084,6 +1084,12 @@ the Telegram update handler.
 The Telegram `/agent` boundary also catches a `GraphRecursionError` from this
 loop and returns a clear, non-mutating failure message. It does not treat a
 limit breach as a reason to retry the update or perform another tool call.
+Known gateway failures receive a provider-specific safe reply. Any other
+exception crossing the graph boundary is logged locally by exception class
+only and becomes a generic read-only-workflow-unavailable reply; raw provider
+diagnostics, filesystem paths, tokens, and upstream payloads never reach
+Telegram. This boundary still cannot turn a failed read into a write because
+the graph exposes no direct mutation tool.
 
 `OllamaToolCallingModel` provides the same narrow graph-facing interface for a
 local model. It sends the conversation and the allowlisted JSON tool schemas to

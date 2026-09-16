@@ -910,6 +910,27 @@ def test_agent_command_turns_a_graph_recursion_limit_into_a_safe_reply() -> None
     )
 
 
+def test_agent_command_hides_unexpected_tool_workflow_diagnostics() -> None:
+    class BrokenToolGraph:
+        def invoke(self, input, config):
+            raise RuntimeError("C:/private/provider-token failed: raw upstream payload")
+
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        tool_agent_application=StewardToolAgentApplication(BrokenToolGraph()),
+    )
+
+    response = application.handle(make_event(text="/agent find all CS3210 notes"))
+
+    assert response == (
+        "The read-only tool workflow is temporarily unavailable. "
+        "No change was made; please retry later or use a narrower question."
+    )
+    assert "private" not in response
+    assert "payload" not in response
+
+
 def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)
