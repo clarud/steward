@@ -683,6 +683,11 @@ SQLite cache for 30 minutes. That preserves an explicit **Keep** choice across a
 Steward restart without rerunning a provider. The cache is operational data only:
 expiry removes it, it creates no Source or Knowledge, and selecting **Keep** is
 still the only transition into normal Inbox capture.
+The same card can be selected by the narrow Telegram phrases `keep that
+research` or `save that research`: an opaque card token restored from an older
+reply identifies exactly one still-live, chat-scoped bundle. These phrases do
+not rerun research, choose among multiple results, or bypass expiry; they are
+only conversational forms of the existing Keep action.
 If a temporary cache row cannot be decoded, Steward drops it and asks for fresh
 research rather than reconstructing or retaining uncertain external material.
 

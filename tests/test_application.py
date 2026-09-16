@@ -2614,6 +2614,47 @@ def test_telegram_research_retention_card_survives_a_local_restart(tmp_path: Pat
     assert "Reviewed answer" in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
 
 
+def test_telegram_can_explicitly_retain_the_referenced_research_card_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database))
+    contexts = ReviewContextRepository(database)
+
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def research(self, query: str) -> ResearchBundle:
+            self.calls += 1
+            return ResearchBundle(query, "The reviewed answer.", (ResearchSource("Example", "https://example.com"),), provider="fake")
+
+    provider = Provider()
+    first = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        research_application=StewardResearchApplication(
+            lambda: provider, ResearchRetentionService(capture), EphemeralResearchCardRepository(database), contexts=contexts,
+        ),
+    )
+    preview = first.handle(make_event(text="/research TLB shootdowns"))
+    assert isinstance(preview, PresentedReply)
+    assert preview.reference is not None and preview.reference[0] == "research"
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        research_application=StewardResearchApplication(
+            lambda: None, ResearchRetentionService(capture), EphemeralResearchCardRepository(database),
+            contexts=ReviewContextRepository(database),
+        ),
+    )
+    retained = restarted.handle(make_event(text="keep that research"))
+
+    assert "Retained the reviewed external research note" in retained
+    assert provider.calls == 1
+    assert "The reviewed answer." in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
+    assert restarted.handle(make_event(text="keep that research")) == (
+        "That research card is no longer available. Run /research again before retaining it."
+    )
+
+
 def test_telegram_research_card_can_retain_one_selected_source_without_the_full_answer(tmp_path: Path) -> None:
     class Provider:
         def research(self, query: str) -> ResearchBundle:

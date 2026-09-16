@@ -2104,11 +2104,34 @@ class StewardResearchApplication:
         provider_factory: Callable[[], ResearchProvider | None],
         retention: ResearchRetentionService,
         ephemeral_cards: EphemeralResearchCardRepository | None = None,
+        *,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._provider_factory = provider_factory
         self._retention = retention
         self._ephemeral_cards = ephemeral_cards
+        self._contexts = contexts
         self._ephemeral_bundles: dict[str, tuple[str, datetime, ResearchBundle]] = {}
+
+    def resolve_research_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Retain only the exact, still-live research card the user selected.
+
+        This is an explicit equivalent of the Keep button, not a broad request
+        to rerun research or infer which result the user meant. The cached card
+        remains chat-bound and expires as usual.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "keep that research", "save that research", "keep this research", "save this research",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "research" or not isinstance(context.identifier, str):
+            return None
+        return self._retain_reviewed_bundle(context.identifier, event.chat_id)
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, query = (event.text or "").strip().partition(" ")
@@ -2129,12 +2152,7 @@ class StewardResearchApplication:
             state = "Already retained" if result.duplicate else "Retained"
             return f"{state} selected external source in Inbox: {result.source.path.name}"
         if command == "/research_retain_token":
-            bundle = self._take_ephemeral_bundle(query.strip(), event.chat_id)
-            if bundle is None:
-                return "That research card is no longer available. Run /research again before retaining it."
-            result = self._retention.retain(bundle)
-            state = "Already retained" if result.duplicate else "Retained"
-            return f"{state} the reviewed external research note in Inbox: {result.source.path.name}"
+            return self._retain_reviewed_bundle(query.strip(), event.chat_id)
         if not separator or not query.strip():
             return f"Use {command} followed by a research question."
         provider = self._provider_factory()
@@ -2153,6 +2171,8 @@ class StewardResearchApplication:
         if sources:
             text += f"\n\nExternal sources:\n{sources}"
         token = self._cache_bundle(event.chat_id, bundle)
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, "research", token)
         actions = [ReplyAction("Keep this reviewed note", f"/research_retain_token {token}")]
         actions.extend(
             ReplyAction(
@@ -2161,7 +2181,21 @@ class StewardResearchApplication:
             )
             for index, source in enumerate(bundle.sources[:8], start=1)
         )
-        return PresentedReply(text, tuple(actions))
+        return PresentedReply(
+            text,
+            tuple(actions),
+            title="External research",
+            icon="🔎",
+            reference=("research", token),
+        )
+
+    def _retain_reviewed_bundle(self, token: str, chat_id: str) -> str:
+        bundle = self._take_ephemeral_bundle(token, chat_id)
+        if bundle is None:
+            return "That research card is no longer available. Run /research again before retaining it."
+        result = self._retention.retain(bundle)
+        state = "Already retained" if result.duplicate else "Retained"
+        return f"{state} the reviewed external research note in Inbox: {result.source.path.name}"
 
     def _cache_bundle(self, chat_id: str, bundle: ResearchBundle) -> str:
         self._purge_expired()
@@ -5329,6 +5363,9 @@ class StewardEventApplication:
             if task_response is not None:
                 return task_response
         if self._research_application is not None:
+            research_reference = self._research_application.resolve_research_reference(event)
+            if research_reference is not None:
+                return research_reference
             research_response = self._research_application.handle_command(event)
             if research_response is not None:
                 return research_response

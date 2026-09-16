@@ -288,3 +288,12 @@ The picker is covered by automated application tests.
 - Focused tests passed for recursion recovery, known model-gateway recovery,
   and an unexpected exception containing deliberately private-looking text.
   The manual non-sensitive provider-outage rehearsal remains in the checklist.
+
+## Post-session automated delivery: exact-card research retention
+
+- A research result card now persists only an opaque, chat-bound ephemeral
+  token. `keep/save that research` retains the exact still-live reviewed bundle
+  after a restart without rerunning the provider or selecting another result.
+- Focused research coverage passed for one provider call, restart recovery,
+  expiry behavior, and the retained note's exact reviewed answer. The harmless
+  Telegram exercise is included in `telegram-manual-test-checklist.md`.

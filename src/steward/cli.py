@@ -1604,6 +1604,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 lambda: _research_provider_from_settings(settings, "auto"),
                 ResearchRetentionService(capture_service),
                 EphemeralResearchCardRepository(database_path),
+                contexts=review_contexts,
             ),
             curated_note_application=StewardCuratedNoteApplication(
                 ActionProposalRepository(database_path),

@@ -521,6 +521,10 @@ until a separate filesystem backup exists.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
   **Keep this reviewed note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.
+- After opening other cards or restarting Telegram, reply to the older research
+  card with `keep that research` or `save that research`. Verify only that
+  still-live, reviewed card is retained; Steward must not rerun research,
+  select a different result, or retain anything after the card expires.
 - With a deliberately unavailable test research provider, verify the failure
   reply is retry-oriented and does not expose a provider diagnostic or local
   configuration path.
