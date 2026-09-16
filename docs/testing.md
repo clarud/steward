@@ -306,3 +306,12 @@ The picker is covered by automated application tests.
   save or move the original material.
 - Focused application coverage passed for displayed actions and unchanged source
   state. The matching Telegram exercise is included in the manual checklist.
+
+## Post-session automated delivery: Telegram activity-event inspection
+
+- `/activity` now provides compact **Open** actions for individual redacted
+  audit events. An event card is read-only, names when/type/opaque object ID,
+  and explicitly states that opening it cannot replay the recorded operation.
+- Focused coverage passed for path redaction, exact event selection, and durable
+  `show that activity` navigation after restart. The manual Telegram exercise
+  is included in `telegram-manual-test-checklist.md`.

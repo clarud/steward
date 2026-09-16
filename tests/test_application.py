@@ -233,7 +233,9 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     assert isinstance(search, PresentedReply)
     assert search.title == "Search results" and "openmp.md" in search.text
     assert search.actions[0].label == "Open 1"
-    assert "Recent activity" in application.handle(make_event(text="/activity"))
+    activity_listing = application.handle(make_event(text="/activity"))
+    assert isinstance(activity_listing, PresentedReply)
+    assert activity_listing.title == "Recent activity"
     source_details = application.handle(make_event(text="/source 1"))
     assert isinstance(source_details, PresentedReply)
     assert source_details.title == "openmp.md"
@@ -241,7 +243,9 @@ def test_event_application_routes_owner_safe_reads_and_workspace_proposals(tmp_p
     natural_inbox = application.handle(make_event(text="what is in my inbox"))
     assert isinstance(natural_inbox, PresentedReply)
     assert "openmp.md" in natural_inbox.text
-    assert "Recent activity" in application.handle(make_event(text="show my recent activity"))
+    natural_activity = application.handle(make_event(text="show my recent activity"))
+    assert isinstance(natural_activity, PresentedReply)
+    assert natural_activity.title == "Recent activity"
     natural_search = application.handle(make_event(text="find my notes on OpenMP"))
     assert isinstance(natural_search, PresentedReply)
     assert natural_search.title == "Search results"
@@ -334,9 +338,46 @@ def test_activity_hides_local_directory_structure_from_telegram(tmp_path: Path) 
 
     response = reads.activity("")
 
-    assert "private-note.md" in response
-    assert str(tmp_path) not in response
-    assert "local file:" in response
+    assert isinstance(response, PresentedReply)
+    assert "private-note.md" in response.text
+    assert str(tmp_path) not in response.text
+    assert "local file:" in response.text
+
+
+def test_telegram_activity_cards_are_safe_and_reopen_the_exact_event_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    inbox = tmp_path / "private" / "vault" / "inbox"; inbox.mkdir(parents=True)
+    activity = ActivityService(database)
+    event = activity.record(ActivityType.SOURCE_CAPTURED, object_id="8", details=str(inbox / "private-note.md"))
+    contexts = ReviewContextRepository(database)
+
+    def reads() -> StewardReadApplication:
+        return StewardReadApplication(
+            SourceRepository(database), SourceFragmentRepository(database),
+            LexicalSearchService(SourceRepository(database), SourceFragmentRepository(database)),
+            WorkspaceRepository(database), ActivityService(database), inbox, contexts=contexts,
+        )
+
+    first = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=reads(),
+    )
+    listing = first.handle(make_event(text="/activity"))
+    assert isinstance(listing, PresentedReply)
+    assert listing.actions[0].command == f"/activity_event {event.id}"
+    card = first.handle(make_event(text=listing.actions[0].command))
+    assert isinstance(card, PresentedReply)
+    assert card.reference == ("activity", event.id)
+    assert "private-note.md" in card.text and str(tmp_path) not in card.text
+    assert "does not repeat the action" in card.text
+
+    restarted = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=reads(),
+    )
+    reopened = restarted.handle(make_event(text="show that activity"))
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.reference == ("activity", event.id)
 
 
 def test_metrics_reports_aggregate_activity_without_event_details(tmp_path: Path) -> None:

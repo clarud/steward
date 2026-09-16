@@ -61,6 +61,23 @@ class ActivityService:
             rows=connection.execute("SELECT id,event_type,object_id,details,occurred_at FROM activity_events ORDER BY id DESC LIMIT ?",(limit,)).fetchall()
         return [ActivityEvent(int(r[0]),ActivityType(str(r[1])),str(r[2]) if r[2] else None,str(r[3]),datetime.fromisoformat(str(r[4]))) for r in rows]
 
+    def get(self, event_id: int) -> ActivityEvent | None:
+        """Return one local audit event by its opaque database ID."""
+
+        if event_id <= 0:
+            return None
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id,event_type,object_id,details,occurred_at FROM activity_events WHERE id = ?",
+                (event_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ActivityEvent(
+            int(row[0]), ActivityType(str(row[1])), str(row[2]) if row[2] else None,
+            str(row[3]), datetime.fromisoformat(str(row[4])),
+        )
+
     def counts(self) -> dict[ActivityType, int]:
         """Return aggregate audit counts without reading event details."""
         with sqlite3.connect(self._database_path) as connection:

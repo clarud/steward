@@ -727,6 +727,13 @@ class StewardReadApplication:
             return response
         if command == "/activity":
             return self.activity(argument)
+        if command == "/activity_event":
+            if not argument.isdigit() or int(argument) <= 0:
+                return "Choose an activity event from /activity."
+            response = self.activity_event(int(argument))
+            if self._contexts is not None and self._activity.get(int(argument)) is not None:
+                self._contexts.set(event.platform, event.chat_id, "activity", int(argument))
+            return response
         if command == "/metrics":
             return self.metrics()
         if command == "/search":
@@ -826,6 +833,25 @@ class StewardReadApplication:
             self._contexts.clear(event.platform, event.chat_id)
             return "That previously opened workspace is no longer available. Open another workspace to continue."
         return self.workspace(context.identifier)
+
+    def resolve_activity_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen only one explicitly inspected audit event in this chat."""
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "show that activity", "open that activity", "show the last activity", "open the last activity",
+            "show that audit event", "open that audit event",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "activity" or not isinstance(context.identifier, int):
+            return None
+        response = self.activity_event(context.identifier)
+        if isinstance(response, str) and response.startswith("Activity event "):
+            self._contexts.clear(event.platform, event.chat_id)
+        return response
 
     @staticmethod
     def help_text() -> str:
@@ -1116,17 +1142,40 @@ class StewardReadApplication:
             reference=("workspace", workspace_id),
         )
 
-    def activity(self, query: str) -> str:
-        needle = query.casefold()
+    def activity(self, query: str) -> str | PresentedReply:
+        needle = query.casefold().strip()
         events = [
             event for event in self._activity.list_recent(limit=20)
             if not needle or needle in event.event_type.value or needle in event.details.casefold()
         ]
         if not events:
             return "No matching recent activity."
-        return "Recent activity:\n" + "\n".join(
+        lines = ["Recent activity:"] + list(
             f"{event.id}: {event.event_type.value} — {self._safe_activity_details(event.details)}"
             for event in events
+        )
+        actions = tuple(
+            ReplyAction(f"Open {index}", f"/activity_event {event.id}")
+            for index, event in enumerate(events, start=1)
+            if event.id is not None
+        )
+        return PresentedReply("\n".join(lines), actions, title="Recent activity", icon="🕘")
+
+    def activity_event(self, event_id: int) -> str | PresentedReply:
+        """Show one safe audit-event card without expanding its object authority."""
+
+        event = self._activity.get(event_id)
+        if event is None:
+            return f"Activity event {event_id} is no longer available. Open /activity to continue."
+        object_line = f"\nObject ID: {event.object_id}" if event.object_id is not None else ""
+        return PresentedReply(
+            f"When: {timestamp_label(event.occurred_at)}{object_line}\n\n"
+            f"{self._safe_activity_details(event.details)}\n\n"
+            "This is an audit record. Opening it does not repeat the action.",
+            (ReplyAction("Recent activity", "/activity"), ReplyAction("Home", "/home")),
+            title=event.event_type.value.replace("_", " ").title(),
+            icon="🕘",
+            reference=("activity", event.id) if event.id is not None else None,
         )
 
     def metrics(self) -> str:
@@ -5414,6 +5463,9 @@ class StewardEventApplication:
             workspace_reference = self._read_application.resolve_workspace_reference(event)
             if workspace_reference is not None:
                 return workspace_reference
+            activity_reference = self._read_application.resolve_activity_reference(event)
+            if activity_reference is not None:
+                return activity_reference
             read_response = self._read_application.handle_command(event)
             if read_response is not None:
                 return read_response

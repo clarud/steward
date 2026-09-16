@@ -546,6 +546,11 @@ explicit operations:
 - `/search`, `/source`, `/sources`, `/inbox`, `/workspaces`, `/activity`,
   `/records`, `/tasks`, `/roots`, and Calendar reads inspect current local or
   authoritative external state.
+- `/activity` is progressively disclosed: each recent redacted audit row has
+  an **Open** action for one immutable audit-event card. The card includes the
+  occurrence time, event type, optional opaque object ID, and safe details, but
+  never repeats its original operation. Its `show/open that activity` reference
+  survives restart without exposing a local path or expanding object authority.
 - Attachments and substantial text are staged as provisional intake. Saving,
   discarding, or adding context is explicit; an attachment is not silently
   retained merely because it arrived in chat. Provisional material defaults to

@@ -116,6 +116,10 @@ until a separate filesystem backup exists.
   a safe clarification/helpful next step instead of silently ignoring it.
 - Send `/sources`, `/inbox`, `/search OpenMP`, `/source 1`, `/workspaces`, and
   `/activity`; use pagination where it appears.
+- From `/activity`, open one event. Verify the card shows its time, type, and
+  safely redacted details and says that viewing does not repeat the action.
+  It must not expose a local path. Restart Telegram, then send `show that
+  activity` to reopen that exact audit event only.
 - Open a source card with `/source ID`, restart the bot, then send `open the
   last source` or `show that PDF`. Verify Steward reopens only that exact
   source card; a broader question about a source must remain a normal
