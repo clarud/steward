@@ -2894,8 +2894,38 @@ class StewardKnowledgeApplication:
 class StewardRootsApplication:
     """Report local source-root health without granting Telegram path authority."""
 
-    def __init__(self, roots: SourceRootRepository) -> None:
+    def __init__(
+        self,
+        roots: SourceRootRepository,
+        *,
+        contexts: ReviewContextRepository | None = None,
+    ) -> None:
         self._roots = roots
+        self._contexts = contexts
+
+    def resolve_root_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Reopen only an explicitly viewed root without exposing its local path.
+
+        Root operations remain a local-only capability. This method is only a
+        bounded navigation convenience for a previous Telegram root card.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "show that root", "open that root", "show the last root", "open the last root",
+            "show that source root", "open that source root",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "root" or not isinstance(context.identifier, int):
+            return None
+        root = next((item for item in self._roots.list_all() if item.id == context.identifier), None)
+        if root is None:
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That previously opened authorized root is no longer available. Open /roots to continue."
+        return self._root_detail(root)
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, _, argument = (event.text or "").strip().partition(" ")
@@ -2906,19 +2936,9 @@ class StewardRootsApplication:
             root = next((item for item in self._roots.list_all() if item.id == int(argument.strip())), None)
             if root is None:
                 return f"Authorized root {argument.strip()} was not found."
-            guidance = (
-                "Reconnect or restore this root locally, then scan it locally."
-                if root.health == "missing"
-                else "Enable this root locally before scanning."
-                if root.health == "disabled"
-                else "This root is available for local scans."
-            )
-            return PresentedReply(
-                f"Status: {root.health}\nExcluded subdirectories: {len(root.exclusions)}\n\n"
-                f"{guidance}\nRoot paths and changes remain local-only.",
-                (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
-                title=root.name, icon="🗂️",
-            )
+            if self._contexts is not None and root.id is not None:
+                self._contexts.set(event.platform, event.chat_id, "root", root.id)
+            return self._root_detail(root)
         if command != "/roots":
             return None
         roots = self._roots.list_all()
@@ -2931,6 +2951,27 @@ class StewardRootsApplication:
             + (ReplyAction("Home", "/home"),),
             title="Authorized source roots",
             icon="🗂️",
+        )
+
+    @staticmethod
+    def _root_detail(root: object) -> PresentedReply:
+        """Render health-only root information shared by commands and follow-ups."""
+
+        health = str(getattr(root, "health"))
+        guidance = (
+            "Reconnect or restore this root locally, then scan it locally."
+            if health == "missing"
+            else "Enable this root locally before scanning."
+            if health == "disabled"
+            else "This root is available for local scans."
+        )
+        identifier = getattr(root, "id")
+        return PresentedReply(
+            f"Status: {health}\nExcluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
+            f"{guidance}\nRoot paths and changes remain local-only.",
+            (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
+            title=str(getattr(root, "name")), icon="🗂️",
+            reference=("root", identifier) if isinstance(identifier, int) and identifier > 0 else None,
         )
 
 
@@ -5246,6 +5287,9 @@ class StewardEventApplication:
             if privacy_response is not None:
                 return privacy_response
         if self._roots_application is not None:
+            root_reference = self._roots_application.resolve_root_reference(event)
+            if root_reference is not None:
+                return root_reference
             roots_response = self._roots_application.handle_command(event)
             if roots_response is not None:
                 return roots_response

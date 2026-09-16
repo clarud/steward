@@ -1534,7 +1534,7 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     roots.add("School", root_path)
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
-        roots_application=StewardRootsApplication(roots),
+        roots_application=StewardRootsApplication(roots, contexts=ReviewContextRepository(database_path)),
     )
 
     response = application.handle(make_event(text="/roots"))
@@ -1547,6 +1547,11 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     assert isinstance(detail, PresentedReply)
     assert detail.title == "School"
     assert "Root paths and changes remain local-only." in detail.text
+    assert detail.reference == ("root", 1)
+    reopened = application.handle(make_event(text="show that root"))
+    assert isinstance(reopened, PresentedReply)
+    assert reopened.title == "School"
+    assert reopened.reference == ("root", 1)
     roots.set_enabled("School", False)
     disabled = application.handle(make_event(text="/roots"))
     assert isinstance(disabled, PresentedReply)

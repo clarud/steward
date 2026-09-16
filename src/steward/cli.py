@@ -1635,7 +1635,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                     "local model" if settings.model_provider == "local" else "external model"
                 ),
             ),
-            roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
+            roots_application=StewardRootsApplication(
+                SourceRootRepository(database_path), contexts=review_contexts
+            ),
             privacy_application=StewardPrivacyApplication(
                 PrivacyService(database_path),
                 sources,

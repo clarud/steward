@@ -1040,7 +1040,7 @@ its acceptance criteria and proportionate automated tests are satisfied.
 | Goal | Current status | What is available now | Important remaining work |
 | --- | --- | --- | --- |
 | 0. Production-source integrity | Complete | Production fixture cleanup, isolated tests, explicit source removal | Keep enforcing root exclusions as roots evolve |
-| 1. Routing foundation | Substantially complete | Commands (including unknown-command fallback), deterministic natural-language reads, callbacks, pagination, path-redacted activity presentation, secret-free `/status` runtime readiness, and persisted source, workspace, record, task, Calendar, concept, and evidence-review reference contexts | Broader reply/reference-resolution cases |
+| 1. Routing foundation | Substantially complete | Commands (including unknown-command fallback), deterministic natural-language reads, callbacks, pagination, path-redacted activity presentation, secret-free `/status` runtime readiness, and persisted source, workspace, record, task, Calendar, root, concept, and evidence-review reference contexts | Broader reply/reference-resolution cases |
 | 2. Provisional intake | Substantially complete | Attachments and substantial text are staged, classified locally, contextualized, then accepted/discarded; model use defaults to none and can be explicitly selected as local or external before capture; restart-persistent staging diagnostics and recovery cards explain each supported extractor category | Live recovery acceptance |
 | 3. Organization review | Substantially complete | Inbox review, durable organization decisions, original-source inspection before a decision, reviewable source-to-workspace links without file movement, paginated existing-workspace correction, safe ambiguous-guidance recovery, persistent user-context rationale on replacement proposals, durable new-workspace naming, reviewed replacement proposals, and explicit keep-Inbox target revision | Live picker acceptance |
 | 4. Read tools | Substantially complete | Read-only source/knowledge/record/workspace/activity tool agent, filename-only provenance at the Telegram/model boundary, Calendar reads in the agent only when local OAuth is already configured, safe recursion-limit replies, and synthetic failure matrices for SoCLaaS/Ollama/Gemini/Calendar/Drive/Gmail | Live provider outage and recovery acceptance |
@@ -1140,7 +1140,9 @@ that no write occurs before explicit approval.
 - Root cards intentionally stop at health and exclusion-count information:
   root selection, enablement, and scans remain local-only operations. This
   preserves the multi-root boundary even while Telegram makes its state
-  discoverable.
+  discoverable. An exact **show/open that root** follow-up may reopen the same
+  health-only card after a restart, but does not add any Telegram root mutation
+  or filesystem capability.
 
 ### Priority sequence from here
 

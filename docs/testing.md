@@ -269,3 +269,12 @@ The picker is covered by automated application tests.
   association as a Calendar mutation.
 - Focused application coverage passed. The corresponding harmless Telegram
   restart exercise is included in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: durable root-card references
+
+- An opened authorized-root card now retains only its opaque local root ID.
+  Exact `show that root` or `open that root` follow-ups can restore the same
+  health-only card after a restart without disclosing a local path or granting
+  Telegram any scan, enablement, relocation, or other root-management action.
+- Focused application coverage passed. The manual restart exercise is included
+  in `telegram-manual-test-checklist.md`.
