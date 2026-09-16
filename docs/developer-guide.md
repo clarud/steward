@@ -589,6 +589,12 @@ explicit operations:
   it before HTTP shutdown. Cycle errors are logged without provider details
   and retried on the next interval. Shutdown waits for an in-flight delivery
   to finish, but interrupts the idle 60-second wait immediately.
+- An open task card also offers **Change deadline**. It collects one explicit,
+  offset-aware ISO-8601 instant and then creates a separate action review. The
+  approval rechecks the deadline that was displayed in the review, so it fails
+  closed if another local change happened first. This changes only the local
+  task deadline: an existing Telegram reminder and any linked Google Calendar
+  deadline marker remain unchanged and are called out on the review/result.
 - `/research` is explicitly external and ephemeral. Keeping its result writes
   a provenance-labeled Inbox note; it does not archive or silently promote web
   information to canonical personal knowledge.
@@ -916,6 +922,9 @@ only when the record type and the chat-scoped durable record reference agree.
 Tasks use compact `/tasks` cards with `Open` actions; after opening one,
 `show that task` can reopen that precise task after restart. Marking a task
 complete remains an explicit **Mark complete** action or `/complete_task ID`.
+Changing a deadline begins with **Change deadline** (or the advanced
+`/propose_task_deadline TASK_ID ISO_TIMESTAMP`) and never updates Calendar as
+a side effect.
 Workspaces likewise use `/workspaces` cards and `/workspace ID` detail views.
 Their source list is a semantic link list, not a directory listing or a move
 instruction; `show that workspace` only reopens the explicit workspace card.

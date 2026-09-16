@@ -547,6 +547,19 @@ class StewardReviewInboxApplication:
                 + (f"\nDue: {schedule_label(due)}" if due else "")
                 + (f"\nTelegram reminder: {schedule_label(reminder)}" if reminder else "\nNo Telegram reminder is scheduled.")
             )
+        if action_type == StewardTaskApplication.RESCHEDULE_TASK:
+            title = payload.get("task_title", "task")
+            old_due_at = payload.get("old_due_at")
+            new_due_at = payload.get("new_due_at")
+            try:
+                old = timestamp_label(datetime.fromisoformat(old_due_at)) if old_due_at else "no precise deadline"
+                new = timestamp_label(datetime.fromisoformat(new_due_at)) if new_due_at else "unknown"
+            except ValueError:
+                old, new = old_due_at or "no precise deadline", new_due_at or "unknown"
+            return f"Change deadline: {title}", (
+                f"Task: {title}\nCurrent deadline: {old}\nNew deadline: {new}\n\n"
+                "No Calendar event will be changed."
+            )
         if action_type.startswith("create_calendar"):
             if "snapshot" not in payload:
                 return "Refresh Calendar preview", "This older proposal needs a fresh Calendar preview before approval."
@@ -1872,6 +1885,7 @@ class StewardTaskApplication:
     """Turn explicit Telegram commitments into reviewable task proposals."""
 
     CREATE_TASK = "create_task"
+    RESCHEDULE_TASK = "reschedule_task"
     UNLINK_CALENDAR = "unlink_task_calendar"
 
     def __init__(
@@ -1918,6 +1932,40 @@ class StewardTaskApplication:
                 return str(error)
             self._activity.record(ActivityType.TASK_COMPLETED, object_id=str(task.id), details=task.title)
             return f"Task {task.id} completed: {task.title}."
+        if command == "/edit_task_deadline":
+            if not separator or not argument.strip().isdigit():
+                return "Open a task and choose Change deadline, or use /edit_task_deadline followed by a numeric task ID."
+            task = self._tasks.get(int(argument.strip()))
+            if task is None:
+                return f"Task {argument.strip()} was not found."
+            if task.status != "open":
+                return "Only an open task can be rescheduled."
+            if self._contexts is None:
+                return "Task-deadline editing is not configured for this process."
+            self._contexts.set(event.platform, event.chat_id, "task_deadline_edit", task.id or 0)
+            current = timestamp_label(task.due_at) if task.due_at is not None else "no precise deadline"
+            return PresentedReply(
+                f"Current deadline: {current}\n\nSend the new deadline as an ISO-8601 time with its UTC offset, for example:\n"
+                "2026-10-02T17:00:00+08:00\n\nSteward will show a review before changing the local task.",
+                (ReplyAction("Cancel", "/cancel_task_deadline"), ReplyAction("Open task", f"/task {task.id}")),
+                title="Change task deadline", icon="🗓️",
+            )
+        if command == "/cancel_task_deadline":
+            if self._contexts is not None:
+                context = self._contexts.get(event.platform, event.chat_id)
+                if context is not None and context.kind == "task_deadline_edit":
+                    self._contexts.clear(event.platform, event.chat_id)
+                    return "The task deadline was not changed."
+            return "There is no task-deadline edit waiting in this chat."
+        if command == "/propose_task_deadline":
+            task_text, value_separator, deadline_text = argument.strip().partition(" ")
+            if not separator or not task_text.isdigit() or not value_separator:
+                return "Use /propose_task_deadline TASK_ID ISO_TIMESTAMP, with an explicit UTC offset."
+            try:
+                deadline = TaskService.parse_due_at(deadline_text.strip())
+            except ValueError as error:
+                return str(error)
+            return self.propose_deadline(int(task_text), deadline, chat_id=event.chat_id)
         if command == "/propose_unlink_task_calendar":
             if not separator or not argument.strip().isdigit():
                 return "Open a task with a linked existing Calendar event, then choose Remove link."
@@ -1934,6 +1982,14 @@ class StewardTaskApplication:
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is not None and context.kind == "task_deadline_edit" and normalized and not normalized.startswith("/"):
+            try:
+                deadline = TaskService.parse_due_at((event.text or "").strip())
+            except ValueError as error:
+                return f"{error} Send the new deadline again, or choose Cancel."
+            self._contexts.clear(event.platform, event.chat_id)
+            return self.propose_deadline(int(context.identifier), deadline, chat_id=event.chat_id)
         if normalized not in {
             "show that task", "open that task", "show the last task", "open the last task",
             "mark that task complete", "mark this task complete", "complete that task",
@@ -1941,7 +1997,6 @@ class StewardTaskApplication:
             "remove that calendar link", "unlink that calendar event", "unlink that event",
         }:
             return None
-        context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != "task":
             return None
         task = self._tasks.get(context.identifier)
@@ -2025,6 +2080,7 @@ class StewardTaskApplication:
         actions = [ReplyAction("Tasks", "/tasks")]
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
+            actions.insert(1, ReplyAction("Change deadline", f"/edit_task_deadline {task_id}"))
         calendar_event_id = (
             self._calendar_links.task_event_id(task_id)
             if self._calendar_links is not None else None
@@ -2075,6 +2131,43 @@ class StewardTaskApplication:
             description,
             (ReplyAction("Remove link", f"/approve_action {pending.id}"), ReplyAction("Keep link", f"/reject_action {pending.id}")),
             title="Review Calendar unlink", icon="📅",
+            reference=("action", pending.id) if pending.id is not None else None,
+        )
+
+    def propose_deadline(self, task_id: int, due_at: datetime, *, chat_id: str) -> str | PresentedReply:
+        """Create a reviewed precise-deadline replacement for one open task."""
+
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        if task.status != "open":
+            return "Only an open task can be rescheduled."
+        payload = {
+            "task_id": str(task_id),
+            "task_title": task.title,
+            "old_due_at": task.due_at.isoformat() if task.due_at is not None else "",
+            "new_due_at": due_at.isoformat(),
+            "chat_id": chat_id,
+        }
+        pending = self._proposals.find_pending(self.RESCHEDULE_TASK, payload)
+        if pending is None:
+            pending = self._proposals.add(self.RESCHEDULE_TASK, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED, object_id=str(pending.id),
+                details=f"Reschedule task:{task_id}",
+            )
+        old_label = timestamp_label(task.due_at) if task.due_at is not None else "no precise deadline"
+        reminder_note = ""
+        if self._reminders is not None and self._reminders.reminder_for_task(task_id) is not None:
+            reminder_note = "\nAn existing Telegram reminder is unchanged."
+        calendar_note = ""
+        if self._calendar_links is not None and self._calendar_links.task_event_id(task_id) is not None:
+            calendar_note = "\nAn existing Google Calendar deadline marker is unchanged."
+        return PresentedReply(
+            f"Task: {task.title}\nCurrent deadline: {old_label}\nNew deadline: {timestamp_label(due_at)}"
+            f"{reminder_note}{calendar_note}\n\nNo task or Calendar event has been changed yet.",
+            (ReplyAction("Apply deadline", f"/approve_action {pending.id}"), ReplyAction("Keep current", f"/reject_action {pending.id}")),
+            title="Review task deadline", icon="🗓️",
             reference=("action", pending.id) if pending.id is not None else None,
         )
 
@@ -4775,6 +4868,8 @@ class StewardActionProposalApplication:
         proposal = self._repository.get(proposal_id)
         if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
             return self._review_task(proposal_id, decision)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_TASK:
+            return self._review_task_deadline(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
             return self._review_delivery_recovery(proposal_id, decision)
         if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
@@ -4996,6 +5091,56 @@ class StewardActionProposalApplication:
         )
         return PresentedReply(
             f"{task.title}{due}", tuple(actions), title="Task saved", icon="✅",
+            reference=("task", task.id) if task.id is not None else None,
+        )
+
+    def _review_task_deadline(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Apply one exact local deadline replacement; never mutate Calendar."""
+
+        if self._tasks is None:
+            return "Task scheduling is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardTaskApplication.RESCHEDULE_TASK:
+            return "Task-deadline proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task-deadline review belongs to a different Telegram chat."
+        if proposal.status == decision:
+            return f"Task-deadline proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task-deadline proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The task deadline was not changed.",
+                (ReplyAction("Open task", f"/task {proposal.payload['task_id']}"),),
+                title="Deadline kept", icon="↩️",
+            )
+        task_id = int(proposal.payload["task_id"])
+        old_value = proposal.payload.get("old_due_at") or None
+        try:
+            task = self._tasks.reschedule_due_at(
+                task_id,
+                TaskService.parse_due_at(proposal.payload["new_due_at"]),
+                expected_due_at=TaskService.parse_due_at(old_value) if old_value else None,
+            )
+        except ValueError as error:
+            return f"The task deadline was not changed: {error}"
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.TASK_RESCHEDULED, object_id=str(task.id),
+                details=f"New deadline: {task.due_at.isoformat() if task.due_at else 'none'}",
+            )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return PresentedReply(
+            f"New local task deadline: {timestamp_label(task.due_at)}\n\n"
+            "No Calendar event or Telegram reminder was changed.",
+            (ReplyAction("Open task", f"/task {task.id}"), ReplyAction("Tasks", "/tasks")),
+            title="Task deadline changed", icon="🗓️",
             reference=("task", task.id) if task.id is not None else None,
         )
 

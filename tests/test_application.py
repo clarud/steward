@@ -2335,6 +2335,58 @@ def test_opened_task_allows_a_narrow_natural_completion_followup_after_restart(t
     assert [event.event_type for event in ActivityService(database).list_recent()].count("task_completed") == 1
 
 
+def test_task_deadline_edit_is_reviewed_and_refuses_a_stale_preview(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database); activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+    task_application = StewardTaskApplication(tasks, proposals, activity, contexts=contexts)
+    actions = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        task_service=tasks, activity_service=activity,
+    )
+
+    prompt = task_application.handle_command(make_event(text=f"/edit_task_deadline {task.id}"))
+    review = task_application.resolve_task_reference(make_event(text="2026-09-19T17:00:00+08:00"))
+
+    assert isinstance(prompt, PresentedReply)
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review task deadline"
+    proposal_id = int(review.actions[0].command.rsplit(" ", 1)[1])
+    accepted = actions.handle_command(make_event(text=f"/approve_action {proposal_id}"))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Task deadline changed"
+    assert tasks.get(task.id or 0).due_at == datetime(2026, 9, 19, 9, tzinfo=UTC)
+    assert proposals.get(proposal_id).status == "accepted"
+    assert any(event.event_type is ActivityType.TASK_RESCHEDULED for event in activity.list_recent())
+
+    other_chat = IncomingEvent(
+        id="telegram:other", platform="telegram", chat_id="other", message_id="8", reply_to_id=None,
+        timestamp=datetime(2026, 9, 7, tzinfo=UTC), text="/propose_task_deadline 1 2026-09-20T17:00:00+08:00",
+        attachments=(), reply_text=None,
+    )
+    cross_chat_review = task_application.handle_command(other_chat)
+    cross_chat_id = int(cross_chat_review.actions[0].command.rsplit(" ", 1)[1])
+    denied = actions.handle_command(make_event(text=f"/approve_action {cross_chat_id}"))
+    assert "different Telegram chat" in denied
+    assert proposals.get(cross_chat_id).status == "pending"
+
+    stale = task_application.propose_deadline(task.id or 0, datetime(2026, 9, 20, 9, tzinfo=UTC), chat_id="100")
+    stale_id = int(stale.actions[0].command.rsplit(" ", 1)[1])
+    tasks.reschedule_due_at(
+        task.id or 0, datetime(2026, 9, 21, 9, tzinfo=UTC),
+        expected_due_at=datetime(2026, 9, 19, 9, tzinfo=UTC),
+    )
+
+    refused = actions.handle_command(make_event(text=f"/approve_action {stale_id}"))
+
+    assert "was not changed" in refused
+    assert proposals.get(stale_id).status == "pending"
+    assert tasks.get(task.id or 0).due_at == datetime(2026, 9, 21, 9, tzinfo=UTC)
+
+
 def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database)

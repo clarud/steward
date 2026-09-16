@@ -422,3 +422,15 @@ production authorization merely to complete them.
 - Focused repository and read-only-tool coverage passed for that recovery path.
 - The complete automated suite subsequently reached 100% with no stderr after
   this change.
+
+## Post-session automated delivery: reviewed task deadline changes
+
+- An open task can now collect a replacement offset-aware deadline from its
+  Telegram card and present an explicit review. Approval compares the displayed
+  old deadline against current local state, so stale reviews fail closed.
+- The operation changes only the local task deadline. It intentionally leaves
+  Telegram reminders and linked Calendar deadline markers unchanged, and its
+  card/result says so instead of suggesting that external state moved with it.
+- Focused task and application coverage passed for approval, UTC normalization,
+  audit activity, and stale-review refusal.
+- The complete automated suite subsequently reached 100% with no stderr.

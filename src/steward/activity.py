@@ -30,6 +30,7 @@ class ActivityType(StrEnum):
     ACTION_REJECTED = "action_rejected"
     TASK_CREATED = "task_created"
     TASK_COMPLETED = "task_completed"
+    TASK_RESCHEDULED = "task_rescheduled"
     TASK_CALENDAR_ASSOCIATED = "task_calendar_associated"
     TASK_CALENDAR_UNLINKED = "task_calendar_unlinked"
     TASK_REMINDER_SENT = "task_reminder_sent"

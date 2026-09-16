@@ -431,6 +431,14 @@ until a separate filesystem backup exists.
   completes that exact task, reports that no Calendar event changed, and the
   repeated phrase reports it was already completed. Do not expect a phrase like
   `done` in ordinary chat to select or complete a task.
+- Open a harmless task with a precise deadline and choose **Change deadline**.
+  Send an offset-aware ISO timestamp such as `2026-10-02T17:00:00+08:00`.
+  Verify the review names the old and new deadline and that rejecting it leaves
+  the task untouched. Approve a fresh review and verify the local task changes.
+  If the card reports an existing reminder or Calendar deadline marker, confirm
+  it explicitly says that relationship was not changed. Modify the local task
+  through another test flow while a second deadline review is pending; approval
+  of the stale card must refuse and leave it pending for fresh review.
 - For a task with an explicit `--due-at` value, use `/calendar_task ID`.
   Verify it is a review card and that accepting it creates only one short
   `Due: ...` deadline marker in Calendar; repeating approval must not duplicate

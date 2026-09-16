@@ -151,6 +151,43 @@ class TaskService:
             connection.execute("UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ?", (datetime.now(UTC).isoformat(), task_id))
         return Task(task.id, task.title, task.due_hint, task.due_at, "completed", task.created_at)
 
+    def reschedule_due_at(
+        self,
+        task_id: int,
+        due_at: datetime,
+        *,
+        expected_due_at: datetime | None,
+    ) -> Task:
+        """Replace one open task's precise deadline after a reviewed proposal.
+
+        The previewed deadline is compared again at approval time, preventing a
+        stale review from overwriting a newer local change. Reminders and
+        Calendar relationships stay separate from this local task mutation.
+        """
+
+        if task_id <= 0:
+            raise ValueError("Task ID must be positive.")
+        if due_at.tzinfo is None or due_at.utcoffset() is None:
+            raise ValueError("A task deadline must include a UTC offset.")
+        normalized_due_at = due_at.astimezone(UTC)
+        expected = expected_due_at.astimezone(UTC) if expected_due_at is not None else None
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, title, due_hint, due_at, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Task {task_id} was not found.")
+            task = self._from_row(row)
+            if task.status != "open":
+                raise ValueError(f"Task {task_id} is not open.")
+            if task.due_at != expected:
+                raise ValueError("This task's deadline changed after the review was created. Open a fresh task card and try again.")
+            connection.execute(
+                "UPDATE tasks SET due_hint = NULL, due_at = ? WHERE id = ?",
+                (normalized_due_at.isoformat(), task_id),
+            )
+        return Task(task.id, task.title, None, normalized_due_at, task.status, task.created_at)
+
     def get(self, task_id: int) -> Task | None:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(

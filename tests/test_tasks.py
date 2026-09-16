@@ -72,6 +72,27 @@ def test_task_service_persists_explicit_deadlines_as_utc_instants(tmp_path: Path
     assert service.list_open() == (task,)
 
 
+def test_task_service_reschedules_only_the_expected_open_deadline(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    service = TaskService(database)
+    original = service.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+
+    changed = service.reschedule_due_at(
+        original.id or 0,
+        datetime(2026, 9, 19, 9, tzinfo=UTC),
+        expected_due_at=original.due_at,
+    )
+
+    assert changed.due_at == datetime(2026, 9, 19, 9, tzinfo=UTC)
+    assert changed.due_hint is None
+    with pytest.raises(ValueError, match="changed after"):
+        service.reschedule_due_at(
+            original.id or 0,
+            datetime(2026, 9, 20, 9, tzinfo=UTC),
+            expected_due_at=original.due_at,
+        )
+
+
 def test_task_reminder_claims_retries_and_acknowledges_due_delivery(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database); activity = ActivityService(database)
