@@ -3380,6 +3380,7 @@ class StewardCalendarApplication:
                 "This Calendar event is not linked to a Steward task. Calendar events and tasks stay separate unless you explicitly add a precise task deadline to Calendar.",
                 (ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")),
                 title="No linked task",
+                reference=("calendar", str(context.identifier)),
             )
         task = self._tasks.get(task_id)
         if task is None:
@@ -3387,12 +3388,14 @@ class StewardCalendarApplication:
                 "This Calendar event has a local Steward task link, but that task is no longer available. The Calendar event was not changed.",
                 (ReplyAction("Refresh", f"/calendar_get {context.identifier}"), ReplyAction("Home", "/home")),
                 title="Linked task unavailable",
+                reference=("calendar", str(context.identifier)),
             )
         due = f"\nDue: {task.due_at.isoformat()}" if task.due_at else ""
         return PresentedReply(
             f"{task.title}\nStatus: {task.status}{due}\n\nThis is Steward's local {relationship}; completing the task does not change the Calendar event.",
             (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Back to event", f"/calendar_get {context.identifier}")),
             title="Linked task",
+            reference=("calendar", str(context.identifier)),
         )
 
 

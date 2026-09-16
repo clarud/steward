@@ -1864,6 +1864,7 @@ def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path
     assert "Submit CS3210 lab" in linked.text
     assert linked.actions[0].command == f"/task {task.id}"
     assert linked.actions[1].command == "/calendar_get event-opaque-1"
+    assert linked.reference == ("calendar", "event-opaque-1")
 
     event_card = application._event_card(
         make_event(text="/calendar_get event-opaque-1"),
@@ -1884,6 +1885,7 @@ def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path
 
     assert isinstance(unlinked, PresentedReply)
     assert unlinked.title == "No linked task"
+    assert unlinked.reference == ("calendar", "unlinked-event")
 
 
 def test_telegram_can_review_and_save_a_local_existing_task_calendar_association(tmp_path: Path) -> None:

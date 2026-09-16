@@ -260,3 +260,12 @@ The picker is covered by automated application tests.
   other cards have been opened or the bot restarts.
 - Focused application and adapter suites passed. The real Telegram restart and
   older-card reply exercise is recorded in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: durable Calendar task-follow-up references
+
+- **Linked task** and **No linked task** cards now retain the originating
+  opaque Calendar event ID. An older-card reply can therefore request the
+  current event without selecting a newer event or treating the local task
+  association as a Calendar mutation.
+- Focused application coverage passed. The corresponding harmless Telegram
+  restart exercise is included in `telegram-manual-test-checklist.md`.

@@ -414,6 +414,10 @@ until a separate filesystem backup exists.
   completed independently; this flow does not delete or edit its Calendar event.
 - From that opened Calendar marker, say `what task is this for?` or use the
   linked-task follow-up. Verify it offers **Open task** for the original task.
+  After opening other cards or restarting Telegram, reply to that older
+  **Linked task** card with `show that event`; it must refetch the same exact
+  Calendar event. Repeat this from an unlinked event's **No linked task** card.
+  Neither follow-up may create or edit a Calendar event.
   Repeat the phrase on an ordinary unlinked Calendar event: Steward must say it
   has no linked task, rather than inventing one.
 - On any Calendar event card, use **Tasks**. It must only open Steward's local
