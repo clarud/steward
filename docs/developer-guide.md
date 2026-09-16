@@ -1820,6 +1820,10 @@ remain future work.
 - Travel extraction recognizes a small, label-oriented itinerary shape. It is
   not a general airline-document parser; Calendar events require a travel
   record plus explicit proposal approval or an explicit CLI write command.
+- Record cards render timestamps in a readable offset-aware form, but verify
+  evidence against the underlying stored ISO-8601 value. A legitimate source
+  timestamp therefore remains linked to its fragment rather than losing
+  provenance because display formatting differs from the original text.
 - Receipt records recognize a conservative labeled shape (merchant, total,
   currency, purchase date, and receipt number), retain field-level provenance,
   and are created only after review. They are not a general receipt

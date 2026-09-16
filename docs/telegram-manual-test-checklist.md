@@ -455,6 +455,10 @@ until a separate filesystem backup exists.
   extracted section for each currently supported field. Correct a field, then
   reopen the record: it must be labelled **not source-evidenced** instead of
   inheriting stale extraction provenance, and it must not appear in Evidence.
+- For a labelled timestamp such as `Departure Time: 2026-10-01T09:00:00+08:00`,
+  verify the human-readable record time still shows a source fragment and
+  appears under **Evidence**. Formatting the timestamp for Telegram must not
+  erase otherwise valid provenance.
 - On a direct or `/pending` record proposal, use **Open source** before
   accepting. Confirm it opens the exact original while the record remains
   uncreated. This action must also be available on a correction proposal.

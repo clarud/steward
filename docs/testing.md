@@ -315,3 +315,12 @@ The picker is covered by automated application tests.
 - Focused coverage passed for path redaction, exact event selection, and durable
   `show that activity` navigation after restart. The manual Telegram exercise
   is included in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: timestamp record provenance
+
+- Record evidence verification now compares a timestamp field's stored
+  ISO-8601 value with its extracted fragment, while Telegram still displays a
+  readable offset-aware time. This prevents presentation formatting from
+  incorrectly marking a supported time as unsupported.
+- Focused record-card coverage passed for a labelled travel departure timestamp
+  and its Evidence entry. The matching manual record test is in the checklist.

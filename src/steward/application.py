@@ -1771,9 +1771,19 @@ class StewardRecordApplication:
         for _, field, display_value in fields:
             if display_value is None:
                 continue
+            # Telegram presents datetimes in a readable local-offset form, but
+            # source fragments and record storage retain their ISO-8601 value.
+            # Provenance must verify the canonical value, not fail merely
+            # because the presentation label is friendlier than the source.
+            raw_value = getattr(record, field, display_value)
+            evidence_value = raw_value.isoformat() if isinstance(raw_value, datetime) else str(display_value)
             fragment_id = stored.get(field)
             fragment = self._fragments.get(fragment_id) if fragment_id is not None else None
-            if fragment is not None and fragment.source_id == getattr(record, "source_id") and str(display_value).casefold() in fragment.text.casefold():
+            if (
+                fragment is not None
+                and fragment.source_id == getattr(record, "source_id")
+                and evidence_value.casefold() in fragment.text.casefold()
+            ):
                 supported.append((field, fragment))
         return tuple(supported)
 

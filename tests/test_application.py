@@ -1015,7 +1015,8 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     fragments = SourceFragmentRepository(database)
     fragment = fragments.replace_for_source(ExtractionResult(
         source.id or 0,
-        (SourceFragment(None, source.id or 0, None, 0, "Flight SQ638\nArrival: Tokyo", "entire file"),),
+        (SourceFragment(None, source.id or 0, None, 0,
+            "Flight SQ638\nArrival: Tokyo\nDeparture Time: 2026-10-01T09:00:00+08:00", "entire file"),),
     ))[0]
     records = RecordService(database)
     record = records.create_from_proposal(records.propose_travel_record(
@@ -1034,12 +1035,15 @@ def test_record_detail_shows_current_fields_and_valid_fragment_provenance(tmp_pa
     assert isinstance(detail, PresentedReply)
     assert "flight: SQ638 (source fragment 1)" in detail.text
     assert "arrival: Tokyo (source fragment 1)" in detail.text
+    assert "departure time:" in detail.text
+    assert "9:00 am (UTC+08:00) (source fragment 1)" in detail.text
     assert detail.actions[0].command == f"/source {source.id}"
     assert detail.actions[1].command == f"/record_evidence travel {record.id}"
     assert detail.reference == ("record:travel", record.id)
     evidence = application.handle_command(make_event(text=f"/record_evidence travel {record.id}"))
     assert isinstance(evidence, PresentedReply)
     assert "flight_number: fragment 1" in evidence.text
+    assert "departure_time: fragment 1" in evidence.text
     assert evidence.actions[0].command == f"/source_content {source.id} 1"
 
     records.correct_travel_field(record.id or 0, "arrival", "Osaka")
