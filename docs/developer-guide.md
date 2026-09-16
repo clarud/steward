@@ -1034,8 +1034,11 @@ therefore not enough to create a contradiction review. This is conservative
 triage, not semantic entailment; the user still reviews every outcome.
 
 `RecordService` adds `TravelRecord` as the first concrete record. It proposes
-flight fields from source fragments and tracks the fragment that supports each
-extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
+flight, route, booking-reference, and explicitly labelled passenger fields from
+source fragments and tracks the fragment that supports each extracted field.
+Passenger extraction is deliberately label-based (`Passenger Name` or `Traveler
+Name`); an unlabelled nearby name is not guessed to be the traveller. `steward
+propose-travel-record SOURCE_ID` is read-only;
 `steward create-travel-record SOURCE_ID` is the explicit persistence step, and
 both the record and all of its evidence rows are inserted in one transaction.
 `TravelRecordReference` extends that small record without widening its core

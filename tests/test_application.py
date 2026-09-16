@@ -1088,6 +1088,30 @@ def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) 
     assert records.list_travel_records()[0].arrival == "Osaka"
 
 
+def test_telegram_travel_record_shows_passenger_with_fragment_provenance(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(
+        None, tmp_path / "itinerary.txt", "a" * 64, SourceType.PLAIN_TEXT, 0, now, now, now
+    ))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Passenger Name: Ada Lovelace", "line 1"),
+    )))[0]
+    records = RecordService(database)
+    record = records.create_from_proposal(records.propose_travel_record(
+        source.id or 0, [(fragment.id or 0, fragment.text)]
+    ))
+    application = StewardRecordApplication(
+        records, fragments, ActionProposalRepository(database), ActivityService(database),
+    )
+
+    card = application.handle_command(make_event(text=f"/record travel {record.id}"))
+
+    assert isinstance(card, PresentedReply)
+    assert f"passenger: Ada Lovelace (source fragment {fragment.id})" in card.text
+
+
 def test_telegram_receipt_correction_is_reviewed_before_mutation(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

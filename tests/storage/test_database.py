@@ -49,6 +49,7 @@ from steward.storage.database import (
     ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
     EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
     TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
+    TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -76,6 +77,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         claim_revision_columns = connection.execute("PRAGMA table_info(claim_revisions)").fetchall()
         intake_columns = connection.execute("PRAGMA table_info(provisional_intakes)").fetchall()
         organization_columns = connection.execute("PRAGMA table_info(organization_proposals)").fetchall()
+        travel_columns = connection.execute("PRAGMA table_info(travel_records)").fetchall()
 
     assert [migration[0] for migration in migrations] == [
         INITIAL_SCHEMA_VERSION,
@@ -131,6 +133,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
             EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
             TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
+            TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -156,6 +159,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
     ]
     assert intake_columns[-1][1] == "diagnostic"
     assert organization_columns[-1][1] == "user_guidance"
+    assert travel_columns[-1][1] == "passenger"
 
 
 def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
@@ -169,7 +173,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION
+    assert migration_count == TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:

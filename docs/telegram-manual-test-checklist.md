@@ -453,6 +453,11 @@ until a separate filesystem backup exists.
 - On any Travel, receipt, or warranty review card, choose **Organize Inbox**.
   Verify Steward opens a separate organization review rather than moving the
   original or accepting the record automatically.
+- Add a harmless labelled `Passenger Name: ...` line to a staged itinerary.
+  The travel review and saved record must show the passenger with its supporting
+  fragment. An unrelated or unlabelled name must not be guessed as a passenger.
+  Use the normal reviewed correction flow to change the passenger and confirm
+  the correction is marked as user-supplied rather than source-evidenced.
 - For a saved travel record, use `/propose_travel_reference RECORD_ID TYPE
   FRAGMENT_ID VALUE` with an exact value that appears in the record's source
   fragment. Verify it stays pending until approval and `/travel_references

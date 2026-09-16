@@ -20,6 +20,7 @@ class TravelRecord:
     departure_time: datetime | None
     arrival_time: datetime | None
     booking_reference: str | None
+    passenger: str | None = None
 
 @dataclass(frozen=True, slots=True)
 class TravelRecordProposal:
@@ -125,8 +126,8 @@ class RecordService:
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute(
                 "INSERT INTO travel_records "
-                "(source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference, passenger) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 self._record_values(record),
             )
         return TravelRecord(
@@ -138,6 +139,7 @@ class RecordService:
             record.departure_time,
             record.arrival_time,
             record.booking_reference,
+            record.passenger,
         )
 
     def field_evidence(self, record_type: str, record_id: int) -> dict[str, int]:
@@ -174,7 +176,7 @@ class RecordService:
         values = {
             "flight_number": record.flight_number, "departure": record.departure, "arrival": record.arrival,
             "departure_time": record.departure_time, "arrival_time": record.arrival_time,
-            "booking_reference": record.booking_reference,
+            "booking_reference": record.booking_reference, "passenger": record.passenger,
         }
         values[field] = normalized
         return TravelRecord(record.id, record.source_id, **values)
@@ -222,9 +224,9 @@ class RecordService:
 
     @staticmethod
     def _normalized_travel_field(field: str, value: str) -> object | None:
-        allowed = {"flight_number", "departure", "arrival", "departure_time", "arrival_time", "booking_reference"}
+        allowed = {"flight_number", "departure", "arrival", "departure_time", "arrival_time", "booking_reference", "passenger"}
         if field not in allowed:
-            raise ValueError("Travel field must be flight_number, departure, arrival, departure_time, arrival_time, or booking_reference.")
+            raise ValueError("Travel field must be flight_number, departure, arrival, departure_time, arrival_time, booking_reference, or passenger.")
         normalized: object | None = " ".join(value.split()) or None
         if field in {"departure_time", "arrival_time"} and normalized is not None:
             try:
@@ -360,8 +362,8 @@ class RecordService:
             self._validate_review_snapshot(connection, proposal, expected_snapshot)
             cursor = connection.execute(
                 "INSERT INTO travel_records "
-                "(source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference, passenger) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 self._record_values(proposal.record),
             )
             record_id = int(cursor.lastrowid)
@@ -379,6 +381,7 @@ class RecordService:
             proposal.record.departure_time,
             proposal.record.arrival_time,
             proposal.record.booking_reference,
+            proposal.record.passenger,
         )
 
     def add_field_evidence(self, record_id: int, field_name: str, fragment_id: int) -> None:
@@ -439,7 +442,7 @@ class RecordService:
         """Return one travel record without exposing the database to callers."""
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
-                "SELECT id, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference "
+                "SELECT id, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference, passenger "
                 "FROM travel_records WHERE id = ?",
                 (record_id,),
             ).fetchone()
@@ -451,6 +454,7 @@ class RecordService:
             datetime.fromisoformat(str(row[5])) if row[5] else None,
             datetime.fromisoformat(str(row[6])) if row[6] else None,
             str(row[7]) if row[7] else None,
+            str(row[8]) if row[8] else None,
         )
 
     def list_references(self, record_id: int) -> tuple[TravelRecordReference, ...]:
@@ -468,7 +472,7 @@ class RecordService:
     def list_travel_records(self) -> list[TravelRecord]:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                "SELECT id, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference "
+                "SELECT id, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference, passenger "
                 "FROM travel_records ORDER BY id"
             ).fetchall()
         return [
@@ -478,12 +482,13 @@ class RecordService:
                 datetime.fromisoformat(str(row[5])) if row[5] else None,
                 datetime.fromisoformat(str(row[6])) if row[6] else None,
                 str(row[7]) if row[7] else None,
+                str(row[8]) if row[8] else None,
             )
             for row in rows
         ]
 
     def propose_travel_record(self, source_id: int, fragments: list[tuple[int, str]]) -> TravelRecordProposal:
-        flight_number = departure = arrival = booking_reference = None
+        flight_number = departure = arrival = booking_reference = passenger = None
         departure_time = arrival_time = None
         evidence: dict[str, int] = {}
         for fragment_id, text in fragments:
@@ -495,12 +500,14 @@ class RecordService:
                 arrival = match.group(1).strip(); evidence["arrival"] = fragment_id
             if booking_reference is None and (match := re.search(r"(?:Booking Reference|PNR):\s*([^\s]+)", text, re.I)):
                 booking_reference = match.group(1); evidence["booking_reference"] = fragment_id
+            if passenger is None and (match := re.search(r"(?:Passenger(?: Name)?|Traveler(?: Name)?):\s*([^\n]+)", text, re.I)):
+                passenger = " ".join(match.group(1).split()); evidence["passenger"] = fragment_id
             if departure_time is None and (value := self._labeled_datetime("Departure Time", text)):
                 departure_time = value; evidence["departure_time"] = fragment_id
             if arrival_time is None and (value := self._labeled_datetime("Arrival Time", text)):
                 arrival_time = value; evidence["arrival_time"] = fragment_id
         return TravelRecordProposal(
-            TravelRecord(None, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference),
+            TravelRecord(None, source_id, flight_number, departure, arrival, departure_time, arrival_time, booking_reference, passenger),
             evidence,
         )
 
@@ -511,6 +518,7 @@ class RecordService:
             record.departure_time.isoformat() if record.departure_time else None,
             record.arrival_time.isoformat() if record.arrival_time else None,
             record.booking_reference,
+            record.passenger,
         )
 
     @staticmethod

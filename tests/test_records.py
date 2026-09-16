@@ -97,6 +97,27 @@ def test_travel_record_proposal_keeps_field_level_fragment_evidence(tmp_path: Pa
     assert proposal.record.departure_time is not None
     assert proposal.record.departure_time.isoformat() == "2026-10-01T09:00:00+08:00"
 
+
+def test_travel_record_passenger_is_evidenced_persisted_and_correctable(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.txt", "a" * 64, SourceType.PLAIN_TEXT, 0, now, now, now)
+    )
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Flight SQ638\nPassenger Name: Ada Lovelace\nPNR: ABC", "entire file"),
+    )))[0]
+    service = RecordService(database)
+
+    proposal = service.propose_travel_record(source.id or 0, [(fragment.id or 0, fragment.text)])
+    record = service.create_from_proposal(proposal)
+
+    assert record.passenger == "Ada Lovelace"
+    assert service.field_evidence("travel", record.id or 0)["passenger"] == fragment.id
+    corrected = service.correct_travel_field(record.id or 0, "passenger", "Grace Hopper")
+    assert corrected.passenger == "Grace Hopper"
+    assert service.get_travel_record(record.id or 0).passenger == "Grace Hopper"
+
 def test_accepted_proposal_persists_its_evidence_atomically(tmp_path: Path) -> None:
     database = tmp_path / "db.sqlite"; initialize_database(database); time = datetime(2026, 9, 8, tzinfo=UTC)
     source = SourceRepository(database).add(Source(None, tmp_path / "trip.pdf", "a" * 64, SourceType.PDF, 0, time, time, time))

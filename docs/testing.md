@@ -228,3 +228,14 @@ The picker is covered by automated application tests.
 - Focused application tests passed for a successful local-model suggestion,
   zero-call denial under source privacy, and provider unavailability. The new
   live Telegram steps are in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: richer travel-record provenance
+
+- Migration 54 adds an optional `passenger` field to existing travel records
+  without changing prior records.
+- Deterministic extraction accepts only labelled `Passenger Name` or `Traveler
+  Name` values and records the supporting fragment; the reviewed record card
+  displays that provenance.
+- Record/migration/application coverage passed for extraction, approval,
+  persistence, user correction, and Telegram rendering. The harmless live
+  itinerary exercise is recorded in `telegram-manual-test-checklist.md`.

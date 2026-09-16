@@ -1469,6 +1469,7 @@ class StewardRecordApplication:
             ("departure time", "departure_time", record.departure_time.isoformat() if record.departure_time else None),
             ("arrival time", "arrival_time", record.arrival_time.isoformat() if record.arrival_time else None),
             ("booking reference", "booking_reference", record.booking_reference),
+            ("passenger", "passenger", record.passenger),
         )
         rendered = "\n".join(
             f"{label}: {value} (fragment {proposal.field_evidence[field]})"
@@ -1675,6 +1676,7 @@ class StewardRecordApplication:
                 ("departure time", "departure_time", timestamp_label(getattr(record, "departure_time")) if getattr(record, "departure_time") else None),
                 ("arrival time", "arrival_time", timestamp_label(getattr(record, "arrival_time")) if getattr(record, "arrival_time") else None),
                 ("booking reference", "booking_reference", getattr(record, "booking_reference")),
+                ("passenger", "passenger", getattr(record, "passenger")),
             )
         if record_type == "receipt":
             total = getattr(record, "total_cents")

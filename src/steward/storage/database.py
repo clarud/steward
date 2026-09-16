@@ -60,6 +60,7 @@ PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION = 50
 ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION = 51
 EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION = 52
 TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION = 53
+TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION = 54
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -537,6 +538,10 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             created_at TEXT NOT NULL
         )
         """,
+    ),
+    (
+        TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
+        "ALTER TABLE travel_records ADD COLUMN passenger TEXT",
     ),
 )
 
