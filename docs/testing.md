@@ -324,3 +324,26 @@ The picker is covered by automated application tests.
   incorrectly marking a supported time as unsupported.
 - Focused record-card coverage passed for a labelled travel departure timestamp
   and its Evidence entry. The matching manual record test is in the checklist.
+
+## Acceptance-pass closeout — 16 September 2026
+
+The current local and Telegram acceptance pass is complete for the features
+exercised in this session. Automated coverage was rerun after the final
+provenance change, and the following manual scenarios were confirmed:
+
+- moved-root recovery preserved 19 source identities and hashes with no
+  duplicate scan results;
+- Drive search pagination, import, repeat-import idempotency, source reading,
+  and generated summaries worked as expected;
+- Gmail search and inbox import worked as expected;
+- Calendar consent recovery restored access after a revoked token, and Telegram
+  displayed offset-aware local dates, event details, and exact-card follow-ups;
+- source privacy-rule updates worked through both the local interface and
+  Telegram.
+
+The remaining checklist items are not known product failures. They are
+specialist rehearsals intentionally deferred because they require a controlled
+provider outage, revoked non-sensitive integration token, or separate backup
+environment: SoCLaaS, Ollama, Gemini, Calendar, Drive, and Gmail outage paths;
+backup/restore; and start-at-login registration. Do not revoke a healthy
+production authorization merely to complete them.
