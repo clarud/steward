@@ -4333,6 +4333,27 @@ def test_capture_uses_an_injected_proposal_builder_before_pausing_for_approval(t
     assert proposals.get(1).rationale == "The extracted notes discuss CS3210."
 
 
+def test_action_proposals_command_paginates_pending_reviews(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    repository = ActionProposalRepository(database_path)
+    service = ActionProposalService(repository, WorkspaceRepository(database_path), ActivityService(database_path))
+    for index in range(9):
+        service.propose_workspace_creation(f"Workspace {index + 1}")
+    application = StewardActionProposalApplication(repository, service)
+
+    first_page = application.handle_command(make_event(text="/action_proposals"))
+    second_page = application.handle_command(make_event(text="/action_proposals 2"))
+
+    assert isinstance(first_page, PresentedReply)
+    assert first_page.text.startswith("Page 1 of 2\nChoose an action")
+    assert "Workspace 9" not in first_page.text
+    assert any(action.label == "Next" and action.command == "/action_proposals 2" for action in first_page.actions)
+    assert isinstance(second_page, PresentedReply)
+    assert "Page 2 of 2" in second_page.text and "Workspace 9" in second_page.text
+    assert [action.command for action in second_page.actions] == ["/review action 9", "/action_proposals 1"]
+    assert application.handle_command(make_event(text="/action_proposals zero")) == "Use /action_proposals with an optional positive page number."
+
+
 def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

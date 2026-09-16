@@ -394,3 +394,12 @@ production authorization merely to complete them.
 - Focused application coverage passes for nine records, page bounds, and the
   second-page record action. The optional harmless Telegram exercise is in the
   manual checklist.
+
+## Post-session automated delivery: paginated pending-action browsing
+
+- `/action_proposals [page]` now retains every pending review behind compact
+  Next/Previous pages. Review buttons keep the exact proposal ID rather than
+  treating a page-local ordinal as an authorization target.
+- Focused application coverage passes for nine pending reviews, page bounds,
+  and a second-page review action. The optional Telegram exercise is in the
+  manual checklist.

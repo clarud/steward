@@ -4669,12 +4669,17 @@ class StewardActionProposalApplication:
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
-        if text == "/action_proposals":
+        if text == "/action_proposals" or text.startswith("/action_proposals "):
+            _, _, page_text = text.partition(" ")
+            if page_text.strip() and (not page_text.strip().isdigit() or int(page_text.strip()) < 1):
+                return "Use /action_proposals with an optional positive page number."
             pending = [proposal for proposal in self._repository.list_all() if proposal.status == "pending"]
             if not pending:
                 return "There are no pending action proposals."
-            visible = pending[:8]
-            lines = ["Choose an action to see its effect before deciding."]
+            pages = max(1, (len(pending) + 7) // 8)
+            page = min(max(int(page_text.strip()) if page_text.strip() else 1, 1), pages)
+            visible = pending[(page - 1) * 8:page * 8]
+            lines = [f"Page {page} of {pages}", "Choose an action to see its effect before deciding."]
             actions: list[ReplyAction] = []
             for index, proposal in enumerate(visible, start=1):
                 title, _ = StewardReviewInboxApplication._action_summary(
@@ -4682,6 +4687,10 @@ class StewardActionProposalApplication:
                 )
                 lines.append(f"{index}. {title}")
                 actions.append(ReplyAction(f"Review {index}", f"/review action {proposal.id}"))
+            if page > 1:
+                actions.append(ReplyAction("Previous", f"/action_proposals {page - 1}"))
+            if page < pages:
+                actions.append(ReplyAction("Next", f"/action_proposals {page + 1}"))
             return PresentedReply(
                 "\n".join(lines), tuple(actions), title="Pending actions", icon="⏳"
             )

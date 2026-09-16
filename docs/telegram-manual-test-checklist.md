@@ -170,6 +170,10 @@ until a separate filesystem backup exists.
   card instead of using its button. Verify only that exact card is accepted
   (or rejected); a stale card or a card from another chat must not authorize a
   change.
+- With nine or more harmless pending action reviews, send `/action_proposals`.
+  Verify **Next** and **Previous** keep each page to eight reviews and that an
+  **Review** button on page two opens the exact pending action, not its visible
+  ordinal from page one.
 - Keep review card A, then open review card B. Reply `what is this?` to A and
   verify A is redrawn. Reply `yes` or `no` to A only when its proposed effect is
   safe to test; Steward must decide A rather than B, including after restart.

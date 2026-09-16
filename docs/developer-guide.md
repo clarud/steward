@@ -641,10 +641,14 @@ makes a proposal durable, so reviewing it is resumable without restoring model
 state. The Telegram application handles these exact commands:
 
 ```text
-/action_proposals
+/action_proposals [page]
 /approve_action ID
 /reject_action ID
 ```
+
+Like other Telegram browse cards, pending action reviews paginate after eight
+items. Each compact **Review** button carries the exact proposal ID, so a
+page-local row number is never treated as an approval target.
 
 `StewardActionProposalApplication` validates the numeric ID and routes only
 recognized proposal types to their deterministic reviewer. Workspace acceptance
