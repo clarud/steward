@@ -667,7 +667,9 @@ Implement:
 
 - `SourceRoot` persistence, local root authorization, exclusions, scan status,
   root health, and root/workspace distinction;
-- Telegram-visible root status and a local handoff for root selection;
+- Telegram-visible, paginated root status and a local handoff for root
+  selection; root cards expose health only, never filesystem paths or remote
+  root-management actions;
 - file watching/debouncing where justified, with hashes authoritative;
 - Windows start-at-login/service guidance, health reporting, log rotation,
   backup/restore, and SQLite snapshot procedures;

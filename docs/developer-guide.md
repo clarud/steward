@@ -544,7 +544,7 @@ The Telegram router intentionally distinguishes read-only inspection from
 explicit operations:
 
 - `/search`, `/source`, `/sources`, `/inbox`, `/workspaces`, `/activity`,
-  `/records`, `/tasks`, `/roots`, and Calendar reads inspect current local or
+  `/records`, `/tasks`, `/roots [page]`, and Calendar reads inspect current local or
   authoritative external state.
 - `/activity` is progressively disclosed: each recent redacted audit row has
   an **Open** action for one immutable audit-event card. The card includes the
@@ -588,6 +588,10 @@ explicit operations:
 - `/research` is explicitly external and ephemeral. Keeping its result writes
   a provenance-labeled Inbox note; it does not archive or silently promote web
   information to canonical personal knowledge.
+- `/roots [page]` uses compact, numbered pages when more than eight locally
+  authorized roots exist. It shows only each root's opaque ID, name, and
+  health; opening a card or moving between pages neither reveals a path nor
+  grants Telegram any filesystem authority.
 - Drive/Gmail search returns metadata cards, followed by an explicit
   single-item import. OAuth setup, source-root authorization, file watching,
   and secrets remain local-only operations.

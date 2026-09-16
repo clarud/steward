@@ -146,6 +146,10 @@ until a separate filesystem backup exists.
 - Send `/roots`, open a root card, and verify it reports only health and
   exclusion count. A missing/disabled root must direct you to local recovery;
   Telegram must never show its path or offer a scan/enable action.
+- With nine or more harmless locally authorized roots, send `/roots`. Verify
+  **Next** and **Previous** expose compact pages of at most eight roots, and
+  that an **Open** button still selects the displayed root's opaque ID. Neither
+  page exposes a filesystem path or root-management control.
 - After opening another card or restarting Telegram, reply to that older root
   card with `show that root`. It must reopen the same health-only root card;
   it must not expose a path or gain a root-management action.

@@ -3054,14 +3054,26 @@ class StewardRootsApplication:
             return self._root_detail(root)
         if command != "/roots":
             return None
+        if argument.strip() and (not argument.strip().isdigit() or int(argument.strip()) < 1):
+            return "Use /roots with an optional positive page number."
         roots = self._roots.list_all()
         if not roots:
             return "No locally authorized source roots. Add one from the local CLI or setup UI."
-        visible = roots[:8]
+        pages = max(1, (len(roots) + 7) // 8)
+        page = min(max(int(argument.strip()) if argument.strip() else 1, 1), pages)
+        visible = roots[(page - 1) * 8:page * 8]
+        actions = [ReplyAction(f"Open {index}", f"/root {root.id}") for index, root in enumerate(visible, start=1)]
+        if page > 1:
+            actions.append(ReplyAction("Previous", f"/roots {page - 1}"))
+        if page < pages:
+            actions.append(ReplyAction("Next", f"/roots {page + 1}"))
+        actions.append(ReplyAction("Home", "/home"))
         return PresentedReply(
-            "\n".join(f"{root.id}: {root.name} ({root.health})" for root in visible),
-            tuple(ReplyAction(f"Open {index}", f"/root {root.id}") for index, root in enumerate(visible, start=1))
-            + (ReplyAction("Home", "/home"),),
+            "\n".join(
+                [f"Page {page} of {pages}"]
+                + [f"{root.id}: {root.name} ({root.health})" for root in visible]
+            ),
+            tuple(actions),
             title="Authorized source roots",
             icon="🗂️",
         )

@@ -1639,7 +1639,7 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
 
     assert isinstance(response, PresentedReply)
     assert response.title == "Authorized source roots"
-    assert response.text == "1: School (available)"
+    assert response.text == "Page 1 of 1\n1: School (available)"
     assert response.actions[0].command == "/root 1"
     detail = application.handle(make_event(text="/root 1"))
     assert isinstance(detail, PresentedReply)
@@ -1653,7 +1653,7 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     roots.set_enabled("School", False)
     disabled = application.handle(make_event(text="/roots"))
     assert isinstance(disabled, PresentedReply)
-    assert disabled.text == "1: School (disabled)"
+    assert disabled.text == "Page 1 of 1\n1: School (disabled)"
 
     roots.set_enabled("School", True)
     root_path.rmdir()
@@ -1661,6 +1661,33 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     assert isinstance(missing, PresentedReply)
     assert "School (missing)" in missing.text
     assert str(root_path) not in missing.text
+
+
+def test_roots_command_paginates_many_authorized_roots_without_paths(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    roots = SourceRootRepository(database_path)
+    for index in range(9):
+        root_path = tmp_path / f"notes-{index}"; root_path.mkdir()
+        roots.add(f"Vault {index + 1}", root_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        roots_application=StewardRootsApplication(roots),
+    )
+
+    first_page = application.handle(make_event(text="/roots"))
+    second_page = application.handle(make_event(text="/roots 2"))
+
+    assert isinstance(first_page, PresentedReply)
+    assert first_page.text.startswith("Page 1 of 2\n1: Vault 1 (available)")
+    assert "Vault 9" not in first_page.text
+    assert [action.label for action in first_page.actions] == [
+        "Open 1", "Open 2", "Open 3", "Open 4", "Open 5", "Open 6", "Open 7", "Open 8", "Next", "Home",
+    ]
+    assert isinstance(second_page, PresentedReply)
+    assert second_page.text == "Page 2 of 2\n9: Vault 9 (available)"
+    assert [action.command for action in second_page.actions] == ["/root 9", "/roots 1", "/home"]
+    assert str(tmp_path) not in first_page.text + second_page.text
+    assert application.handle(make_event(text="/roots zero")) == "Use /roots with an optional positive page number."
 
 
 def test_privacy_commands_change_only_one_known_source_policy(tmp_path: Path) -> None:

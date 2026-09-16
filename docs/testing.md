@@ -347,3 +347,13 @@ provider outage, revoked non-sensitive integration token, or separate backup
 environment: SoCLaaS, Ollama, Gemini, Calendar, Drive, and Gmail outage paths;
 backup/restore; and start-at-login registration. Do not revoke a healthy
 production authorization merely to complete them.
+
+## Post-session automated delivery: paginated multi-vault root browsing
+
+- Telegram `/roots [page]` now exposes at most eight health-only root cards per
+  page, with compact **Next**/**Previous** navigation. Root IDs remain opaque
+  selection handles; no page or button reveals a local path or enables remote
+  scans, relocation, authorization, or other filesystem mutation.
+- Focused application coverage exercises nine authorized roots, page bounds,
+  compact action labels, and path redaction. The optional live multi-root
+  exercise is in `telegram-manual-test-checklist.md`.
