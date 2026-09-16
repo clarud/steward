@@ -420,3 +420,5 @@ production authorization merely to complete them.
   A filename-like search such as `COURSE_DETAILS.md` can therefore return a
   normal read-only result instead of failing an agent tool loop.
 - Focused repository and read-only-tool coverage passed for that recovery path.
+- The complete automated suite subsequently reached 100% with no stderr after
+  this change.
