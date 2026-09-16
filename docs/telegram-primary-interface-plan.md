@@ -1272,8 +1272,13 @@ association. A Calendar read failure or a conflicting link leaves the proposal
 pending and fails closed. Task and event cards expose the resulting relationship
 in both directions; completing the task still leaves Calendar untouched.
 
-Automated application coverage verifies the proposal/approval path, reverse
-navigation, local-only behavior, Calendar-outage refusal, picker pagination,
+An existing-event association can be removed through its Task card only as a
+separate reviewed local unlink. Approval verifies the exact stored opaque event
+ID, records Activity, and changes neither the event nor any deadline marker.
+The proposal fails closed if a newer association has replaced the selected one.
+
+Automated application coverage verifies the proposal/approval and unlink paths,
+reverse navigation, local-only behavior, Calendar-outage refusal, picker pagination,
 and cross-chat approval refusal. Each association proposal is owned by the
 Telegram chat that created it; another chat cannot accept or reject it. Live
 Telegram acceptance remains required for restart while pending and actual

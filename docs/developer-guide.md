@@ -674,6 +674,13 @@ existing-event relationship proposed in one chat from being authorized in
 another. Calendar read failures, deleted tasks, and conflicting existing links
 leave the proposal pending rather than silently reassigning anything.
 
+An existing-event association can also be removed from its Task card. **Remove
+link** creates a separate chat-bound review; approval validates the exact
+stored event ID before deleting only the local association and appending an
+audit event. It never reads, creates, edits, or deletes a Google Calendar event.
+This gives an incorrect link a reversible lifecycle without claiming ownership
+of the external event.
+
 ### Retained external research
 
 `ResearchService` is provider-independent through its `ResearchProvider`

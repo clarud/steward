@@ -2091,6 +2091,22 @@ def test_telegram_can_review_and_save_a_local_existing_task_calendar_association
     assert isinstance(task_card, PresentedReply)
     assert "Calendar: linked existing event" in task_card.text
     assert any(action.command == "/calendar_get existing-event" for action in task_card.actions)
+    calls_before_unlink = list(calls)
+    unlink = application.handle(make_event(text=f"/propose_unlink_task_calendar {task.id}"))
+    assert isinstance(unlink, PresentedReply)
+    assert unlink.title == "Review Calendar unlink"
+    assert unlink.reference == ("action", 2)
+    assert links.associated_event_id_for_task(task.id or 0) == "existing-event"
+    assert "Google Calendar will not be changed" in unlink.text
+
+    cross_chat_unlink = application.handle(replace(make_event(text="/approve_action 2"), chat_id="200"))
+    assert cross_chat_unlink == "This task-to-Calendar review belongs to a different Telegram chat."
+    removed = application.handle(make_event(text="/approve_action 2"))
+    assert isinstance(removed, PresentedReply)
+    assert removed.title == "Task unlinked from Calendar"
+    assert links.associated_event_id_for_task(task.id or 0) is None
+    assert ActivityType.TASK_CALENDAR_UNLINKED in [item.event_type for item in activity.list_recent()]
+    assert calls == calls_before_unlink
 
 
 def test_existing_task_calendar_association_fails_closed_when_calendar_cannot_refetch(tmp_path: Path) -> None:

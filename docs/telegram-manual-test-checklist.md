@@ -450,6 +450,12 @@ until a separate filesystem backup exists.
   must leave both objects separate. Restart while the first review is pending;
   it must remain reviewable. A Calendar outage during approval must leave the
   proposal pending and create no local association or Calendar write.
+- From that linked Task card choose **Remove link**. Confirm the review names
+  the exact task/event relationship and says Google Calendar will not change.
+  Reject once to keep the relationship, then approve a new review and verify
+  **View calendar** no longer appears for that existing-event association while
+  the Google Calendar event itself remains untouched. Restart while an unlink
+  review is pending and ensure `yes` still targets that exact review only.
 - Open an unlinked task with a precise deadline and verify **Add to calendar**
   creates a review rather than an event. A task with only a vague due cue, a task
   without a deadline, and a completed unlinked task must not be silently scheduled.

@@ -364,3 +364,9 @@ def test_explicit_existing_event_associations_are_local_one_to_one(tmp_path) -> 
         links.associate_existing_event(second.id or 0, "existing-event")
     with pytest.raises(ValueError, match="already has"):
         links.associate_existing_event(first.id or 0, "another-event")
+    with pytest.raises(ValueError, match="different Calendar event"):
+        links.remove_existing_event_association(first.id or 0, "another-event")
+    assert links.remove_existing_event_association(first.id or 0, "existing-event") is True
+    assert links.remove_existing_event_association(first.id or 0, "existing-event") is False
+    assert links.associated_event_id_for_task(first.id or 0) is None
+    assert links.associated_task_id_for_event("existing-event") is None

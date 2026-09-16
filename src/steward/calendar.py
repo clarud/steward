@@ -234,6 +234,30 @@ class CalendarLinkRepository:
             )
         return True
 
+    def remove_existing_event_association(self, task_id: int, event_id: str) -> bool:
+        """Remove one local relationship without changing the Calendar event.
+
+        The event ID makes a stale proposal fail closed if the task was linked
+        to a different event after this review was created.
+        """
+
+        if task_id <= 0 or not event_id.strip():
+            raise ValueError("Removing an association requires a positive task ID and Calendar event ID.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT external_event_id FROM task_calendar_associations WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            if str(row[0]) != event_id:
+                raise ValueError("The task is now associated with a different Calendar event.")
+            connection.execute(
+                "DELETE FROM task_calendar_associations WHERE task_id = ? AND external_event_id = ?",
+                (task_id, event_id),
+            )
+        return True
+
     def link_travel_event(self, key: str, record_id: int, event_id: str) -> bool:
         return self._link("calendar_event_links", "travel_record_id", key, record_id, event_id)
 

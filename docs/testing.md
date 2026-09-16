@@ -366,3 +366,14 @@ production authorization merely to complete them.
   revision can be created.
 - Focused application coverage asserts the exact reference. The corresponding
   harmless Telegram restart exercise is in `telegram-manual-test-checklist.md`.
+
+## Post-session automated delivery: reviewed task–Calendar unlink
+
+- An incorrect association between an existing Calendar event and a Steward
+  task can now be removed through a separate review. Approval verifies the
+  exact local relationship, removes only that SQLite row, and records Activity;
+  Google Calendar is neither read nor changed.
+- Repository and application coverage verify one-to-one safety, stale-event
+  refusal, cross-chat refusal, action-card context, audit recording, and zero
+  additional Calendar calls during unlink. The live task-card exercise is in
+  `telegram-manual-test-checklist.md`.

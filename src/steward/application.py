@@ -567,6 +567,12 @@ class StewardReviewInboxApplication:
                 f"Calendar event: {payload.get('event_summary', payload.get('event_id', 'unknown'))}\n\n"
                 "Approval creates only a local 1:1 Steward relationship. Google Calendar will not be changed."
             )
+        if action_type == StewardTaskApplication.UNLINK_CALENDAR:
+            return "Remove task Calendar link", (
+                f"Task: {payload.get('task_title', payload.get('task_id', 'unknown'))}\n"
+                f"Calendar event: {payload.get('event_summary', payload.get('event_id', 'unknown'))}\n\n"
+                "Approval removes only Steward's local relationship. Google Calendar will not be changed."
+            )
         if action_type.startswith("create_") and "record" in action_type:
             return "Save extracted record", "A record will be created from the reviewed source evidence."
         if action_type.startswith("correct_"):
@@ -1850,6 +1856,7 @@ class StewardTaskApplication:
     """Turn explicit Telegram commitments into reviewable task proposals."""
 
     CREATE_TASK = "create_task"
+    UNLINK_CALENDAR = "unlink_task_calendar"
 
     def __init__(
         self,
@@ -1895,6 +1902,10 @@ class StewardTaskApplication:
                 return str(error)
             self._activity.record(ActivityType.TASK_COMPLETED, object_id=str(task.id), details=task.title)
             return f"Task {task.id} completed: {task.title}."
+        if command == "/propose_unlink_task_calendar":
+            if not separator or not argument.strip().isdigit():
+                return "Open a task with a linked existing Calendar event, then choose Remove link."
+            return self.propose_unlink_calendar(int(argument.strip()), chat_id=event.chat_id)
         if command != "/propose_task":
             return None
         if not separator:
@@ -1911,6 +1922,7 @@ class StewardTaskApplication:
             "show that task", "open that task", "show the last task", "open the last task",
             "mark that task complete", "mark this task complete", "complete that task",
             "complete this task", "i completed that task", "i completed this task",
+            "remove that calendar link", "unlink that calendar event", "unlink that event",
         }:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
@@ -1937,6 +1949,8 @@ class StewardTaskApplication:
                 (ReplyAction("Completed tasks", "/completed_tasks"), ReplyAction("Open task", f"/task {completed.id}")),
                 title="Task completed",
             )
+        if normalized in {"remove that calendar link", "unlink that calendar event", "unlink that event"}:
+            return self.propose_unlink_calendar(context.identifier, chat_id=event.chat_id)
         return self._task_detail(context.identifier)
 
     def _list_tasks(self, page: int = 1, *, completed: bool = False) -> str | PresentedReply:
@@ -2006,6 +2020,7 @@ class StewardTaskApplication:
         if associated_event_id is not None:
             lines.append("Calendar: linked existing event")
             actions.insert(0, ReplyAction("View calendar", f"/calendar_get {associated_event_id}"))
+            actions.insert(0, ReplyAction("Remove link", f"/propose_unlink_task_calendar {task_id}"))
         if calendar_event_id is not None:
             lines.append("Calendar: linked deadline marker")
             actions.insert(0, ReplyAction("View calendar", f"/calendar_get {calendar_event_id}"))
@@ -2015,6 +2030,36 @@ class StewardTaskApplication:
         return PresentedReply(
             "\n".join(lines), tuple(actions), title=f"Task {task_id}", icon="✅",
             reference=("task", task_id),
+        )
+
+    def propose_unlink_calendar(self, task_id: int, *, chat_id: str) -> str | PresentedReply:
+        """Stage removal of one existing-event association; never edit Calendar."""
+
+        if self._calendar_links is None:
+            return "Existing task-to-Calendar associations are not configured on this Steward process."
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        event_id = self._calendar_links.associated_event_id_for_task(task_id)
+        if event_id is None:
+            return "This task has no linked existing Calendar event to remove. Deadline markers are separate Calendar proposals."
+        payload = {
+            "task_id": str(task_id), "task_title": task.title,
+            "event_id": event_id, "chat_id": chat_id,
+        }
+        pending = self._proposals.find_pending(self.UNLINK_CALENDAR, payload)
+        if pending is None:
+            pending = self._proposals.add(self.UNLINK_CALENDAR, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED, object_id=str(pending.id),
+                details=f"Remove local Calendar association for task:{task_id}",
+            )
+        _, description = StewardReviewInboxApplication._action_summary(pending.action_type, pending.payload)
+        return PresentedReply(
+            description,
+            (ReplyAction("Remove link", f"/approve_action {pending.id}"), ReplyAction("Keep link", f"/reject_action {pending.id}")),
+            title="Review Calendar unlink", icon="📅",
+            reference=("action", pending.id) if pending.id is not None else None,
         )
 
     def propose(self, text: str, *, chat_id: str | None = None) -> str | PresentedReply:
@@ -4684,6 +4729,8 @@ class StewardActionProposalApplication:
             return self._review_workspace_link(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
             return self._review_task_calendar_association(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.UNLINK_CALENDAR:
+            return self._review_task_calendar_unlink(proposal_id, decision, event)
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
@@ -4791,6 +4838,52 @@ class StewardActionProposalApplication:
             f"{result}\n\nGoogle Calendar was not changed.",
             (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
             title="Task linked to Calendar", icon="📅",
+        )
+
+    def _review_task_calendar_unlink(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Apply an approved local unlink without mutating Google Calendar."""
+
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardTaskApplication.UNLINK_CALENDAR:
+            return "Task-to-Calendar unlink proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task-to-Calendar review belongs to a different Telegram chat."
+        if proposal.status == decision:
+            return f"Task-to-Calendar unlink proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task-to-Calendar unlink proposal {proposal.id} was already {proposal.status}."
+        task_id = int(proposal.payload["task_id"])
+        event_id = proposal.payload["event_id"]
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The local task-to-Calendar relationship remains. Google Calendar was not changed.",
+                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+                title="Calendar link kept", icon="↩️",
+            )
+        if self._calendar_links is None:
+            return "Existing task-to-Calendar associations are not configured on this Steward process."
+        try:
+            removed = self._calendar_links.remove_existing_event_association(task_id, event_id)
+        except ValueError as error:
+            return f"This Calendar link can no longer be removed: {error} The proposal remains pending."
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            if removed:
+                self._activity.record(
+                    ActivityType.TASK_CALENDAR_UNLINKED, object_id=str(task_id),
+                    details=f"Existing Calendar event {event_id}",
+                )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        result = "The local task-to-Calendar relationship was removed." if removed else "The local relationship was already absent."
+        return PresentedReply(
+            f"{result}\n\nGoogle Calendar was not changed.",
+            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+            title="Task unlinked from Calendar", icon="📅",
         )
 
     def _review_task(self, proposal_id: int, decision: str) -> str | PresentedReply:
