@@ -1812,9 +1812,11 @@ remain future work.
   fragment, especially for short or ambiguous queries.
 - FTS5 is token-based. It does not automatically stem every grammatical form,
   so `cache` may not match `caches` with the current tokenizer configuration.
-- Hybrid search falls back to semantic retrieval if a natural-language query
-  contains punctuation that FTS5 rejects. This prevents a parser error, though
-  it means no lexical candidates contribute to that particular ranking.
+- Lexical search first preserves a valid FTS5 query as written. If SQLite
+  rejects punctuation-heavy ordinary input (for example a filename such as
+  `COURSE_DETAILS.md`), it retries it as one escaped literal phrase. This
+  avoids turning a read-only request into a parser error, but advanced FTS5
+  operators still require valid FTS5 syntax to retain their special meaning.
 - Citation verification proves only that each inline key refers to a fragment
   supplied in the current request. It cannot prove that every factual sentence
   is supported by the cited fragment; semantic entailment remains future work.
@@ -1876,11 +1878,9 @@ remain future work.
    Recall@K and MRR for lexical, semantic, and hybrid search.
 2. Experiment manually with heading, paragraph, fixed-size, and overlapping
    chunk strategies before changing the default extractor.
-3. Improve FTS5 query construction so ordinary punctuation and natural
-   language cannot accidentally become invalid FTS syntax.
-4. Add snippets with query-term highlighting and include explicit scores in a
+3. Add snippets with query-term highlighting and include explicit scores in a
    diagnostic search mode.
-5. Add metadata filters such as source type, path prefix, workspace, or date
+4. Add metadata filters such as source type, path prefix, workspace, or date
    once those domains exist.
 
 ### Scale and storage

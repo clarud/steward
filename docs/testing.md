@@ -412,3 +412,11 @@ production authorization merely to complete them.
 - Focused application coverage passes for a nine-source bundle, page-two
   retention commands, and exactly one provider request. The live harmless
   exercise is in the manual checklist.
+
+## Post-session automated delivery: resilient lexical filename search
+
+- FTS5 now keeps valid advanced queries intact, but retries punctuation-heavy
+  ordinary input as an escaped literal phrase when SQLite rejects its syntax.
+  A filename-like search such as `COURSE_DETAILS.md` can therefore return a
+  normal read-only result instead of failing an agent tool loop.
+- Focused repository and read-only-tool coverage passed for that recovery path.

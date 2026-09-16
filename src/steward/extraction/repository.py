@@ -147,13 +147,13 @@ class SourceFragmentRepository:
         )
         normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
         path_filter = " AND s.path LIKE ?" if normalized_prefix is not None else ""
-        parameters = (
-            query, SourceStatus.ACTIVE.value, *selected_source_types,
-            *( (normalized_prefix + "%",) if normalized_prefix is not None else () ), limit,
-        )
-        try:
+        def fetch(match_query: str) -> list[tuple[object, ...]]:
+            parameters = (
+                match_query, SourceStatus.ACTIVE.value, *selected_source_types,
+                *((normalized_prefix + "%",) if normalized_prefix is not None else ()), limit,
+            )
             with sqlite3.connect(self._database_path) as connection:
-                rows = connection.execute(
+                return connection.execute(
                     f"""
                     SELECT sf.id, sf.source_id, sf.heading, sf.ordinal, sf.text,
                            sf.location, bm25(source_fragments_fts) AS score,
@@ -171,8 +171,18 @@ class SourceFragmentRepository:
                     """,
                     parameters,
                 ).fetchall()
-        except sqlite3.OperationalError as error:
-            raise InvalidSearchQueryError(f"Invalid FTS5 search query: {query!r}") from error
+
+        try:
+            rows = fetch(query)
+        except sqlite3.OperationalError:
+            # Preserve valid FTS operators, but let ordinary filename-like or
+            # punctuation-heavy requests fall back to one literal FTS phrase.
+            # Escaping quotes keeps user input data, never FTS syntax.
+            literal_query = '"' + query.replace('"', '""') + '"'
+            try:
+                rows = fetch(literal_query)
+            except sqlite3.OperationalError as error:
+                raise InvalidSearchQueryError(f"Invalid FTS5 search query: {query!r}") from error
 
         return tuple(
             FragmentSearchResult(

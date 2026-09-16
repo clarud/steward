@@ -100,3 +100,17 @@ def test_fragment_repository_searches_persisted_fragment_text(tmp_path: Path) ->
 
     assert len(matches) == 1
     assert matches[0].fragment.heading == "TLB"
+
+
+def test_fragment_repository_recovers_from_punctuation_heavy_fts_query(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    source_path = tmp_path / "COURSE_DETAILS.md"
+    source_path.write_text("# Course details\nCS3210 schedule.", encoding="utf-8")
+    source = register_source(database_path, source_path)
+    repository = SourceFragmentRepository(database_path)
+    repository.replace_for_source(MarkdownExtractor().extract(source))
+
+    matches = repository.search("course (details")
+
+    assert [match.fragment.source_id for match in matches] == [source.id]
