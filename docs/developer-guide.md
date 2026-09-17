@@ -1339,6 +1339,13 @@ metadata. Google Calendar is the first real integration; web research remains
 an explicitly ephemeral provider. This keeps future Gmail, GitHub, or task
 system additions narrow rather than offering the model a generic HTTP tool.
 
+Telegram-originated Calendar-event reviews record their originating chat ID.
+Only that chat may approve the external write; another authorized chat fails
+closed before a Calendar writer is constructed. Legacy reviews without that
+binding cannot be accepted in Telegram, but may be rejected to clear the
+pending item before a fresh chat-bound review is created. Local CLI proposals
+remain locally reviewed operations and do not acquire a Telegram identity.
+
 ## Per-source privacy policy
 
 Phase 30 stores a `PrivacyRule` for individual sources: `external_allowed`,

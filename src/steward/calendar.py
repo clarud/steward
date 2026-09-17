@@ -442,10 +442,14 @@ class CalendarEventProposalService:
         self._activity = activity
         self._tasks = tasks
 
-    def propose_travel_event(self, record_id: int) -> ActionProposal:
+    def propose_travel_event(self, record_id: int, *, chat_id: str | None = None) -> ActionProposal:
         record = self._record(record_id)
         self._validate_record(record)
         payload = {"record_id": str(record_id), "snapshot": self._snapshot(record)}
+        if chat_id is not None:
+            if not chat_id.strip():
+                raise ValueError("A Telegram Calendar proposal requires an originating chat.")
+            payload["chat_id"] = chat_id
         existing = self._proposals.find_pending(self.CREATE_TRAVEL_EVENT, payload)
         if existing is not None:
             return existing
@@ -457,10 +461,14 @@ class CalendarEventProposalService:
         )
         return proposal
 
-    def propose_task_event(self, task_id: int) -> ActionProposal:
+    def propose_task_event(self, task_id: int, *, chat_id: str | None = None) -> ActionProposal:
         task = self._task(task_id)
         self._validate_task(task)
         payload = {"task_id": str(task_id), "snapshot": self._snapshot(task)}
+        if chat_id is not None:
+            if not chat_id.strip():
+                raise ValueError("A Telegram Calendar proposal requires an originating chat.")
+            payload["chat_id"] = chat_id
         existing = self._proposals.find_pending(self.CREATE_TASK_EVENT, payload)
         if existing is not None:
             return existing

@@ -5080,9 +5080,13 @@ class StewardActionProposalApplication:
                 return "Calendar proposals are not configured on this Steward process."
             try:
                 proposal = (
-                    self._calendar_proposals.propose_travel_event(int(argument.strip()))
+                    self._calendar_proposals.propose_travel_event(
+                        int(argument.strip()), chat_id=event.chat_id
+                    )
                     if command == "/calendar_travel"
-                    else self._calendar_proposals.propose_task_event(int(argument.strip()))
+                    else self._calendar_proposals.propose_task_event(
+                        int(argument.strip()), chat_id=event.chat_id
+                    )
                 )
             except ValueError as error:
                 return str(error)
@@ -5156,6 +5160,22 @@ class StewardActionProposalApplication:
         }:
             if self._calendar_proposals is None:
                 return "Calendar proposal review is not configured on this Steward process."
+            proposal_chat = proposal.payload.get("chat_id")
+            if not isinstance(proposal_chat, str) or not proposal_chat:
+                if decision == "rejected":
+                    try:
+                        self._calendar_proposals.review(proposal_id, decision)
+                    except ValueError as error:
+                        return str(error)
+                    return PresentedReply(
+                        "Legacy Calendar review declined. Create a fresh review from the task or travel record.",
+                        (ReplyAction("Home", "/home"),),
+                        title="Calendar event declined",
+                        icon="â†©ï¸",
+                    )
+                return "This older Calendar review is missing its chat binding. Reject it, then create a fresh review from the task or travel record."
+            if proposal_chat != event.chat_id:
+                return "This Calendar review belongs to another authorized Telegram chat. No Calendar event was created."
             try:
                 writer = self._calendar_writer_factory() if decision == "accepted" and self._calendar_writer_factory else None
                 reviewed = self._calendar_proposals.review(proposal_id, decision, writer)

@@ -487,3 +487,13 @@ production authorization merely to complete them.
 - Automated application coverage verifies cross-chat refusal, no pre-approval
   policy change, owner approval, and legacy-review recovery.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: chat-bound Calendar event reviews
+
+- Telegram-created travel and task Calendar proposals now store their
+  originating chat. Another authorized chat cannot approve the external write;
+  a legacy unbound proposal fails closed for approval and can be rejected for a
+  fresh review.
+- Automated application coverage verifies cross-chat refusal before the writer
+  is called, owner approval, and legacy-review recovery.
+- The complete automated suite subsequently reached 100% with no stderr.

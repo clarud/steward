@@ -4673,7 +4673,7 @@ def test_telegram_calendar_proposal_never_falls_through_to_workspace_review(tmp_
     calendar_proposals = CalendarEventProposalService(
         repository, RecordService(database_path), ActivityService(database_path)
     )
-    proposal = calendar_proposals.propose_travel_event(record.id or 0)
+    proposal = calendar_proposals.propose_travel_event(record.id or 0, chat_id="100")
     app = StewardActionProposalApplication(
         repository,
         ActionProposalService(repository, WorkspaceRepository(database_path), ActivityService(database_path)),
@@ -4711,6 +4711,54 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     assert "Flight SQ638" in response.text and "Singapore → Tokyo" in response.text
     assert "9 Sep 2026" in response.text
     assert response.actions[0].command == "/approve_action 1"
+
+
+def test_telegram_calendar_review_is_bound_to_the_originating_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "flight.pdf", "f" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    records = RecordService(database)
+    record = records.create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", now, now.replace(hour=17), "ABC")
+    )
+    activity = ActivityService(database)
+    repository = ActionProposalRepository(database)
+    proposals = CalendarEventProposalService(repository, records, activity)
+
+    class Writer:
+        calls = 0
+        def create_travel_event(self, _record):
+            self.calls += 1
+
+    writer = Writer()
+    application = StewardActionProposalApplication(
+        repository, ActionProposalService(repository, WorkspaceRepository(database), activity),
+        proposals, calendar_writer_factory=lambda: writer,  # type: ignore[arg-type]
+    )
+    other = IncomingEvent(
+        id="telegram:43", platform="telegram", chat_id="other", message_id="8", reply_to_id=None,
+        timestamp=now, text="/approve_action 1",
+    )
+
+    proposed = application.handle_command(make_event(text=f"/calendar_travel {record.id}"))
+    refused = application.handle_command(other)
+
+    assert isinstance(proposed, PresentedReply)
+    assert "belongs to another" in refused
+    assert writer.calls == 0
+    assert repository.get(1).status == "pending"
+    accepted = application.handle_command(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Calendar event created"
+    assert writer.calls == 1
+
+    legacy = CalendarEventProposalService(repository, records, activity).propose_travel_event(record.id or 0)
+    assert "missing its chat binding" in application.handle_command(make_event(text=f"/approve_action {legacy.id}"))
+    declined = application.handle_command(make_event(text=f"/reject_action {legacy.id}"))
+    assert isinstance(declined, PresentedReply)
+    assert repository.get(legacy.id or 0).status == "rejected"
 
 
 def test_opened_travel_record_can_naturally_propose_calendar_review(tmp_path: Path) -> None:
@@ -4786,7 +4834,7 @@ def test_telegram_can_approve_a_task_calendar_proposal_with_the_calendar_writer(
             self.received_task_id = received_task.id
 
     writer = Writer()
-    pending = proposals.propose_task_event(task.id or 0)
+    pending = proposals.propose_task_event(task.id or 0, chat_id="100")
     app = StewardActionProposalApplication(
         repository,
         ActionProposalService(repository, WorkspaceRepository(database_path), activity),
