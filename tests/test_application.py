@@ -60,6 +60,7 @@ from steward.reviews import ReviewContextRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 from steward.tasks import TaskReminderService, TaskService
 from steward.research import EphemeralResearchCardRepository, ResearchBundle, ResearchProviderError, ResearchRetentionService, ResearchSource
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.errors import GraphRecursionError
@@ -526,6 +527,32 @@ def test_tool_agent_uses_an_explicit_telegram_reply_as_bounded_context() -> None
     )
 
     assert response == "Explained."
+
+
+def test_tool_agent_labels_generated_and_tool_backed_answers() -> None:
+    class GeneratedGraph:
+        def invoke(self, _input, _config):
+            return {"messages": [HumanMessage("what is a TLB?"), AIMessage("A TLB is a translation cache.")]}
+
+    class LocalToolGraph:
+        def invoke(self, _input, _config):
+            return {
+                "messages": [
+                    HumanMessage("what do I know about TLBs?"),
+                    ToolMessage("[]", tool_call_id="call-1", name="search_sources"),
+                    AIMessage("I found your virtual-memory notes."),
+                ]
+            }
+
+    generated = StewardToolAgentApplication(GeneratedGraph()).handle_request(make_event(text="what is a TLB?"))
+    sourced = StewardToolAgentApplication(LocalToolGraph()).handle_request(make_event(text="what do I know about TLBs?"))
+
+    assert isinstance(generated, PresentedReply)
+    assert generated.title == "Generated answer"
+    assert "did not search your saved material" in generated.text
+    assert isinstance(sourced, PresentedReply)
+    assert sourced.title == "Answer using saved material"
+    assert "searched your local saved material" in sourced.text
 
 
 def test_pending_review_pages_reach_older_items_and_recover_after_decisions(tmp_path: Path) -> None:

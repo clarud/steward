@@ -1179,6 +1179,15 @@ diagnostics, filesystem paths, tokens, and upstream payloads never reach
 Telegram. This boundary still cannot turn a failed read into a write because
 the graph exposes no direct mutation tool.
 
+Telegram renders the final agent response with an origin label based only on
+`ToolMessage`s produced after the current `HumanMessage`. A no-tool response is
+labelled **Generated answer** and says that saved material was not searched for
+that reply. Local source/knowledge/record/workspace/activity calls are labelled
+**Answer using saved material**; Calendar-only calls are labelled **Answer using
+Calendar**; a mixed tool sequence is labelled **Answer using Steward tools**.
+The label is a transparency statement about the current turn's evidence path,
+not a claim that a generated answer is verified or permanently retained.
+
 `OllamaToolCallingModel` provides the same narrow graph-facing interface for a
 local model. It sends the conversation and the allowlisted JSON tool schemas to
 Ollama's `/api/chat` endpoint. Ollama returns requested function names and

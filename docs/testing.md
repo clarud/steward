@@ -549,3 +549,12 @@ with no stderr.
 - Focused end-to-end intake/organization coverage verifies the source is moved,
   linked once, and audited as both a move and a new workspace relationship.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: transparent agent answer origins
+
+- Production LangChain agent responses now identify whether the current turn
+  was generated without a Steward lookup, used saved material, used Calendar,
+  or used mixed read-only tools. The classification ignores tool messages from
+  earlier conversation turns.
+- Focused application coverage verifies generated and saved-material cards.
+  The complete automated suite subsequently reached 100% with no stderr.
