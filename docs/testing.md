@@ -558,3 +558,31 @@ with no stderr.
   earlier conversation turns.
 - Focused application coverage verifies generated and saved-material cards.
   The complete automated suite subsequently reached 100% with no stderr.
+
+## Acceptance wrap-up — 17 September 2026
+
+The current guided validation batch is complete and passed.
+
+- **Root recovery:** a renamed local root was relocated by its registered root
+  name, then scanned with `new=0`, `updated=0`, `unchanged=19`, and `missing=0`.
+  Strict health subsequently reported the root available. This preserved the
+  existing tracked source identities rather than creating duplicates.
+- **Drive:** metadata search pagination, explicit import, duplicate-import
+  recovery, source reading, and generated summary were exercised successfully.
+- **Gmail:** search and explicit import were exercised successfully.
+- **Calendar:** an expired/revoked OAuth token was diagnosed, reauthorized, and
+  then Calendar search, event cards, reply-context lookups, date formatting,
+  location, and detail follow-ups worked in Telegram.
+- **Privacy:** a source privacy-rule update was exercised successfully,
+  including the Telegram-facing review flow.
+- **Telegram:** source/record cards, page navigation, pending reviews,
+  contextual source and Calendar follow-ups, and restart recovery were
+  exercised successfully in the configured test chat.
+- **Automated regression coverage:** the complete pytest suite reached 100%
+  with an empty stderr stream after the latest automated deliveries.
+
+This is an acceptance record, not a claim that the product has no future work.
+Known product improvements remain planned, including clearer source identifiers
+across source-list pages, more compact action labels, richer guided next
+actions, and broader natural-language routing. They are UX/delivery backlog
+items rather than failures found in this validation batch.
