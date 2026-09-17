@@ -562,6 +562,16 @@ with no stderr.
   later approved Inbox source. The complete automated suite subsequently
   reached 100% with no stderr.
 
+## Post-session automated delivery: chat-bound curated-note reviews
+
+- Curated-note drafts now retain their originating Telegram chat in local
+  proposal metadata. Another authorized chat cannot approve a draft or create
+  an Inbox source from it. Older drafts without that metadata fail closed for
+  approval but can be discarded safely.
+- Focused application coverage verifies cross-chat refusal, pending-state
+  preservation, and normal owner approval. The complete automated suite
+  subsequently reached 100% with no stderr.
+
 ## Acceptance wrap-up — 17 September 2026
 
 The current guided validation batch is complete and passed.

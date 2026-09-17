@@ -2728,7 +2728,7 @@ class StewardCuratedNoteApplication:
             origin = "user-supplied note"
         if command == "/propose_note" and (not separator or not note):
             return "Use /propose_note followed by the curated note you want to retain."
-        return self._stage(note, origin)
+        return self._stage(note, origin, event)
 
     def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Use a normal next message only after the user explicitly chose Edit."""
@@ -2739,7 +2739,7 @@ class StewardCuratedNoteApplication:
         if context is None or context.kind != "curated_note_edit":
             return None
         self._contexts.clear(event.platform, event.chat_id)
-        return self._revise(context.identifier, (event.text or "").strip())
+        return self._revise(context.identifier, (event.text or "").strip(), event)
 
     def handle_natural_retention(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Stage one deliberately replied-to message as an editable note draft.
@@ -2765,12 +2765,13 @@ class StewardCuratedNoteApplication:
         return self._stage(
             note,
             "user-selected Telegram reply; explicitly retained as a curated note",
+            event,
         )
 
-    def _stage(self, note: str, origin: str) -> PresentedReply:
+    def _stage(self, note: str, origin: str, event: IncomingEvent) -> PresentedReply:
         """Create or reopen the one pending review for an exact selected draft."""
 
-        payload = {"text": note, "origin": origin}
+        payload = {"text": note, "origin": origin, "chat_id": event.chat_id}
         pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
         if pending is None:
             pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
@@ -2799,9 +2800,9 @@ class StewardCuratedNoteApplication:
             return "Use /curate_edit followed by the proposal ID and replacement text. Nothing has been saved yet."
         if self._contexts is not None:
             self._contexts.clear(event.platform, event.chat_id)
-        return self._revise(int(identifier), replacement)
+        return self._revise(int(identifier), replacement, event)
 
-    def _revise(self, proposal_id: int, replacement: str) -> str | PresentedReply:
+    def _revise(self, proposal_id: int, replacement: str, event: IncomingEvent) -> str | PresentedReply:
         proposal = self._pending_note(proposal_id)
         if isinstance(proposal, str):
             return proposal
@@ -2810,7 +2811,7 @@ class StewardCuratedNoteApplication:
             return "The replacement curated note must not be empty."
         origin = proposal.payload.get("origin", "user-supplied note")
         revised_origin = f"{origin}; explicitly edited by user before retention"
-        payload = {"text": text, "origin": revised_origin}
+        payload = {"text": text, "origin": revised_origin, "chat_id": event.chat_id}
         replacement_proposal = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
         if replacement_proposal is None:
             self._proposals.set_status(proposal_id, "rejected")
@@ -2885,7 +2886,7 @@ class StewardCuratedNoteApplication:
             return f"The configured {mode} model returned no note; nothing was saved."
         note = note[:6000]
         origin = f"model-synthesized user-selected Telegram reply ({mode} model)"
-        return self._stage(note, origin)
+        return self._stage(note, origin, event)
 
 
 class StewardKnowledgeApplication:
@@ -5781,6 +5782,21 @@ class StewardActionProposalApplication:
             return f"Curated note proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":
             return f"Curated note proposal {proposal.id} was already {proposal.status}."
+        proposal_chat = proposal.payload.get("chat_id")
+        if not isinstance(proposal_chat, str) or not proposal_chat:
+            if decision == "rejected":
+                self._repository.set_status(proposal_id, decision)
+                if self._activity is not None:
+                    self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details="Legacy unbound curated-note proposal declined")
+                return PresentedReply(
+                    "The older curated note was discarded. Create a fresh draft from the message you want to retain.",
+                    (ReplyAction("Home", "/home"),),
+                    title="Curated note declined",
+                    icon="↩️",
+                )
+            return "This older curated-note review is missing its chat binding. Reject it, then create a fresh draft from the selected message."
+        if proposal_chat != event.chat_id:
+            return "This curated-note review belongs to another authorized Telegram chat. No note was saved."
         if decision == "rejected":
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
