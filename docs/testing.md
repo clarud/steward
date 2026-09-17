@@ -128,19 +128,12 @@ regression coverage and safe operating guidance remain discoverable.
 
 #### Source list pagination does not expose stable source IDs — open bug
 
-**Observed:** `/sources` numbers results from `1` on each page. Those numbers
-are page-local navigation positions, but typed commands such as `/source`,
-`/privacy`, and reviewed source-maintenance commands require the stable source
-ID. A user viewing page two therefore cannot reliably infer the ID to type.
-
-**Current workaround:** Use the item's **Open** button, then the source card's
-**Privacy** action; this carries the stable ID internally.
-
-**Required product fix:** Show a compact stable identifier on every source list
-and source-detail card (for example, `S42`), while keeping list-position
-buttons for navigation. Commands should accept the documented stable identifier
-or provide a copy-friendly action. Add pagination tests proving that page-local
-positions never masquerade as source IDs.
+**Status: resolved.** The heading is retained as historical context for the
+original report. Each source-list entry now shows `ID N`, including subsequent
+pages, and each source card shows `Source ID: N`. List ordinals remain only
+page-local button labels; every **Open** command carries the exact stable ID.
+Automated pagination coverage verifies source 11 appears as `ID 11` on page
+two. The same behavior passed the guided Telegram acceptance batch.
 
 #### Calendar OAuth refresh recovery — open bug
 
