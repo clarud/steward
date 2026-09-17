@@ -1279,6 +1279,12 @@ After explicitly opening a persisted Travel record, a bounded phrase such as
 review path as its visible action. The selected record must exist in the current
 chat's context. This route only creates a pending proposal; it does not start
 OAuth or construct a Calendar writer until a later explicit approval.
+The same exact-record context handles small inspection follow-ups such as
+**show details**, **when does this flight leave?**, and **where is it going?**
+by reopening the persisted record card. It is intentionally a card/navigation
+route, not an unbounded natural-language record query: without an explicitly
+opened record in the same chat, those phrases continue through ordinary
+question routing.
 Calendar event cards can also use **what task is this for?** after a reviewed
 deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as

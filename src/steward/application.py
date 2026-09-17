@@ -1525,6 +1525,15 @@ class StewardRecordApplication:
             "show the last warranty": "warranty",
             "open the last warranty": "warranty",
         }.get(normalized)
+        if normalized in {
+            "show details", "show the details", "show record details",
+            "what are the details", "what are this record's details",
+            "when is it", "when is that", "when does it leave",
+            "when does this flight leave", "when does that flight leave",
+            "where is it", "where is that", "where is it going",
+            "where does it go", "where does this flight go",
+        }:
+            requested_type = context.kind.removeprefix("record:") if context is not None and context.kind.startswith("record:") else None
         if requested_type is None:
             return None
         if context is None or context.kind != f"record:{requested_type}":

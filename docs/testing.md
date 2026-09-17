@@ -507,3 +507,13 @@ production authorization merely to complete them.
 - Focused application and record coverage verifies cross-chat refusal, no
   pre-approval record creation, and normal owner approval for a Travel record.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: contextual record inspection
+
+- After a chat explicitly opens a persisted local record, bounded inspection
+  phrases such as `show details`, `when does this flight leave?`, and `where is
+  it going?` reopen that exact record card. They do not invoke a model, query
+  Calendar, or mutate state.
+- Automated application coverage verifies the exact Travel-record route after
+  restart. An unscoped phrase is deliberately not treated as a record lookup.
+- The complete automated suite subsequently reached 100% with no stderr.

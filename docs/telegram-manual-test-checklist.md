@@ -515,6 +515,10 @@ until a separate filesystem backup exists.
   uncreated. This action must also be available on a correction proposal.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
+- Open a harmless Travel record and then say **show details**, **when does this
+  flight leave?**, or **where is it going?**. Each must reopen that exact local
+  record without a model call or Calendar write. Clear the chat context or use
+  a new chat and confirm the same phrase does not guess a record.
 - For a staged flight message with `Flight`, `Departure`, `Arrival`, and
   `Booking Reference` lines, choose **Save**. Verify Inbox capture is followed
   by a Travel Record review card, not an immediately created record. After

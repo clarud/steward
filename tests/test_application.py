@@ -1149,6 +1149,12 @@ def test_telegram_record_reference_reopens_the_last_explicitly_opened_flight_aft
     assert provenance.actions[0].command == f"/source {source.id}"
     assert provenance.reference == ("record:travel", record.id)
 
+    details = restarted.handle(make_event(text="when does this flight leave?"))
+
+    assert isinstance(details, PresentedReply)
+    assert details.title == f"Travel record {record.id}"
+    assert "flight: SQ638" in details.text
+
 
 def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
