@@ -573,6 +573,11 @@ until a separate filesystem backup exists.
   review from a Travel record in the first chat and try to approve it in the
   second. Steward must refuse before creating an event. The originating chat
   must still be able to approve or reject the exact pending review.
+- If a separate harmless allowed test chat is configured, create a harmless
+  Travel, receipt, warranty, correction, or Travel-reference review in the
+  first chat and try to approve it in the second. Steward must refuse without
+  creating or changing a record; the originating chat must still be able to
+  approve or reject that exact review.
 - With `STEWARD_MODEL_PROVIDER=local`, set a harmless source to
   `local_model_only` and ask about it through the tool agent. Verify the local
   model can use it. Switch to an external provider and verify the same source

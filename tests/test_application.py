@@ -4713,6 +4713,44 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     assert response.actions[0].command == "/approve_action 1"
 
 
+def test_telegram_record_review_is_bound_to_the_originating_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.md", "1" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Flight SQ638\nDeparture: Singapore\nArrival: Tokyo", "lines 1-3"),
+    )))
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    records = RecordService(database)
+    record_application = StewardRecordApplication(records, fragments, proposals, activity)
+    action_application = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        record_service=records, fragment_repository=fragments, activity_service=activity,
+    )
+    other = IncomingEvent(
+        id="telegram:43", platform="telegram", chat_id="other", message_id="8", reply_to_id=None,
+        timestamp=now, text="/approve_action 1",
+    )
+
+    proposed = record_application.handle_command(make_event(text=f"/propose_travel_record {source.id}"))
+    refused = action_application.handle_command(other)
+
+    assert isinstance(proposed, PresentedReply)
+    assert proposals.get(1).payload["chat_id"] == "100"
+    assert "belongs to another" in refused
+    assert records.list_travel_records() == []
+    assert proposals.get(1).status == "pending"
+
+    accepted = action_application.handle_command(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Travel record saved"
+    assert records.list_travel_records()[0].flight_number == "SQ638"
+
+
 def test_telegram_calendar_review_is_bound_to_the_originating_chat(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 10, 1, 9, tzinfo=UTC)

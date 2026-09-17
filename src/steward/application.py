@@ -1465,16 +1465,16 @@ class StewardRecordApplication:
         if command == "/travel_references":
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
-            return self._propose_travel_reference(separator, argument)
+            return self._propose_travel_reference(separator, argument, chat_id=event.chat_id)
         if command in {"/propose_receipt_record", "/propose_warranty_record"}:
-            return self._propose_document_record(command, separator, argument)
+            return self._propose_document_record(command, separator, argument, chat_id=event.chat_id)
         if command in {"/correct_travel_record", "/correct_receipt_record", "/correct_warranty_record"}:
-            return self._propose_record_correction(command, separator, argument)
+            return self._propose_record_correction(command, separator, argument, chat_id=event.chat_id)
         if command != "/propose_travel_record":
             return None
         if not separator or not argument.strip().isdigit():
             return "Use /propose_travel_record followed by a numeric source ID."
-        return self._propose_travel_record_for_source(int(argument.strip()))
+        return self._propose_travel_record_for_source(int(argument.strip()), chat_id=event.chat_id)
 
     def resolve_record_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Resolve a narrow navigation or provenance follow-up for one selected record."""
@@ -1569,7 +1569,9 @@ class StewardRecordApplication:
         }.get(record_type)
         return records is not None and any(record.id == record_id for record in records())
 
-    def propose_for_captured_source(self, source_id: int, source_name: str) -> PresentedReply | None:
+    def propose_for_captured_source(
+        self, source_id: int, source_name: str, *, chat_id: str | None = None
+    ) -> PresentedReply | None:
         """Create the appropriate *review* from one just-preserved original.
 
         Classification selects a proposal type only.  Field extraction remains
@@ -1579,12 +1581,14 @@ class StewardRecordApplication:
 
         normalized = source_name.casefold()
         if any(term in normalized for term in ("receipt", "invoice")):
-            return self._propose_document_record_for_source("receipt", source_id)
+            return self._propose_document_record_for_source("receipt", source_id, chat_id=chat_id)
         if "warranty" in normalized:
-            return self._propose_document_record_for_source("warranty", source_id)
-        return self._propose_travel_record_for_source(source_id)
+            return self._propose_document_record_for_source("warranty", source_id, chat_id=chat_id)
+        return self._propose_travel_record_for_source(source_id, chat_id=chat_id)
 
-    def _propose_travel_record_for_source(self, source_id: int) -> PresentedReply | None:
+    def _propose_travel_record_for_source(
+        self, source_id: int, *, chat_id: str | None = None
+    ) -> PresentedReply | None:
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
             return None
@@ -1609,6 +1613,8 @@ class StewardRecordApplication:
             if value is not None and field in proposal.field_evidence
         )
         payload = {"source_id": str(source_id), "snapshot": record_review_snapshot(proposal, [(part.id or 0, part.text) for part in fragments])}
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
         pending = self._proposals.find_pending(self.CREATE_TRAVEL_RECORD, payload)
         if pending is None:
             pending = self._proposals.add(self.CREATE_TRAVEL_RECORD, payload)
@@ -1643,7 +1649,9 @@ class StewardRecordApplication:
             for reference in references
         )
 
-    def _propose_travel_reference(self, separator: str, argument: str) -> str | PresentedReply:
+    def _propose_travel_reference(
+        self, separator: str, argument: str, *, chat_id: str | None = None
+    ) -> str | PresentedReply:
         """Stage an evidence-grounded reference rather than writing from chat."""
         parts = argument.split(maxsplit=3)
         if not separator or len(parts) != 4 or not parts[0].isdigit() or not parts[2].isdigit():
@@ -1667,6 +1675,8 @@ class StewardRecordApplication:
             "fragment_id": fragment_id_text,
             "value": value,
         }
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
         pending = self._proposals.find_pending(self.ADD_TRAVEL_REFERENCE, payload)
         if pending is None:
             pending = self._proposals.add(self.ADD_TRAVEL_REFERENCE, payload)
@@ -1685,7 +1695,9 @@ class StewardRecordApplication:
             ),
         )
 
-    def _propose_record_correction(self, command: str, separator: str, argument: str) -> str | PresentedReply:
+    def _propose_record_correction(
+        self, command: str, separator: str, argument: str, *, chat_id: str | None = None
+    ) -> str | PresentedReply:
         record_id, field_separator, remainder = argument.strip().partition(" ")
         field, value_separator, value = remainder.partition(" ")
         if not separator or not record_id.isdigit() or not field_separator or not value_separator:
@@ -1703,6 +1715,8 @@ class StewardRecordApplication:
         except ValueError as error:
             return str(error)
         payload = {"record_id": record_id, "field": field, "value": value}
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
         pending = self._proposals.find_pending(action_type, payload)
         if pending is None:
             pending = self._proposals.add(action_type, payload)
@@ -1716,16 +1730,20 @@ class StewardRecordApplication:
             ),
         )
 
-    def _propose_document_record(self, command: str, separator: str, argument: str) -> str | PresentedReply:
+    def _propose_document_record(
+        self, command: str, separator: str, argument: str, *, chat_id: str | None = None
+    ) -> str | PresentedReply:
         label = "receipt" if command == "/propose_receipt_record" else "warranty"
         action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
         if not separator or not argument.strip().isdigit():
             return f"Use {command} followed by a numeric source ID."
         source_id = int(argument.strip())
-        proposal = self._propose_document_record_for_source(label, source_id)
+        proposal = self._propose_document_record_for_source(label, source_id, chat_id=chat_id)
         return proposal or f"The source did not yield evidenced {label} fields."
 
-    def _propose_document_record_for_source(self, label: str, source_id: int) -> PresentedReply | None:
+    def _propose_document_record_for_source(
+        self, label: str, source_id: int, *, chat_id: str | None = None
+    ) -> PresentedReply | None:
         action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
@@ -1743,6 +1761,8 @@ class StewardRecordApplication:
             if getattr(proposal.record, field) is not None
         ]
         payload = {"source_id": str(source_id), "snapshot": record_review_snapshot(proposal, [(part.id or 0, part.text) for part in fragments])}
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
         pending = self._proposals.find_pending(action_type, payload)
         if pending is None:
             pending = self._proposals.add(action_type, payload)
@@ -5115,6 +5135,18 @@ class StewardActionProposalApplication:
         proposal_id = int(argument.strip())
         decision = "accepted" if command == "/approve_action" else "rejected"
         proposal = self._repository.get(proposal_id)
+        if proposal is not None and proposal.action_type in {
+            StewardRecordApplication.CREATE_TRAVEL_RECORD,
+            StewardRecordApplication.CREATE_RECEIPT_RECORD,
+            StewardRecordApplication.CREATE_WARRANTY_RECORD,
+            StewardRecordApplication.CORRECT_TRAVEL_RECORD,
+            StewardRecordApplication.CORRECT_RECEIPT_RECORD,
+            StewardRecordApplication.CORRECT_WARRANTY_RECORD,
+            StewardRecordApplication.ADD_TRAVEL_REFERENCE,
+        }:
+            proposal_chat = proposal.payload.get("chat_id")
+            if isinstance(proposal_chat, str) and proposal_chat and proposal_chat != event.chat_id:
+                return "This record review belongs to another authorized Telegram chat. No record was changed."
         if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
             return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_TASK:
@@ -6223,7 +6255,7 @@ class StewardEventApplication:
             and result.source.id is not None
         ):
             record_review = self._record_application.propose_for_captured_source(
-                result.source.id, intake_classification[1]
+                result.source.id, intake_classification[1], chat_id=event.chat_id
             )
             if record_review is not None:
                 return PresentedReply(

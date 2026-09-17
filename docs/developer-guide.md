@@ -1104,6 +1104,14 @@ the travel record and fragment exist; `add_reference()` is idempotent for the
 same record/type/value and returns the existing reference on a retry. The CLI
 exposes `add-travel-record-reference RECORD_ID TYPE VALUE FRAGMENT_ID` and
 `travel-record-references RECORD_ID` for explicit inspection.
+Telegram-created record proposals also retain the initiating chat ID. This
+covers Travel, receipt, and warranty creation, record corrections, and Travel
+record-reference proposals. Another authorized chat cannot approve a bound
+review or make its record mutation; the originating chat retains the ordinary
+approve/reject controls. This is a transport authorization boundary, not a
+second identity system: direct CLI proposals remain local operations and
+legacy proposals without a chat ID stay compatible with the existing local
+review flow.
 `FileMutationService.undo_move()` supplies rollback data and writes its own
 `SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
 filesystem changes.

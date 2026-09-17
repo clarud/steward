@@ -497,3 +497,13 @@ production authorization merely to complete them.
 - Automated application coverage verifies cross-chat refusal before the writer
   is called, owner approval, and legacy-review recovery.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: chat-bound record reviews
+
+- New Telegram record proposals retain the initiating chat ID for Travel,
+  receipt, warranty, correction, and Travel-reference operations. Another
+  authorized chat cannot approve the mutation; the proposal remains pending
+  for the initiating chat to approve or reject.
+- Focused application and record coverage verifies cross-chat refusal, no
+  pre-approval record creation, and normal owner approval for a Travel record.
+- The complete automated suite subsequently reached 100% with no stderr.
