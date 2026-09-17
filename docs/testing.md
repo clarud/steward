@@ -15,6 +15,10 @@ safe test.
   `tests/test_external_search_navigation.py`, and
   `tests/test_application.py`. It covers mocked provider/Calendar/import
   recovery only; it does not claim live OAuth, quota, or network-outage proof.
+- The isolated `tests/test_recovery_workflow.py` backup/restore rehearsal also
+  passed on 17 September 2026. It validates restored pending local state in a
+  disposable SQLite environment; it does not retract delivered Telegram
+  messages or substitute for a live restore exercise.
 - The run exposed a stale database migration-ledger expectation: schema version
   53 (`task_calendar_associations`) existed but was omitted from the test. The
   test was corrected and the full suite then passed.
