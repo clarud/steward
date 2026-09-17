@@ -477,3 +477,13 @@ production authorization merely to complete them.
 - Automated application coverage verifies the source remains externally
   allowed until explicit approval, then changes only after that approval.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: chat-bound privacy reviews
+
+- New Telegram source-privacy proposals store the originating chat ID. A
+  different authorized chat cannot approve or replace the pending decision.
+  Legacy unbound proposals fail closed for approval and can be rejected to make
+  room for a fresh bound review.
+- Automated application coverage verifies cross-chat refusal, no pre-approval
+  policy change, owner approval, and legacy-review recovery.
+- The complete automated suite subsequently reached 100% with no stderr.

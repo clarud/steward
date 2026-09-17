@@ -1356,6 +1356,11 @@ The same boundary is enforced before model-assisted organization and
 model-assisted knowledge enrichment: cloud providers receive only
 `external_allowed` source excerpts, local providers may receive any source
 except `no_model`, and denied material produces a deterministic local response.
+Telegram-created privacy reviews additionally retain their originating chat ID.
+Only that chat may approve or reject the pending change; another authorized chat
+is told that the review belongs elsewhere and the source rule remains unchanged.
+Older unbound reviews fail closed for approval and may only be declined, so a
+fresh card creates the new chat-bound proposal.
 
 ## Model routing
 

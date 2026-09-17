@@ -565,6 +565,10 @@ until a separate filesystem backup exists.
   the same **Review privacy change** card for that exact source; it must not
   change the rule before approval. Try the phrase without opening a source
   first and confirm it does not guess a source or modify any privacy policy.
+- If a separate harmless allowed test chat is configured, create a source
+  privacy review in the first chat and try to approve it in the second. It must
+  refuse without changing the rule. The originating chat must still be able to
+  approve or reject its own pending review.
 - With `STEWARD_MODEL_PROVIDER=local`, set a harmless source to
   `local_model_only` and ask about it through the tool agent. Verify the local
   model can use it. Switch to an external provider and verify the same source

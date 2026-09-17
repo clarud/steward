@@ -1793,6 +1793,57 @@ def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_
     assert repeated == "Privacy proposal 1 was already accepted."
 
 
+def test_telegram_privacy_review_is_bound_to_the_originating_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "private.md", "e" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    privacy = PrivacyService(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        privacy_application=StewardPrivacyApplication(
+            privacy, SourceRepository(database), activity, proposals
+        ),
+    )
+    owner = make_event(text=f"/set_privacy {source.id} no_model")
+    other = IncomingEvent(
+        id="telegram:43", platform="telegram", chat_id="other", message_id="8", reply_to_id=None,
+        timestamp=now, text="/approve_action 1",
+    )
+
+    proposed = application.handle(owner)
+    refused = application.handle(other)
+    second_chat = application.handle(
+        IncomingEvent(
+            id="telegram:44", platform="telegram", chat_id="other", message_id="9", reply_to_id=None,
+            timestamp=now, text=f"/set_privacy {source.id} local_model_only",
+        )
+    )
+
+    assert isinstance(proposed, PresentedReply)
+    assert "belongs to another" in refused
+    assert isinstance(second_chat, PresentedReply)
+    assert second_chat.title == "Privacy change pending"
+    assert "local_model_only" not in second_chat.text
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
+    assert proposals.get(1).status == "pending"
+    assert application.handle(make_event(text="/approve_action 1")).title == "Privacy rule applied"
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.NO_MODEL
+
+    legacy = proposals.add(
+        StewardPrivacyApplication.SET_SOURCE_PRIVACY,
+        {"source_id": str(source.id), "rule": PrivacyRule.EXTERNAL_ALLOWED.value},
+    )
+    assert "missing its chat binding" in application.handle(make_event(text=f"/approve_action {legacy.id}"))
+    assert application.handle(make_event(text=f"/reject_action {legacy.id}")) == (
+        "Legacy privacy proposal declined. Create a fresh review from the source card."
+    )
+    assert proposals.get(legacy.id or 0).status == "rejected"
+
+
 def test_telegram_source_privacy_picker_is_available_from_source_and_model_denial(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     now = datetime(2026, 9, 9, tzinfo=UTC)

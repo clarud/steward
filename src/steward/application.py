@@ -3447,7 +3447,7 @@ class StewardPrivacyApplication:
                 return "Open a source and choose Privacy, or use /privacy_options followed by a numeric source ID."
             return self._privacy_options(int(argument.strip()))
         if command in {"/approve_action", "/reject_action"}:
-            return self._review_privacy_proposal(command, separator, argument)
+            return self._review_privacy_proposal(event, command, separator, argument)
         if command != "/set_privacy":
             return None
         parts = argument.split()
@@ -3462,7 +3462,7 @@ class StewardPrivacyApplication:
             return "Privacy rule must be external_allowed, external_redacted, local_model_only, or no_model."
         previous_rule = self._privacy.rule_for(source_id)
         if self._proposals is not None:
-            payload = {"source_id": str(source_id), "rule": rule.value}
+            payload = {"source_id": str(source_id), "rule": rule.value, "chat_id": event.chat_id}
             pending_for_source = next(
                 (
                     item for item in self._proposals.list_all()
@@ -3473,6 +3473,15 @@ class StewardPrivacyApplication:
                 None,
             )
             if pending_for_source is not None and pending_for_source.payload != payload:
+                pending_chat = pending_for_source.payload.get("chat_id")
+                if isinstance(pending_chat, str) and pending_chat and pending_chat != event.chat_id:
+                    return PresentedReply(
+                        f"Source {source_id} already has a privacy review pending in another authorized chat. "
+                        "Its rule is unchanged.",
+                        (ReplyAction("Home", "/home"),),
+                        title="Privacy change pending",
+                        icon="ðŸ”’",
+                    )
                 return PresentedReply(
                     f"Source {source_id} already has a pending privacy change to "
                     f"{pending_for_source.payload['rule']}. Review or reject that change before proposing another.",
@@ -3582,7 +3591,7 @@ class StewardPrivacyApplication:
         return f"/set_privacy {source_id} {rule.value}"
 
     def _review_privacy_proposal(
-        self, command: str, separator: str, argument: str
+        self, event: IncomingEvent, command: str, separator: str, argument: str
     ) -> str | PresentedReply | None:
         if self._proposals is None:
             return None
@@ -3596,6 +3605,20 @@ class StewardPrivacyApplication:
             return f"Privacy proposal {proposal.id} was already {proposal.status}."
         if proposal.status != "pending":
             return f"Privacy proposal {proposal.id} was already {proposal.status}."
+        proposal_chat = proposal.payload.get("chat_id")
+        if not isinstance(proposal_chat, str) or not proposal_chat:
+            if command == "/reject_action":
+                self._proposals.set_status(proposal.id or 0, "rejected")
+                if self._activity is not None:
+                    self._activity.record(
+                        ActivityType.ACTION_REJECTED,
+                        object_id=str(proposal.id),
+                        details="Legacy unbound privacy proposal declined",
+                    )
+                return "Legacy privacy proposal declined. Create a fresh review from the source card."
+            return "This older privacy review is missing its chat binding. Reject it, then create a fresh review from the source card."
+        if proposal_chat != event.chat_id:
+            return "This privacy review belongs to another authorized Telegram chat. The source rule was not changed."
         source_id = int(proposal.payload["source_id"])
         source = self._sources.get_by_id(source_id)
         if source is None:
