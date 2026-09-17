@@ -4225,7 +4225,7 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
     workspaces.create("CS3210")
     proposals = OrganizationProposalRepository(database)
     approval_service = OrganizationApprovalService(
-        proposals, sources, FileMutationService(sources, activity), activity
+        proposals, sources, FileMutationService(sources, activity), activity, workspaces
     )
     organization = StewardOrganizationApprovalApplication(
         proposals,
@@ -4279,8 +4279,9 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
     assert not source.path.exists()
     assert (tmp_path / "vault" / "projects" / "CS3210" / source.path.name).is_file()
     assert proposals.get(1).status == "accepted"
+    assert workspaces.list_source_ids(1) == (source.id,)
     assert {event.event_type for event in activity.list_recent()} >= {
-        ActivityType.SOURCE_MOVED, ActivityType.ORGANIZATION_ACCEPTED,
+        ActivityType.SOURCE_MOVED, ActivityType.SOURCE_LINKED_TO_WORKSPACE, ActivityType.ORGANIZATION_ACCEPTED,
     }
 
 

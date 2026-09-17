@@ -1060,6 +1060,13 @@ uses `FileMutationService` to move the registered file, update its stored path,
 and write an activity event; rejection leaves the source unchanged. Repeating
 an already accepted/rejected decision is a no-op, which makes retry recovery
 safe.
+For a reviewed move to an existing workspace, approval also creates the
+idempotent `workspace_sources` semantic link and records
+`SOURCE_LINKED_TO_WORKSPACE` when that relationship is new. The folder path is
+therefore not treated as the only evidence of relevance. If a process stops
+after the file move but before the link/status write, retry sees the registered
+destination, skips a second move, and completes the missing link before marking
+the proposal accepted.
 
 `ModelAssistedOrganizationService` is an optional second proposer for the
 explicit `steward propose-organization SOURCE_ID --model-assisted` command. It

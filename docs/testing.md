@@ -538,5 +538,14 @@ production authorization merely to complete them.
   proposal. No extracted text is sent to a model and no record is created by
   this routing step.
 - Focused application coverage verifies a generic receipt and the one-label
-  false-positive guard. The complete automated suite subsequently reached 100%
-  with no stderr.
+false-positive guard. The complete automated suite subsequently reached 100%
+with no stderr.
+
+## Post-session automated delivery: organization moves retain workspace meaning
+
+- A reviewed move to an existing workspace now also creates the local,
+  idempotent semantic source-to-workspace relationship. The physical folder and
+  Workspace card therefore describe the same approved association.
+- Focused end-to-end intake/organization coverage verifies the source is moved,
+  linked once, and audited as both a move and a new workspace relationship.
+- The complete automated suite subsequently reached 100% with no stderr.

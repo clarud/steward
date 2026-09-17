@@ -207,6 +207,16 @@ class OrganizationApprovalService:
             # that recovery path a no-op instead of a second move.
             if source.path.resolve() != proposal.suggested_path.resolve():
                 self._files.move_source(source.path, proposal.suggested_path)
+            if proposal.workspace_id is not None and self._workspaces is not None:
+                # Physical placement and semantic relevance answer different
+                # questions. This idempotent link is retried after an
+                # interrupted filesystem move before the proposal can finish.
+                if self._workspaces.link_source(proposal.workspace_id, proposal.source_id):
+                    self._activity.record(
+                        ActivityType.SOURCE_LINKED_TO_WORKSPACE,
+                        object_id=str(proposal.source_id),
+                        details=f"workspace:{proposal.workspace_id}",
+                    )
 
         self._proposals.set_status(proposal_id, decision)
         self._activity.record(

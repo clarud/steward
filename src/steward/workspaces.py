@@ -27,10 +27,15 @@ class WorkspaceRepository:
         with sqlite3.connect(self._database_path) as connection:
             cursor = connection.execute("INSERT INTO workspaces (name,status,created_at) VALUES (?,?,?)", (workspace.name, workspace.status, workspace.created_at.isoformat()))
         return replace(workspace, id=cursor.lastrowid)
-    def link_source(self, workspace_id: int, source_id: int) -> None:
+    def link_source(self, workspace_id: int, source_id: int) -> bool:
+        """Create one semantic relationship and report whether it was new."""
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute("INSERT OR IGNORE INTO workspace_sources (workspace_id,source_id) VALUES (?,?)", (workspace_id,source_id))
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO workspace_sources (workspace_id,source_id) VALUES (?,?)",
+                (workspace_id, source_id),
+            )
+        return cursor.rowcount == 1
 
     def list_all(self) -> list[Workspace]:
         with sqlite3.connect(self._database_path) as connection:
@@ -94,4 +99,5 @@ class WorkspaceService:
         workspace = self._repository.create(name)
         if self._activity_service is not None: self._activity_service.record(ActivityType.WORKSPACE_CREATED, object_id=str(workspace.id), details=workspace.name)
         return workspace
-    def add_source(self, workspace_id: int, source_id: int) -> None: self._repository.link_source(workspace_id, source_id)
+    def add_source(self, workspace_id: int, source_id: int) -> bool:
+        return self._repository.link_source(workspace_id, source_id)

@@ -526,6 +526,10 @@ until a separate filesystem backup exists.
   and verify that neither approval is implied by the other. After accepting the
   record, use **Add to calendar** and verify it opens a second, separately
   approved Calendar proposal.
+- Accept an organization move into a harmless existing workspace, then open the
+  workspace card. The moved source must appear in its linked-source list as
+  well as at its approved filesystem destination. Reopening or retrying the
+  accepted review must not add a second link.
 - Upload a harmless file with a generic filename but labelled receipt fields
   such as `Merchant`, `Total`, and `Receipt Number`. After **Save**, it should
   offer a receipt-record review based on extracted evidence. A generic file
