@@ -10,6 +10,11 @@ safe test.
 ### Automated verification
 
 - Full test suite: passed after the source privacy-picker change.
+- The documented synthetic provider matrix passed on 17 September 2026:
+  `tests/graphs/test_tool_agent.py`, `tests/test_calendar.py`,
+  `tests/test_external_search_navigation.py`, and
+  `tests/test_application.py`. It covers mocked provider/Calendar/import
+  recovery only; it does not claim live OAuth, quota, or network-outage proof.
 - The run exposed a stale database migration-ledger expectation: schema version
   53 (`task_calendar_associations`) existed but was omitted from the test. The
   test was corrected and the full suite then passed.
