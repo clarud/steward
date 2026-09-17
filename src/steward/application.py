@@ -3424,11 +3424,13 @@ class StewardPrivacyApplication:
         sources: SourceRepository,
         activity: ActivityService | None = None,
         proposals: ActionProposalRepository | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._privacy = privacy
         self._sources = sources
         self._activity = activity
         self._proposals = proposals
+        self._contexts = contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
@@ -3541,6 +3543,43 @@ class StewardPrivacyApplication:
             icon="🔒",
             reference=("source", source_id),
         )
+
+    def natural_source_privacy_command(self, event: IncomingEvent) -> str | None:
+        """Translate a bounded source-card privacy request into a review.
+
+        A bare conversational phrase cannot choose a source. The source must
+        be the exact, durable card context restored for this Telegram chat.
+        The returned command is handled by ``handle_command`` and therefore
+        follows the same proposal/approval path as the visible picker.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        rules = {
+            "keep this local": PrivacyRule.LOCAL_MODEL_ONLY,
+            "keep that local": PrivacyRule.LOCAL_MODEL_ONLY,
+            "use local model only": PrivacyRule.LOCAL_MODEL_ONLY,
+            "do not send this to the cloud": PrivacyRule.LOCAL_MODEL_ONLY,
+            "don't send this to the cloud": PrivacyRule.LOCAL_MODEL_ONLY,
+            "allow cloud for this source": PrivacyRule.EXTERNAL_ALLOWED,
+            "allow cloud for that source": PrivacyRule.EXTERNAL_ALLOWED,
+            "allow a cloud model": PrivacyRule.EXTERNAL_ALLOWED,
+            "do not use a model for this": PrivacyRule.NO_MODEL,
+            "don't use a model for this": PrivacyRule.NO_MODEL,
+            "no model for this": PrivacyRule.NO_MODEL,
+        }
+        rule = rules.get(normalized)
+        if rule is None:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "source":
+            return None
+        source_id = int(context.identifier)
+        if self._sources.get_by_id(source_id) is None:
+            self._contexts.clear(event.platform, event.chat_id)
+            return None
+        return f"/set_privacy {source_id} {rule.value}"
 
     def _review_privacy_proposal(
         self, command: str, separator: str, argument: str
@@ -5950,6 +5989,13 @@ class StewardEventApplication:
             privacy_response = self._privacy_application.handle_command(event)
             if privacy_response is not None:
                 return privacy_response
+            privacy_followup = self._privacy_application.natural_source_privacy_command(event)
+            if privacy_followup is not None:
+                privacy_response = self._privacy_application.handle_command(
+                    replace(event, text=privacy_followup)
+                )
+                if privacy_response is not None:
+                    return privacy_response
         if self._roots_application is not None:
             root_reference = self._roots_application.resolve_root_reference(event)
             if root_reference is not None:

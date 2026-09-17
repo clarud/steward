@@ -467,3 +467,13 @@ production authorization merely to complete them.
   Calendar-event link exists before an explicit later approval.
 - Focused application/Calendar/Telegram coverage passed, followed by a complete
   suite run at 100% with no stderr.
+
+## Post-session automated delivery: natural source privacy review
+
+- An exact source card can now accept bounded phrases such as `keep this
+  local`, which produces the existing reviewable `local_model_only` proposal.
+  The phrase cannot select a source without the card context and never changes
+  a policy directly.
+- Automated application coverage verifies the source remains externally
+  allowed until explicit approval, then changes only after that approval.
+- The complete automated suite subsequently reached 100% with no stderr.

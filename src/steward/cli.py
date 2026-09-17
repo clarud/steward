@@ -1644,6 +1644,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sources,
                 activity,
                 ActionProposalRepository(database_path),
+                contexts=review_contexts,
             ),
             operations_application=StewardOperationsApplication(
                 TelegramUpdateDeliveryRepository(database_path),

@@ -563,6 +563,11 @@ explicit operations:
   source's privacy rule before any model-assisted organization can run. A bare `/save` reply can select only the pending staged
   intake from that exact chat message; it reuses the original staged bytes and
   does not re-download or infer an attachment from reply text.
+- Source-card privacy changes use the same review boundary. After opening one
+  exact source, **keep this local**, **allow cloud for this source**, or **no
+  model for this** creates a reviewable policy proposal for that card only. A
+  bare phrase cannot choose a source and no policy changes until the visible
+  approval is accepted.
 - Curated note drafts are similarly non-canonical. **Edit** opens a durable,
   chat-scoped input step; the replacement creates a new pending proposal and
   marks the earlier draft rejected as superseded. Steward never overwrites the

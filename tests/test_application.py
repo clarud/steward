@@ -1841,6 +1841,47 @@ def test_telegram_source_privacy_picker_is_available_from_source_and_model_denia
     assert privacy.rule_for(source.id or 0) is PrivacyRule.NO_MODEL
 
 
+def test_opened_source_can_naturally_propose_a_reviewed_privacy_boundary(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "notes.md", "d" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    privacy = PrivacyService(database)
+    reads = StewardReadApplication(
+        SourceRepository(database), fragments,
+        LexicalSearchService(SourceRepository(database), fragments), WorkspaceRepository(database),
+        activity, tmp_path, contexts=contexts,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=reads,
+        privacy_application=StewardPrivacyApplication(
+            privacy, SourceRepository(database), activity, proposals, contexts=contexts
+        ),
+    )
+
+    opened = application.handle(make_event(text=f"/source {source.id}"))
+    review = application.handle(make_event(text="keep this local"))
+
+    assert isinstance(opened, PresentedReply)
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review privacy change"
+    assert "local_model_only" in review.text
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.EXTERNAL_ALLOWED
+    assert proposals.get(1).action_type == StewardPrivacyApplication.SET_SOURCE_PRIVACY
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Privacy rule applied"
+    assert privacy.rule_for(source.id or 0) is PrivacyRule.LOCAL_MODEL_ONLY
+
+
 def test_delivery_diagnostics_expose_metadata_but_never_message_content(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     deliveries = TelegramUpdateDeliveryRepository(database_path)
