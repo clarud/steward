@@ -573,6 +573,10 @@ explicit operations:
   marks the earlier draft rejected as superseded. Steward never overwrites the
   draft that was originally shown to the user. The opaque proposal reference is
   SQLite-backed, so the replacement can be supplied after a process restart.
+- A user can also reply to a specific Telegram discussion with **keep this as
+  a note** (or the explicit `/curate` command). The bounded phrase stages that
+  exact reply as the same editable, reviewable draft; it does not save a source
+  or infer retention from an ordinary un-replied message.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.

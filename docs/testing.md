@@ -552,6 +552,16 @@ with no stderr.
 - Focused application coverage verifies generated and saved-material cards.
   The complete automated suite subsequently reached 100% with no stderr.
 
+## Post-session automated delivery: natural curated-note retention
+
+- Replying to a specific Telegram message with **keep this as a note** now
+  stages the same editable curated-note review as `/curate`. The reply is not
+  silently captured, and no source exists until the ordinary explicit approval
+  is accepted.
+- Focused application coverage verifies the selected text, pending state, and
+  later approved Inbox source. The complete automated suite subsequently
+  reached 100% with no stderr.
+
 ## Acceptance wrap-up — 17 September 2026
 
 The current guided validation batch is complete and passed.

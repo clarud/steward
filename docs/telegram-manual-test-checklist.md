@@ -634,7 +634,8 @@ until a separate filesystem backup exists.
   `/semantic_search QUESTION`, and `/hybrid_search QUESTION`. Verify that all
   results identify only filenames, source IDs, and derived locations; none
   invoke an external model or expose local directories.
-- Reply to a text discussion message with `/curate`. Verify the staged note
+- Reply to a text discussion message with `/curate`, or reply normally with
+  `keep this as a note`. Verify the staged note
   identifies its origin as a user-selected Telegram reply, is not saved before
   approval, and becomes a labeled Inbox Markdown note only after approval.
   Confirm approval ends with a **Curated note saved** card offering **Inbox**,

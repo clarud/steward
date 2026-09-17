@@ -2728,12 +2728,7 @@ class StewardCuratedNoteApplication:
             origin = "user-supplied note"
         if command == "/propose_note" and (not separator or not note):
             return "Use /propose_note followed by the curated note you want to retain."
-        payload = {"text": note, "origin": origin}
-        pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
-        if pending is None:
-            pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
-            self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create curated Inbox note from {origin}")
-        return self._review_card(pending)
+        return self._stage(note, origin)
 
     def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Use a normal next message only after the user explicitly chose Edit."""
@@ -2745,6 +2740,46 @@ class StewardCuratedNoteApplication:
             return None
         self._contexts.clear(event.platform, event.chat_id)
         return self._revise(context.identifier, (event.text or "").strip())
+
+    def handle_natural_retention(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Stage one deliberately replied-to message as an editable note draft.
+
+        This intentionally recognizes a small, unambiguous phrase set.  A
+        normal message is never captured merely because it contains ``save``:
+        the user must reply to the exact discussion they wish to retain, and
+        the result remains a pending review.
+        """
+
+        request = (event.text or "").strip().casefold()
+        if request not in {
+            "save this as a note",
+            "save that as a note",
+            "keep this as a note",
+            "keep that as a note",
+            "turn this into a note",
+        }:
+            return None
+        note = (event.reply_text or "").strip()
+        if not note:
+            return "Reply to the message you want to retain, then say `keep this as a note`."
+        return self._stage(
+            note,
+            "user-selected Telegram reply; explicitly retained as a curated note",
+        )
+
+    def _stage(self, note: str, origin: str) -> PresentedReply:
+        """Create or reopen the one pending review for an exact selected draft."""
+
+        payload = {"text": note, "origin": origin}
+        pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED,
+                object_id=str(pending.id),
+                details=f"Create curated Inbox note from {origin}",
+            )
+        return self._review_card(pending)
 
     def _edit(self, separator: str, argument: str, event: IncomingEvent) -> str | PresentedReply:
         identifier, content_separator, replacement = argument.strip().partition(" ")
@@ -2850,16 +2885,7 @@ class StewardCuratedNoteApplication:
             return f"The configured {mode} model returned no note; nothing was saved."
         note = note[:6000]
         origin = f"model-synthesized user-selected Telegram reply ({mode} model)"
-        payload = {"text": note, "origin": origin}
-        pending = self._proposals.find_pending(self.CREATE_CURATED_NOTE, payload)
-        if pending is None:
-            pending = self._proposals.add(self.CREATE_CURATED_NOTE, payload)
-            self._activity.record(
-                ActivityType.ACTION_PROPOSED,
-                object_id=str(pending.id),
-                details=f"Create curated Inbox note from {mode} model synthesis",
-            )
-        return self._review_card(pending)
+        return self._stage(note, origin)
 
 
 class StewardKnowledgeApplication:
@@ -6179,6 +6205,9 @@ class StewardEventApplication:
             note_followup = self._curated_note_application.handle_followup(event)
             if note_followup is not None:
                 return note_followup
+            natural_retention = self._curated_note_application.handle_natural_retention(event)
+            if natural_retention is not None:
+                return natural_retention
         if self._workspace_link_application is not None:
             link_response = self._workspace_link_application.handle_command(event)
             if link_response is not None:

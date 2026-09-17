@@ -3192,6 +3192,34 @@ def test_telegram_can_stage_a_replied_to_discussion_as_a_curated_note(tmp_path: 
     assert "Origin: user-selected Telegram reply" in source.path.read_text(encoding="utf-8")
 
 
+def test_telegram_natural_reply_can_stage_a_curated_note_for_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database), SourceFragmentRepository(database), activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        curated_note_application=StewardCuratedNoteApplication(proposals, activity),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, capture_service=capture,
+        ),
+    )
+
+    preview = application.handle(make_event(
+        text="keep this as a note",
+        reply_text="A TLB caches recently used address translations.",
+    ))
+
+    assert isinstance(preview, PresentedReply)
+    assert "explicitly retained as a curated note" in preview.text
+    assert SourceRepository(database).list_all() == []
+    assert proposals.get(1).status == "pending"
+    saved = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(saved, PresentedReply)
+    assert saved.title == "Curated note saved"
+    assert "A TLB caches recently used address translations." in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
+
+
 def test_telegram_can_synthesize_a_replied_discussion_locally_before_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database)
