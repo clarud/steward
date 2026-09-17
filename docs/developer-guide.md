@@ -1029,6 +1029,14 @@ strict difference between originals and derived data.
 Inbox, hashes and registers it as a `Source`, chooses a type-specific extractor,
 persists `SourceFragment` rows, and appends a `SOURCE_CAPTURED` activity event.
 The original file is canonical; fragments and embeddings can be rebuilt.
+When accepted intake has the explicit **record** classification, Steward now
+keeps the two domain questions separate: it creates a pending record review and
+also begins the normal pending organization review for that same saved source.
+The record card links to **Review organization** rather than silently deciding a
+file home. Approving a record never moves its source; approving the separate
+organization proposal never creates its record. If an older organization thread
+is already waiting in the chat, Steward reports that constraint and leaves both
+originals and records unchanged.
 
 `IntentResolver` routes deterministic signals first: a `/save` command or an
 attachment means capture, while `/delete`, `/organize`, and `/inspect` map to

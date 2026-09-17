@@ -517,3 +517,14 @@ production authorization merely to complete them.
 - Automated application coverage verifies the exact Travel-record route after
   restart. An unscoped phrase is deliberately not treated as a record lookup.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: independent record and organization intake reviews
+
+- Accepting record-classified intake now creates both a pending evidence-backed
+  record review and the normal pending organization review for the one saved
+  source. The record card links to the exact organization review instead of
+  treating a record decision as a filing decision.
+- Focused application coverage verifies that the original remains in Inbox,
+  both reviews remain pending, and opening the organization card neither moves
+  the source nor creates the record.
+- The complete automated suite subsequently reached 100% with no stderr.

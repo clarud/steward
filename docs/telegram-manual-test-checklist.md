@@ -521,9 +521,11 @@ until a separate filesystem backup exists.
   a new chat and confirm the same phrase does not guess a record.
 - For a staged flight message with `Flight`, `Departure`, `Arrival`, and
   `Booking Reference` lines, choose **Save**. Verify Inbox capture is followed
-  by a Travel Record review card, not an immediately created record. After
-  accepting that record, use **Add to calendar** and verify it opens a second,
-  separately approved Calendar proposal.
+  by a Travel Record review card and a separate **Review organization** action,
+  not an immediately created record or moved file. Open the organization review
+  and verify that neither approval is implied by the other. After accepting the
+  record, use **Add to calendar** and verify it opens a second, separately
+  approved Calendar proposal.
 - On any Travel, receipt, or warranty review card, choose **Organize Inbox**.
   Verify Steward opens a separate organization review rather than moving the
   original or accepting the record automatically.

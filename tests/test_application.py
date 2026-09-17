@@ -3996,6 +3996,60 @@ def test_accepted_flight_intake_immediately_offers_a_record_review(tmp_path: Pat
     assert RecordService(database_path).list_travel_records() == []
 
 
+def test_accepted_record_intake_also_creates_a_separate_organization_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"
+    sources = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    activity = ActivityService(database)
+    capture = InboxCaptureService(inbox, sources, fragments, activity)
+    intakes = ProvisionalIntakeRepository(database)
+    action_proposals = ActionProposalRepository(database)
+    organization_proposals = OrganizationProposalRepository(database)
+    organization_service = OrganizationApprovalService(
+        organization_proposals, sources, FileMutationService(sources, activity), activity,
+    )
+    organization = StewardOrganizationApprovalApplication(
+        organization_proposals, WorkspaceRepository(database),
+        OrganizationApprovalThreadRepository(database), activity,
+        build_organization_approval_graph(
+            organization_proposals, checkpointer=InMemorySaver(), review_proposal=organization_service.review,
+        ), source_repository=sources, inbox_dir=inbox,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(tmp_path / ".steward" / "cache" / "intake", intakes, capture, activity, PrivacyService(database))
+        ),
+        organization_approval_application=organization,
+        record_application=StewardRecordApplication(RecordService(database), fragments, action_proposals, activity),
+        review_inbox_application=StewardReviewInboxApplication(
+            action_proposals, organization_proposals, sources, records=RecordService(database), fragments=fragments,
+        ),
+    )
+
+    application.handle(make_event(text="Flight SQ638\nDeparture: Singapore\nArrival: Tokyo"))
+    accepted = application.handle(make_event(text="/intake_accept 1"))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Review travel record"
+    assert "separate organization review is ready" in accepted.text
+    assert any(action.command == "/review organization 1" for action in accepted.actions)
+    assert not any(action.command == "/organize" for action in accepted.actions)
+    assert action_proposals.get(1).status == "pending"
+    assert organization_proposals.get(1).status == "pending"
+    assert RecordService(database).list_travel_records() == []
+    source = sources.get_by_id(1)
+    assert source is not None and source.path.parent == inbox
+
+    organization_card = application.handle(make_event(text="/review organization 1"))
+
+    assert isinstance(organization_card, PresentedReply)
+    assert organization_card.title.startswith("Organize ")
+    assert any(action.command == "/organization_accept 1" for action in organization_card.actions)
+    assert source.path.parent == inbox
+
+
 def test_provisional_intake_failure_does_not_disclose_a_local_staging_path() -> None:
     class UnavailableService:
         def accept(self, _intake_id: int, _event: IncomingEvent) -> CaptureResult:

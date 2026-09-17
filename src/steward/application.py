@@ -6257,6 +6257,7 @@ class StewardEventApplication:
         intake_classification: tuple[str, str, str | None] | None = None,
     ) -> str | PresentedReply:
         saved = self._capture_application.format_result(result)
+        record_review: PresentedReply | None = None
         if (
             intake_classification is not None
             and intake_classification[0] == "record"
@@ -6266,25 +6267,55 @@ class StewardEventApplication:
             record_review = self._record_application.propose_for_captured_source(
                 result.source.id, intake_classification[1], chat_id=event.chat_id
             )
-            if record_review is not None:
-                return PresentedReply(
-                    f"{saved}\n\n{record_review.text}", record_review.actions,
-                    title=record_review.title, icon=record_review.icon,
-                )
         if self._organization_approval_application is None:
-            return saved
+            if record_review is None:
+                return saved
+            return PresentedReply(
+                f"{saved}\n\n{record_review.text}", record_review.actions,
+                title=record_review.title, icon=record_review.icon,
+            )
         guidance = intake_classification[2] if intake_classification is not None else None
-        proposal = (
+        organization_review = (
             self._organization_approval_application.begin_with_context(event, result, guidance)
             if guidance
             else self._organization_approval_application.begin(event, result)
         )
-        if isinstance(proposal, PresentedReply):
+        if record_review is not None:
+            actions = list(record_review.actions)
+            organization_action = self._organization_review_action(organization_review)
+            if organization_action is not None:
+                # The record proposal already has a reviewable destination.
+                # Replace the generic Inbox command with the exact newly
+                # created organization review for this same source.
+                actions = [action for action in actions if action.command != "/organize"]
+                actions.insert(-1, organization_action)
+                organization_note = "A separate organization review is ready; it will not move the original until you review it."
+            elif isinstance(organization_review, str):
+                organization_note = organization_review
+            else:
+                organization_note = "No additional organization review was needed."
             return PresentedReply(
-                f"{saved}\n\n{proposal.text}", proposal.actions,
-                title=proposal.title, icon=proposal.icon,
+                f"{saved}\n\n{record_review.text}\n\n{organization_note}", tuple(actions),
+                title=record_review.title, icon=record_review.icon,
             )
-        return f"{saved}\n\n{proposal}" if proposal is not None else saved
+        if isinstance(organization_review, PresentedReply):
+            return PresentedReply(
+                f"{saved}\n\n{organization_review.text}", organization_review.actions,
+                title=organization_review.title, icon=organization_review.icon,
+            )
+        return f"{saved}\n\n{organization_review}" if organization_review is not None else saved
+
+    @staticmethod
+    def _organization_review_action(response: str | PresentedReply | None) -> ReplyAction | None:
+        """Link a second pending review without exposing its raw ID in prose."""
+
+        if not isinstance(response, PresentedReply):
+            return None
+        for action in response.actions:
+            command, _, argument = action.command.partition(" ")
+            if command == "/organization_accept" and argument.isdigit():
+                return ReplyAction("Review organization", f"/review organization {argument}")
+        return None
 
     @staticmethod
     def _is_time_bound_commitment(text: str) -> bool:
