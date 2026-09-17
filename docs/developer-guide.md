@@ -595,6 +595,11 @@ explicit operations:
   closed if another local change happened first. This changes only the local
   task deadline: an existing Telegram reminder and any linked Google Calendar
   deadline marker remain unchanged and are called out on the review/result.
+- **Set reminder**/**Change reminder** follows the same reviewed pattern but
+  changes only the pending Telegram reminder. Its approval compares the shown
+  reminder state again and refuses a stale review. An existing reminder cannot
+  be redirected to a different Telegram chat; the task deadline and Calendar
+  links remain untouched.
 - `/research` is explicitly external and ephemeral. Keeping its result writes
   a provenance-labeled Inbox note; it does not archive or silently promote web
   information to canonical personal knowledge.
@@ -924,7 +929,9 @@ Tasks use compact `/tasks` cards with `Open` actions; after opening one,
 complete remains an explicit **Mark complete** action or `/complete_task ID`.
 Changing a deadline begins with **Change deadline** (or the advanced
 `/propose_task_deadline TASK_ID ISO_TIMESTAMP`) and never updates Calendar as
-a side effect.
+a side effect. Setting or changing a reminder is a separate reviewed action
+(`Change reminder` or `/propose_task_reminder TASK_ID ISO_TIMESTAMP`), which
+also never changes the task deadline or Calendar.
 Workspaces likewise use `/workspaces` cards and `/workspace ID` detail views.
 Their source list is a semantic link list, not a directory listing or a move
 instruction; `show that workspace` only reopens the explicit workspace card.

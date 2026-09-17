@@ -2387,6 +2387,52 @@ def test_task_deadline_edit_is_reviewed_and_refuses_a_stale_preview(tmp_path: Pa
     assert tasks.get(task.id or 0).due_at == datetime(2026, 9, 21, 9, tzinfo=UTC)
 
 
+def test_task_reminder_edit_is_reviewed_and_preserves_deadline(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database); activity = ActivityService(database)
+    reminders = TaskReminderService(database, tasks, activity)
+    proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+    original = reminders.schedule(task.id or 0, "100", datetime(2026, 9, 18, 1, tzinfo=UTC))
+    task_application = StewardTaskApplication(tasks, proposals, activity, reminders=reminders, contexts=contexts)
+    actions = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        task_service=tasks, task_reminder_service=reminders, activity_service=activity,
+    )
+
+    card = task_application.handle_command(make_event(text=f"/task {task.id}"))
+    prompt = task_application.handle_command(make_event(text=f"/edit_task_reminder {task.id}"))
+    review = task_application.resolve_task_reference(make_event(text="2026-09-18T11:00:00+08:00"))
+
+    assert isinstance(card, PresentedReply)
+    assert any(action.label == "Change reminder" for action in card.actions)
+    assert isinstance(prompt, PresentedReply)
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review task reminder"
+    proposal_id = int(review.actions[0].command.rsplit(" ", 1)[1])
+    accepted = actions.handle_command(make_event(text=f"/approve_action {proposal_id}"))
+
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Task reminder changed"
+    assert reminders.reminder_for_task(task.id or 0).remind_at == datetime(2026, 9, 18, 3, tzinfo=UTC)
+    assert tasks.get(task.id or 0).due_at == datetime(2026, 9, 18, 15, 59, tzinfo=UTC)
+    assert proposals.get(proposal_id).status == "accepted"
+    assert any(event.event_type is ActivityType.TASK_REMINDER_RESCHEDULED for event in activity.list_recent())
+
+    stale = task_application.propose_reminder(task.id or 0, datetime(2026, 9, 18, 4, tzinfo=UTC), chat_id="100")
+    stale_id = int(stale.actions[0].command.rsplit(" ", 1)[1])
+    reminders.reschedule(
+        task.id or 0, "100", datetime(2026, 9, 18, 5, tzinfo=UTC),
+        expected_remind_at=datetime(2026, 9, 18, 3, tzinfo=UTC), expected_chat_id="100",
+    )
+
+    refused = actions.handle_command(make_event(text=f"/approve_action {stale_id}"))
+
+    assert "was not changed" in refused
+    assert proposals.get(stale_id).status == "pending"
+
+
 def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database)

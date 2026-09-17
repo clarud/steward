@@ -245,6 +245,56 @@ class TaskReminderService:
             )
         return TaskReminder(task, chat_id, normalized)
 
+    def reschedule(
+        self,
+        task_id: int,
+        chat_id: str,
+        remind_at: datetime,
+        *,
+        expected_remind_at: datetime | None,
+        expected_chat_id: str | None,
+    ) -> TaskReminder:
+        """Replace one pending reminder after comparing its reviewed state.
+
+        A pending reminder cannot be redirected from the chat that originally
+        received it.  A missing reminder may be newly scheduled for the chat
+        that explicitly approved it.  This is local SQLite state only.
+        """
+
+        if not chat_id.strip():
+            raise ValueError("A Telegram reminder requires an originating chat.")
+        if remind_at.tzinfo is None or remind_at.utcoffset() is None:
+            raise ValueError("A reminder time must include a UTC offset.")
+        normalized = remind_at.astimezone(UTC)
+        expected = expected_remind_at.astimezone(UTC) if expected_remind_at is not None else None
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            task_row = connection.execute(
+                "SELECT id, title, due_hint, due_at, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if task_row is None:
+                raise ValueError(f"Task {task_id} was not found.")
+            task = TaskService._from_row(task_row)
+            if task.status != "open":
+                raise ValueError(f"Task {task_id} is not open.")
+            reminder_row = connection.execute(
+                "SELECT chat_id, remind_at FROM task_reminders WHERE task_id = ? AND reminded_at IS NULL",
+                (task_id,),
+            ).fetchone()
+            current_chat = str(reminder_row[0]) if reminder_row is not None else None
+            current_time = datetime.fromisoformat(str(reminder_row[1])) if reminder_row is not None else None
+            if current_time != expected or current_chat != expected_chat_id:
+                raise ValueError("This task's reminder changed after the review was created. Open a fresh task card and try again.")
+            if current_chat is not None and current_chat != chat_id:
+                raise ValueError("This task's existing reminder belongs to a different Telegram chat.")
+            connection.execute(
+                "INSERT OR REPLACE INTO task_reminders (task_id, chat_id, remind_at, claimed_at, reminded_at) "
+                "VALUES (?, ?, ?, NULL, NULL)",
+                (task_id, chat_id, normalized.isoformat()),
+            )
+        return TaskReminder(task, chat_id, normalized)
+
     def reminder_for_task(self, task_id: int) -> TaskReminder | None:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(

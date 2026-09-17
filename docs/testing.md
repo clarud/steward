@@ -434,3 +434,14 @@ production authorization merely to complete them.
 - Focused task and application coverage passed for approval, UTC normalization,
   audit activity, and stale-review refusal.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: reviewed task reminder changes
+
+- A task card can now set or change a pending Telegram reminder through a
+  separate stale-safe review. An existing reminder remains bound to its
+  originating chat; a review from another chat cannot redirect its delivery.
+- Reminder approval changes neither the canonical task deadline nor any
+  Calendar relationship. Focused task, application, and Telegram-adapter
+  coverage passed for the review, UTC normalization, stale refusal, and
+  cross-chat boundary.
+- The complete automated suite subsequently reached 100% with no stderr.

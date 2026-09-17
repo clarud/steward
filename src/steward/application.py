@@ -560,6 +560,19 @@ class StewardReviewInboxApplication:
                 f"Task: {title}\nCurrent deadline: {old}\nNew deadline: {new}\n\n"
                 "No Calendar event will be changed."
             )
+        if action_type == StewardTaskApplication.RESCHEDULE_REMINDER:
+            title = payload.get("task_title", "task")
+            old_remind_at = payload.get("old_remind_at")
+            new_remind_at = payload.get("new_remind_at")
+            try:
+                old = timestamp_label(datetime.fromisoformat(old_remind_at)) if old_remind_at else "no pending reminder"
+                new = timestamp_label(datetime.fromisoformat(new_remind_at)) if new_remind_at else "unknown"
+            except ValueError:
+                old, new = old_remind_at or "no pending reminder", new_remind_at or "unknown"
+            return f"Change reminder: {title}", (
+                f"Task: {title}\nCurrent reminder: {old}\nNew reminder: {new}\n\n"
+                "No task deadline or Calendar event will be changed."
+            )
         if action_type.startswith("create_calendar"):
             if "snapshot" not in payload:
                 return "Refresh Calendar preview", "This older proposal needs a fresh Calendar preview before approval."
@@ -1886,6 +1899,7 @@ class StewardTaskApplication:
 
     CREATE_TASK = "create_task"
     RESCHEDULE_TASK = "reschedule_task"
+    RESCHEDULE_REMINDER = "reschedule_task_reminder"
     UNLINK_CALENDAR = "unlink_task_calendar"
 
     def __init__(
@@ -1957,6 +1971,32 @@ class StewardTaskApplication:
                     self._contexts.clear(event.platform, event.chat_id)
                     return "The task deadline was not changed."
             return "There is no task-deadline edit waiting in this chat."
+        if command == "/edit_task_reminder":
+            if not separator or not argument.strip().isdigit():
+                return "Open a task and choose Set reminder or Change reminder, or use /edit_task_reminder followed by a numeric task ID."
+            task = self._tasks.get(int(argument.strip()))
+            if task is None:
+                return f"Task {argument.strip()} was not found."
+            if task.status != "open":
+                return "Only an open task can have a reminder changed."
+            if self._contexts is None or self._reminders is None:
+                return "Task-reminder editing is not configured for this process."
+            self._contexts.set(event.platform, event.chat_id, "task_reminder_edit", task.id or 0)
+            reminder = self._reminders.reminder_for_task(task.id or 0)
+            current = timestamp_label(reminder.remind_at) if reminder is not None else "no pending reminder"
+            return PresentedReply(
+                f"Current reminder: {current}\n\nSend the new reminder time as an ISO-8601 time with its UTC offset, for example:\n"
+                "2026-10-02T09:00:00+08:00\n\nSteward will show a review before changing the local reminder.",
+                (ReplyAction("Cancel", "/cancel_task_reminder"), ReplyAction("Open task", f"/task {task.id}")),
+                title="Change task reminder", icon="⏰",
+            )
+        if command == "/cancel_task_reminder":
+            if self._contexts is not None:
+                context = self._contexts.get(event.platform, event.chat_id)
+                if context is not None and context.kind == "task_reminder_edit":
+                    self._contexts.clear(event.platform, event.chat_id)
+                    return "The task reminder was not changed."
+            return "There is no task-reminder edit waiting in this chat."
         if command == "/propose_task_deadline":
             task_text, value_separator, deadline_text = argument.strip().partition(" ")
             if not separator or not task_text.isdigit() or not value_separator:
@@ -1966,6 +2006,15 @@ class StewardTaskApplication:
             except ValueError as error:
                 return str(error)
             return self.propose_deadline(int(task_text), deadline, chat_id=event.chat_id)
+        if command == "/propose_task_reminder":
+            task_text, value_separator, reminder_text = argument.strip().partition(" ")
+            if not separator or not task_text.isdigit() or not value_separator:
+                return "Use /propose_task_reminder TASK_ID ISO_TIMESTAMP, with an explicit UTC offset."
+            try:
+                reminder_at = TaskService.parse_due_at(reminder_text.strip())
+            except ValueError as error:
+                return str(error)
+            return self.propose_reminder(int(task_text), reminder_at, chat_id=event.chat_id)
         if command == "/propose_unlink_task_calendar":
             if not separator or not argument.strip().isdigit():
                 return "Open a task with a linked existing Calendar event, then choose Remove link."
@@ -1990,6 +2039,13 @@ class StewardTaskApplication:
                 return f"{error} Send the new deadline again, or choose Cancel."
             self._contexts.clear(event.platform, event.chat_id)
             return self.propose_deadline(int(context.identifier), deadline, chat_id=event.chat_id)
+        if context is not None and context.kind == "task_reminder_edit" and normalized and not normalized.startswith("/"):
+            try:
+                reminder_at = TaskService.parse_due_at((event.text or "").strip())
+            except ValueError as error:
+                return f"{error} Send the new reminder time again, or choose Cancel."
+            self._contexts.clear(event.platform, event.chat_id)
+            return self.propose_reminder(int(context.identifier), reminder_at, chat_id=event.chat_id)
         if normalized not in {
             "show that task", "open that task", "show the last task", "open the last task",
             "mark that task complete", "mark this task complete", "complete that task",
@@ -2081,6 +2137,9 @@ class StewardTaskApplication:
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
             actions.insert(1, ReplyAction("Change deadline", f"/edit_task_deadline {task_id}"))
+            if self._reminders is not None:
+                label = "Change reminder" if self._reminders.reminder_for_task(task_id) is not None else "Set reminder"
+                actions.insert(2, ReplyAction(label, f"/edit_task_reminder {task_id}"))
         calendar_event_id = (
             self._calendar_links.task_event_id(task_id)
             if self._calendar_links is not None else None
@@ -2168,6 +2227,41 @@ class StewardTaskApplication:
             f"{reminder_note}{calendar_note}\n\nNo task or Calendar event has been changed yet.",
             (ReplyAction("Apply deadline", f"/approve_action {pending.id}"), ReplyAction("Keep current", f"/reject_action {pending.id}")),
             title="Review task deadline", icon="🗓️",
+            reference=("action", pending.id) if pending.id is not None else None,
+        )
+
+    def propose_reminder(self, task_id: int, remind_at: datetime, *, chat_id: str) -> str | PresentedReply:
+        """Create a reviewed pending-reminder replacement for one open task."""
+
+        if self._reminders is None:
+            return "Task reminders are not configured for this Steward process."
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        if task.status != "open":
+            return "Only an open task can have a reminder changed."
+        existing = self._reminders.reminder_for_task(task_id)
+        payload = {
+            "task_id": str(task_id),
+            "task_title": task.title,
+            "old_remind_at": existing.remind_at.isoformat() if existing is not None else "",
+            "old_chat_id": existing.chat_id if existing is not None else "",
+            "new_remind_at": remind_at.isoformat(),
+            "chat_id": chat_id,
+        }
+        pending = self._proposals.find_pending(self.RESCHEDULE_REMINDER, payload)
+        if pending is None:
+            pending = self._proposals.add(self.RESCHEDULE_REMINDER, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED, object_id=str(pending.id),
+                details=f"Reschedule reminder for task:{task_id}",
+            )
+        old_label = timestamp_label(existing.remind_at) if existing is not None else "no pending reminder"
+        return PresentedReply(
+            f"Task: {task.title}\nCurrent reminder: {old_label}\nNew reminder: {timestamp_label(remind_at)}\n\n"
+            "No task deadline or Calendar event has been changed yet.",
+            (ReplyAction("Apply reminder", f"/approve_action {pending.id}"), ReplyAction("Keep current", f"/reject_action {pending.id}")),
+            title="Review task reminder", icon="⏰",
             reference=("action", pending.id) if pending.id is not None else None,
         )
 
@@ -4870,6 +4964,8 @@ class StewardActionProposalApplication:
             return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_TASK:
             return self._review_task_deadline(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_REMINDER:
+            return self._review_task_reminder(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
             return self._review_delivery_recovery(proposal_id, decision)
         if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
@@ -5142,6 +5238,59 @@ class StewardActionProposalApplication:
             (ReplyAction("Open task", f"/task {task.id}"), ReplyAction("Tasks", "/tasks")),
             title="Task deadline changed", icon="🗓️",
             reference=("task", task.id) if task.id is not None else None,
+        )
+
+    def _review_task_reminder(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Apply one exact Telegram reminder replacement; never mutate Calendar."""
+
+        if self._task_reminders is None:
+            return "Task reminders are not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardTaskApplication.RESCHEDULE_REMINDER:
+            return "Task-reminder proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task-reminder review belongs to a different Telegram chat."
+        if proposal.status == decision:
+            return f"Task-reminder proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task-reminder proposal {proposal.id} was already {proposal.status}."
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The task reminder was not changed.",
+                (ReplyAction("Open task", f"/task {proposal.payload['task_id']}"),),
+                title="Reminder kept", icon="↩️",
+            )
+        task_id = int(proposal.payload["task_id"])
+        old_value = proposal.payload.get("old_remind_at") or None
+        old_chat_id = proposal.payload.get("old_chat_id") or None
+        try:
+            reminder = self._task_reminders.reschedule(
+                task_id,
+                event.chat_id,
+                TaskService.parse_due_at(proposal.payload["new_remind_at"]),
+                expected_remind_at=TaskService.parse_due_at(old_value) if old_value else None,
+                expected_chat_id=old_chat_id,
+            )
+        except ValueError as error:
+            return f"The task reminder was not changed: {error}"
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(
+                ActivityType.TASK_REMINDER_RESCHEDULED, object_id=str(task_id),
+                details=f"New reminder: {reminder.remind_at.isoformat()}",
+            )
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return PresentedReply(
+            f"New Telegram reminder: {timestamp_label(reminder.remind_at)}\n\n"
+            "No task deadline or Calendar event was changed.",
+            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Tasks", "/tasks")),
+            title="Task reminder changed", icon="⏰",
+            reference=("task", task_id),
         )
 
     def _review_claim_revision(

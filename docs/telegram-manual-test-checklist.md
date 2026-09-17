@@ -439,6 +439,13 @@ until a separate filesystem backup exists.
   it explicitly says that relationship was not changed. Modify the local task
   through another test flow while a second deadline review is pending; approval
   of the stale card must refuse and leave it pending for fresh review.
+- Open an open task with a pending Telegram reminder and choose **Change
+  reminder**. Supply an offset-aware ISO timestamp and verify the review shows
+  the old/new reminder while explicitly saying its deadline and Calendar links
+  are unchanged. Reject once, then approve a fresh review and check `/tasks`.
+  Change the reminder through another test flow before approving a second card;
+  the older review must refuse as stale. A task whose reminder belongs to a
+  different approved test chat must not redirect that reminder to this chat.
 - For a task with an explicit `--due-at` value, use `/calendar_task ID`.
   Verify it is a review card and that accepting it creates only one short
   `Due: ...` deadline marker in Calendar; repeating approval must not duplicate

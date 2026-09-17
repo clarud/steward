@@ -115,6 +115,31 @@ def test_task_reminder_claims_retries_and_acknowledges_due_delivery(tmp_path: Pa
     assert activity.list_recent()[0].event_type is ActivityType.TASK_REMINDER_SENT
 
 
+def test_task_reminder_reschedule_is_stale_safe_and_cannot_change_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database); activity = ActivityService(database)
+    service = TaskReminderService(database, tasks, activity)
+    task = tasks.create("Submit CS3210 lab")
+    original = service.schedule(task.id or 0, "100", datetime(2026, 9, 18, 9, tzinfo=UTC))
+
+    changed = service.reschedule(
+        task.id or 0, "100", datetime(2026, 9, 18, 10, tzinfo=UTC),
+        expected_remind_at=original.remind_at, expected_chat_id="100",
+    )
+
+    assert changed.remind_at == datetime(2026, 9, 18, 10, tzinfo=UTC)
+    with pytest.raises(ValueError, match="changed after"):
+        service.reschedule(
+            task.id or 0, "100", datetime(2026, 9, 18, 11, tzinfo=UTC),
+            expected_remind_at=original.remind_at, expected_chat_id="100",
+        )
+    with pytest.raises(ValueError, match="different Telegram chat"):
+        service.reschedule(
+            task.id or 0, "other", datetime(2026, 9, 18, 11, tzinfo=UTC),
+            expected_remind_at=changed.remind_at, expected_chat_id="100",
+        )
+
+
 def test_task_service_requires_a_title() -> None:
     with pytest.raises(ValueError, match="task"):
         TaskService.parse_proposal("remind me to")
