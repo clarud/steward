@@ -2787,7 +2787,7 @@ class StewardCuratedNoteApplication:
         if not separator or not identifier.isdigit():
             return "Use /curate_edit followed by a curated-note proposal ID and replacement text."
         if not content_separator:
-            proposal = self._pending_note(int(identifier))
+            proposal = self._pending_note(int(identifier), event)
             if isinstance(proposal, str):
                 return proposal
             if self._contexts is not None:
@@ -2803,7 +2803,7 @@ class StewardCuratedNoteApplication:
         return self._revise(int(identifier), replacement, event)
 
     def _revise(self, proposal_id: int, replacement: str, event: IncomingEvent) -> str | PresentedReply:
-        proposal = self._pending_note(proposal_id)
+        proposal = self._pending_note(proposal_id, event)
         if isinstance(proposal, str):
             return proposal
         text = replacement.strip()[:6000]
@@ -2835,12 +2835,18 @@ class StewardCuratedNoteApplication:
             )
         return self._review_card(replacement_proposal)
 
-    def _pending_note(self, proposal_id: int) -> ActionProposal | str:
+    def _pending_note(self, proposal_id: int, event: IncomingEvent | None = None) -> ActionProposal | str:
         proposal = self._proposals.get(proposal_id)
         if proposal is None or proposal.action_type != self.CREATE_CURATED_NOTE:
             return "That curated-note proposal was not found."
         if proposal.status != "pending":
             return f"Curated note proposal {proposal_id} was already {proposal.status}."
+        if event is not None:
+            proposal_chat = proposal.payload.get("chat_id")
+            if not isinstance(proposal_chat, str) or not proposal_chat:
+                return "This older curated-note review is missing its chat binding. Reject it, then create a fresh draft from the selected message."
+            if proposal_chat != event.chat_id:
+                return "This curated-note review belongs to another authorized Telegram chat. No draft was changed."
         return proposal
 
     @staticmethod

@@ -3218,6 +3218,9 @@ def test_telegram_natural_reply_can_stage_a_curated_note_for_review(tmp_path: Pa
     denied = application.handle(replace(make_event(text="/approve_action 1"), chat_id="other-chat"))
     assert "belongs to another authorized Telegram chat" in denied
     assert proposals.get(1).status == "pending"
+    edit_denied = application.handle(replace(make_event(text="/curate_edit 1 # Different draft"), chat_id="other-chat"))
+    assert "belongs to another authorized Telegram chat" in edit_denied
+    assert proposals.get(1).status == "pending"
     saved = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(saved, PresentedReply)
     assert saved.title == "Curated note saved"

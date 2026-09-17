@@ -578,9 +578,9 @@ explicit operations:
   exact reply as the same editable, reviewable draft; it does not save a source
   or infer retention from an ordinary un-replied message.
 - Telegram-created curated-note reviews are bound to their originating chat.
-  Another authorized chat cannot approve the draft; legacy unbound drafts fail
-  closed for approval but may be discarded and recreated from the source
-  message.
+  Another authorized chat cannot approve or edit the draft; legacy unbound
+  drafts fail closed for approval or editing but may be discarded and recreated
+  from the source message.
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.

@@ -642,8 +642,9 @@ until a separate filesystem backup exists.
   while rejection ends with **Curated note declined** and does not create a
   source.
 - If more than one authorized Telegram chat is configured, create a curated
-  note draft in one chat and try **Save note** in the other. It must refuse the
-  cross-chat approval, leave the draft pending, and create no Inbox source.
+  note draft in one chat and try **Save note** or **Edit** in the other. It
+  must refuse the cross-chat request, leave the draft pending, and create no
+  Inbox source or replacement draft.
 - Reply to a non-sensitive discussion message with `/curate_synthesize local`.
   Verify that the returned model draft is marked as local-model synthesis and
   remains unsaved until approval. Use `external` only when you deliberately
