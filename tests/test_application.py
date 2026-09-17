@@ -2697,6 +2697,9 @@ def test_explicit_task_deadline_is_reviewed_and_persisted_with_its_timezone(tmp_
 
     assert isinstance(preview, PresentedReply)
     assert "Due at: 18 Sep 2026 · 3:59 pm (UTC+00:00)" in preview.text
+    denied = application.handle(replace(make_event(text="/approve_action 1"), chat_id="other-chat"))
+    assert "belongs to another authorized Telegram chat" in denied
+    assert tasks.list_open() == ()
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task saved"

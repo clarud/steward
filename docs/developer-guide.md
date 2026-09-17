@@ -584,6 +584,9 @@ explicit operations:
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
+- Telegram task-creation reviews are also chat-bound. A second authorized chat
+  cannot create a task from another chat's draft; legacy unbound reviews fail
+  closed for acceptance but can still be rejected.
 - `/home` and `/pending` unify outstanding actions, organization choices,
   staged intake, and knowledge updates into identifiable review cards. After
   opening one card, an unambiguous `yes`/`accept` or `no`/`reject` reply is

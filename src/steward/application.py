@@ -5239,6 +5239,13 @@ class StewardActionProposalApplication:
             if isinstance(proposal_chat, str) and proposal_chat and proposal_chat != event.chat_id:
                 return "This record review belongs to another authorized Telegram chat. No record was changed."
         if proposal is not None and proposal.action_type == StewardTaskApplication.CREATE_TASK:
+            proposal_chat = proposal.payload.get("chat_id")
+            if not isinstance(proposal_chat, str) or not proposal_chat:
+                if decision == "rejected":
+                    return self._review_task(proposal_id, decision)
+                return "This older task review is missing its chat binding. Reject it, then create a fresh task proposal."
+            if proposal_chat != event.chat_id:
+                return "This task review belongs to another authorized Telegram chat. No task was created."
             return self._review_task(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_TASK:
             return self._review_task_deadline(proposal_id, decision, event)

@@ -572,6 +572,16 @@ with no stderr.
   preservation, normal owner approval, and cross-chat edit refusal. The
   complete automated suite subsequently reached 100% with no stderr.
 
+## Post-session automated delivery: chat-bound task creation
+
+- A task proposal already records the originating Telegram chat; its approval
+  path now enforces that boundary. Another authorized chat cannot create the
+  task from the draft, while an older unbound review fails closed for approval
+  and remains rejectable.
+- Focused application coverage verifies the cross-chat refusal before normal
+  owner approval. The complete automated suite subsequently reached 100% with
+  no stderr.
+
 ## Acceptance wrap-up — 17 September 2026
 
 The current guided validation batch is complete and passed.
