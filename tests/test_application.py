@@ -2058,6 +2058,49 @@ def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path
     assert unlinked.reference == ("calendar", "unlinked-event")
 
 
+def test_calendar_event_can_navigate_to_its_linked_travel_record(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "b" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    records = RecordService(database)
+    record = records.create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", now, now, "ABC123")
+    )
+    links = CalendarLinkRepository(database)
+    assert links.link_travel_event(f"travel-record:{record.id}", record.id or 0, "flight-event-opaque")
+    contexts = ReviewContextRepository(database)
+    application = StewardCalendarApplication(
+        None, contexts=contexts, calendar_links=links, records=records
+    )
+
+    event_card = application._event_card(
+        make_event(text="/calendar_get flight-event-opaque"),
+        type("Event", (), {
+            "id": "flight-event-opaque", "summary": "Flight SQ638",
+            "start": "2026-10-01T09:00:00+08:00", "end": "2026-10-01T17:00:00+09:00",
+            "location": None, "description": None,
+        })(),
+    )
+    linked = application.resolve_calendar_reference(make_event(text="what flight is this?"))
+
+    assert any(action.command == "/calendar_linked_trip" for action in event_card.actions)
+    assert isinstance(linked, PresentedReply)
+    assert linked.title == "Linked trip"
+    assert "SQ638" in linked.text and "Singapore" in linked.text and "Tokyo" in linked.text
+    assert linked.actions[0].command == f"/record travel {record.id}"
+    assert linked.actions[1].command == "/calendar_get flight-event-opaque"
+    assert linked.reference == ("calendar", "flight-event-opaque")
+
+    contexts.set("telegram", "100", "calendar", "unlinked-event")
+    unlinked = application.resolve_calendar_reference(make_event(text="show linked trip"))
+
+    assert isinstance(unlinked, PresentedReply)
+    assert unlinked.title == "No linked trip"
+    assert unlinked.reference == ("calendar", "unlinked-event")
+
+
 def test_telegram_can_review_and_save_a_local_existing_task_calendar_association(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database)

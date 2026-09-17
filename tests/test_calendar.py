@@ -41,6 +41,8 @@ def test_calendar_links_are_queryable_without_reading_the_external_calendar(tmp_
     assert links.link_task_event(f"task:{task.id}", task.id or 0, "task-event") is False
     assert links.task_event_id(task.id or 0) == "task-event"
     assert links.travel_event_id(record.id or 0) == "travel-event"
+    assert links.travel_record_id_for_event("travel-event") == record.id
+    assert links.travel_record_id_for_event("unlinked-event") is None
 
 
 class FakeEvents:

@@ -454,6 +454,12 @@ until a separate filesystem backup exists.
   instead of offering another creation proposal. The button must fetch current
   Calendar data. Complete the task and verify the task can still be viewed and
   completed independently; this flow does not delete or edit its Calendar event.
+- After creating an approved Calendar event from a harmless Travel record,
+  open that event and verify it offers **Linked trip**. The follow-up must show
+  the exact local flight/route and offer **Open trip** plus **Back to event**.
+  Try the same follow-up on an ordinary Calendar event: it must say there is no
+  linked trip rather than guessing from the event title. Neither path may edit
+  Calendar or create a record.
 - From that opened Calendar marker, say `what task is this for?` or use the
   linked-task follow-up. Verify it offers **Open task** for the original task.
   After opening other cards or restarting Telegram, reply to that older

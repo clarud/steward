@@ -445,3 +445,15 @@ production authorization merely to complete them.
   coverage passed for the review, UTC normalization, stale refusal, and
   cross-chat boundary.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: linked travel Calendar navigation
+
+- A local `calendar_event_links` lookup now maps a reviewed
+  Steward-created travel event back to its persisted travel record. The current
+  Calendar card exposes **Linked trip** only for that exact opaque link.
+- The follow-up opens the record through an ordinary local card and can return
+  to the current externally authoritative event. Unlinked Calendar events
+  explicitly report that no linked trip exists; they do not become travel
+  records by title matching. This feature performs no Calendar write.
+- Focused Calendar, application, and Telegram-adapter tests passed, followed
+  by a complete suite run at 100% with no stderr.

@@ -3578,6 +3578,7 @@ class StewardCalendarApplication:
         contexts: ReviewContextRepository | None = None,
         calendar_links: CalendarLinkRepository | None = None,
         tasks: TaskService | None = None,
+        records: RecordService | None = None,
         action_proposals: ActionProposalRepository | None = None,
         activity: ActivityService | None = None,
     ) -> None:
@@ -3585,6 +3586,7 @@ class StewardCalendarApplication:
         self._contexts = contexts
         self._calendar_links = calendar_links
         self._tasks = tasks
+        self._records = records
         self._action_proposals = action_proposals
         self._activity = activity
 
@@ -3605,6 +3607,12 @@ class StewardCalendarApplication:
             "/calendar_linked_task",
         }:
             return self._linked_task_card(event)
+        if normalized in {
+            "show linked trip", "open linked trip", "show the linked trip",
+            "open the linked trip", "show linked travel record", "open linked travel record",
+            "what flight is this", "what trip is this", "/calendar_linked_trip",
+        }:
+            return self._linked_trip_card(event)
         if normalized not in {
             "show that event", "open that event", "show the last event",
             "open the last event", "show that calendar event", "open that calendar event",
@@ -3773,6 +3781,15 @@ class StewardCalendarApplication:
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
         actions: list[ReplyAction] = [ReplyAction("Refresh", f"/calendar_get {identifier}")]
+        if self._calendar_links is not None and self._records is not None:
+            try:
+                travel_record_id = self._calendar_links.travel_record_id_for_event(identifier)
+            except ValueError:
+                travel_record_id = None
+            if travel_record_id is not None and any(
+                item.id == travel_record_id for item in self._records.list_travel_records()
+            ):
+                actions.append(ReplyAction("Linked trip", "/calendar_linked_trip"))
         if self._calendar_links is not None and self._tasks is not None:
             try:
                 task_id = self._calendar_links.task_id_for_event(identifier)
@@ -3847,6 +3864,51 @@ class StewardCalendarApplication:
             f"{task.title}\nStatus: {task.status}{due}\n\nThis is Steward's local {relationship}; completing the task does not change the Calendar event.",
             (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Back to event", f"/calendar_get {context.identifier}")),
             title="Linked task",
+            reference=("calendar", str(context.identifier)),
+        )
+
+    def _linked_trip_card(self, event: IncomingEvent) -> PresentedReply | str | None:
+        """Move from a Steward-created travel event to its preserved record.
+
+        General Calendar events do not become records merely because a user
+        opens them. The local link is present only after Steward has created a
+        reviewed event for a persisted travel record.
+        """
+
+        if self._contexts is None:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "calendar":
+            return None
+        if self._calendar_links is None or self._records is None:
+            return "Travel-record Calendar links are not configured for this Steward process."
+        try:
+            record_id = self._calendar_links.travel_record_id_for_event(str(context.identifier))
+        except ValueError:
+            record_id = None
+        if record_id is None:
+            return PresentedReply(
+                "This Calendar event is not linked to a Steward travel record. Calendar events and travel records stay separate unless Steward created an approved event from that record.",
+                (ReplyAction("Upcoming", "/calendar_search"), ReplyAction("Home", "/home")),
+                title="No linked trip",
+                reference=("calendar", str(context.identifier)),
+            )
+        record = next((item for item in self._records.list_travel_records() if item.id == record_id), None)
+        if record is None:
+            return PresentedReply(
+                "This Calendar event has a local Steward travel-record link, but that record is no longer available. The Calendar event was not changed.",
+                (ReplyAction("Refresh", f"/calendar_get {context.identifier}"), ReplyAction("Home", "/home")),
+                title="Linked trip unavailable",
+                reference=("calendar", str(context.identifier)),
+            )
+        route = ""
+        if record.departure or record.arrival:
+            route = f"\nRoute: {record.departure or 'unknown'} → {record.arrival or 'unknown'}"
+        flight = f"Flight: {record.flight_number}" if record.flight_number else "Travel record"
+        return PresentedReply(
+            f"{flight}{route}\n\nThis is Steward's local link to an approved Calendar event. Google Calendar remains authoritative for the event itself.",
+            (ReplyAction("Open trip", f"/record travel {record_id}"), ReplyAction("Back to event", f"/calendar_get {context.identifier}")),
+            title="Linked trip",
             reference=("calendar", str(context.identifier)),
         )
 

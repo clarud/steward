@@ -1654,6 +1654,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 _calendar_reader_factory(settings), contexts=review_contexts,
                 calendar_links=CalendarLinkRepository(database_path),
                 tasks=TaskService(database_path),
+                records=RecordService(database_path),
                 action_proposals=ActionProposalRepository(database_path),
                 activity=activity,
             ),

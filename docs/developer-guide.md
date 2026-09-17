@@ -1256,6 +1256,11 @@ After an approved travel-event write, reopening that Travel record likewise
 shows `Calendar: linked event` and offers **View calendar** using the opaque
 local link. The button performs a fresh Calendar read; the local record is not
 treated as a stale copy of the external event.
+The reverse route is equally narrow: a current Calendar card offers **Linked
+trip** only if its opaque external ID is stored in `calendar_event_links` for a
+persisted Travel record. The follow-up opens that local record and then allows
+the user to return to the current Calendar event. An arbitrary Calendar event
+never becomes a travel record because its summary happens to resemble a flight.
 Calendar event cards can also use **what task is this for?** after a reviewed
 deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as

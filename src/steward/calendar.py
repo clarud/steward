@@ -168,6 +168,23 @@ class CalendarLinkRepository:
     def travel_event_id(self, record_id: int) -> str | None:
         return self._event_id("calendar_event_links", "travel_record_id", record_id)
 
+    def travel_record_id_for_event(self, event_id: str) -> int | None:
+        """Return the local travel record for a Steward-created event.
+
+        This is only a lookup of Steward's own opaque link. It does not infer
+        that an arbitrary Google Calendar event is a travel record or read a
+        stale copy of the event from SQLite.
+        """
+
+        if not event_id.strip():
+            raise ValueError("Calendar event ID must not be empty.")
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT travel_record_id FROM calendar_event_links WHERE external_event_id = ?",
+                (event_id,),
+            ).fetchone()
+        return int(row[0]) if row else None
+
     def task_event_id(self, task_id: int) -> str | None:
         return self._event_id("calendar_task_event_links", "task_id", task_id)
 

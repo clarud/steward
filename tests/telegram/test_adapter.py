@@ -476,6 +476,7 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     assert unregister_positions[0] < fallback_positions[0]
     assert ("command", "home") in application.handlers
     assert ("command", "pending") in application.handlers
+    assert ("command", "calendar_linked_trip") in application.handlers
     assert ("command", "calendar") in application.handlers
 
 
