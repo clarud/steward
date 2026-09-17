@@ -528,3 +528,15 @@ production authorization merely to complete them.
   both reviews remain pending, and opening the organization card neither moves
   the source nor creates the record.
 - The complete automated suite subsequently reached 100% with no stderr.
+
+## Post-session automated delivery: evidence-driven generic-file record routing
+
+- After explicit Save and local extraction, a generic filename can receive one
+  pending Travel, receipt, or warranty review when a unique record type has at
+  least two labelled, source-backed fields. Filename hints still take priority.
+- A single incidental label or an ambiguous highest score creates no record
+  proposal. No extracted text is sent to a model and no record is created by
+  this routing step.
+- Focused application coverage verifies a generic receipt and the one-label
+  false-positive guard. The complete automated suite subsequently reached 100%
+  with no stderr.

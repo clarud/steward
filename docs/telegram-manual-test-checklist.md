@@ -526,6 +526,10 @@ until a separate filesystem backup exists.
   and verify that neither approval is implied by the other. After accepting the
   record, use **Add to calendar** and verify it opens a second, separately
   approved Calendar proposal.
+- Upload a harmless file with a generic filename but labelled receipt fields
+  such as `Merchant`, `Total`, and `Receipt Number`. After **Save**, it should
+  offer a receipt-record review based on extracted evidence. A generic file
+  containing only one incidental label must not receive a record proposal.
 - On any Travel, receipt, or warranty review card, choose **Organize Inbox**.
   Verify Steward opens a separate organization review rather than moving the
   original or accepting the record automatically.

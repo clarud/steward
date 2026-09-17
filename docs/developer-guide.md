@@ -1038,6 +1038,15 @@ organization proposal never creates its record. If an older organization thread
 is already waiting in the chat, Steward reports that constraint and leaves both
 originals and records unchanged.
 
+After local extraction, record proposal routing does not rely solely on the
+original filename. A filename explicitly suggesting an itinerary, invoice, or
+warranty remains a strong routing hint, but a generic filename may also produce
+one record review when exactly one record type has at least two independently
+extracted labelled fields. A single incidental label, or a tie between record
+types, produces no record proposal. This deterministic evidence check happens
+only after the user has chosen Save; it sends no content to a model and does not
+create a record.
+
 `IntentResolver` routes deterministic signals first: a `/save` command or an
 attachment means capture, while `/delete`, `/organize`, and `/inspect` map to
 their corresponding intents. `WorkspaceService` creates explicit workspaces

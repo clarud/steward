@@ -1583,9 +1583,10 @@ class StewardRecordApplication:
     ) -> PresentedReply | None:
         """Create the appropriate *review* from one just-preserved original.
 
-        Classification selects a proposal type only.  Field extraction remains
-        deterministic and evidence-backed, and this method never persists a
-        record itself.
+        An explicit filename hint wins when it yields evidence. Otherwise this
+        uses only the already-extracted local fragments to choose one clearly
+        supported record type. It never sends source text to a model or
+        persists a record itself.
         """
 
         normalized = source_name.casefold()
@@ -1593,7 +1594,28 @@ class StewardRecordApplication:
             return self._propose_document_record_for_source("receipt", source_id, chat_id=chat_id)
         if "warranty" in normalized:
             return self._propose_document_record_for_source("warranty", source_id, chat_id=chat_id)
-        return self._propose_travel_record_for_source(source_id, chat_id=chat_id)
+        if any(term in normalized for term in ("flight", "itinerary", "booking")):
+            return self._propose_travel_record_for_source(source_id, chat_id=chat_id)
+
+        fragments = self._fragments.list_for_source(source_id)
+        evidence = [(fragment.id or 0, fragment.text) for fragment in fragments]
+        if not evidence:
+            return None
+        candidates = {
+            "travel": len(self._records.propose_travel_record(source_id, evidence).field_evidence),
+            "receipt": len(self._records.propose_receipt_record(source_id, evidence).field_evidence),
+            "warranty": len(self._records.propose_warranty_record(source_id, evidence).field_evidence),
+        }
+        # One incidental label is too weak for autonomous routing. A generic
+        # filename needs at least two independently extracted fields and a
+        # unique best type before Steward opens a record review.
+        best_score = max(candidates.values())
+        best = [kind for kind, score in candidates.items() if score == best_score]
+        if best_score < 2 or len(best) != 1:
+            return None
+        if best[0] == "travel":
+            return self._propose_travel_record_for_source(source_id, chat_id=chat_id)
+        return self._propose_document_record_for_source(best[0], source_id, chat_id=chat_id)
 
     def _propose_travel_record_for_source(
         self, source_id: int, *, chat_id: str | None = None
@@ -6258,14 +6280,11 @@ class StewardEventApplication:
     ) -> str | PresentedReply:
         saved = self._capture_application.format_result(result)
         record_review: PresentedReply | None = None
-        if (
-            intake_classification is not None
-            and intake_classification[0] == "record"
-            and self._record_application is not None
-            and result.source.id is not None
-        ):
+        if self._record_application is not None and result.source.id is not None:
             record_review = self._record_application.propose_for_captured_source(
-                result.source.id, intake_classification[1], chat_id=event.chat_id
+                result.source.id,
+                intake_classification[1] if intake_classification is not None else result.source.path.name,
+                chat_id=event.chat_id,
             )
         if self._organization_approval_application is None:
             if record_review is None:

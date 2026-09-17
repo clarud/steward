@@ -3996,6 +3996,51 @@ def test_accepted_flight_intake_immediately_offers_a_record_review(tmp_path: Pat
     assert RecordService(database_path).list_travel_records() == []
 
 
+def test_generic_filename_intake_routes_to_a_unique_evidence_backed_record_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    sources = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    activity = ActivityService(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", sources, fragments, activity)
+    proposals = ActionProposalRepository(database)
+    records = RecordService(database)
+    record_application = StewardRecordApplication(records, fragments, proposals, activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture),
+        provisional_intake_application=StewardProvisionalIntakeApplication(
+            ProvisionalIntakeService(tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database), capture, activity, PrivacyService(database))
+        ),
+        record_application=record_application,
+    )
+    original = tmp_path / "lecture-handout.md"
+    original.write_text("Merchant: Campus Cafe\nTotal: SGD 12.50\nReceipt Number: R-7", encoding="utf-8")
+    upload = IncomingEvent(
+        "telegram:receipt", "telegram", "100", "8", None,
+        datetime(2026, 9, 9, tzinfo=UTC), None, (original.name,),
+    )
+
+    staged = application.handle_file(upload, original)
+    reviewed = application.handle(make_event(text="/intake_accept 1"))
+
+    assert isinstance(staged, PresentedReply)
+    assert "Type: document" in staged.text
+    assert isinstance(reviewed, PresentedReply)
+    assert reviewed.title == "Review receipt record"
+    assert "merchant: Campus Cafe" in reviewed.text
+    assert "total_cents: 1250" in reviewed.text
+    assert proposals.get(1).action_type == StewardRecordApplication.CREATE_RECEIPT_RECORD
+    assert records.list_receipt_records() == []
+
+    weak_source = sources.add(Source(
+        None, tmp_path / "weak.md", "e" * 64, SourceType.MARKDOWN, 0,
+        datetime(2026, 9, 9, tzinfo=UTC), datetime(2026, 9, 9, tzinfo=UTC), datetime(2026, 9, 9, tzinfo=UTC),
+    ))
+    fragments.replace_for_source(ExtractionResult(weak_source.id or 0, (
+        SourceFragment(None, weak_source.id or 0, None, 0, "Product: incidental label", "line 1"),
+    )))
+    assert record_application.propose_for_captured_source(weak_source.id or 0, "weak.md") is None
+
+
 def test_accepted_record_intake_also_creates_a_separate_organization_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     inbox = tmp_path / "vault" / "inbox"
