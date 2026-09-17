@@ -1534,6 +1534,33 @@ class StewardRecordApplication:
             return "That previously opened record is no longer available. Open another record to continue."
         return self._record_detail(" ", f"{requested_type} {context.identifier}")
 
+    def calendar_followup_command(self, event: IncomingEvent) -> str | None:
+        """Translate a bounded travel-card request into the review command.
+
+        This deliberately requires an exact previously opened travel record.
+        It is not a general natural-language Calendar writer: the resulting
+        command still creates the normal pending proposal, whose approval is
+        required before the Calendar adapter is even constructed.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "add this flight to calendar", "put this flight in calendar",
+            "put this flight on calendar", "add that flight to calendar",
+            "put that flight in calendar", "add this trip to calendar",
+            "put this trip in calendar", "put it in calendar", "put it on calendar",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "record:travel":
+            return None
+        if not self._record_exists("travel", context.identifier):
+            self._contexts.clear(event.platform, event.chat_id)
+            return None
+        return f"/calendar_travel {context.identifier}"
+
     def _record_exists(self, record_type: str, record_id: int) -> bool:
         records = {
             "travel": self._records.list_travel_records,
@@ -5938,6 +5965,14 @@ class StewardEventApplication:
             if knowledge_response is not None:
                 return knowledge_response
         if self._record_application is not None:
+            if self._action_proposal_application is not None:
+                calendar_followup = self._record_application.calendar_followup_command(event)
+                if calendar_followup is not None:
+                    calendar_response = self._action_proposal_application.handle_command(
+                        replace(event, text=calendar_followup)
+                    )
+                    if calendar_response is not None:
+                        return calendar_response
             record_reference = self._record_application.resolve_record_reference(event)
             if record_reference is not None:
                 return record_reference

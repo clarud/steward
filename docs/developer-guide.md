@@ -1261,6 +1261,11 @@ trip** only if its opaque external ID is stored in `calendar_event_links` for a
 persisted Travel record. The follow-up opens that local record and then allows
 the user to return to the current Calendar event. An arbitrary Calendar event
 never becomes a travel record because its summary happens to resemble a flight.
+After explicitly opening a persisted Travel record, a bounded phrase such as
+**put this flight in calendar** translates to the same `/calendar_travel ID`
+review path as its visible action. The selected record must exist in the current
+chat's context. This route only creates a pending proposal; it does not start
+OAuth or construct a Calendar writer until a later explicit approval.
 Calendar event cards can also use **what task is this for?** after a reviewed
 deadline marker is opened: Steward looks up only the local opaque-ID link and
 offers **Open task**. An unlinked event explicitly says so; it is never treated as

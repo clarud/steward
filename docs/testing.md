@@ -457,3 +457,13 @@ production authorization merely to complete them.
   records by title matching. This feature performs no Calendar write.
 - Focused Calendar, application, and Telegram-adapter tests passed, followed
   by a complete suite run at 100% with no stderr.
+
+## Post-session automated delivery: natural Travel-record Calendar review
+
+- After an exact Travel record has been opened in a chat, the bounded request
+  `put this flight in calendar` now creates the normal pending Calendar review.
+  It cannot select an arbitrary trip, write an event, or start Calendar OAuth.
+- The application test verifies that the review remains pending and no local
+  Calendar-event link exists before an explicit later approval.
+- Focused application/Calendar/Telegram coverage passed, followed by a complete
+  suite run at 100% with no stderr.

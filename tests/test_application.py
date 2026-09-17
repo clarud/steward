@@ -4621,6 +4621,43 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     assert response.actions[0].command == "/approve_action 1"
 
 
+def test_opened_travel_record_can_naturally_propose_calendar_review(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "trip.pdf", "c" * 64, SourceType.PDF, 0, now, now, now)
+    )
+    records = RecordService(database)
+    record = records.create_travel_record(
+        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", now, now.replace(hour=17), "ABC123")
+    )
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    record_application = StewardRecordApplication(
+        records, SourceFragmentRepository(database), proposals, activity, contexts=contexts
+    )
+    action_application = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        CalendarEventProposalService(proposals, records, activity),
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        record_application=record_application, action_proposal_application=action_application,
+    )
+
+    opened = application.handle(make_event(text=f"/record travel {record.id}"))
+    review = application.handle(make_event(text="put this flight in calendar"))
+
+    assert isinstance(opened, PresentedReply)
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review Calendar event"
+    assert "No event has been created" in review.text
+    assert proposals.get(1).action_type == "create_calendar_travel_event"
+    assert CalendarLinkRepository(database).travel_event_id(record.id or 0) is None
+
+
 def test_telegram_can_create_a_reviewed_task_calendar_proposal(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     activity = ActivityService(database_path)

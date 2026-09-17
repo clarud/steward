@@ -460,6 +460,11 @@ until a separate filesystem backup exists.
   Try the same follow-up on an ordinary Calendar event: it must say there is no
   linked trip rather than guessing from the event title. Neither path may edit
   Calendar or create a record.
+- Open a harmless persisted Travel record and say **put this flight in
+  calendar**. It must produce the usual readable Calendar-event review rather
+  than writing immediately. The review must still be rejected or explicitly
+  approved using its visible controls; use the phrase outside an opened Travel
+  record and Steward must not guess which event to create.
 - From that opened Calendar marker, say `what task is this for?` or use the
   linked-task follow-up. Verify it offers **Open task** for the original task.
   After opening other cards or restarting Telegram, reply to that older
