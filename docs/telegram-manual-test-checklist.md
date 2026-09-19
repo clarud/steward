@@ -621,10 +621,11 @@ until a separate filesystem backup exists.
   setup, send `/agent find my CS3210 notes`. Verify Telegram returns a short
   retry-oriented read-only-workflow message without a local path, token, or raw
   provider diagnostic. No source, task, Calendar, or proposal state may change.
-- Choose a harmless Markdown source with a known ID and send
-  `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
-  approval, **Open source** inspects the same original, accepting refreshes its
-  fragments, and the original file remains byte-for-byte unchanged.
+- Open a harmless Markdown source and choose **Refresh text** (or use
+  `/propose_reextract SOURCE_ID` as a recovery path). Verify that no derived
+  text changes before approval, **Open source** inspects the same original,
+  accepting refreshes its fragments, and the original file remains byte-for-byte
+  unchanged.
 - If a second authorized test chat is available, check `/pending` there before
   approving the re-extraction. It must not show the first chat's maintenance
   review, and manually sending its approval command from that second chat must

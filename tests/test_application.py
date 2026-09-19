@@ -1908,6 +1908,9 @@ def test_telegram_source_privacy_picker_is_available_from_source_and_model_denia
     assert ("Privacy", f"/privacy_options {source.id}") in {
         (action.label, action.command) for action in source_card.actions
     }
+    assert ("Refresh text", f"/propose_reextract {source.id}") in {
+        (action.label, action.command) for action in source_card.actions
+    }
     denied = application.handle(make_event(text=f"/summarize_source {source.id}"))
     assert isinstance(denied, PresentedReply)
     assert denied.title == "Model access blocked"

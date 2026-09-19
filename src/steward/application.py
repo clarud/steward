@@ -1032,7 +1032,8 @@ class StewardReadApplication:
             )
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
             + ((ReplyAction("Workspaces", f"/source_memberships {source_id}"),
-                ReplyAction("Link workspace", f"/source_workspaces {source_id}")) if source.status.value == "active" else ()),
+                ReplyAction("Link workspace", f"/source_workspaces {source_id}"),
+                ReplyAction("Refresh text", f"/propose_reextract {source_id}")) if source.status.value == "active" else ()),
             title=source.path.name,
             icon="📄",
             reference=("source", source_id),

@@ -718,3 +718,13 @@ batch.
   browser, and displays no scope string, token, or client path. Focused tests
   cover read/write alternatives and insufficient Calendar metadata. The full
   regression suite passed at 100% after this delivery.
+
+## Post-session automated delivery: source-card derived-text refresh
+
+- Active source cards now expose a compact **Refresh text** action, so an owner
+  can initiate the existing reviewed re-extraction workflow without locating a
+  source ID or typing an administrative command.
+- The button is only a shortcut to the same pending proposal: derived text does
+  not change until explicit approval, the original remains unchanged, and the
+  existing chat-bound proposal and parser-recovery protections still apply.
+  Focused source-card coverage and the full regression suite passed at 100%.
