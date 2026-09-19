@@ -618,3 +618,18 @@ Known product improvements remain planned, including clearer source identifiers
 across source-list pages, more compact action labels, richer guided next
 actions, and broader natural-language routing. They are UX/delivery backlog
 items rather than failures found in this validation batch.
+
+## Deployment state: registered start-at-login task â€” 20 September 2026
+
+- With explicit user authorization, Windows Task Scheduler now contains the
+  local-only `Steward Telegram` task.
+- Read-back verification confirmed the expected virtual-environment executable,
+  project working directory, `telegram`-only arguments (no secrets),
+  `IgnoreNew` duplicate-instance policy, and three bounded restart attempts.
+- Before startup, a foreground-poller inspection found no running Steward
+  Telegram process. The scheduled task was then started and remained **Running**
+  across a short observation interval; Task Scheduler reported its normal
+  running result and `steward health --strict` passed concurrently.
+- Remaining live acceptance: send one harmless Telegram request and receive a
+  reply from the scheduled process, verify an actual Windows logon trigger, then
+  exercise a controlled provider-outage/recovery path.

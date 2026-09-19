@@ -148,7 +148,15 @@ real code paths without touching the user's operational database or vault:
 
 The installation's `steward health --strict` preflight passed: both databases were
 available, one authorized root was available, and a Telegram token was configured.
-A read-only Task Scheduler inspection found no task named `Steward Telegram`.
-Therefore Task Scheduler registration, logon triggering, one-poller verification,
-and live Telegram/provider outage recovery remain unperformed. Do not interpret
-the disposable recovery rehearsal as start-at-login acceptance.
+On 2026-09-20, the user explicitly authorized registration of the local
+`Steward Telegram` task. It uses this project's
+virtual-environment `steward.exe`, has `telegram` as its only argument, uses the
+project as its working directory, ignores duplicate instances, and has the
+documented bounded restart policy. A foreground-poller inspection found no
+running Steward Telegram process, after which the task was started and remained
+**Running** across a short observation period. Strict local health also passed
+while it was running. This proves registration and immediate startup, but not a
+future Windows logon trigger, an end-to-end Telegram reply from the scheduled
+process, or live Telegram/provider outage recovery. Do not interpret the
+disposable recovery rehearsal or task registration alone as full start-at-login
+acceptance.
