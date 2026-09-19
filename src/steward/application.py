@@ -2192,6 +2192,11 @@ class StewardTaskApplication:
             "mark that task complete", "mark this task complete", "complete that task",
             "complete this task", "i completed that task", "i completed this task",
             "remove that calendar link", "unlink that calendar event", "unlink that event",
+            "when is the deadline", "when is that deadline", "when is this due",
+            "when is that due", "what is the deadline", "what is this due",
+            "do i have a reminder", "when is the reminder", "when is that reminder",
+            "show the linked calendar event", "show that calendar event", "open the linked calendar event",
+            "what calendar event is this linked to",
         }:
             return None
         if context is None or context.kind != "task":
@@ -2219,6 +2224,48 @@ class StewardTaskApplication:
             )
         if normalized in {"remove that calendar link", "unlink that calendar event", "unlink that event"}:
             return self.propose_unlink_calendar(context.identifier, chat_id=event.chat_id)
+        if normalized in {
+            "when is the deadline", "when is that deadline", "when is this due",
+            "when is that due", "what is the deadline", "what is this due",
+        }:
+            deadline = (
+                f"Deadline: {timestamp_label(task.due_at)}" if task.due_at is not None
+                else (f"Deadline cue: {task.due_hint}" if task.due_hint else "This task has no deadline.")
+            )
+            return PresentedReply(
+                f"{deadline}\n\nThis is a local Steward task. It does not imply a Calendar event.",
+                (ReplyAction("Open task", f"/task {task.id}"),),
+                title="Task deadline", icon="📅", reference=("task", task.id or 0),
+            )
+        if normalized in {"do i have a reminder", "when is the reminder", "when is that reminder"}:
+            reminder = self._reminders.reminder_for_task(context.identifier) if self._reminders is not None else None
+            label = f"Reminder: {timestamp_label(reminder.remind_at)}" if reminder is not None else "No Telegram reminder is scheduled."
+            actions = [ReplyAction("Open task", f"/task {task.id}")]
+            if task.status == "open" and self._reminders is not None:
+                actions.insert(0, ReplyAction("Change reminder" if reminder is not None else "Set reminder", f"/edit_task_reminder {task.id}"))
+            return PresentedReply(
+                f"{label}\n\nReminders are local Steward messages; they do not create Calendar events.",
+                tuple(actions), title="Task reminder", icon="⏰", reference=("task", task.id or 0),
+            )
+        if normalized in {
+            "show the linked calendar event", "show that calendar event", "open the linked calendar event",
+            "what calendar event is this linked to",
+        }:
+            event_id = None
+            if self._calendar_links is not None:
+                event_id = self._calendar_links.associated_event_id_for_task(context.identifier)
+                event_id = event_id or self._calendar_links.task_event_id(context.identifier)
+            if event_id is None:
+                return PresentedReply(
+                    "This task has no linked Calendar event. Tasks remain separate unless you explicitly approve a Calendar relationship.",
+                    (ReplyAction("Open task", f"/task {task.id}"),),
+                    title="No linked Calendar event", icon="📅", reference=("task", task.id or 0),
+                )
+            return PresentedReply(
+                "Open the linked event to fetch its current details from Google Calendar.",
+                (ReplyAction("View calendar", f"/calendar_get {event_id}"), ReplyAction("Open task", f"/task {task.id}")),
+                title="Linked Calendar event", icon="📅", reference=("task", task.id or 0),
+            )
         return self._task_detail(context.identifier)
 
     def _list_tasks(self, page: int = 1, *, completed: bool = False) -> str | PresentedReply:

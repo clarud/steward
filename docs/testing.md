@@ -660,3 +660,14 @@ batch.
 - Focused organization, CLI, and application coverage passed for owner access
   and cross-chat refusal. The complete pytest suite subsequently reached 100%
   with an empty stderr stream.
+
+## Post-session automated delivery: exact task follow-ups
+
+- After opening a task, Telegram now understands bounded questions such as
+  `when is the deadline?`, `do I have a reminder?`, and `show the linked
+  calendar event`. The replies show only the selected task's current local
+  state and, for a link, offer a button that re-fetches Google Calendar.
+- These questions never infer a Calendar event from a task and never create or
+  change a task, reminder, or Calendar event. Focused application coverage
+  passed for deadline, reminder, and exact linked-event navigation. The
+  complete pytest suite subsequently reached 100% with an empty stderr stream.

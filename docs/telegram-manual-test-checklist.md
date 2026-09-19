@@ -375,6 +375,11 @@ until a separate filesystem backup exists.
   complete action or an active reminder display. Empty open tasks still link
   to history. Browsing does not reopen, delete, or otherwise mutate tasks.
   Automated coverage verifies access beyond eight open/completed tasks.
+- Open one task, then send `when is the deadline?`, `do I have a reminder?`,
+  and `show the linked calendar event`. Verify each reply refers only to that
+  selected task. The Calendar reply must offer **View calendar** only for an
+  existing explicit link; none of these questions may create or change a task,
+  reminder, or event.
 
 - Calendar proposals from travel records and tasks show readable dates and
   the flight/task title before approval, including disclosure of any booking

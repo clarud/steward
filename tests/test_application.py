@@ -2631,6 +2631,33 @@ def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp
     assert tasks.get(task.id or 0).status == "open"
 
 
+def test_opened_task_supports_exact_deadline_reminder_and_calendar_followups(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    tasks = TaskService(database)
+    reminders = TaskReminderService(database, tasks, activity)
+    links = CalendarLinkRepository(database)
+    contexts = ReviewContextRepository(database)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+    reminders.schedule(task.id or 0, "100", datetime(2026, 9, 18, 1, tzinfo=UTC))
+    assert links.link_task_event(f"task:{task.id}", task.id or 0, "deadline-event") is True
+    application = StewardTaskApplication(
+        tasks, ActionProposalRepository(database), activity, reminders, contexts, links,
+    )
+    application.handle_command(make_event(text=f"/task {task.id}"))
+
+    deadline = application.resolve_task_reference(make_event(text="when is the deadline?"))
+    reminder = application.resolve_task_reference(make_event(text="do I have a reminder?"))
+    calendar = application.resolve_task_reference(make_event(text="show the linked calendar event"))
+
+    assert isinstance(deadline, PresentedReply)
+    assert deadline.title == "Task deadline" and "18 Sep 2026" in deadline.text
+    assert isinstance(reminder, PresentedReply)
+    assert reminder.title == "Task reminder" and "1:00 am" in reminder.text
+    assert isinstance(calendar, PresentedReply)
+    assert calendar.actions[0].command == "/calendar_get deadline-event"
+
+
 def test_deterministic_natural_task_phrase_creates_the_same_reviewable_proposal(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     activity = ActivityService(database); proposals = ActionProposalRepository(database); tasks = TaskService(database)
