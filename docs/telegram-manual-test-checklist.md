@@ -111,7 +111,10 @@ until a separate filesystem backup exists.
   browse extracted sections. Send `give me the content` after opening it,
   including after restart. Check that the text belongs to the selected source
   and retains its page/heading location. Section numbering follows extraction
-  units, which may differ from physical PDF page numbers.
+  units, which may differ from physical PDF page numbers. Each section card
+  should also offer **Summarize** and **Ask about it** for that same source;
+  the former must respect its privacy rule and the latter must retain the
+  selected document after a restart.
 
 - Send `/status`; verify it reports local counts and delivery health, never a
   token or message body.

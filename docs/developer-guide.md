@@ -943,7 +943,11 @@ historical reach. This presentation change adds no dependency or persisted state
 
 Source cards expose **Read content** through `/source_content ID [SECTION]`.
 The application reads stored fragments in document order and presents one
-section with its location and Previous/Next actions. The existing Telegram
+section with its location and Previous/Next actions. Each extracted-section
+card also exposes compact **Summarize** and **Ask about it** next actions:
+they target the same exact source ID, so the former still passes the normal
+privacy check and the latter opens the durable selected-source question step.
+The existing Telegram
 presenter splits oversized sections across messages. `give me the content`
 uses the selected source's durable chat context; without a selected source it
 asks the user to open one. Reading extracted content invokes no model and does

@@ -819,6 +819,8 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert content.reference == ("source", source.id)
     assert "Parallel loops" in content.text and "page 1" in content.text
     assert "Static scheduling" not in content.text
+    assert any(action.command == f"/summarize_source {source.id}" for action in content.actions)
+    assert any(action.command == f"/ask_source {source.id}" for action in content.actions)
     next_action = next(action for action in content.actions if action.label == "Next")
     second = restarted.handle(make_event(text=next_action.command))
     assert "Static scheduling" in second.text and "page 2" in second.text

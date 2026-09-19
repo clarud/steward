@@ -1185,7 +1185,15 @@ class StewardReadApplication:
             actions.append(ReplyAction("Previous", f"/source_content {source_id} {section - 1}"))
         if section < len(fragments):
             actions.append(ReplyAction("Next", f"/source_content {source_id} {section + 1}"))
-        actions.append(ReplyAction("Source details", f"/source {source_id}"))
+        # Reading stored extraction is deliberately model-free.  These compact
+        # follow-ups make the optional next step explicit: summarization still
+        # runs the source privacy check, while Ask about it creates the durable
+        # selected-source input context used by the next ordinary message.
+        actions.extend((
+            ReplyAction("Summarize", f"/summarize_source {source_id}"),
+            ReplyAction("Ask about it", f"/ask_source {source_id}"),
+            ReplyAction("Source details", f"/source {source_id}"),
+        ))
         return PresentedReply(
             f"Extracted section {section} of {len(fragments)} · {fragment.location}\n"
             f"{fragment.heading or ''}\n\n{fragment.text}",
