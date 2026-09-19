@@ -728,3 +728,13 @@ batch.
   not change until explicit approval, the original remains unchanged, and the
   existing chat-bound proposal and parser-recovery protections still apply.
   Focused source-card coverage and the full regression suite passed at 100%.
+
+## Post-session automated delivery: natural selected-source refresh
+
+- After an explicit source-card selection, the bounded phrase `refresh this
+  text` now stages the same chat-bound re-extraction review as the source-card
+  button. It does not invoke the parser and cannot select a source from an
+  unscoped request.
+- Focused application coverage verifies the exact source ID, pending proposal,
+  and unchanged derived text before approval. The full regression suite is
+  passed at 100% after this delivery.

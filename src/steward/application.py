@@ -889,6 +889,32 @@ class StewardReadApplication:
             return "That previously opened source is no longer registered. Search or list sources to choose another."
         return self.source(str(context.identifier))
 
+    def natural_source_maintenance_command(self, event: IncomingEvent) -> str | None:
+        """Translate a selected-source refresh request into the reviewed command.
+
+        The text is intentionally narrow and only works after a durable source
+        card context exists in this chat. It therefore cannot turn an arbitrary
+        conversational reference into a parser invocation or filesystem target.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "refresh this text", "refresh that text", "refresh this source",
+            "refresh that source", "re-extract this source", "reextract this source",
+            "re-extract this file", "reextract this file",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "source":
+            return None
+        source = self._sources.get_by_id(int(context.identifier))
+        if source is None or source.status.value != "active":
+            self._contexts.clear(event.platform, event.chat_id)
+            return None
+        return f"/propose_reextract {source.id}"
+
     def resolve_workspace_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Reopen an explicitly selected workspace for exact navigation phrases."""
 
@@ -6506,6 +6532,14 @@ class StewardEventApplication:
             if intake_followup is not None:
                 return intake_followup
         if self._read_application is not None:
+            if self._action_proposal_application is not None:
+                maintenance_command = self._read_application.natural_source_maintenance_command(event)
+                if maintenance_command is not None:
+                    maintenance_response = self._action_proposal_application.handle_command(
+                        replace(event, text=maintenance_command)
+                    )
+                    if maintenance_response is not None:
+                        return maintenance_response
             source_reference = self._read_application.resolve_source_reference(event)
             if source_reference is not None:
                 return source_reference

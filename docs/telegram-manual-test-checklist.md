@@ -626,6 +626,9 @@ until a separate filesystem backup exists.
   text changes before approval, **Open source** inspects the same original,
   accepting refreshes its fragments, and the original file remains byte-for-byte
   unchanged.
+- After explicitly opening that source, try **refresh this text**. It must
+  stage the same review for that exact source. In a fresh chat, the same phrase
+  must not guess a source or invoke extraction.
 - If a second authorized test chat is available, check `/pending` there before
   approving the re-extraction. It must not show the first chat's maintenance
   review, and manually sending its approval command from that second chat must

@@ -3554,6 +3554,38 @@ def test_telegram_reextract_is_reviewed_and_preserves_the_original(tmp_path: Pat
     assert activity.list_recent()[1].event_type is ActivityType.SOURCE_REEXTRACTED
 
 
+def test_opened_source_can_naturally_stage_a_reviewed_text_refresh(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    source_path = tmp_path / "notes.md"; source_path.write_text("# TLB\n", encoding="utf-8")
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 6, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        read_application=StewardReadApplication(
+            sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database),
+            activity, tmp_path / "inbox", contexts=contexts,
+        ),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            activity_service=activity, source_repository=sources,
+            source_service=SourceService(sources, fragments, MarkdownExtractor()),
+        ),
+    )
+
+    application.handle(make_event(text=f"/source {source.id}"))
+    review = application.handle(make_event(text="refresh this text"))
+
+    assert isinstance(review, PresentedReply)
+    assert "original file will not change" in review.text
+    assert proposals.get(1).action_type == StewardActionProposalApplication.REEXTRACT_SOURCE
+    assert proposals.get(1).payload["source_id"] == str(source.id)
+    assert fragments.list_for_source(source.id or 0) == ()
+
+
 def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"
     initialize_database(database)

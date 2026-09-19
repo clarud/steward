@@ -840,6 +840,12 @@ target. Extraction failure leaves the proposal pending so that the user can
 repair the local condition and deliberately retry; success records
 `SOURCE_REEXTRACTED` plus the approval audit event.
 
+After explicitly opening an active source, Telegram also accepts bounded
+phrases such as `refresh this text` and translates them into that same proposal.
+This is selected-card navigation, not an agent tool: a fresh or unrelated chat
+cannot choose a source through a pronoun, and parser work still waits for the
+visible approval.
+
 `/propose_rebuild_index` follows the same review boundary for the whole local
 semantic index. Its approved callable loads the already-local embedding model,
 clears and regenerates only derived vectors from persisted fragments, and never
