@@ -642,6 +642,9 @@ batch.
   semantic-index rebuilding, and metadata-unregistering proposals now retain
   the requesting chat ID. They are hidden from another authorized chat's
   `/pending` view and cannot be accepted or rejected from that chat.
+- A guessed review ID that is denied in another chat also creates no Telegram
+  review context, so a later `yes` cannot be interpreted as a confirmation of
+  an inaccessible card.
 - Proposals created by a local CLI operator intentionally retain no Telegram
   identity and retain their established behavior.
 - Focused action-proposal and application coverage passed, including

@@ -4844,12 +4844,14 @@ def test_telegram_originated_maintenance_reviews_are_private_to_the_originating_
     assert actions.handle_command(replace(make_event(text="/action_proposals"), chat_id="other-chat")) == (
         "There are no pending action proposals."
     )
+    contexts = ReviewContextRepository(database)
     reviews = StewardReviewInboxApplication(
-        proposals, OrganizationProposalRepository(database), SourceRepository(database)
+        proposals, OrganizationProposalRepository(database), SourceRepository(database), contexts=contexts,
     )
     assert reviews.handle_command(replace(make_event(text="/review action 1"), chat_id="other-chat")) == (
         "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
     )
+    assert contexts.get("telegram", "other-chat") is None
     assert reviews.pending(other).title == "All caught up"
     assert reviews.pending(make_event(text="/pending")).title == "2 decisions waiting"
 

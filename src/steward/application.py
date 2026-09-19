@@ -236,9 +236,6 @@ class StewardReviewInboxApplication:
     def detail(self, event: IncomingEvent, kind: str, identifier: int) -> str | PresentedReply:
         """Render one complete, human-readable proposal card."""
 
-        if self._contexts is not None:
-            self._contexts.set(event.platform, event.chat_id, kind, identifier)
-
         if kind == "action":
             proposal = self._actions.get(identifier)
             if proposal is None or proposal.status != "pending":
@@ -246,6 +243,8 @@ class StewardReviewInboxApplication:
             proposal_chat = proposal.payload.get("chat_id")
             if proposal_chat and proposal_chat != event.chat_id:
                 return "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
+            if self._contexts is not None:
+                self._contexts.set(event.platform, event.chat_id, kind, identifier)
             title, description = self._action_summary(proposal.action_type, proposal.payload)
             source_action: ReplyAction | None = None
             raw_source_id = proposal.payload.get("source_id")
@@ -300,6 +299,8 @@ class StewardReviewInboxApplication:
                 pending_thread.platform != event.platform or pending_thread.chat_id != event.chat_id
             ):
                 return "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
+            if self._contexts is not None:
+                self._contexts.set(event.platform, event.chat_id, kind, identifier)
             source = self._sources.get_by_id(proposal.source_id)
             filename = source.path.name if source is not None else "the saved source"
             target = proposal.workspace_name or (
@@ -323,6 +324,8 @@ class StewardReviewInboxApplication:
             intake = self._intakes.get(identifier)
             if intake is None or intake.status != "pending" or intake.chat_id != event.chat_id:
                 return "That staged item is no longer waiting in this chat. Send /pending for the current list."
+            if self._contexts is not None:
+                self._contexts.set(event.platform, event.chat_id, kind, identifier)
             analysis_description = {
                 IntakeAnalysisMode.EXTERNAL: "A configured external model may analyze extracted content after you save it.",
                 IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
@@ -345,6 +348,8 @@ class StewardReviewInboxApplication:
             proposal = self._knowledge.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That knowledge review is no longer waiting. Send /pending for the current list."
+            if self._contexts is not None:
+                self._contexts.set(event.platform, event.chat_id, kind, identifier)
             actions = list(
                 (
                     ReplyAction("Flag conflict", f"/review_enrichment {identifier} accepted"),
