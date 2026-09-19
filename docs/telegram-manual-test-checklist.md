@@ -604,6 +604,10 @@ until a separate filesystem backup exists.
   `/propose_reextract SOURCE_ID`. Verify that no derived text changes before
   approval, **Open source** inspects the same original, accepting refreshes its
   fragments, and the original file remains byte-for-byte unchanged.
+- If a second authorized test chat is available, check `/pending` there before
+  approving the re-extraction. It must not show the first chat's maintenance
+  review, and manually sending its approval command from that second chat must
+  be refused without changing fragments or the original.
 - With the embedding model already installed locally, send
   `/propose_rebuild_index`. Verify that it is a review card; approval rebuilds
   vectors from existing fragments without reading or changing original files.

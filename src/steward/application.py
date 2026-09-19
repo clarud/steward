@@ -241,6 +241,9 @@ class StewardReviewInboxApplication:
             proposal = self._actions.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
+            proposal_chat = proposal.payload.get("chat_id")
+            if proposal_chat and proposal_chat != event.chat_id:
+                return "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
             title, description = self._action_summary(proposal.action_type, proposal.payload)
             source_action: ReplyAction | None = None
             raw_source_id = proposal.payload.get("source_id")
@@ -507,7 +510,12 @@ class StewardReviewInboxApplication:
     def _pending_items(self, event: IncomingEvent) -> list[tuple[str, int, str]]:
         items: list[tuple[str, int, str]] = []
         for proposal in reversed(self._actions.list_all()):
-            if proposal.status == "pending" and proposal.id is not None:
+            proposal_chat = proposal.payload.get("chat_id")
+            if (
+                proposal.status == "pending"
+                and proposal.id is not None
+                and (not proposal_chat or proposal_chat == event.chat_id)
+            ):
                 title, _ = self._action_summary(proposal.action_type, proposal.payload)
                 items.append(("action", proposal.id, title))
         for proposal in reversed(self._organizations.list_all()):
@@ -5159,7 +5167,11 @@ class StewardActionProposalApplication:
             _, _, page_text = text.partition(" ")
             if page_text.strip() and (not page_text.strip().isdigit() or int(page_text.strip()) < 1):
                 return "Use /action_proposals with an optional positive page number."
-            pending = [proposal for proposal in self._repository.list_all() if proposal.status == "pending"]
+            pending = [
+                proposal for proposal in self._repository.list_all()
+                if proposal.status == "pending"
+                and (not proposal.payload.get("chat_id") or proposal.payload.get("chat_id") == event.chat_id)
+            ]
             if not pending:
                 return "There are no pending action proposals."
             pages = max(1, (len(pending) + 7) // 8)
@@ -5212,13 +5224,13 @@ class StewardActionProposalApplication:
                 icon="📅",
             )
         if command == "/create_workspace":
-            return self.propose_workspace(argument)
+            return self.propose_workspace(argument, chat_id=event.chat_id)
         if command == "/propose_reextract":
-            return self.propose_reextract(argument)
+            return self.propose_reextract(argument, chat_id=event.chat_id)
         if command == "/propose_rebuild_index":
-            return self.propose_rebuild_semantic_index(argument)
+            return self.propose_rebuild_semantic_index(argument, chat_id=event.chat_id)
         if command == "/propose_unregister_source":
-            return self.propose_unregister_source(argument)
+            return self.propose_unregister_source(argument, chat_id=event.chat_id)
         if command not in {"/approve_action", "/reject_action"}:
             return None
         if not separator or not argument.strip().isdigit():
@@ -5226,6 +5238,20 @@ class StewardActionProposalApplication:
         proposal_id = int(argument.strip())
         decision = "accepted" if command == "/approve_action" else "rejected"
         proposal = self._repository.get(proposal_id)
+        proposal_chat = proposal.payload.get("chat_id") if proposal is not None else None
+        if (
+            proposal is not None
+            and proposal.action_type in {
+                ActionProposalService.CREATE_WORKSPACE,
+                self.REEXTRACT_SOURCE,
+                self.REBUILD_SEMANTIC_INDEX,
+                self.UNREGISTER_SOURCE,
+            }
+            and isinstance(proposal_chat, str)
+            and proposal_chat
+            and proposal_chat != event.chat_id
+        ):
+            return "This review belongs to another authorized Telegram chat. No change was made."
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_TRAVEL_RECORD,
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
@@ -5998,10 +6024,10 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         return f"{label} record {record.id} corrected: {proposal.payload['field']}."
 
-    def propose_workspace(self, name: str) -> str:
+    def propose_workspace(self, name: str, *, chat_id: str | None = None) -> str:
         """Create a durable workspace proposal without creating the workspace."""
         try:
-            proposal, workspace = self._service.propose_workspace_creation(name)
+            proposal, workspace = self._service.propose_workspace_creation(name, chat_id=chat_id)
         except ValueError as error:
             return str(error)
         if workspace is not None:
@@ -6013,7 +6039,7 @@ class StewardActionProposalApplication:
             f"Review with /approve_action {proposal.id} or /reject_action {proposal.id}."
         )
 
-    def propose_reextract(self, source_id_text: str) -> str | PresentedReply:
+    def propose_reextract(self, source_id_text: str, *, chat_id: str | None = None) -> str | PresentedReply:
         """Stage a narrow, review-required derived-data refresh."""
         if self._source_service is None or self._sources is None:
             return "Source re-extraction is not configured for this Steward process."
@@ -6024,6 +6050,8 @@ class StewardActionProposalApplication:
         if source is None:
             return f"Source {source_id} was not found."
         payload = {"source_id": str(source_id)}
+        if chat_id:
+            payload["chat_id"] = chat_id
         proposal = self._repository.find_pending(self.REEXTRACT_SOURCE, payload)
         if proposal is None:
             proposal = self._repository.add(self.REEXTRACT_SOURCE, payload)
@@ -6043,15 +6071,16 @@ class StewardActionProposalApplication:
             ),
         )
 
-    def propose_rebuild_semantic_index(self, argument: str) -> str | PresentedReply:
+    def propose_rebuild_semantic_index(self, argument: str, *, chat_id: str | None = None) -> str | PresentedReply:
         """Stage a model-costly but rebuildable local index operation."""
         if self._semantic_index_rebuilder is None:
             return "Semantic-index rebuilding is not configured for this Steward process."
         if argument.strip():
             return "Use /propose_rebuild_index without arguments."
-        proposal = self._repository.find_pending(self.REBUILD_SEMANTIC_INDEX, {})
+        payload = {"chat_id": chat_id} if chat_id else {}
+        proposal = self._repository.find_pending(self.REBUILD_SEMANTIC_INDEX, payload)
         if proposal is None:
-            proposal = self._repository.add(self.REBUILD_SEMANTIC_INDEX, {})
+            proposal = self._repository.add(self.REBUILD_SEMANTIC_INDEX, payload)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(proposal.id), details="Rebuild local semantic index")
         return PresentedReply(
@@ -6062,7 +6091,7 @@ class StewardActionProposalApplication:
             ),
         )
 
-    def propose_unregister_source(self, source_id_text: str) -> str | PresentedReply:
+    def propose_unregister_source(self, source_id_text: str, *, chat_id: str | None = None) -> str | PresentedReply:
         """Stage metadata removal without accepting a filesystem target from chat."""
         if self._sources is None:
             return "Source unregistering is not configured for this Steward process."
@@ -6072,6 +6101,8 @@ class StewardActionProposalApplication:
         if source is None:
             return f"Source {source_id_text.strip()} was not found."
         payload = {"source_id": str(source.id)}
+        if chat_id:
+            payload["chat_id"] = chat_id
         proposal = self._repository.find_pending(self.UNREGISTER_SOURCE, payload)
         if proposal is None:
             proposal = self._repository.add(self.UNREGISTER_SOURCE, payload)
@@ -6319,7 +6350,7 @@ class StewardEventApplication:
             if self._action_proposal_application is None:
                 return "Workspace proposals are not configured for this Steward process."
             return self._action_proposal_application.propose_workspace(
-                self._workspace_name(event.text or "")
+                self._workspace_name(event.text or ""), chat_id=event.chat_id
             )
         if decision.primary_intent is Intent.ASK:
             if self._tool_agent_application is not None:

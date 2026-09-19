@@ -4816,6 +4816,44 @@ def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_p
     assert WorkspaceRepository(database_path).list_all()[0].name == "Compiler Project"
 
 
+def test_telegram_originated_maintenance_reviews_are_private_to_the_originating_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = ActionProposalRepository(database)
+    actions = StewardActionProposalApplication(
+        proposals,
+        ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        activity_service=activity,
+        semantic_index_rebuilder=lambda: 0,
+    )
+    owner = make_event(text="/create_workspace Secure notes")
+
+    workspace_preview = actions.handle_command(owner)
+    rebuild_preview = actions.handle_command(make_event(text="/propose_rebuild_index"))
+
+    assert "Workspace proposal 1" in workspace_preview
+    assert isinstance(rebuild_preview, PresentedReply)
+    assert proposals.get(1).payload["chat_id"] == "100"
+    assert proposals.get(2).payload["chat_id"] == "100"
+
+    other = replace(make_event(text="/approve_action 1"), chat_id="other-chat")
+    denied = actions.handle_command(other)
+
+    assert denied == "This review belongs to another authorized Telegram chat. No change was made."
+    assert proposals.get(1).status == "pending"
+    assert actions.handle_command(replace(make_event(text="/action_proposals"), chat_id="other-chat")) == (
+        "There are no pending action proposals."
+    )
+    reviews = StewardReviewInboxApplication(
+        proposals, OrganizationProposalRepository(database), SourceRepository(database)
+    )
+    assert reviews.handle_command(replace(make_event(text="/review action 1"), chat_id="other-chat")) == (
+        "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
+    )
+    assert reviews.pending(other).title == "All caught up"
+    assert reviews.pending(make_event(text="/pending")).title == "2 decisions waiting"
+
+
 def test_telegram_action_review_requires_an_explicit_numeric_command(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

@@ -614,10 +614,12 @@ The current guided validation batch is complete and passed.
   with an empty stderr stream after the latest automated deliveries.
 
 This is an acceptance record, not a claim that the product has no future work.
-Known product improvements remain planned, including clearer source identifiers
-across source-list pages, more compact action labels, richer guided next
-actions, and broader natural-language routing. They are UX/delivery backlog
-items rather than failures found in this validation batch.
+Source-list pages now show each stable source ID alongside the filename and each
+open button targets that same ID, so page-local numbering no longer obscures the
+source to open. Remaining planned product improvements include more compact
+action labels, richer guided next actions, and broader natural-language routing.
+They are UX/delivery backlog items rather than failures found in this validation
+batch.
 
 ## Deployment state: registered start-at-login task â€” 20 September 2026
 
@@ -633,3 +635,15 @@ items rather than failures found in this validation batch.
 - Remaining live acceptance: send one harmless Telegram request and receive a
   reply from the scheduled process, verify an actual Windows logon trigger, then
   exercise a controlled provider-outage/recovery path.
+
+## Post-session automated delivery: chat-bound maintenance reviews
+
+- Telegram-originated workspace creation, derived-text re-extraction,
+  semantic-index rebuilding, and metadata-unregistering proposals now retain
+  the requesting chat ID. They are hidden from another authorized chat's
+  `/pending` view and cannot be accepted or rejected from that chat.
+- Proposals created by a local CLI operator intentionally retain no Telegram
+  identity and retain their established behavior.
+- Focused action-proposal and application coverage passed, including
+  cross-chat invisibility and cross-chat approval refusal. The complete pytest
+  suite subsequently reached 100% with an empty stderr stream.

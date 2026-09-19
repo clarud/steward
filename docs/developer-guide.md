@@ -587,6 +587,11 @@ explicit operations:
 - Telegram task-creation reviews are also chat-bound. A second authorized chat
   cannot create a task from another chat's draft; legacy unbound reviews fail
   closed for acceptance but can still be rejected.
+- Telegram-created workspace and maintenance reviews are also chat-bound:
+  workspace creation, derived-text re-extraction, semantic-index rebuilding,
+  and metadata unregistering are visible and actionable only in the chat that
+  requested them. Legacy unbound proposals retain their established behavior;
+  their lack of a Telegram identity is visible in their local operator context.
 - `/home` and `/pending` unify outstanding actions, organization choices,
   staged intake, and knowledge updates into identifiable review cards. After
   opening one card, an unambiguous `yes`/`accept` or `no`/`reject` reply is

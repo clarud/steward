@@ -106,7 +106,16 @@ class ActionProposalService:
         self._workspaces = workspaces
         self._activity = activity
 
-    def propose_workspace_creation(self, name: str) -> tuple[ActionProposal | None, Workspace | None]:
+    def propose_workspace_creation(
+        self, name: str, *, chat_id: str | None = None
+    ) -> tuple[ActionProposal | None, Workspace | None]:
+        """Stage a workspace creation, optionally bound to its Telegram chat.
+
+        Command-line callers intentionally leave ``chat_id`` unset: they are
+        local operator workflows rather than Telegram reviews. A Telegram
+        caller supplies the chat so another authorized chat cannot discover or
+        decide its pending request.
+        """
         normalized = " ".join(name.split())
         if not normalized:
             raise ValueError("A workspace name must not be empty.")
@@ -114,6 +123,8 @@ class ActionProposalService:
         if existing is not None:
             return None, existing
         payload = {"name": normalized}
+        if chat_id:
+            payload["chat_id"] = chat_id
         proposal = self._repository.find_pending(self.CREATE_WORKSPACE, payload)
         if proposal is None:
             proposal = self._repository.add(self.CREATE_WORKSPACE, payload)
