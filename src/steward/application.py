@@ -3634,15 +3634,21 @@ class StewardKnowledgeApplication:
     def _evidence_source_action(
         self, proposal: StoredKnowledgeEnrichmentProposal,
     ) -> tuple[ReplyAction, ...]:
-        """Offer source inspection only for currently resolvable evidence."""
+        """Offer exact evidence and source inspection for resolvable evidence."""
 
         fragment = self._fragments.get(proposal.fragment_id)
         if fragment is None:
             return ()
         # A fragment retains an opaque source ID even in a deliberately
         # lightweight knowledge-only composition. The normal source reader
-        # validates current availability when the user follows this action.
-        return (ReplyAction("Open source", f"/source {fragment.source_id}"),)
+        # validates current availability when the user follows either action.
+        # ``ordinal`` is the stable position inside this source's current
+        # extraction, whereas the fragment database ID is not a user-facing
+        # document position.
+        return (
+            ReplyAction("Show evidence", f"/source_content {fragment.source_id} {fragment.ordinal + 1}"),
+            ReplyAction("Open source", f"/source {fragment.source_id}"),
+        )
 
     @staticmethod
     def _conflict_status_line(proposal: StoredKnowledgeEnrichmentProposal) -> str:

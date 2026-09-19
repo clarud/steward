@@ -703,9 +703,11 @@ until a separate filesystem backup exists.
   claim unchanged, and show the three separate resolution choices. Resolve it
   as disputed and verify both the concept card and saved evidence review display
   that outcome after a bot restart.
-- Before choosing a conflict outcome, use **Open source** on the conflict card.
-  Verify it opens the source associated with the displayed evidence fragment;
-  inspection alone must not accept/reject the review or change the claim.
+- Before choosing a conflict outcome, use **Show evidence** on the conflict
+  card. Verify it opens the exact extracted section associated with the
+  displayed evidence fragment; **Open source** remains available for the
+  broader original. Either inspection alone must not accept/reject the review
+  or change the claim.
 - Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
   same evidence plus decision buttons (conflicts use **Flag conflict** and **Not
   a conflict**), rather than requiring a manually typed review command.

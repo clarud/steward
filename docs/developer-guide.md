@@ -1542,6 +1542,12 @@ decision in the activity log. A contradiction is never silently added as claim
 support. The CLI checks the source privacy rule before sending evidence to a
 cloud or local model.
 
+Telegram knowledge-review and conflict cards expose **Show evidence** as well
+as **Open source**. The former opens the exact stored extraction section using
+the evidence fragment's source-local ordinal; the latter opens the surrounding
+source card. Both are read-only navigation actions and neither records a
+decision or changes a claim.
+
 Telegram treats contradiction review as a two-stage decision. The pending card
 uses **Flag conflict** and **Not a conflict**, making clear that accepting the
 comparison does not choose which statement is true. A flagged conflict then

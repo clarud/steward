@@ -1351,6 +1351,7 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert isinstance(preview, PresentedReply)
     assert "CONFIRM claim 1" in preview.text
     assert preview.actions[0].command == "/review_enrichment 1 accepted"
+    assert preview.actions[-2].command == f"/source_content {source.id} 1"
     assert preview.actions[-1].command == f"/source {source.id}"
     reopened = application.handle(make_event(text="/knowledge_proposal 1"))
     assert isinstance(reopened, PresentedReply)
@@ -1444,8 +1445,9 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     assert isinstance(recorded, PresentedReply)
     assert recorded.title == "Knowledge conflict recorded"
     assert [action.label for action in recorded.actions] == [
-        "Keep claim", "Mark disputed", "Needs revision", "Open source",
+        "Keep claim", "Mark disputed", "Needs revision", "Show evidence", "Open source",
     ]
+    assert recorded.actions[-2].command == f"/source_content {source.id} 1"
     assert recorded.actions[-1].command == f"/source {source.id}"
     assert knowledge.get_claim(claim.id or 0) == claim
     concept_card = application.handle(make_event(text="/knowledge TLB"))
