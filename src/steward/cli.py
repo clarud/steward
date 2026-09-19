@@ -1590,6 +1590,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 contexts=review_contexts,
                 records=RecordService(database_path),
                 fragments=fragments,
+                organization_threads=OrganizationApprovalThreadRepository(database_path),
             ),
             record_application=StewardRecordApplication(
                 RecordService(database_path), fragments, ActionProposalRepository(database_path), activity,

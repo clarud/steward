@@ -4854,6 +4854,32 @@ def test_telegram_originated_maintenance_reviews_are_private_to_the_originating_
     assert reviews.pending(make_event(text="/pending")).title == "2 decisions waiting"
 
 
+def test_pending_organization_review_is_private_to_its_durable_approval_thread(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 20, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, tmp_path / "inbox" / "notes.md", "a" * 64, SourceType.MARKDOWN,
+        0, now, now, now,
+    ))
+    organizations = OrganizationProposalRepository(database)
+    proposal_id = organizations.add(OrganizationProposal(
+        None, source.id or 0, "keep_in_inbox", None, None, "Need more context.", 0.0,
+    ))
+    threads = OrganizationApprovalThreadRepository(database)
+    threads.start("telegram", "100", proposal_id, "approval:telegram:100:1")
+    reviews = StewardReviewInboxApplication(
+        ActionProposalRepository(database), organizations, sources, organization_threads=threads,
+    )
+    other = replace(make_event(text="/pending"), chat_id="other-chat")
+
+    assert reviews.pending(other).title == "All caught up"
+    assert reviews.handle_command(replace(make_event(text=f"/review organization {proposal_id}"), chat_id="other-chat")) == (
+        "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
+    )
+    assert reviews.pending(make_event(text="/pending")).title == "1 decision waiting"
+
+
 def test_telegram_action_review_requires_an_explicit_numeric_command(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)

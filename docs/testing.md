@@ -647,3 +647,13 @@ batch.
 - Focused action-proposal and application coverage passed, including
   cross-chat invisibility and cross-chat approval refusal. The complete pytest
   suite subsequently reached 100% with an empty stderr stream.
+
+## Post-session automated delivery: chat-bound organization cards
+
+- Organization approvals were already executed through a chat-specific durable
+  LangGraph thread. The generic Telegram review inbox now consults that same
+  mapping, so a different authorized chat cannot list or render the pending
+  organization card even by guessing its numeric review ID.
+- Focused organization, CLI, and application coverage passed for owner access
+  and cross-chat refusal. The complete pytest suite subsequently reached 100%
+  with an empty stderr stream.

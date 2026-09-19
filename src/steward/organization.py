@@ -119,6 +119,23 @@ class OrganizationApprovalThreadRepository:
             ).fetchone()
         return self._from_row(row) if row is not None else None
 
+    def get_pending_for_proposal(self, proposal_id: int) -> PendingOrganizationApproval | None:
+        """Return the owning transport thread for one still-pending proposal.
+
+        This is used by presentation code to avoid exposing a review card in a
+        different authorized chat. The approval graph remains the authority for
+        executing any eventual decision.
+        """
+
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT platform, chat_id, proposal_id, thread_id, status "
+                "FROM organization_approval_threads "
+                "WHERE proposal_id = ? AND status = 'pending'",
+                (proposal_id,),
+            ).fetchone()
+        return self._from_row(row) if row is not None else None
+
     def start(self, platform: str, chat_id: str, proposal_id: int, thread_id: str) -> None:
         if self.get_pending(platform, chat_id) is not None:
             raise ValueError("This chat already has an organization proposal awaiting review.")

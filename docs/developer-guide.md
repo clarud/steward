@@ -584,6 +584,11 @@ explicit operations:
 - Tasks, curated notes, source/workspace links, records, travel corrections,
   Calendar writes, and organization moves become durable only through a
   pending proposal and a deterministic approval path.
+- A pending organization proposal with a durable LangGraph approval thread is
+  also hidden from other authorized chats in `/pending` and cannot be rendered
+  by a manually guessed `/review organization ID` command. The persisted
+  thread mapping is the presentation boundary; the approval graph remains the
+  execution boundary.
 - Telegram task-creation reviews are also chat-bound. A second authorized chat
   cannot create a task from another chat's draft; legacy unbound reviews fail
   closed for acceptance but can still be rejected.

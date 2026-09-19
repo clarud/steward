@@ -165,6 +165,7 @@ class StewardReviewInboxApplication:
         contexts: ReviewContextRepository | None = None,
         records: RecordService | None = None,
         fragments: SourceFragmentRepository | None = None,
+        organization_threads: OrganizationApprovalThreadRepository | None = None,
     ) -> None:
         self._actions = action_proposals
         self._organizations = organization_proposals
@@ -174,6 +175,7 @@ class StewardReviewInboxApplication:
         self._contexts = contexts
         self._records = records
         self._fragments = fragments
+        self._organization_threads = organization_threads
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         command, _, argument = (event.text or "").strip().partition(" ")
@@ -289,6 +291,15 @@ class StewardReviewInboxApplication:
             proposal = self._organizations.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That organization decision is no longer waiting. Send /pending for the current list."
+            pending_thread = (
+                self._organization_threads.get_pending_for_proposal(identifier)
+                if self._organization_threads is not None
+                else None
+            )
+            if pending_thread is not None and (
+                pending_thread.platform != event.platform or pending_thread.chat_id != event.chat_id
+            ):
+                return "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
             source = self._sources.get_by_id(proposal.source_id)
             filename = source.path.name if source is not None else "the saved source"
             target = proposal.workspace_name or (
@@ -519,7 +530,19 @@ class StewardReviewInboxApplication:
                 title, _ = self._action_summary(proposal.action_type, proposal.payload)
                 items.append(("action", proposal.id, title))
         for proposal in reversed(self._organizations.list_all()):
-            if proposal.status == "pending" and proposal.id is not None:
+            pending_thread = (
+                self._organization_threads.get_pending_for_proposal(proposal.id)
+                if self._organization_threads is not None and proposal.id is not None
+                else None
+            )
+            if (
+                proposal.status == "pending"
+                and proposal.id is not None
+                and (
+                    pending_thread is None
+                    or (pending_thread.platform == event.platform and pending_thread.chat_id == event.chat_id)
+                )
+            ):
                 source = self._sources.get_by_id(proposal.source_id)
                 filename = source.path.name if source is not None else "saved source"
                 items.append(("organization", proposal.id, f"Organize {filename}"))
