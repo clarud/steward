@@ -373,6 +373,9 @@ class StewardReviewInboxApplication:
             if self._fragments is not None:
                 fragment = self._fragments.get(proposal.fragment_id)
                 if fragment is not None and self._sources.get_by_id(fragment.source_id) is not None:
+                    actions.append(
+                        ReplyAction("Show evidence", f"/source_content {fragment.source_id} {fragment.ordinal + 1}")
+                    )
                     actions.append(ReplyAction("Open source", f"/source {fragment.source_id}"))
             return PresentedReply(
                 f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",

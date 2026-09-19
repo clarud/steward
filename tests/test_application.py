@@ -1413,6 +1413,35 @@ def test_telegram_knowledge_review_is_bound_to_its_origin_chat(tmp_path: Path) -
     assert application.handle(make_event(text="/review_enrichment 1 accepted")) == "Knowledge enrichment proposal 1 accepted."
 
 
+def test_pending_knowledge_review_offers_the_same_exact_evidence_navigation(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, "TLB", 0, "TLBs cache translations.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    proposals = KnowledgeEnrichmentProposalRepository(database)
+    proposal = proposals.add(replace(
+        knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text),
+        chat_id="100",
+    ))
+    reviews = StewardReviewInboxApplication(
+        ActionProposalRepository(database), OrganizationProposalRepository(database), sources,
+        knowledge_proposals=proposals, fragments=fragments,
+    )
+
+    card = reviews.handle_command(make_event(text=f"/review knowledge {proposal.id}"))
+
+    assert isinstance(card, PresentedReply)
+    assert any(action.command == f"/source_content {source.id} 1" for action in card.actions)
+    assert any(action.command == f"/source {source.id}" for action in card.actions)
+
+
 def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)
