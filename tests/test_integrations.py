@@ -50,6 +50,26 @@ def test_oauth_token_readiness_detects_missing_required_scope_without_disclosing
     )
 
 
+def test_oauth_token_readiness_accepts_one_of_multiple_safe_scope_sets(tmp_path: Path) -> None:
+    read_token = tmp_path / "read.json"
+    write_token = tmp_path / "write.json"
+    insufficient = tmp_path / "insufficient.json"
+    for path, scopes in (
+        (read_token, ["calendar.read"]),
+        (write_token, ["calendar.write"]),
+        (insufficient, ["metadata-only"]),
+    ):
+        path.write_text(json.dumps({"expiry": "2026-10-01T00:00:00+00:00", "scopes": scopes}), encoding="utf-8")
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    alternatives = (("calendar.read",), ("calendar.write",))
+
+    assert oauth_token_readiness(read_token, now=now, any_required_scope_sets=alternatives) == "local token present"
+    assert oauth_token_readiness(write_token, now=now, any_required_scope_sets=alternatives) == "local token present"
+    assert oauth_token_readiness(insufficient, now=now, any_required_scope_sets=alternatives) == (
+        "local token lacks required access; reauthorize locally"
+    )
+
+
 @pytest.mark.parametrize("expiry", [None, "malformed", "2026-09-01T00:00:00+00:00"])
 @pytest.mark.parametrize("scopes", [["metadata-only"], "metadata-only"])
 def test_missing_oauth_access_takes_priority_over_refresh_and_expiry(tmp_path: Path, expiry, scopes) -> None:

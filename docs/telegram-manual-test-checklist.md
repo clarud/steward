@@ -571,8 +571,10 @@ until a separate filesystem backup exists.
 - Use `/integrations`. It must report only local readiness, never a client
   path, token value, or refresh token. A missing integration says it needs
   local browser authorization; an expired token says whether local refresh may
-  be available or local reauthorization is required. Telegram must not launch
-  the OAuth flow.
+  be available or local reauthorization is required. A Calendar token that
+  proves neither Calendar read nor approved event-write access must likewise
+  say it lacks required access, without disclosing the scope value. Telegram
+  must not launch the OAuth flow.
 
 - Complete Google OAuth locally in a browser, never in Telegram.
 - Use `/calendar_search` and `/calendar_get EVENT_ID`; compare results with

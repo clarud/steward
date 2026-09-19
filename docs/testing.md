@@ -706,3 +706,15 @@ batch.
   an event. Focused application coverage verifies both location and description
   replies and the three expected current-event reads (open plus two follow-ups).
   The full regression suite passed at 100% after this delivery.
+
+## Post-session automated delivery: Calendar OAuth-scope readiness
+
+- The metadata-only Telegram integrations card now verifies that Calendar token
+  metadata declares either Calendar read access or the separately approved
+  event-write access. It does not assume that every local Calendar token file
+  is usable.
+- A token that proves neither presents the existing secret-free local
+  reauthorization guidance. The card still makes no provider call, launches no
+  browser, and displays no scope string, token, or client path. Focused tests
+  cover read/write alternatives and insufficient Calendar metadata. The full
+  regression suite passed at 100% after this delivery.

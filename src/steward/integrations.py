@@ -15,6 +15,7 @@ def oauth_token_readiness(
     *,
     now: datetime | None = None,
     required_scopes: tuple[str, ...] = (),
+    any_required_scope_sets: tuple[tuple[str, ...], ...] = (),
 ) -> str:
     """Return a secret-free local OAuth readiness summary.
 
@@ -33,8 +34,11 @@ def oauth_token_readiness(
     if not isinstance(payload, dict):
         return "local token present (readiness cannot be verified)"
     # Refreshing a token does not repair missing authorization scopes. Check
-    # required access even when expiry metadata is absent or malformed.
-    if required_scopes:
+    # required access even when expiry metadata is absent or malformed. Some
+    # integrations intentionally accept either a read-only token or a broader
+    # write token, so an alternative set can be supplied without revealing the
+    # provider's scope strings in the result.
+    if required_scopes or any_required_scope_sets:
         scopes = payload.get("scopes")
         if isinstance(scopes, str):
             granted_scopes = frozenset(scopes.split())
@@ -42,7 +46,11 @@ def oauth_token_readiness(
             granted_scopes = frozenset(scopes)
         else:
             return "local token present (required access cannot be verified)"
-        if not set(required_scopes).issubset(granted_scopes):
+        has_required_scopes = bool(required_scopes) and set(required_scopes).issubset(granted_scopes)
+        has_alternative_scope_set = bool(any_required_scope_sets) and any(
+            set(scope_set).issubset(granted_scopes) for scope_set in any_required_scope_sets
+        )
+        if not has_required_scopes and not has_alternative_scope_set:
             return "local token lacks required access; reauthorize locally"
     expiry = payload.get("expiry")
     if not isinstance(expiry, str):

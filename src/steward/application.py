@@ -31,7 +31,14 @@ from steward.workspaces import Workspace
 from steward.workspaces import WorkspaceRepository
 from steward.activity import ActivityService, ActivityType
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
-from steward.calendar import CalendarEventProposalService, CalendarLinkRepository, CalendarService, CalendarWriteService
+from steward.calendar import (
+    GOOGLE_CALENDAR_EVENTS_SCOPE,
+    GOOGLE_CALENDAR_READONLY_SCOPE,
+    CalendarEventProposalService,
+    CalendarLinkRepository,
+    CalendarService,
+    CalendarWriteService,
+)
 from steward.drive import GOOGLE_DRIVE_READONLY_SCOPE
 from steward.extraction import InvalidSearchQueryError, SourceFragmentRepository
 from steward.gmail import GOOGLE_GMAIL_READONLY_SCOPE
@@ -2660,16 +2667,19 @@ class StewardIntegrationStatusApplication:
         token_dir = self._data_dir / "config"
         states = {
             # Calendar can validly hold either its read-only or its separately
-            # authorized write scope, so only Drive/Gmail have one exact
-            # required scope that this metadata-only screen can verify.
-            "Calendar": (token_dir / "google-calendar-token.json", ()),
-            "Drive": (token_dir / "google-drive-token.json", (GOOGLE_DRIVE_READONLY_SCOPE,)),
-            "Gmail": (token_dir / "gmail-token.json", (GOOGLE_GMAIL_READONLY_SCOPE,)),
+            # authorized write scope. Both alternatives are verified locally
+            # without displaying their values in Telegram.
+            "Calendar": (
+                token_dir / "google-calendar-token.json", (),
+                ((GOOGLE_CALENDAR_READONLY_SCOPE,), (GOOGLE_CALENDAR_EVENTS_SCOPE,)),
+            ),
+            "Drive": (token_dir / "google-drive-token.json", (GOOGLE_DRIVE_READONLY_SCOPE,), ()),
+            "Gmail": (token_dir / "gmail-token.json", (GOOGLE_GMAIL_READONLY_SCOPE,), ()),
         }
         lines = ["Google integration status (metadata only):", f"OAuth client: {config_state}"]
         lines.extend(
-            f"{name}: {oauth_token_readiness(token, required_scopes=scopes)}"
-            for name, (token, scopes) in states.items()
+            f"{name}: {oauth_token_readiness(token, required_scopes=scopes, any_required_scope_sets=alternatives)}"
+            for name, (token, scopes, alternatives) in states.items()
         )
         lines.append("Authorize or change OAuth settings only on the local machine.")
         return PresentedReply(
