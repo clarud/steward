@@ -671,3 +671,13 @@ batch.
   change a task, reminder, or Calendar event. Focused application coverage
   passed for deadline, reminder, and exact linked-event navigation. The
   complete pytest suite subsequently reached 100% with an empty stderr stream.
+
+## Post-session automated delivery: casual explicit text capture
+
+- Deliberate Telegram capture phrases no longer require punctuation: `remember
+  buy milk`, `thought improve task routing`, and `note review CS3210 chapter 4`
+  enter the same reversible Intake review as their colon-prefixed forms.
+- They stage text locally and still require explicit **Save**; ordinary text
+  beginning with a different word (for example `remembering`) remains outside
+  this capture rule. Focused application coverage passed. The complete pytest
+  suite subsequently reached 100% with an empty stderr stream.

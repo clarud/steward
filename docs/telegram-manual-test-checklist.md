@@ -101,6 +101,12 @@ until a separate filesystem backup exists.
   empty, follow its example to propose a task and verify saving still needs
   approval.
 
+- Send `remember buy milk`, `thought improve task routing`, or `note review
+  CS3210 chapter 4`. Each should open a staged Intake review, not save a source.
+  Choose **Save** only after checking the summary, or **Do not keep** to discard
+  the local staged copy. Ordinary words such as `remembering` must not trigger
+  capture merely because they share a prefix.
+
 - Open a source, choose **Read content**, and use **Next**/**Previous** to
   browse extracted sections. Send `give me the content` after opening it,
   including after restart. Check that the text belongs to the selected source

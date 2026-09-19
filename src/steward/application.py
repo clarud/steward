@@ -4408,7 +4408,10 @@ class StewardProvisionalIntakeApplication:
         """
         text = (event.text or "").strip()
         normalized = text.casefold()
-        explicit_prefixes = ("note:", "thought:", "remember:", "deadline:", "todo:", "task:")
+        explicit_prefixes = (
+            "note:", "thought:", "remember:", "deadline:", "todo:", "task:",
+            "note ", "thought ", "remember ", "todo ", "task ",
+        )
         personal_signals = (
             "flight", "itinerary", "booking", "reservation", "receipt", "invoice", "warranty",
             "deadline", "due ", "submit ", "remind me", "to do", "todo", "task",

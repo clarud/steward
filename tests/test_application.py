@@ -3768,6 +3768,13 @@ def test_source_pagination_exposes_only_bounded_follow_up_commands(tmp_path: Pat
     assert response.actions[-1].command == "/sources 2"
 
 
+def test_explicit_casual_capture_prefixes_stage_text_without_auto_saving() -> None:
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="remember buy milk"))
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="thought improve task routing"))
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="note review CS3210 chapter 4"))
+    assert not StewardProvisionalIntakeApplication.should_propose_text(make_event(text="remembering this is useful"))
+
+
 def test_attachment_is_provisional_unless_its_caption_uses_save(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
