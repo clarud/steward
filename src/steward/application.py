@@ -3981,12 +3981,24 @@ class StewardCalendarApplication:
             "what flight is this", "what trip is this", "/calendar_linked_trip",
         }:
             return self._linked_trip_card(event)
+        requested_field = {
+            "where is it": "location",
+            "where is that event": "location",
+            "where is this event": "location",
+            "what is the location": "location",
+            "show the location": "location",
+            "what is the description": "description",
+            "show the description": "description",
+            "what are the event details": "description",
+        }.get(normalized)
         if normalized not in {
             "show that event", "open that event", "show the last event",
             "open the last event", "show that calendar event", "open that calendar event",
             "what is this", "what is that event", "what is this event",
             "when is it", "when is that event", "what time is it", "what time is that event",
-            "where is it", "where is that event", "show details", "show event details",
+            "where is it", "where is that event", "where is this event", "what is the location",
+            "show the location", "what is the description", "show the description",
+            "what are the event details", "show details", "show event details",
         }:
             return None
         context = self._contexts.get(event.platform, event.chat_id)
@@ -3995,9 +4007,35 @@ class StewardCalendarApplication:
         if self._calendar_factory is None:
             return "Calendar is not configured locally. Complete Calendar authorization on the local machine first."
         try:
-            return self._event_card(event, self._calendar_factory().get_event(str(context.identifier)))
+            event_result = self._calendar_factory().get_event(str(context.identifier))
+            if requested_field is not None:
+                return self._event_field_card(event, event_result, requested_field)
+            return self._event_card(event, event_result)
         except Exception:
             return self._read_failure(f"/calendar_get {context.identifier}")
+
+    def _event_field_card(self, event: IncomingEvent, event_result: object, field: str) -> PresentedReply:
+        """Show one current provider field for the explicitly selected event."""
+
+        identifier = str(getattr(event_result, "id"))
+        value = getattr(event_result, field, None)
+        label = "Location" if field == "location" else "Description"
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, "calendar", identifier)
+        text = str(value).strip() if value else f"No {label.casefold()} is provided for this event."
+        if field == "description" and len(text) > 2_000:
+            text = text[:2_000] + "\n[Truncated; view full details in Calendar.]"
+        return PresentedReply(
+            f"{text}\n\nThis was fetched from the current Calendar event; nothing was changed.",
+            (
+                ReplyAction("Full event", f"/calendar_get {identifier}"),
+                ReplyAction("Upcoming", "/calendar_search"),
+                ReplyAction("Home", "/home"),
+            ),
+            title=label,
+            icon="ðŸ“…",
+            reference=("calendar", identifier),
+        )
 
     @staticmethod
     def _read_failure(retry_command: str) -> PresentedReply:

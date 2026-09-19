@@ -2141,6 +2141,33 @@ def test_telegram_reopens_the_last_calendar_event_after_restart(tmp_path: Path) 
     assert graph.inputs == []
 
 
+def test_opened_calendar_event_answers_exact_location_and_description_questions(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    class Reader:
+        def get_event(self, event_id: str):
+            calls.append(event_id)
+            return type("Event", (), {
+                "id": event_id, "summary": "Interview",
+                "start": "2026-10-01T09:00:00+08:00", "end": "2026-10-01T10:00:00+08:00",
+                "location": "Marina Bay, Singapore", "description": "Bring your portfolio.",
+            })()
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    application = StewardCalendarApplication(lambda: Reader(), contexts=ReviewContextRepository(database))
+    application.handle_command(make_event(text="/calendar_get event-opaque-1"))
+
+    location = application.resolve_calendar_reference(make_event(text="where is it?"))
+    description = application.resolve_calendar_reference(make_event(text="what is the description?"))
+
+    assert isinstance(location, PresentedReply)
+    assert location.title == "Location" and "Marina Bay, Singapore" in location.text
+    assert location.actions[0].command == "/calendar_get event-opaque-1"
+    assert isinstance(description, PresentedReply)
+    assert description.title == "Description" and "Bring your portfolio." in description.text
+    assert calls == ["event-opaque-1", "event-opaque-1", "event-opaque-1"]
+
+
 def test_calendar_event_can_navigate_to_an_explicitly_linked_task(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database)

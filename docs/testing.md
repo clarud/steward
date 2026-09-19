@@ -695,3 +695,14 @@ batch.
 - Focused application coverage verifies receipt-total and warranty-coverage-end
   answers with source provenance. The full regression suite passed at 100% with
   an empty stderr stream after this delivery.
+
+## Post-session automated delivery: exact Calendar-field follow-ups
+
+- After a user opens a Calendar event, `where is it?` and `what is the
+  description?` fetch the selected opaque event ID again and show only the
+  requested current field. Missing data is stated plainly instead of inferred.
+- These are read-only external refreshes: they retain the narrow Calendar
+  reference, offer a Full event action, and never create, edit, link, or delete
+  an event. Focused application coverage verifies both location and description
+  replies and the three expected current-event reads (open plus two follow-ups).
+  The full regression suite passed at 100% after this delivery.

@@ -139,10 +139,13 @@ until a separate filesystem backup exists.
   selected event ID for an explicit retry and offer Calendar/integration recovery
   actions rather than showing old event details.
 - After opening an event, try `what is this?`, `when is it?`, `where is it?`,
-  and `show details`. Each must refetch that event without invoking a model or
-  creating a Calendar write. The response must remain a Calendar card rather than
-  saying the review type is unavailable. Verify detail, result, empty-result, and
-  failure cards offer only applicable compact navigation/recovery actions.
+  `what is the description?`, and `show details`. Each must refetch that event
+  without invoking a model or creating a Calendar write. The location and
+  description questions should show only their requested current field and
+  offer **Full event**; a missing field must be stated plainly. The response
+  must remain a Calendar card rather than saying the review type is unavailable.
+  Verify detail, result, empty-result, and failure cards offer only applicable
+  compact navigation/recovery actions.
 - Send `/tasks`, open one task with its compact button, restart the bot, then
   send `show that task`. Verify the detail card survives and **Mark complete**
   remains an explicit action rather than an inferred conversational write.
