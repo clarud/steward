@@ -594,9 +594,12 @@ explicit operations:
   closed for acceptance but can still be rejected.
 - Telegram-created workspace and maintenance reviews are also chat-bound:
   workspace creation, derived-text re-extraction, semantic-index rebuilding,
-  and metadata unregistering are visible and actionable only in the chat that
-  requested them. Legacy unbound proposals retain their established behavior;
-  their lack of a Telegram identity is visible in their local operator context.
+  metadata unregistering, workspace links, and delivery-recovery retry budgets
+  are visible and actionable only in the chat that requested them. The shared
+  Telegram action inbox hides legacy unbound proposals and refuses their
+  acceptance; an operator may decline one locally/remotely to clear it, then
+  create a fresh chat-bound review. This prevents an old local CLI proposal
+  from becoming an implicit remote authorization capability.
 - Telegram-created knowledge-enrichment reviews are likewise chat-bound. A
   pending evidence comparison, its unresolved conflict outcome, and a resulting
   claim-revision draft can be reviewed only from the originating chat. Migration

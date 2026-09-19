@@ -620,6 +620,10 @@ until a separate filesystem backup exists.
   first chat and try to approve it in the second. Steward must refuse without
   creating or changing a record; the originating chat must still be able to
   approve or reject that exact review.
+- A pending action created from a local CLI workflow without a Telegram chat
+  identity must not appear in Telegram's **Pending** or **Pending actions**
+  lists. A guessed approval command must refuse; declining it is the only
+  Telegram recovery path before recreating an equivalent chat-bound review.
 - With `STEWARD_MODEL_PROVIDER=local`, set a harmless source to
   `local_model_only` and ask about it through the tool agent. Verify the local
   model can use it. Switch to an external provider and verify the same source

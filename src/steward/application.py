@@ -248,7 +248,7 @@ class StewardReviewInboxApplication:
             if proposal is None or proposal.status != "pending":
                 return "That review is no longer waiting for a decision. Send /pending for the current list."
             proposal_chat = proposal.payload.get("chat_id")
-            if proposal_chat and proposal_chat != event.chat_id:
+            if proposal_chat != event.chat_id:
                 return "That review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
             if self._contexts is not None:
                 self._contexts.set(event.platform, event.chat_id, kind, identifier)
@@ -543,7 +543,7 @@ class StewardReviewInboxApplication:
             if (
                 proposal.status == "pending"
                 and proposal.id is not None
-                and (not proposal_chat or proposal_chat == event.chat_id)
+                and proposal_chat == event.chat_id
             ):
                 title, _ = self._action_summary(proposal.action_type, proposal.payload)
                 items.append(("action", proposal.id, title))
@@ -2651,7 +2651,11 @@ class StewardWorkspaceLinkApplication:
             return PresentedReply("This source is already linked. No file moved.",
                                   (ReplyAction("View workspace", f"/workspace {workspace_id}"),),
                                   title=workspace.name)
-        payload = {"workspace_id": str(workspace_id), "source_id": str(source_id)}
+        payload = {
+            "workspace_id": str(workspace_id),
+            "source_id": str(source_id),
+            "chat_id": event.chat_id,
+        }
         pending = self._proposals.find_pending(self.LINK_SOURCE, payload)
         if pending is None:
             pending = self._proposals.add(self.LINK_SOURCE, payload)
@@ -4449,7 +4453,7 @@ class StewardOperationsApplication:
             dead_letter = self._deliveries.get_dead_letter(update_id)
             if dead_letter is None:
                 return f"Telegram update {update_id!r} is not a dead letter."
-            payload = {"update_id": update_id}
+            payload = {"update_id": update_id, "chat_id": event.chat_id}
             pending = self._proposals.find_pending(self.RECOVER_DELIVERY, payload)
             if pending is None:
                 pending = self._proposals.add(self.RECOVER_DELIVERY, payload)
@@ -5449,7 +5453,7 @@ class StewardActionProposalApplication:
             pending = [
                 proposal for proposal in self._repository.list_all()
                 if proposal.status == "pending"
-                and (not proposal.payload.get("chat_id") or proposal.payload.get("chat_id") == event.chat_id)
+                and proposal.payload.get("chat_id") == event.chat_id
             ]
             if not pending:
                 return "There are no pending action proposals."
@@ -5520,6 +5524,12 @@ class StewardActionProposalApplication:
         decision = "accepted" if command == "/approve_action" else "rejected"
         proposal = self._repository.get(proposal_id)
         proposal_chat = proposal.payload.get("chat_id") if proposal is not None else None
+        if proposal is not None and (not isinstance(proposal_chat, str) or not proposal_chat):
+            if decision == "accepted":
+                return (
+                    "This older action review is missing its chat binding. Reject it, then create "
+                    "a fresh review from Telegram."
+                )
         if (
             proposal is not None
             and proposal.action_type in {
@@ -5559,7 +5569,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_REMINDER:
             return self._review_task_reminder(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
-            return self._review_delivery_recovery(proposal_id, decision)
+            return self._review_delivery_recovery(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
             return self._review_reextract(proposal_id, decision)
         if proposal is not None and proposal.action_type == self.REBUILD_SEMANTIC_INDEX:
@@ -5571,7 +5581,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type == StewardKnowledgeApplication.REVISE_CLAIM:
             return self._review_claim_revision(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
-            return self._review_workspace_link(proposal_id, decision)
+            return self._review_workspace_link(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
             return self._review_task_calendar_association(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardTaskApplication.UNLINK_CALENDAR:
@@ -5943,12 +5953,20 @@ class StewardActionProposalApplication:
             title="Knowledge claim revised", icon="🧠",
         )
 
-    def _review_delivery_recovery(self, proposal_id: int, decision: str) -> str:
+    def _review_delivery_recovery(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str:
         if self._delivery_repository is None:
             return "Telegram delivery recovery is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
         if proposal is None:
             return "Delivery recovery proposal was not found."
+        proposal_chat = proposal.payload.get("chat_id")
+        if not isinstance(proposal_chat, str) or not proposal_chat:
+            if decision == "accepted":
+                return "This older delivery-recovery review is missing its chat binding. Reject it, then create a fresh review."
+        elif proposal_chat != event.chat_id:
+            return "This delivery-recovery review belongs to a different Telegram chat."
         if proposal.status == decision:
             return f"Delivery recovery proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":
@@ -6150,12 +6168,16 @@ class StewardActionProposalApplication:
             icon="🧠",
         )
 
-    def _review_workspace_link(self, proposal_id: int, decision: str) -> str:
+    def _review_workspace_link(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str:
         if self._workspaces is None or self._sources is None:
             return "Workspace linking is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
         if proposal is None:
             return "Link proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This workspace-link review belongs to a different Telegram chat."
         if proposal.status == decision:
             return f"Link proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":

@@ -563,7 +563,7 @@ def test_pending_review_pages_reach_older_items_and_recover_after_decisions(tmp_
     initialize_database(database)
     actions = ActionProposalRepository(database)
     for index in range(10):
-        actions.add("create_workspace", {"name": f"Workspace {index}"})
+        actions.add("create_workspace", {"name": f"Workspace {index}", "chat_id": "100"})
     reviews = StewardReviewInboxApplication(
         actions, OrganizationProposalRepository(database), SourceRepository(database),
     )
@@ -593,7 +593,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     sources = SourceRepository(database)
     source = sources.add(Source(None, source_path, "a" * 64, SourceType.PDF, 6, now, now, now))
     actions = ActionProposalRepository(database)
-    action = actions.add("create_workspace", {"name": "Job Search"})
+    action = actions.add("create_workspace", {"name": "Job Search", "chat_id": "100"})
     organizations = OrganizationProposalRepository(database)
     organization = organizations.add(
         OrganizationProposal(None, source.id or 0, "keep_in_inbox", None, None, "No match yet.", 0.0, user_guidance="This is for my job search.")
@@ -646,6 +646,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
 
     draft = actions.add(StewardCuratedNoteApplication.CREATE_CURATED_NOTE, {
         "text": "# Reviewed draft\nA specific point.", "origin": "selected reply",
+        "chat_id": "100",
     })
     draft_card = reviews.handle_command(make_event(text=f"/review action {draft.id}"))
     assert "A specific point." in draft_card.text
@@ -653,6 +654,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert actions.get(draft.id).status == "pending"
     correction = actions.add(StewardRecordApplication.CORRECT_TRAVEL_RECORD, {
         "record_id": "42", "field": "arrival", "value": "Osaka",
+        "chat_id": "100",
     })
     correction_card = reviews.handle_command(make_event(text=f"/review action {correction.id}"))
     assert "Record: 42" in correction_card.text and "Replacement: Osaka" in correction_card.text
@@ -667,6 +669,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     preview = RecordService(database).propose_travel_record(source.id, parts)
     record_proposal = actions.add("create_travel_record", {
         "source_id": str(source.id), "snapshot": record_review_snapshot(preview, parts),
+        "chat_id": "100",
     })
     record_reviews = StewardReviewInboxApplication(
         actions, organizations, sources, records=RecordService(database), fragments=fragments,
@@ -926,7 +929,9 @@ def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tm
     initialize_database(database)
     sources = SourceRepository(database)
     actions = ActionProposalRepository(database)
-    proposal = actions.add(ActionProposalService.CREATE_WORKSPACE, {"name": "CS3210 Revision"})
+    proposal = actions.add(
+        ActionProposalService.CREATE_WORKSPACE, {"name": "CS3210 Revision", "chat_id": "100"}
+    )
     organizations = OrganizationProposalRepository(database)
     contexts = ReviewContextRepository(database)
     activity = ActivityService(database)
@@ -3008,7 +3013,7 @@ def test_record_approval_rejects_changed_evidence_and_legacy_previews(tmp_path: 
         ]
         assert proposals.get(1).status == "pending"
         legacy = proposals.add(f"create_{kind}_record", {"source_id": str(source.id)})
-        assert "snapshot protection" in application.handle(make_event(text=f"/approve_action {legacy.id}")).text
+        assert "missing its chat binding" in application.handle(make_event(text=f"/approve_action {legacy.id}"))
         assert getattr(records, f"list_{kind}_records")() == []
         fresh = application.handle(make_event(text=stale.actions[0].command))
         assert getattr(records, f"list_{kind}_records")() == []
@@ -3637,7 +3642,7 @@ def test_telegram_reextract_keeps_a_failed_refresh_pending(tmp_path: Path) -> No
     )
 
     assert application.handle_command(make_event(text="/propose_reextract 99")) == "Source 99 was not found."
-    proposal = proposals.add(application.REEXTRACT_SOURCE, {"source_id": "99"})
+    proposal = proposals.add(application.REEXTRACT_SOURCE, {"source_id": "99", "chat_id": "100"})
 
     recovery = application.handle_command(make_event(text=f"/approve_action {proposal.id}"))
     assert recovery.title == "Text refresh incomplete"
@@ -3675,7 +3680,10 @@ def test_telegram_reextract_failure_explains_the_specific_extractor_without_leak
         None, tmp_path / "lecture.docx", "d" * 64, SourceType.DOCX, 20, now, now, now
     ))
     proposals = ActionProposalRepository(database)
-    proposal = proposals.add(StewardActionProposalApplication.REEXTRACT_SOURCE, {"source_id": str(source.id)})
+    proposal = proposals.add(
+        StewardActionProposalApplication.REEXTRACT_SOURCE,
+        {"source_id": str(source.id), "chat_id": "100"},
+    )
 
     class FailingExtractor:
         def reextract_source(self, source_id):
@@ -4920,7 +4928,7 @@ def test_action_proposals_command_paginates_pending_reviews(tmp_path: Path) -> N
     repository = ActionProposalRepository(database_path)
     service = ActionProposalService(repository, WorkspaceRepository(database_path), ActivityService(database_path))
     for index in range(9):
-        service.propose_workspace_creation(f"Workspace {index + 1}")
+        service.propose_workspace_creation(f"Workspace {index + 1}", chat_id="100")
     application = StewardActionProposalApplication(repository, service)
 
     first_page = application.handle_command(make_event(text="/action_proposals"))
@@ -4942,7 +4950,7 @@ def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_p
     activity = ActivityService(database_path)
     repository = ActionProposalRepository(database_path)
     service = ActionProposalService(repository, WorkspaceRepository(database_path), activity)
-    proposal, _ = service.propose_workspace_creation("Compiler Project")
+    proposal, _ = service.propose_workspace_creation("Compiler Project", chat_id="100")
     assert proposal is not None and proposal.id is not None
     app = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()),
@@ -4961,6 +4969,14 @@ def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_p
     assert accepted.title == "Workspace created"
     assert "Compiler Project is now available" in accepted.text
     assert WorkspaceRepository(database_path).list_all()[0].name == "Compiler Project"
+
+    legacy, _ = service.propose_workspace_creation("Local-only legacy proposal")
+    assert legacy is not None
+    assert app.handle(make_event(text="/action_proposals")) == "There are no pending action proposals."
+    assert "missing its chat binding" in app.handle(make_event(text=f"/approve_action {legacy.id}"))
+    declined = app.handle(make_event(text=f"/reject_action {legacy.id}"))
+    assert isinstance(declined, PresentedReply)
+    assert declined.title == "Action declined"
 
 
 def test_telegram_originated_maintenance_reviews_are_private_to_the_originating_chat(tmp_path: Path) -> None:

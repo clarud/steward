@@ -762,3 +762,14 @@ batch.
   an identity to older CLI/tool reviews. Those legacy rows stay inspectable but
   fail closed for Telegram mutations. Focused repository, application, and
   schema coverage verifies owner completion and cross-chat refusal.
+
+## Post-session automated delivery: unified Telegram action boundary
+
+- The shared action-review inbox now shows only reviews explicitly created by
+  the current Telegram chat. It no longer treats an absent `chat_id` from a
+  local CLI workflow as permission for any authorized Telegram chat to inspect
+  or approve that action.
+- Telegram delivery-recovery and workspace-link proposal producers now add the
+  originating chat ID as well. Legacy unbound actions fail closed for approval
+  but can be declined and recreated deliberately. Focused application coverage
+  verifies pagination, owner review, cross-chat refusal, and legacy recovery.
