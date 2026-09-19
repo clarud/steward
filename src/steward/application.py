@@ -617,6 +617,12 @@ class StewardReviewInboxApplication:
                 "No task deadline or Calendar event will be changed."
             )
         if action_type.startswith("create_calendar"):
+            if action_type == CalendarEventProposalService.CREATE_ADHOC_EVENT:
+                try:
+                    details = f"{payload['summary']}\n{calendar_time_label(payload['start'], payload['end'])}"
+                except (KeyError, ValueError):
+                    return "Refresh Calendar preview", "This Calendar proposal needs a fresh preview before approval."
+                return "Review Calendar event", details + "\n\nDestination: configured Google Calendar. No event has been created."
             if "snapshot" not in payload:
                 return "Refresh Calendar preview", "This older proposal needs a fresh Calendar preview before approval."
             item = json.loads(payload["snapshot"])
@@ -5433,23 +5439,25 @@ class StewardActionProposalApplication:
 
         command, separator, argument = text.partition(" ")
         command = command.partition("@")[0]
-        if command in {"/calendar_travel", "/calendar_task"}:
-            if not separator or not argument.strip().isdigit():
+        if command in {"/calendar_travel", "/calendar_task", "/calendar_event"}:
+            if command in {"/calendar_travel", "/calendar_task"} and (not separator or not argument.strip().isdigit()):
                 target = "a saved travel record ID" if command == "/calendar_travel" else "a saved task ID"
                 return f"Use {command} followed by {target}."
             if self._calendar_proposals is None:
                 return "Calendar proposals are not configured on this Steward process."
             try:
-                proposal = (
-                    self._calendar_proposals.propose_travel_event(
-                        int(argument.strip()), chat_id=event.chat_id
+                if command == "/calendar_travel":
+                    proposal = self._calendar_proposals.propose_travel_event(int(argument.strip()), chat_id=event.chat_id)
+                elif command == "/calendar_task":
+                    proposal = self._calendar_proposals.propose_task_event(int(argument.strip()), chat_id=event.chat_id)
+                else:
+                    summary, start_text, end_text = (part.strip() for part in argument.split("|"))
+                    proposal = self._calendar_proposals.propose_adhoc_event(
+                        summary, datetime.fromisoformat(start_text), datetime.fromisoformat(end_text), chat_id=event.chat_id,
                     )
-                    if command == "/calendar_travel"
-                    else self._calendar_proposals.propose_task_event(
-                        int(argument.strip()), chat_id=event.chat_id
-                    )
-                )
             except ValueError as error:
+                if command == "/calendar_event" and (not separator or len(argument.split("|")) != 3):
+                    return "Use /calendar_event TITLE | ISO_START_WITH_OFFSET | ISO_END_WITH_OFFSET."
                 return str(error)
             title, description = StewardReviewInboxApplication._action_summary(proposal.action_type, proposal.payload)
             return PresentedReply(
@@ -5551,6 +5559,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type in {
             CalendarEventProposalService.CREATE_TRAVEL_EVENT,
             CalendarEventProposalService.CREATE_TASK_EVENT,
+            CalendarEventProposalService.CREATE_ADHOC_EVENT,
         }:
             if self._calendar_proposals is None:
                 return "Calendar proposal review is not configured on this Steward process."
@@ -6427,8 +6436,12 @@ class StewardEventApplication:
             natural_review = self._review_inbox_application.handle_natural_request(event)
             if natural_review is not None:
                 return natural_review
+        normalized = (event.text or "").strip().casefold()
+        if self._action_proposal_application is not None and normalized.startswith("calendar:"):
+            return self._action_proposal_application.handle_command(
+                replace(event, text="/calendar_event " + (event.text or "").partition(":")[2].strip())
+            ) or "Calendar event proposals are not configured on this Steward process."
         if self._task_application is not None:
-            normalized = (event.text or "").strip().casefold()
             if normalized.startswith(("remind me to ", "remember to ", "todo:", "task:", "deadline:")) or self._is_time_bound_commitment(normalized):
                 return self._task_application.propose(event.text or "", chat_id=event.chat_id)
         if self._calendar_application is not None:

@@ -277,6 +277,36 @@ def test_calendar_event_proposal_requires_a_separate_acceptance_before_writing(t
     ]
 
 
+def test_standalone_calendar_event_requires_review_and_reuses_its_stable_key(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database)
+    proposals = CalendarEventProposalService(ActionProposalRepository(database), RecordService(database), activity)
+    start = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    end = datetime(2026, 10, 1, 10, tzinfo=UTC)
+
+    first = proposals.propose_adhoc_event("Dentist appointment", start, end, chat_id="100")
+    repeated = proposals.propose_adhoc_event("Dentist appointment", start, end, chat_id="100")
+
+    assert first.id == repeated.id
+    assert first.action_type == "create_calendar_adhoc_event"
+    assert first.status == "pending"
+    with pytest.raises(ValueError, match="authorization"):
+        proposals.review(first.id or 0, "accepted")
+
+    class Writer:
+        calls: list[tuple[str, datetime, datetime, str]] = []
+
+        def create_adhoc_event(self, *, summary, start, end, idempotency_key):
+            self.calls.append((summary, start, end, idempotency_key))
+
+    writer = Writer()
+    accepted = proposals.review(first.id or 0, "accepted", writer)  # type: ignore[arg-type]
+
+    assert accepted.status == "accepted"
+    assert writer.calls == [("Dentist appointment", start, end, first.payload["idempotency_key"])]
+    assert activity.list_recent()[0].event_type is ActivityType.ACTION_ACCEPTED
+
+
 def test_calendar_event_proposal_rejects_invalid_record_times_before_creating_a_proposal(tmp_path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 8, tzinfo=UTC)

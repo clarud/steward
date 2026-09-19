@@ -1319,6 +1319,16 @@ also closes the crash window after Google accepts an event but before the link
 is saved by reconciling the remote event with its deterministic private
 idempotency key on retry.
 
+Standalone appointments use the deliberately structured Telegram form
+`calendar: TITLE | ISO_START_WITH_OFFSET | ISO_END_WITH_OFFSET`. It creates a
+chat-bound `create_calendar_adhoc_event` review rather than a task, record, or
+unreviewed provider write. The proposal stores its title, timezone-aware
+interval, and a deterministic private idempotency key derived from those three
+values. Acceptance constructs the Calendar writer lazily, reuses a remote event
+with that key if a prior process stopped after the provider write, and otherwise
+creates one titled event. This keeps appointments distinct from tasks: no local
+task is invented and no task/record link is inferred.
+
 Tasks remain canonical task records rather than Calendar events.
 `CalendarLinkRepository` exposes only the local relationship between a persisted
 task/travel record and an opaque external event ID; reading that link does not call

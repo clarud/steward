@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -407,6 +408,35 @@ class CalendarWriteService:
         self._link_task_event(key, task.id, event.id)
         return event
 
+    def create_adhoc_event(
+        self, *, summary: str, start: datetime, end: datetime, idempotency_key: str
+    ) -> CalendarEvent:
+        """Create one reviewed standalone event without inventing a local task.
+
+        The opaque idempotency key is generated when the proposal is persisted,
+        before a remote write.  A process interruption after Google's accepted
+        write can therefore recover the same event rather than duplicate it.
+        """
+
+        if not summary.strip():
+            raise ValueError("Calendar event summary must not be empty.")
+        if start.tzinfo is None or start.utcoffset() is None or end.tzinfo is None or end.utcoffset() is None:
+            raise ValueError("Calendar event times must include a timezone offset.")
+        if start >= end:
+            raise ValueError("Calendar event start must be before its end.")
+        recovered = self._calendar.find_by_idempotency_key(idempotency_key)
+        if recovered is not None:
+            return recovered
+        event = self._calendar.create_event(
+            summary=summary,
+            start=start,
+            end=end,
+            description="Steward reviewed standalone Calendar event.",
+            idempotency_key=idempotency_key,
+        )
+        self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event.id, details=idempotency_key)
+        return event
+
     def _link(self, key: str, record_id: int, event_id: str) -> None:
         if self._links.link_travel_event(key, record_id, event_id):
             self._activity.record(ActivityType.CALENDAR_EVENT_CREATED, object_id=event_id, details=key)
@@ -429,6 +459,7 @@ class CalendarEventProposalService:
 
     CREATE_TRAVEL_EVENT = "create_calendar_travel_event"
     CREATE_TASK_EVENT = "create_calendar_task_event"
+    CREATE_ADHOC_EVENT = "create_calendar_adhoc_event"
 
     def __init__(
         self,
@@ -480,6 +511,35 @@ class CalendarEventProposalService:
         )
         return proposal
 
+    def propose_adhoc_event(
+        self, summary: str, start: datetime, end: datetime, *, chat_id: str | None = None
+    ) -> ActionProposal:
+        """Persist an explicit standalone event request before any provider call."""
+
+        self._validate_adhoc(summary, start, end)
+        if chat_id is not None and not chat_id.strip():
+            raise ValueError("A Telegram Calendar proposal requires an originating chat.")
+        normalized_summary = " ".join(summary.split())
+        key_material = "\n".join((normalized_summary, start.isoformat(), end.isoformat()))
+        payload = {
+            "summary": normalized_summary,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "idempotency_key": "adhoc-calendar:" + sha256(key_material.encode("utf-8")).hexdigest(),
+        }
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
+        existing = self._proposals.find_pending(self.CREATE_ADHOC_EVENT, payload)
+        if existing is not None:
+            return existing
+        proposal = self._proposals.add(self.CREATE_ADHOC_EVENT, payload)
+        self._activity.record(
+            ActivityType.ACTION_PROPOSED,
+            object_id=str(proposal.id),
+            details="Create standalone Calendar event",
+        )
+        return proposal
+
     def review(
         self,
         proposal_id: int,
@@ -504,12 +564,23 @@ class CalendarEventProposalService:
                 if proposal.payload.get("snapshot") != self._snapshot(record):
                     raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
                 calendar_writer.create_travel_event(record)
-            else:
+            elif proposal.action_type == self.CREATE_TASK_EVENT:
                 task = self._task(int(proposal.payload["task_id"]))
                 self._validate_task(task)
                 if proposal.payload.get("snapshot") != self._snapshot(task):
                     raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
                 calendar_writer.create_task_deadline_event(task)
+            else:
+                try:
+                    start = datetime.fromisoformat(proposal.payload["start"])
+                    end = datetime.fromisoformat(proposal.payload["end"])
+                except (KeyError, ValueError) as error:
+                    raise ValueError("Calendar event proposal is incomplete. Create a fresh review.") from error
+                self._validate_adhoc(proposal.payload.get("summary", ""), start, end)
+                calendar_writer.create_adhoc_event(
+                    summary=proposal.payload["summary"], start=start, end=end,
+                    idempotency_key=proposal.payload["idempotency_key"],
+                )
         self._proposals.set_status(proposal_id, decision)
         self._activity.record(
             ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
@@ -527,7 +598,9 @@ class CalendarEventProposalService:
 
     def _proposal(self, proposal_id: int) -> ActionProposal:
         proposal = self._proposals.get(proposal_id)
-        if proposal is None or proposal.action_type not in {self.CREATE_TRAVEL_EVENT, self.CREATE_TASK_EVENT}:
+        if proposal is None or proposal.action_type not in {
+            self.CREATE_TRAVEL_EVENT, self.CREATE_TASK_EVENT, self.CREATE_ADHOC_EVENT,
+        }:
             raise ValueError("Calendar event proposal was not found.")
         return proposal
 
@@ -560,3 +633,14 @@ class CalendarEventProposalService:
             raise ValueError("Tasks need an explicit timezone-aware deadline for Calendar.")
         if task.due_at.tzinfo is None or task.due_at.utcoffset() is None:
             raise ValueError("Task deadlines must include a timezone for Calendar.")
+
+    @staticmethod
+    def _validate_adhoc(summary: str, start: datetime, end: datetime) -> None:
+        if not " ".join(summary.split()):
+            raise ValueError("Calendar event summary must not be empty.")
+        if len(summary) > 500:
+            raise ValueError("Calendar event summary must be at most 500 characters.")
+        if start.tzinfo is None or start.utcoffset() is None or end.tzinfo is None or end.utcoffset() is None:
+            raise ValueError("Calendar event times must include a timezone offset.")
+        if start >= end:
+            raise ValueError("Calendar event start must be before its end.")

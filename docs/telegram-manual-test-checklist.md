@@ -579,6 +579,13 @@ until a separate filesystem backup exists.
 - Complete Google OAuth locally in a browser, never in Telegram.
 - Use `/calendar_search` and `/calendar_get EVENT_ID`; compare results with
   Google Calendar directly.
+- To create a standalone appointment rather than a task marker or travel event,
+  send `calendar: TITLE | ISO_START_WITH_OFFSET | ISO_END_WITH_OFFSET`, for
+  example `calendar: Dentist | 2026-10-01T09:00:00+08:00 |
+  2026-10-01T10:00:00+08:00`. Verify the readable preview remains pending and
+  nothing appears in Google Calendar until **Create event** is approved.
+  Repeat the same request before approval and confirm it reopens the same
+  review. A second authorized chat must not be able to approve it.
 - With no search terms, Calendar lists upcoming/ongoing events. A named search
   can still find past events. Check readable dates and UTC offsets on both list
   and detail cards; single-day all-day events should show one date, not the

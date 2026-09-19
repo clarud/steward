@@ -738,3 +738,15 @@ batch.
 - Focused application coverage verifies the exact source ID, pending proposal,
   and unchanged derived text before approval. The full regression suite is
   passed at 100% after this delivery.
+
+## Post-session automated delivery: reviewed standalone Calendar events
+
+- A structured Telegram request beginning `calendar:` can now propose a
+  standalone appointment with an explicit title and timezone-aware start/end
+  interval. It is distinct from a task deadline marker and a Travel record:
+  neither local object is created or inferred.
+- The proposal is chat-bound, uses an opaque deterministic idempotency key, and
+  cannot contact Google until a visible approval. Focused Calendar and Telegram
+  tests verify pending-state safety, repeat-proposal reuse, authorization refusal,
+  and the exact writer request. The full regression suite passed at 100% after
+  this delivery.

@@ -5061,6 +5061,29 @@ def test_telegram_can_create_a_pending_calendar_proposal_without_writing(tmp_pat
     assert response.actions[0].command == "/approve_action 1"
 
 
+def test_telegram_calendar_prefix_stages_a_reviewed_standalone_event(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    calendar_proposals = CalendarEventProposalService(proposals, RecordService(database), activity)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity), calendar_proposals,
+        ),
+    )
+
+    review = application.handle(make_event(text=(
+        "calendar: Dentist appointment | 2026-10-01T09:00:00+08:00 | 2026-10-01T10:00:00+08:00"
+    )))
+
+    assert isinstance(review, PresentedReply)
+    assert review.title == "Review Calendar event"
+    assert "Dentist appointment" in review.text and "1 Oct 2026" in review.text
+    assert proposals.get(1).action_type == CalendarEventProposalService.CREATE_ADHOC_EVENT
+    assert proposals.get(1).payload["chat_id"] == "100"
+    assert review.actions[0].command == "/approve_action 1"
+
+
 def test_telegram_record_review_is_bound_to_the_originating_chat(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 10, 1, tzinfo=UTC)
