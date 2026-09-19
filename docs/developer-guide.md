@@ -597,6 +597,13 @@ explicit operations:
   and metadata unregistering are visible and actionable only in the chat that
   requested them. Legacy unbound proposals retain their established behavior;
   their lack of a Telegram identity is visible in their local operator context.
+- Telegram-created knowledge-enrichment reviews are likewise chat-bound. A
+  pending evidence comparison, its unresolved conflict outcome, and a resulting
+  claim-revision draft can be reviewed only from the originating chat. Migration
+  55 stores the opaque chat identity on the enrichment row; the revision action
+  carries the same identity in its existing payload. Older unbound knowledge
+  reviews remain readable as historical local state but fail closed for Telegram
+  decisions, so an authorized second chat cannot mutate shared evidence.
 - `/home` and `/pending` unify outstanding actions, organization choices,
   staged intake, and knowledge updates into identifiable review cards. After
   opening one card, an unambiguous `yes`/`accept` or `no`/`reject` reply is
@@ -1541,6 +1548,10 @@ provides the normal context and action repositories. The next ordinary message i
 saved only as a generic `revise_knowledge_claim` action proposal. Its card shows
 the original claim ID, conflict review, evidence fragment, and exact replacement
 wording before a separate approval. Cancelling or rejecting creates no claim.
+Both stages are bound to the Telegram chat that created the enrichment review:
+another allowlisted chat cannot accept/reject it, select a conflict outcome,
+start/suggest a revision, or approve its resulting wording. This protects
+canonical shared knowledge while retaining ordinary read-only concept history.
 
 Approved wording is applied by `KnowledgeService.accept_claim_revision()` inside
 one SQLite transaction. It revalidates the accepted contradiction, its

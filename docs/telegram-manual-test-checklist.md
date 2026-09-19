@@ -702,6 +702,12 @@ until a separate filesystem backup exists.
 - Reopen a pending card with `/knowledge_proposal ID`; verify it presents the
   same evidence plus decision buttons (conflicts use **Flag conflict** and **Not
   a conflict**), rather than requiring a manually typed review command.
+- If a second harmless authorized chat is available, create a knowledge
+  enrichment review in the first chat. `/pending`, `/knowledge_proposals`, and
+  `/knowledge_proposal ID` in the second must not make it actionable; manually
+  sending accept/reject or conflict-resolution commands there must refuse with
+  no evidence, conflict, or claim change. The originating chat must still be
+  able to complete its exact review after a restart.
 - Open a concept and a knowledge-evidence card, then open other cards. Reply to
   the older concept with `show that concept`, and to the older evidence card
   with `show that evidence`. Restart Telegram and repeat. Each reply must reopen

@@ -750,3 +750,15 @@ batch.
   tests verify pending-state safety, repeat-proposal reuse, authorization refusal,
   and the exact writer request. The full regression suite passed at 100% after
   this delivery.
+
+## Post-session automated delivery: chat-bound knowledge reviews
+
+- New Telegram knowledge-enrichment proposals now persist their originating
+  chat identity. `/pending` and `/knowledge_proposals` show them only to that
+  chat, and guessed review, conflict-resolution, draft, model-suggestion, or
+  claim-revision approval commands from another authorized chat refuse before
+  changing canonical evidence or claims.
+- Migration 55 adds the nullable local-only `chat_id` field without assigning
+  an identity to older CLI/tool reviews. Those legacy rows stay inspectable but
+  fail closed for Telegram mutations. Focused repository, application, and
+  schema coverage verifies owner completion and cross-chat refusal.

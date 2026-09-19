@@ -50,6 +50,7 @@ from steward.storage.database import (
     EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
     TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
     TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
+    KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -134,6 +135,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
             TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
             TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
+            KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -150,8 +152,8 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
     assert [column[1] for column in message_reference_columns] == [
         "platform", "chat_id", "message_id", "reference_kind", "reference_id", "created_at",
     ]
-    assert [column[1] for column in enrichment_columns][-2:] == [
-        "conflict_resolution", "conflict_resolved_at",
+    assert [column[1] for column in enrichment_columns][-3:] == [
+        "conflict_resolution", "conflict_resolved_at", "chat_id",
     ]
     assert [column[1] for column in claim_revision_columns] == [
         "action_proposal_id", "conflict_proposal_id", "original_claim_id",
@@ -173,7 +175,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION
+    assert migration_count == KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:

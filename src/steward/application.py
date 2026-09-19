@@ -355,6 +355,8 @@ class StewardReviewInboxApplication:
             proposal = self._knowledge.get(identifier)
             if proposal is None or proposal.status != "pending":
                 return "That knowledge review is no longer waiting. Send /pending for the current list."
+            if proposal.chat_id != event.chat_id:
+                return "That knowledge review is unavailable in this Telegram chat. Send /pending for reviews you can act on."
             if self._contexts is not None:
                 self._contexts.set(event.platform, event.chat_id, kind, identifier)
             actions = list(
@@ -479,7 +481,11 @@ class StewardReviewInboxApplication:
                 return f"{command} {context.identifier}"
         elif context.kind == "knowledge" and self._knowledge is not None:
             proposal = self._knowledge.get(context.identifier)
-            if proposal is not None and proposal.status == "pending":
+            if (
+                proposal is not None
+                and proposal.status == "pending"
+                and proposal.chat_id == event.chat_id
+            ):
                 return f"/review_enrichment {context.identifier} {decision}"
         # Organization confirmations are intentionally handled by its
         # LangGraph approval thread, which verifies the chat's active thread
@@ -564,7 +570,7 @@ class StewardReviewInboxApplication:
                     items.append(("intake", intake.id, f"Save {intake.original_name}"))
         if self._knowledge is not None:
             for proposal in reversed(self._knowledge.list_all()):
-                if proposal.status == "pending":
+                if proposal.status == "pending" and proposal.chat_id == event.chat_id:
                     items.append(("knowledge", proposal.id, "Review a knowledge update"))
         return items
 
@@ -3274,7 +3280,10 @@ class StewardKnowledgeApplication:
                 for proposal in proposals[:10]
             )
         if command == "/knowledge_proposals":
-            pending = [proposal for proposal in self._proposals.list_all() if proposal.status == "pending"]
+            pending = [
+                proposal for proposal in self._proposals.list_all()
+                if proposal.status == "pending" and proposal.chat_id == event.chat_id
+            ]
             if not pending:
                 return "No pending knowledge enrichment proposals."
             return "Pending knowledge proposals:\n" + "\n".join(
@@ -3287,6 +3296,15 @@ class StewardKnowledgeApplication:
             proposal = self._proposals.get(int(argument.strip()))
             if proposal is None:
                 return f"Knowledge proposal {argument.strip()} was not found."
+            if proposal.status == "pending" and proposal.chat_id != event.chat_id:
+                return "That knowledge review is unavailable in this Telegram chat."
+            if (
+                proposal.operation is EnrichmentOperation.CONTRADICT
+                and proposal.status == "accepted"
+                and proposal.conflict_resolution is None
+                and proposal.chat_id != event.chat_id
+            ):
+                return "That knowledge conflict is unavailable in this Telegram chat."
             if proposal.status == "pending":
                 return PresentedReply(
                     self._render_enrichment(proposal),
@@ -3311,9 +3329,12 @@ class StewardKnowledgeApplication:
                 return f"Claim {parts[0]} was not found."
             if fragment is None:
                 return f"Fragment {parts[1]} was not found."
-            stored = self._proposals.add(
-                self._knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text)
+            candidate = self._knowledge.compare_evidence(
+                claim, fragment_id=fragment.id or 0, evidence_text=fragment.text
             )
+            stored = self._proposals.add(replace(candidate, chat_id=event.chat_id))
+            if stored.chat_id != event.chat_id:
+                return "An identical knowledge review is already waiting in a different Telegram chat. No duplicate review was created."
             self._activity.record(
                 ActivityType.KNOWLEDGE_ENRICHMENT_PROPOSED,
                 object_id=str(stored.id), details=f"{stored.operation.value}: {stored.rationale}",
@@ -3327,6 +3348,9 @@ class StewardKnowledgeApplication:
             parts = argument.split()
             if not separator or len(parts) != 2 or not parts[0].isdigit() or parts[1] not in {"accepted", "rejected"}:
                 return "Use /review_enrichment followed by a proposal ID and accepted or rejected."
+            existing = self._proposals.get(int(parts[0]))
+            if existing is None or existing.chat_id != event.chat_id:
+                return "That knowledge review is unavailable in this Telegram chat."
             try:
                 proposal = self._proposals.review(int(parts[0]), parts[1])
             except StaleKnowledgeReviewError as error:
@@ -3357,6 +3381,9 @@ class StewardKnowledgeApplication:
                     "Use /resolve_knowledge_conflict followed by a proposal ID and "
                     "keep_existing, disputed, or needs_revision."
                 )
+            existing = self._proposals.get(int(parts[0]))
+            if existing is None or existing.chat_id != event.chat_id:
+                return "That knowledge conflict is unavailable in this Telegram chat."
             try:
                 proposal = self._proposals.resolve_conflict(int(parts[0]), parts[1])
             except ValueError as error:
@@ -3420,6 +3447,7 @@ class StewardKnowledgeApplication:
         conflict = self._proposals.get(conflict_id)
         if (
             conflict is None
+            or conflict.chat_id != event.chat_id
             or conflict.operation is not EnrichmentOperation.CONTRADICT
             or conflict.status != "accepted"
             or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION
@@ -3446,7 +3474,11 @@ class StewardKnowledgeApplication:
         if not normalized or len(normalized) > 2_000:
             return "Send replacement claim text containing between 1 and 2,000 characters, or cancel the prompt."
         conflict = self._proposals.get(conflict_id)
-        if conflict is None or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION:
+        if (
+            conflict is None
+            or conflict.chat_id != event.chat_id
+            or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION
+        ):
             self._contexts.clear(event.platform, event.chat_id)
             return "That knowledge conflict no longer needs a revision. No draft was created."
         existing = next((
@@ -3454,6 +3486,7 @@ class StewardKnowledgeApplication:
             if item.action_type == self.REVISE_CLAIM
             and item.status == "pending"
             and item.payload.get("conflict_proposal_id") == str(conflict_id)
+            and item.payload.get("chat_id") == event.chat_id
         ), None)
         payload = {
             "conflict_proposal_id": str(conflict_id),
@@ -3461,6 +3494,7 @@ class StewardKnowledgeApplication:
             "fragment_id": str(conflict.fragment_id),
             "replacement_text": normalized,
             "draft_origin": draft_origin,
+            "chat_id": event.chat_id,
         }
         if existing is None:
             existing = self._actions.add(self.REVISE_CLAIM, payload)
@@ -3496,6 +3530,7 @@ class StewardKnowledgeApplication:
         conflict = self._proposals.get(conflict_id)
         if (
             conflict is None
+            or conflict.chat_id != event.chat_id
             or conflict.operation is not EnrichmentOperation.CONTRADICT
             or conflict.status != "accepted"
             or conflict.conflict_resolution is not ConflictResolution.NEEDS_REVISION
@@ -5534,7 +5569,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
             return self._review_curated_note(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardKnowledgeApplication.REVISE_CLAIM:
-            return self._review_claim_revision(proposal_id, decision)
+            return self._review_claim_revision(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
             return self._review_workspace_link(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardCalendarApplication.ASSOCIATE_TASK_EVENT:
@@ -5868,13 +5903,15 @@ class StewardActionProposalApplication:
         )
 
     def _review_claim_revision(
-        self, proposal_id: int, decision: str
+        self, proposal_id: int, decision: str, event: IncomingEvent
     ) -> str | PresentedReply:
         if self._knowledge is None:
             return "Knowledge claim revision is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
         if proposal is None or proposal.action_type != StewardKnowledgeApplication.REVISE_CLAIM:
             return "Claim revision proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This claim-revision review belongs to a different Telegram chat."
         if proposal.status == decision:
             return f"Claim revision proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":

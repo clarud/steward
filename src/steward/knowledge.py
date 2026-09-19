@@ -56,6 +56,10 @@ class KnowledgeEnrichmentProposal:
     fragment_id: int
     operation: EnrichmentOperation
     rationale: str
+    # Telegram-created reviews are tied to their origin chat.  Local CLI and
+    # tool callers intentionally leave this empty; they do not inherit a
+    # remote-chat capability merely because they share the operational DB.
+    chat_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +77,7 @@ class StoredKnowledgeEnrichmentProposal:
     evidence_snapshot: str | None = None
     conflict_resolution: ConflictResolution | None = None
     conflict_resolved_at: datetime | None = None
+    chat_id: str | None = None
 
 
 class StaleKnowledgeReviewError(ValueError):
@@ -111,8 +116,8 @@ class KnowledgeEnrichmentProposalRepository:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO knowledge_enrichment_proposals
-                (claim_id, fragment_id, operation, rationale, status, created_at, evidence_snapshot)
-                VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                (claim_id, fragment_id, operation, rationale, status, created_at, evidence_snapshot, chat_id)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
                 """,
                 (
                     proposal.claim_id,
@@ -121,12 +126,13 @@ class KnowledgeEnrichmentProposalRepository:
                     proposal.rationale,
                     created_at.isoformat(),
                     snapshot,
+                    proposal.chat_id,
                 ),
             )
             row = connection.execute(
                 """
                 SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
-                       evidence_snapshot, conflict_resolution, conflict_resolved_at
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at, chat_id
                 FROM knowledge_enrichment_proposals
                 WHERE claim_id = ? AND fragment_id = ? AND operation = ? AND rationale = ? AND evidence_snapshot = ?
                 """,
@@ -141,7 +147,7 @@ class KnowledgeEnrichmentProposalRepository:
             row = connection.execute(
                 """
                 SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
-                       evidence_snapshot, conflict_resolution, conflict_resolved_at
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at, chat_id
                 FROM knowledge_enrichment_proposals WHERE id = ?
                 """,
                 (proposal_id,),
@@ -153,7 +159,7 @@ class KnowledgeEnrichmentProposalRepository:
             rows = connection.execute(
                 """
                 SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at,
-                       evidence_snapshot, conflict_resolution, conflict_resolved_at
+                       evidence_snapshot, conflict_resolution, conflict_resolved_at, chat_id
                 FROM knowledge_enrichment_proposals ORDER BY id
                 """
             ).fetchall()
@@ -167,7 +173,7 @@ class KnowledgeEnrichmentProposalRepository:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT id, claim_id, fragment_id, operation, rationale, status, created_at, reviewed_at, "
-                "evidence_snapshot, conflict_resolution, conflict_resolved_at "
+                "evidence_snapshot, conflict_resolution, conflict_resolved_at, chat_id "
                 "FROM knowledge_enrichment_proposals WHERE id = ?", (proposal_id,),
             ).fetchone()
             if row is None or row[5] != "pending":
@@ -262,6 +268,7 @@ class KnowledgeEnrichmentProposalRepository:
             str(row[8]) if row[8] else None,
             ConflictResolution(str(row[9])) if row[9] else None,
             datetime.fromisoformat(str(row[10])) if row[10] else None,
+            str(row[11]) if row[11] else None,
         )
 
 class KnowledgeService:
@@ -278,7 +285,7 @@ class KnowledgeService:
             rows = connection.execute(
                 """SELECT p.id, p.claim_id, p.fragment_id, p.operation, p.rationale,
                           p.status, p.created_at, p.reviewed_at, p.evidence_snapshot,
-                          p.conflict_resolution, p.conflict_resolved_at,
+                          p.conflict_resolution, p.conflict_resolved_at, p.chat_id,
                           c.text, f.text, f.location, f.source_id, s.content_hash
                    FROM knowledge_enrichment_proposals p
                    JOIN claims c ON c.id = p.claim_id
@@ -288,8 +295,8 @@ class KnowledgeService:
                      AND s.status = 'active' AND p.evidence_snapshot IS NOT NULL
                    ORDER BY p.id""", (claim_id,),
             ).fetchall()
-        return tuple(KnowledgeEnrichmentProposalRepository._from_row(row[:11])
-                     for row in rows if row[8] == json.dumps(list(row[11:]), ensure_ascii=False))
+        return tuple(KnowledgeEnrichmentProposalRepository._from_row(row[:12])
+                     for row in rows if row[8] == json.dumps(list(row[12:]), ensure_ascii=False))
 
     def create_concept(self, name: str) -> Concept:
         concept = Concept(None, name.strip(), datetime.now(UTC))

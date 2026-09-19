@@ -76,11 +76,13 @@ class FakeGraph:
         return {"answer": "A TLB caches address translations. [F1]"}
 
 
-def make_event(*, text: str | None, reply_text: str | None = None) -> IncomingEvent:
+def make_event(
+    *, text: str | None, reply_text: str | None = None, chat_id: str = "100"
+) -> IncomingEvent:
     return IncomingEvent(
         id="telegram:42",
         platform="telegram",
-        chat_id="100",
+        chat_id=chat_id,
         message_id="7",
         reply_to_id=None,
         timestamp=datetime(2026, 9, 7, tzinfo=UTC),
@@ -1371,6 +1373,38 @@ def test_knowledge_enrichment_is_reviewed_with_claim_and_fragment_ids(tmp_path: 
     assert proposals.get(2).status == "rejected"
 
 
+def test_telegram_knowledge_review_is_bound_to_its_origin_chat(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source = SourceRepository(database).add(
+        Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
+    )
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "TLBs cache translations.", "line 1"),
+    )))[0]
+    knowledge = KnowledgeService(database)
+    concept = knowledge.create_concept("TLB")
+    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
+    repository = KnowledgeEnrichmentProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        knowledge_application=StewardKnowledgeApplication(
+            knowledge, fragments, repository, ActivityService(database),
+        ),
+    )
+
+    preview = application.handle(make_event(text=f"/propose_enrichment {claim.id} {fragment.id}"))
+
+    assert isinstance(preview, PresentedReply)
+    assert repository.get(1).chat_id == "100"
+    assert "No pending" in application.handle(make_event(text="/knowledge_proposals", chat_id="200"))
+    assert "unavailable" in application.handle(make_event(text="/knowledge_proposal 1", chat_id="200"))
+    assert "unavailable" in application.handle(make_event(text="/review_enrichment 1 accepted", chat_id="200"))
+    assert repository.get(1).status == "pending"
+    assert application.handle(make_event(text="/review_enrichment 1 accepted")) == "Knowledge enrichment proposal 1 accepted."
+
+
 def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)
@@ -1469,9 +1503,9 @@ def test_knowledge_revision_prompt_survives_restart_and_requires_separate_approv
     concept = knowledge.create_concept("Queues")
     original = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
     conflicts = KnowledgeEnrichmentProposalRepository(database)
-    conflict = conflicts.add(knowledge.compare_evidence(
+    conflict = conflicts.add(replace(knowledge.compare_evidence(
         original, fragment_id=fragment.id or 0, evidence_text="Queues do not always buffer jobs."
-    ))
+    ), chat_id="100"))
     conflicts.review(conflict.id, "accepted")
     actions = ActionProposalRepository(database)
     activity = ActivityService(database)
@@ -1536,9 +1570,9 @@ def test_telegram_knowledge_cards_keep_exact_concept_and_evidence_references(tmp
     concept = knowledge.create_concept("TLB")
     claim = knowledge.create_claim(concept.id or 0, "TLBs cache page contents.", [fragment.id or 0])
     proposals = KnowledgeEnrichmentProposalRepository(database)
-    proposal = proposals.add(knowledge.compare_evidence(
+    proposal = proposals.add(replace(knowledge.compare_evidence(
         claim, fragment_id=fragment.id or 0, evidence_text=fragment.text,
-    ))
+    ), chat_id="100"))
     contexts = ReviewContextRepository(database)
     knowledge_application = StewardKnowledgeApplication(
         knowledge, fragments, proposals, ActivityService(database), contexts=contexts,
@@ -1580,9 +1614,9 @@ def test_telegram_model_drafts_a_privacy_gated_claim_revision_for_separate_revie
     concept = knowledge.create_concept("Queues")
     original = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
     conflicts = KnowledgeEnrichmentProposalRepository(database)
-    conflict = conflicts.add(knowledge.compare_evidence(
+    conflict = conflicts.add(replace(knowledge.compare_evidence(
         original, fragment_id=fragment.id or 0, evidence_text=fragment.text
-    ))
+    ), chat_id="100"))
     conflicts.review(conflict.id, "accepted")
     actions = ActionProposalRepository(database)
 
@@ -1640,7 +1674,9 @@ def test_telegram_model_claim_revision_fails_closed_for_privacy_and_provider_err
     concept = knowledge.create_concept("Queues")
     claim = knowledge.create_claim(concept.id or 0, "Queues always buffer jobs.", [fragment.id or 0])
     conflicts = KnowledgeEnrichmentProposalRepository(database)
-    conflict = conflicts.add(knowledge.compare_evidence(claim, fragment_id=fragment.id or 0, evidence_text=fragment.text))
+    conflict = conflicts.add(replace(knowledge.compare_evidence(
+        claim, fragment_id=fragment.id or 0, evidence_text=fragment.text
+    ), chat_id="100"))
     conflicts.review(conflict.id, "accepted")
 
     class OfflineModel:
