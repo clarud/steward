@@ -1597,14 +1597,99 @@ class StewardRecordApplication:
             "where does it go", "where does this flight go",
         }:
             requested_type = context.kind.removeprefix("record:") if context is not None and context.kind.startswith("record:") else None
+        if (
+            requested_type is None
+            and context is not None
+            and context.kind.startswith("record:")
+            and self._record_followup_field(context.kind.removeprefix("record:"), normalized) is not None
+        ):
+            requested_type = context.kind.removeprefix("record:")
         if requested_type is None:
             return None
         if context is None or context.kind != f"record:{requested_type}":
             return None
-        if not self._record_exists(requested_type, context.identifier):
+        records = {
+            "travel": self._records.list_travel_records,
+            "receipt": self._records.list_receipt_records,
+            "warranty": self._records.list_warranty_records,
+        }.get(requested_type)
+        record = next((item for item in records() if item.id == context.identifier), None) if records else None
+        if record is None:
             self._contexts.clear(event.platform, event.chat_id)
             return "That previously opened record is no longer available. Open another record to continue."
+        requested_field = self._record_followup_field(requested_type, normalized)
+        if requested_field is not None:
+            return self._record_field_card(requested_type, record, requested_field)
         return self._record_detail(" ", f"{requested_type} {context.identifier}")
+
+    @staticmethod
+    def _record_followup_field(record_type: str, normalized: str) -> str | None:
+        """Map only unambiguous, selected-record questions to one stored field.
+
+        This deliberately does not attempt general natural-language record
+        retrieval.  The caller has already proved that a specific record was
+        opened in this chat, so these short phrases are navigation-level reads
+        rather than a model decision or a new search.
+        """
+
+        fields_by_phrase = {
+            "travel": {
+                "what is the flight number": "flight_number",
+                "what flight is it": "flight_number",
+                "what is the booking reference": "booking_reference",
+                "what is the booking code": "booking_reference",
+                "who is the passenger": "passenger",
+                "who is travelling": "passenger",
+                "when does it arrive": "arrival_time",
+                "when does this flight arrive": "arrival_time",
+            },
+            "receipt": {
+                "how much was it": "total_cents",
+                "what was the total": "total_cents",
+                "where did i buy it": "merchant",
+                "which merchant was it": "merchant",
+                "when did i buy it": "purchased_at",
+                "what is the receipt number": "receipt_number",
+            },
+            "warranty": {
+                "when does the warranty end": "coverage_ends_at",
+                "when does this warranty end": "coverage_ends_at",
+                "when does the coverage end": "coverage_ends_at",
+                "who provides the warranty": "provider",
+                "what is the warranty number": "warranty_number",
+                "what product is this": "product_name",
+            },
+        }
+        return fields_by_phrase.get(record_type, {}).get(normalized)
+
+    def _record_field_card(self, record_type: str, record: object, field: str) -> PresentedReply:
+        """Present one current field and disclose whether its value has evidence."""
+
+        fields = self._record_fields(record_type, record)
+        label, _, value = next(item for item in fields if item[1] == field)
+        if field == "total_cents" and value is not None:
+            currency = getattr(record, "currency", None)
+            value = f"{currency} {value}" if currency else value
+        evidence = dict(self._supported_record_evidence(record_type, record, fields))
+        fragment = evidence.get(field)
+        provenance = (
+            f"Source evidence: fragment {fragment.id}" if fragment is not None and fragment.id is not None
+            else "Source evidence: this current value is not source-evidenced."
+        )
+        actions = [
+            ReplyAction("Open record", f"/record {record_type} {record.id}"),
+            ReplyAction("Open source", f"/source {record.source_id}"),
+        ]
+        if fragment is not None:
+            actions.insert(0, ReplyAction("Show evidence", f"/source_content {record.source_id} {fragment.ordinal + 1}"))
+        return PresentedReply(
+            f"{label.title()}: {value if value is not None else 'not recorded'}\n\n{provenance}\n\n"
+            "This reads the selected local record; nothing was changed.",
+            tuple(actions),
+            title=f"{record_type.title()} record detail",
+            icon="âœˆï¸" if record_type == "travel" else "ðŸ§¾" if record_type == "receipt" else "ðŸ›¡ï¸",
+            reference=(f"record:{record_type}", record.id),
+        )
 
     def calendar_followup_command(self, event: IncomingEvent) -> str | None:
         """Translate a bounded travel-card request into the review command.

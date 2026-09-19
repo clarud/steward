@@ -681,3 +681,17 @@ batch.
   beginning with a different word (for example `remembering`) remains outside
   this capture rule. Focused application coverage passed. The complete pytest
   suite subsequently reached 100% with an empty stderr stream.
+
+## Post-session automated delivery: exact record-field follow-ups
+
+- After a user deliberately opens a Travel, receipt, or warranty card, bounded
+  record questions can return one useful current field rather than making the
+  user scan the whole card. Examples include `what is the booking reference?`,
+  `how much was it?`, and `when does the warranty end?`.
+- The response is local and read-only. It is scoped to the chat's selected
+  record, identifies current fragment evidence only when the value can still
+  be verified there, and exposes the existing evidence/original actions. It
+  neither invokes a model nor searches or writes Calendar.
+- Focused application coverage verifies receipt-total and warranty-coverage-end
+  answers with source provenance. The full regression suite passed at 100% with
+  an empty stderr stream after this delivery.

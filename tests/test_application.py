@@ -5070,6 +5070,51 @@ def test_telegram_calendar_review_is_bound_to_the_originating_chat(tmp_path: Pat
     assert repository.get(legacy.id or 0).status == "rejected"
 
 
+def test_opened_record_answers_exact_field_questions_with_current_provenance(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    sources = SourceRepository(database)
+    receipt_source = sources.add(Source(
+        None, tmp_path / "receipt.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now,
+    ))
+    warranty_source = sources.add(Source(
+        None, tmp_path / "warranty.md", "b" * 64, SourceType.MARKDOWN, 0, now, now, now,
+    ))
+    fragments = SourceFragmentRepository(database)
+    receipt_fragment = fragments.replace_for_source(ExtractionResult(receipt_source.id or 0, (
+        SourceFragment(None, receipt_source.id or 0, None, 0, "Merchant: Campus Cafe\nTotal: SGD 5.00", "lines 1-2"),
+    )))[0]
+    warranty_fragment = fragments.replace_for_source(ExtractionResult(warranty_source.id or 0, (
+        SourceFragment(None, warranty_source.id or 0, None, 0, "Product: Laptop\nCoverage Ends: 2027-10-01T09:00:00+00:00", "lines 1-2"),
+    )))[0]
+    records = RecordService(database)
+    receipt = records.create_receipt_from_proposal(records.propose_receipt_record(
+        receipt_source.id or 0, [(receipt_fragment.id or 0, receipt_fragment.text)],
+    ))
+    warranty = records.create_warranty_from_proposal(records.propose_warranty_record(
+        warranty_source.id or 0, [(warranty_fragment.id or 0, warranty_fragment.text)],
+    ))
+    application = StewardRecordApplication(
+        records, fragments, ActionProposalRepository(database), ActivityService(database),
+        ReviewContextRepository(database),
+    )
+
+    application.handle_command(make_event(text=f"/record receipt {receipt.id}"))
+    total = application.resolve_record_reference(make_event(text="how much was it?"))
+    application.handle_command(make_event(text=f"/record warranty {warranty.id}"))
+    coverage = application.resolve_record_reference(make_event(text="when does the warranty end?"))
+
+    assert isinstance(total, PresentedReply)
+    assert total.title == "Receipt record detail"
+    assert "Total: SGD 5.00" in total.text
+    assert f"Source evidence: fragment {receipt_fragment.id}" in total.text
+    assert total.actions[0].command == f"/source_content {receipt.source_id} 1"
+    assert isinstance(coverage, PresentedReply)
+    assert coverage.title == "Warranty record detail"
+    assert "1 Oct 2027" in coverage.text
+    assert f"Source evidence: fragment {warranty_fragment.id}" in coverage.text
+
+
 def test_opened_travel_record_can_naturally_propose_calendar_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 10, 1, 9, tzinfo=UTC)
