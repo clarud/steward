@@ -789,7 +789,8 @@ organization card and the unified `/pending` review card. Focused application/Te
 picker layout and correction acceptance remain open.
 
 Telegram replies can now resolve exact previously delivered source, workspace,
-task, typed-record, Calendar, concept, and knowledge-evidence detail cards instead of relying only on the newest
+task, typed-record, Calendar, concept, knowledge-evidence, and ephemeral
+research detail cards instead of relying only on the newest
 chat-wide selection. Each single-object card carries a narrow pointer; after
 Telegram confirms delivery, migration 47 persists its outbound message-ID mapping
 without rendered text or object content. A reply restores that exact object before

@@ -190,6 +190,51 @@ def test_reply_to_older_source_card_restores_exact_durable_reference(tmp_path) -
     assert references.get("telegram", "other-chat", "101") is None
 
 
+def test_reply_to_older_research_card_restores_exact_token_after_restart(tmp_path) -> None:
+    """A reply selects the displayed ephemeral research result, not the newest one."""
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"research one", "research two"}:
+                token = "research-one" if event.text.endswith("one") else "research-two"
+                return PresentedReply(f"Research {token}", reference=("research", token))
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 300
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="research one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="research two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+
+    replied_card = type("Replied", (), {"message_id": 301, "text": "Research research-one", "caption": None})()
+    reply = Message(text="keep that research", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=research:research-one"]
+    selected = contexts.get("telegram", "100")
+    assert selected is not None and (selected.kind, selected.identifier) == ("research", "research-one")
+
+
 def test_reference_write_failure_after_send_does_not_repeat_visible_reply(tmp_path) -> None:
     class BrokenReferences:
         def set(self, *args):
