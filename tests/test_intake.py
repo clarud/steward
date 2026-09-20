@@ -13,10 +13,12 @@ from steward.sources import SourceRepository
 from steward.storage import initialize_database
 
 
-def make_event(*, event_id: str = "telegram:42", chat_id: str = "100") -> IncomingEvent:
+def make_event(
+    *, event_id: str = "telegram:42", chat_id: str = "100", attachment: str = "OpenMP notes.pdf"
+) -> IncomingEvent:
     return IncomingEvent(
         event_id, "telegram", chat_id, "7", None, datetime(2026, 9, 9, tzinfo=UTC),
-        None, ("OpenMP notes.pdf",),
+        None, (attachment,),
     )
 
 
@@ -77,7 +79,7 @@ def test_discard_removes_staged_original_without_creating_a_source(tmp_path: Pat
     service, sources, activity = make_service(tmp_path)
     original = tmp_path / "download.pdf"
     original.write_bytes(b"pdf bytes")
-    intake = service.stage_file(make_event(), original)
+    intake = service.stage_file(make_event(attachment=original.name), original)
 
     discarded = service.discard(intake.id or 0, "100")
 
@@ -169,12 +171,29 @@ def test_text_intake_classifies_task_and_record_cues_without_a_model(tmp_path: P
         "telegram:record", "telegram", "100", "10", None, datetime(2026, 9, 9, tzinfo=UTC),
         "Flight SQ638 booking reference ABC.",
     )
+    hotel_event = IncomingEvent(
+        "telegram:hotel", "telegram", "100", "11", None, datetime(2026, 9, 9, tzinfo=UTC),
+        "Hotel reservation confirmation: A1B2C3.",
+    )
 
     task = service.stage_text(task_event)
     record = service.stage_text(record_event)
+    hotel = service.stage_text(hotel_event)
 
     assert task.category == "task"
     assert record.category == "record"
+    assert hotel.category == "record"
+
+
+def test_file_intake_classifies_hotel_and_ticket_filenames_as_records(tmp_path: Path) -> None:
+    service, _, _ = make_service(tmp_path)
+    original = tmp_path / "hotel-reservation-ticket.pdf"
+    original.write_bytes(b"pdf bytes")
+
+    intake = service.stage_file(make_event(attachment=original.name), original)
+
+    assert intake.category == "record"
+    assert intake.summary == "Likely record: hotel-reservation-ticket.pdf. No content was sent to a model."
 
 
 def test_duplicate_delivery_reuses_one_pending_intake_without_a_second_capture(tmp_path: Path) -> None:

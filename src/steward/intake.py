@@ -378,7 +378,11 @@ class ProvisionalIntakeService:
     @staticmethod
     def _classify_file(path: Path, original_name: str) -> tuple[str, str]:
         name = original_name.casefold()
-        if any(term in name for term in ("flight", "itinerary", "receipt", "invoice", "warranty", "booking")):
+        if any(term in name for term in (
+            "flight", "itinerary", "booking", "reservation", "hotel", "boarding pass", "ticket",
+            "passport", "visa", "receipt", "invoice", "warranty", "contract", "certificate",
+            "subscription",
+        )):
             return "record", f"Likely record: {original_name}. No content was sent to a model."
         source_type = source_type_for_path(path)
         label = source_type.value.replace("_", " ") if source_type else "unclassified file"
@@ -391,7 +395,11 @@ class ProvisionalIntakeService:
             return "reference", "Likely shared link or reference. No content was sent to a model."
         if any(token in normalized for token in ("deadline", "todo", "task", "remind me")):
             return "task", "Likely task or deadline. No content was sent to a model."
-        if any(token in normalized for token in ("flight", "receipt", "invoice", "booking", "warranty")):
+        if any(token in normalized for token in (
+            "flight", "itinerary", "booking", "reservation", "hotel", "boarding pass", "ticket",
+            "passport", "visa", "receipt", "invoice", "warranty", "contract", "certificate",
+            "subscription",
+        )):
             return "record", "Likely life record. No content was sent to a model."
         if normalized.startswith(("thought:", "note:")):
             return "thought", "Likely personal thought or note. No content was sent to a model."
