@@ -172,6 +172,40 @@ def test_tool_agent_ends_cleanly_when_model_exceeds_tool_budget() -> None:
     assert "tool-call limit" in result["messages"][-1].content
 
 
+def test_default_tool_budget_allows_six_bounded_read_lookups() -> None:
+    calls = []
+
+    @tool
+    def search_sources(query: str) -> str:
+        """Search sources."""
+        calls.append(query)
+        return query
+
+    class SixLookupModel:
+        def bind_tools(self, _tools):
+            return self
+
+        def invoke(self, messages):
+            prior_results = sum(isinstance(message, ToolMessage) for message in messages)
+            if prior_results == 6:
+                return AIMessage("I combined the six local lookups.")
+            return AIMessage(
+                "",
+                tool_calls=[{
+                    "name": "search_sources", "args": {"query": f"topic {prior_results + 1}"},
+                    "id": f"lookup-{prior_results + 1}",
+                }],
+            )
+
+    result = build_tool_agent_graph(SixLookupModel(), [search_sources]).invoke(
+        {"messages": [HumanMessage("Compare several local topics")]},
+        {"recursion_limit": 16},
+    )
+
+    assert calls == [f"topic {index}" for index in range(1, 7)]
+    assert result["messages"][-1].content == "I combined the six local lookups."
+
+
 def test_tool_agent_stops_before_repeating_an_identical_lookup() -> None:
     calls = []
 

@@ -37,9 +37,14 @@ def build_tool_agent_graph(
     *,
     checkpointer: object | None = None,
     tool_policy: ToolPolicy | None = None,
-    max_tool_calls: int = 4,
+    max_tool_calls: int = 6,
 ):
-    """Compile a custom read-only tool loop without a prebuilt agent wrapper."""
+    """Compile a custom read-only tool loop without a prebuilt agent wrapper.
+
+    Six calls leave room for a normal multi-step local lookup while still
+    fitting under Steward's 16-step graph recursion cap (model/tool alternation
+    plus the initial model turn). Explicit callers may choose a tighter limit.
+    """
     if not tools:
         raise ValueError("A tool agent requires at least one tool.")
     if max_tool_calls <= 0:

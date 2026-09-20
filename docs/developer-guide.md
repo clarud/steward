@@ -1217,7 +1217,10 @@ message and `ToolMessage` is appended rather than replacing prior context.
 `GeminiToolCallingModel` translates Gemini function-call responses into
 LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
 then returns its result to the next model turn. `steward agent QUESTION` uses
-this graph with a persistent thread ID and an eight-step recursion cap.
+this graph with a persistent thread ID, a six-call read-only budget, and a
+16-step recursion cap. Six calls permit ordinary multi-step retrieval while
+remaining bounded; repeat detection and final evidence-only synthesis still
+stop unproductive loops.
 Provider request construction—including SDK message conversion—is wrapped as a
 recoverable `ModelGatewayError`, so an incompatible provider SDK response ends
 the tool turn with Steward's safe unavailable-model reply rather than crashing
