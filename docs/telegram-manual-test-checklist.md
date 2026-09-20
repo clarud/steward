@@ -463,6 +463,13 @@ until a separate filesystem backup exists.
   Change the reminder through another test flow before approving a second card;
   the older review must refuse as stale. A task whose reminder belongs to a
   different approved test chat must not redirect that reminder to this chat.
+- Open a harmless task with both a precise deadline and a pending Telegram
+  reminder. Choose **Clear deadline**, inspect the review, then reject once and
+  approve a fresh review. Only the local deadline should disappear; an existing
+  Calendar marker and the reminder must remain. Next choose **Cancel reminder**
+  and approve it. Only the pending Telegram reminder should disappear. If a
+  reminder is currently being delivered, cancellation must fail safely and ask
+  you to retry rather than claiming it can retract an in-flight Telegram send.
 - For a task with an explicit `--due-at` value, use `/calendar_task ID`.
   Verify it is a review card and that accepting it creates only one short
   `Due: ...` deadline marker in Calendar; repeating approval must not duplicate

@@ -2706,6 +2706,52 @@ def test_task_reminder_edit_is_reviewed_and_preserves_deadline(tmp_path: Path) -
     assert proposals.get(stale_id).status == "pending"
 
 
+def test_task_deadline_and_reminder_cancellation_are_reviewed_and_leave_calendar_unchanged(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); tasks = TaskService(database)
+    reminders = TaskReminderService(database, tasks, activity)
+    proposals = ActionProposalRepository(database); contexts = ReviewContextRepository(database)
+    task = tasks.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+    reminders.schedule(task.id or 0, "100", datetime(2026, 9, 18, 1, tzinfo=UTC))
+    task_application = StewardTaskApplication(tasks, proposals, activity, reminders, contexts)
+    actions = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+        task_service=tasks, task_reminder_service=reminders, activity_service=activity,
+    )
+
+    detail = task_application.handle_command(make_event(text=f"/task {task.id}"))
+    deadline_review = task_application.resolve_task_reference(make_event(text="clear this deadline"))
+
+    assert isinstance(detail, PresentedReply)
+    assert any(action.label == "Clear deadline" for action in detail.actions)
+    assert any(action.label == "Cancel reminder" for action in detail.actions)
+    assert isinstance(deadline_review, PresentedReply)
+    assert deadline_review.title == "Review deadline removal"
+    deadline_id = int(deadline_review.actions[0].command.rsplit(" ", 1)[1])
+    deadline_cleared = actions.handle_command(make_event(text=f"/approve_action {deadline_id}"))
+
+    assert isinstance(deadline_cleared, PresentedReply)
+    assert deadline_cleared.title == "Task deadline cleared"
+    assert tasks.get(task.id or 0).due_at is None
+    assert reminders.reminder_for_task(task.id or 0) is not None
+    assert proposals.get(deadline_id).status == "accepted"
+
+    task_application.handle_command(make_event(text=f"/task {task.id}"))
+    reminder_review = task_application.resolve_task_reference(make_event(text="cancel that reminder"))
+    assert isinstance(reminder_review, PresentedReply)
+    assert reminder_review.title == "Review reminder cancellation"
+    reminder_id = int(reminder_review.actions[0].command.rsplit(" ", 1)[1])
+    reminder_cancelled = actions.handle_command(make_event(text=f"/approve_action {reminder_id}"))
+
+    assert isinstance(reminder_cancelled, PresentedReply)
+    assert reminder_cancelled.title == "Task reminder cancelled"
+    assert reminders.reminder_for_task(task.id or 0) is None
+    assert tasks.get(task.id or 0).due_at is None
+    assert proposals.get(reminder_id).status == "accepted"
+    assert [event.event_type for event in activity.list_recent()].count(ActivityType.TASK_RESCHEDULED) == 1
+    assert [event.event_type for event in activity.list_recent()].count(ActivityType.TASK_REMINDER_RESCHEDULED) == 1
+
+
 def test_task_detail_distinguishes_an_optional_calendar_marker_from_the_task(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database)

@@ -625,6 +625,28 @@ class StewardReviewInboxApplication:
                 f"Task: {title}\nCurrent reminder: {old}\nNew reminder: {new}\n\n"
                 "No task deadline or Calendar event will be changed."
             )
+        if action_type == StewardTaskApplication.CLEAR_DEADLINE:
+            title = payload.get("task_title", "task")
+            old_due_at = payload.get("old_due_at")
+            try:
+                old = timestamp_label(datetime.fromisoformat(old_due_at)) if old_due_at else "unknown"
+            except ValueError:
+                old = old_due_at or "unknown"
+            return f"Clear deadline: {title}", (
+                f"Task: {title}\nCurrent deadline: {old}\n\n"
+                "Approval removes only this local deadline. No Calendar event or Telegram reminder will be changed."
+            )
+        if action_type == StewardTaskApplication.CLEAR_REMINDER:
+            title = payload.get("task_title", "task")
+            old_remind_at = payload.get("old_remind_at")
+            try:
+                old = timestamp_label(datetime.fromisoformat(old_remind_at)) if old_remind_at else "unknown"
+            except ValueError:
+                old = old_remind_at or "unknown"
+            return f"Cancel reminder: {title}", (
+                f"Task: {title}\nCurrent reminder: {old}\n\n"
+                "Approval cancels only this pending Telegram reminder. No task deadline or Calendar event will be changed."
+            )
         if action_type.startswith("create_calendar"):
             if action_type == CalendarEventProposalService.CREATE_ADHOC_EVENT:
                 try:
@@ -2183,6 +2205,8 @@ class StewardTaskApplication:
     CREATE_TASK = "create_task"
     RESCHEDULE_TASK = "reschedule_task"
     RESCHEDULE_REMINDER = "reschedule_task_reminder"
+    CLEAR_DEADLINE = "clear_task_deadline"
+    CLEAR_REMINDER = "clear_task_reminder"
     UNLINK_CALENDAR = "unlink_task_calendar"
 
     def __init__(
@@ -2298,6 +2322,14 @@ class StewardTaskApplication:
             except ValueError as error:
                 return str(error)
             return self.propose_reminder(int(task_text), reminder_at, chat_id=event.chat_id)
+        if command == "/clear_task_deadline":
+            if not separator or not argument.strip().isdigit():
+                return "Open a task with a precise deadline, then choose Clear deadline."
+            return self.propose_clear_deadline(int(argument.strip()), chat_id=event.chat_id)
+        if command == "/clear_task_reminder":
+            if not separator or not argument.strip().isdigit():
+                return "Open a task with a Telegram reminder, then choose Cancel reminder."
+            return self.propose_clear_reminder(int(argument.strip()), chat_id=event.chat_id)
         if command == "/propose_unlink_task_calendar":
             if not separator or not argument.strip().isdigit():
                 return "Open a task with a linked existing Calendar event, then choose Remove link."
@@ -2337,6 +2369,8 @@ class StewardTaskApplication:
             "when is the deadline", "when is that deadline", "when is this due",
             "when is that due", "what is the deadline", "what is this due",
             "do i have a reminder", "when is the reminder", "when is that reminder",
+            "clear that deadline", "clear this deadline", "remove that deadline", "remove this deadline",
+            "cancel that reminder", "cancel this reminder", "remove that reminder", "remove this reminder",
             "show the linked calendar event", "show that calendar event", "open the linked calendar event",
             "what calendar event is this linked to",
         }:
@@ -2366,6 +2400,10 @@ class StewardTaskApplication:
             )
         if normalized in {"remove that calendar link", "unlink that calendar event", "unlink that event"}:
             return self.propose_unlink_calendar(context.identifier, chat_id=event.chat_id)
+        if normalized in {"clear that deadline", "clear this deadline", "remove that deadline", "remove this deadline"}:
+            return self.propose_clear_deadline(context.identifier, chat_id=event.chat_id)
+        if normalized in {"cancel that reminder", "cancel this reminder", "remove that reminder", "remove this reminder"}:
+            return self.propose_clear_reminder(context.identifier, chat_id=event.chat_id)
         if normalized in {
             "when is the deadline", "when is that deadline", "when is this due",
             "when is that due", "what is the deadline", "what is this due",
@@ -2467,9 +2505,13 @@ class StewardTaskApplication:
         if task.status == "open":
             actions.insert(0, ReplyAction("Mark complete", f"/complete_task {task_id}"))
             actions.insert(1, ReplyAction("Change deadline", f"/edit_task_deadline {task_id}"))
+            if task.due_at is not None:
+                actions.insert(2, ReplyAction("Clear deadline", f"/clear_task_deadline {task_id}"))
             if self._reminders is not None:
                 label = "Change reminder" if self._reminders.reminder_for_task(task_id) is not None else "Set reminder"
-                actions.insert(2, ReplyAction(label, f"/edit_task_reminder {task_id}"))
+                actions.insert(3, ReplyAction(label, f"/edit_task_reminder {task_id}"))
+                if self._reminders.reminder_for_task(task_id) is not None:
+                    actions.insert(4, ReplyAction("Cancel reminder", f"/clear_task_reminder {task_id}"))
         calendar_event_id = (
             self._calendar_links.task_event_id(task_id)
             if self._calendar_links is not None else None
@@ -2592,6 +2634,81 @@ class StewardTaskApplication:
             "No task deadline or Calendar event has been changed yet.",
             (ReplyAction("Apply reminder", f"/approve_action {pending.id}"), ReplyAction("Keep current", f"/reject_action {pending.id}")),
             title="Review task reminder", icon="⏰",
+            reference=("action", pending.id) if pending.id is not None else None,
+        )
+
+    def propose_clear_deadline(self, task_id: int, *, chat_id: str) -> str | PresentedReply:
+        """Stage removal of one precise local deadline without changing Calendar."""
+
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        if task.status != "open":
+            return "Only an open task can have a deadline cleared."
+        if task.due_at is None:
+            return "This task has no precise deadline to clear."
+        payload = {
+            "task_id": str(task_id),
+            "task_title": task.title,
+            "old_due_at": task.due_at.isoformat(),
+            "chat_id": chat_id,
+        }
+        pending = self._proposals.find_pending(self.CLEAR_DEADLINE, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CLEAR_DEADLINE, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED, object_id=str(pending.id),
+                details=f"Clear deadline for task:{task_id}",
+            )
+        calendar_note = (
+            "\nAn existing Google Calendar deadline marker is unchanged."
+            if self._calendar_links is not None and self._calendar_links.task_event_id(task_id) is not None
+            else ""
+        )
+        return PresentedReply(
+            f"Task: {task.title}\nCurrent deadline: {timestamp_label(task.due_at)}{calendar_note}\n\n"
+            "No task or Calendar event has been changed yet.",
+            (ReplyAction("Clear deadline", f"/approve_action {pending.id}"),
+             ReplyAction("Keep deadline", f"/reject_action {pending.id}")),
+            title="Review deadline removal", icon="🗓️",
+            reference=("action", pending.id) if pending.id is not None else None,
+        )
+
+    def propose_clear_reminder(self, task_id: int, *, chat_id: str) -> str | PresentedReply:
+        """Stage cancellation of one pending reminder from its owner chat."""
+
+        if self._reminders is None:
+            return "Task reminders are not configured for this Steward process."
+        task = self._tasks.get(task_id)
+        if task is None:
+            return f"Task {task_id} was not found."
+        if task.status != "open":
+            return "Only an open task can have a reminder cancelled."
+        reminder = self._reminders.reminder_for_task(task_id)
+        if reminder is None:
+            return "This task has no pending Telegram reminder to cancel."
+        if reminder.chat_id != chat_id:
+            return "This task's reminder belongs to a different Telegram chat."
+        payload = {
+            "task_id": str(task_id),
+            "task_title": task.title,
+            "old_remind_at": reminder.remind_at.isoformat(),
+            "old_chat_id": reminder.chat_id,
+            "chat_id": chat_id,
+        }
+        pending = self._proposals.find_pending(self.CLEAR_REMINDER, payload)
+        if pending is None:
+            pending = self._proposals.add(self.CLEAR_REMINDER, payload)
+            self._activity.record(
+                ActivityType.ACTION_PROPOSED, object_id=str(pending.id),
+                details=f"Cancel reminder for task:{task_id}",
+            )
+        return PresentedReply(
+            f"Task: {task.title}\nCurrent reminder: {timestamp_label(reminder.remind_at)}\n\n"
+            "No task deadline or Calendar event has been changed yet.",
+            (ReplyAction("Cancel reminder", f"/approve_action {pending.id}"),
+             ReplyAction("Keep reminder", f"/reject_action {pending.id}")),
+            title="Review reminder cancellation", icon="⏰",
             reference=("action", pending.id) if pending.id is not None else None,
         )
 
@@ -5585,6 +5702,10 @@ class StewardActionProposalApplication:
             return self._review_task_deadline(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardTaskApplication.RESCHEDULE_REMINDER:
             return self._review_task_reminder(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.CLEAR_DEADLINE:
+            return self._review_task_deadline_clear(proposal_id, decision, event)
+        if proposal is not None and proposal.action_type == StewardTaskApplication.CLEAR_REMINDER:
+            return self._review_task_reminder_clear(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == StewardOperationsApplication.RECOVER_DELIVERY:
             return self._review_delivery_recovery(proposal_id, decision, event)
         if proposal is not None and proposal.action_type == self.REEXTRACT_SOURCE:
@@ -5927,6 +6048,95 @@ class StewardActionProposalApplication:
             (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Tasks", "/tasks")),
             title="Task reminder changed", icon="⏰",
             reference=("task", task_id),
+        )
+
+    def _review_task_deadline_clear(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Apply one stale-safe removal of local deadline state only."""
+
+        if self._tasks is None:
+            return "Task scheduling is not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardTaskApplication.CLEAR_DEADLINE:
+            return "Task deadline-removal proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task deadline-removal review belongs to a different Telegram chat."
+        if proposal.status == decision:
+            return f"Task deadline-removal proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task deadline-removal proposal {proposal.id} was already {proposal.status}."
+        task_id = int(proposal.payload["task_id"])
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The local task deadline was kept. No Calendar event or Telegram reminder was changed.",
+                (ReplyAction("Open task", f"/task {task_id}"),),
+                title="Deadline kept", icon="↩️",
+            )
+        try:
+            task = self._tasks.clear_due_at(
+                task_id, expected_due_at=TaskService.parse_due_at(proposal.payload["old_due_at"])
+            )
+        except ValueError as error:
+            return f"The task deadline was not cleared: {error}"
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.TASK_RESCHEDULED, object_id=str(task.id), details="Deadline cleared")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return PresentedReply(
+            "The local task deadline was cleared.\n\nNo Calendar event or Telegram reminder was changed.",
+            (ReplyAction("Open task", f"/task {task.id}"), ReplyAction("Tasks", "/tasks")),
+            title="Task deadline cleared", icon="🗓️",
+            reference=("task", task.id) if task.id is not None else None,
+        )
+
+    def _review_task_reminder_clear(
+        self, proposal_id: int, decision: str, event: IncomingEvent
+    ) -> str | PresentedReply:
+        """Apply one stale-safe cancellation of a pending owner-chat reminder."""
+
+        if self._task_reminders is None:
+            return "Task reminders are not configured for this Steward process."
+        proposal = self._repository.get(proposal_id)
+        if proposal is None or proposal.action_type != StewardTaskApplication.CLEAR_REMINDER:
+            return "Task reminder-cancellation proposal was not found."
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return "This task reminder-cancellation review belongs to a different Telegram chat."
+        if proposal.status == decision:
+            return f"Task reminder-cancellation proposal {proposal.id} was already {proposal.status}."
+        if proposal.status != "pending":
+            return f"Task reminder-cancellation proposal {proposal.id} was already {proposal.status}."
+        task_id = int(proposal.payload["task_id"])
+        if decision == "rejected":
+            self._repository.set_status(proposal_id, decision)
+            if self._activity is not None:
+                self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
+            return PresentedReply(
+                "The Telegram reminder was kept. No task deadline or Calendar event was changed.",
+                (ReplyAction("Open task", f"/task {task_id}"),),
+                title="Reminder kept", icon="↩️",
+            )
+        try:
+            task = self._task_reminders.cancel(
+                task_id,
+                event.chat_id,
+                expected_remind_at=TaskService.parse_due_at(proposal.payload["old_remind_at"]),
+                expected_chat_id=proposal.payload["old_chat_id"],
+            )
+        except ValueError as error:
+            return f"The task reminder was not cancelled: {error}"
+        self._repository.set_status(proposal_id, decision)
+        if self._activity is not None:
+            self._activity.record(ActivityType.TASK_REMINDER_RESCHEDULED, object_id=str(task.id), details="Reminder cancelled")
+            self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
+        return PresentedReply(
+            "The Telegram reminder was cancelled.\n\nNo task deadline or Calendar event was changed.",
+            (ReplyAction("Open task", f"/task {task.id}"), ReplyAction("Tasks", "/tasks")),
+            title="Task reminder cancelled", icon="⏰",
+            reference=("task", task.id) if task.id is not None else None,
         )
 
     def _review_claim_revision(

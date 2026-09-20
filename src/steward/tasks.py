@@ -188,6 +188,33 @@ class TaskService:
             )
         return Task(task.id, task.title, None, normalized_due_at, task.status, task.created_at)
 
+    def clear_due_at(self, task_id: int, *, expected_due_at: datetime) -> Task:
+        """Clear one precise deadline after comparing the reviewed value.
+
+        A deadline is local Task state.  Any separately approved Calendar marker
+        is intentionally left alone, so clearing this field never mutates Google
+        Calendar or silently removes an external event.
+        """
+
+        if task_id <= 0:
+            raise ValueError("Task ID must be positive.")
+        if expected_due_at.tzinfo is None or expected_due_at.utcoffset() is None:
+            raise ValueError("A task deadline must include a UTC offset.")
+        expected = expected_due_at.astimezone(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT id, title, due_hint, due_at, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Task {task_id} was not found.")
+            task = self._from_row(row)
+            if task.status != "open":
+                raise ValueError(f"Task {task_id} is not open.")
+            if task.due_at != expected:
+                raise ValueError("This task's deadline changed after the review was created. Open a fresh task card and try again.")
+            connection.execute("UPDATE tasks SET due_hint = NULL, due_at = NULL WHERE id = ?", (task_id,))
+        return Task(task.id, task.title, None, None, task.status, task.created_at)
+
     def get(self, task_id: int) -> Task | None:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
@@ -305,6 +332,56 @@ class TaskReminderService:
         if row is None or task is None:
             return None
         return TaskReminder(task, str(row[0]), datetime.fromisoformat(str(row[1])))
+
+    def cancel(
+        self,
+        task_id: int,
+        chat_id: str,
+        *,
+        expected_remind_at: datetime,
+        expected_chat_id: str,
+    ) -> Task:
+        """Cancel one still-pending reminder after its reviewed-state check.
+
+        A claimed reminder may already be in Telegram delivery.  Failing closed
+        in that state avoids promising cancellation while a worker can still
+        send it; the user can retry once its short claim lease is released.
+        """
+
+        if task_id <= 0:
+            raise ValueError("Task ID must be positive.")
+        if not chat_id.strip():
+            raise ValueError("A Telegram reminder requires an originating chat.")
+        if expected_remind_at.tzinfo is None or expected_remind_at.utcoffset() is None:
+            raise ValueError("A reminder time must include a UTC offset.")
+        expected = expected_remind_at.astimezone(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            task_row = connection.execute(
+                "SELECT id, title, due_hint, due_at, status, created_at FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if task_row is None:
+                raise ValueError(f"Task {task_id} was not found.")
+            task = TaskService._from_row(task_row)
+            if task.status != "open":
+                raise ValueError(f"Task {task_id} is not open.")
+            reminder_row = connection.execute(
+                "SELECT chat_id, remind_at, claimed_at FROM task_reminders "
+                "WHERE task_id = ? AND reminded_at IS NULL", (task_id,)
+            ).fetchone()
+            if reminder_row is None:
+                raise ValueError("This task's reminder changed after the review was created. Open a fresh task card and try again.")
+            current_chat = str(reminder_row[0])
+            current_time = datetime.fromisoformat(str(reminder_row[1]))
+            if current_time != expected or current_chat != expected_chat_id:
+                raise ValueError("This task's reminder changed after the review was created. Open a fresh task card and try again.")
+            if current_chat != chat_id:
+                raise ValueError("This task's existing reminder belongs to a different Telegram chat.")
+            if reminder_row[2] is not None:
+                raise ValueError("This reminder is currently being delivered. Retry after delivery recovers before cancelling it.")
+            connection.execute("DELETE FROM task_reminders WHERE task_id = ? AND reminded_at IS NULL", (task_id,))
+        return task
 
     def claim_due(self, now: datetime | None = None) -> tuple[TaskReminder, ...]:
         now = (now or datetime.now(UTC)).astimezone(UTC)

@@ -93,6 +93,18 @@ def test_task_service_reschedules_only_the_expected_open_deadline(tmp_path: Path
         )
 
 
+def test_task_service_clears_only_the_reviewed_open_deadline(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    service = TaskService(database)
+    original = service.create("Submit CS3210 lab", due_at=datetime(2026, 9, 18, 15, 59, tzinfo=UTC))
+
+    cleared = service.clear_due_at(original.id or 0, expected_due_at=original.due_at)
+
+    assert cleared.due_at is None and cleared.due_hint is None
+    with pytest.raises(ValueError, match="changed after"):
+        service.clear_due_at(original.id or 0, expected_due_at=original.due_at)
+
+
 def test_task_reminder_claims_retries_and_acknowledges_due_delivery(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     tasks = TaskService(database); activity = ActivityService(database)
@@ -137,6 +149,31 @@ def test_task_reminder_reschedule_is_stale_safe_and_cannot_change_chat(tmp_path:
         service.reschedule(
             task.id or 0, "other", datetime(2026, 9, 18, 11, tzinfo=UTC),
             expected_remind_at=changed.remind_at, expected_chat_id="100",
+        )
+
+
+def test_task_reminder_cancellation_is_stale_safe_owner_bound_and_refuses_delivery_claim(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    tasks = TaskService(database); activity = ActivityService(database)
+    service = TaskReminderService(database, tasks, activity)
+    task = tasks.create("Submit CS3210 lab")
+    original = service.schedule(task.id or 0, "100", datetime(2026, 9, 18, 9, tzinfo=UTC))
+
+    cancelled = service.cancel(
+        task.id or 0, "100", expected_remind_at=original.remind_at, expected_chat_id="100",
+    )
+
+    assert cancelled.id == task.id
+    assert service.reminder_for_task(task.id or 0) is None
+    service.schedule(task.id or 0, "100", datetime(2026, 9, 18, 10, tzinfo=UTC))
+    with pytest.raises(ValueError, match="changed after"):
+        service.cancel(
+            task.id or 0, "100", expected_remind_at=original.remind_at, expected_chat_id="100",
+        )
+    claimed = service.claim_due(datetime(2026, 9, 18, 10, tzinfo=UTC))[0]
+    with pytest.raises(ValueError, match="currently being delivered"):
+        service.cancel(
+            task.id or 0, "100", expected_remind_at=claimed.remind_at, expected_chat_id="100",
         )
 
 
