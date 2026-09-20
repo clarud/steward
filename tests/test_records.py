@@ -167,6 +167,18 @@ def test_warranty_record_proposal_persists_field_evidence(tmp_path: Path) -> Non
     assert service.list_warranty_records() == [warranty]
 
 
+def test_hotel_reservation_proposal_persists_field_evidence(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database); now = datetime(2026, 9, 9, tzinfo=UTC)
+    source = SourceRepository(database).add(Source(None, tmp_path / "hotel.txt", "d" * 64, SourceType.PLAIN_TEXT, 0, now, now, now))
+    fragment = SourceFragmentRepository(database).replace_for_source(ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "Hotel: Marina Bay Hotel\nReservation Number: H-42\nGuest: Ada Lovelace\nCheck-in: 2026-10-01T15:00:00+08:00\nCheck-out: 2026-10-03T11:00:00+08:00", "entire file"),)))[0]
+    service = RecordService(database)
+    proposal = service.propose_hotel_reservation_record(source.id or 0, [(fragment.id or 0, fragment.text)])
+    assert proposal.record.property_name == "Marina Bay Hotel" and proposal.record.booking_reference == "H-42"
+    reservation = service.create_hotel_reservation_from_proposal(proposal)
+    assert service.field_evidence("hotel", reservation.id or 0)["check_out_at"] == fragment.id
+    assert service.list_hotel_reservation_records() == [reservation]
+
+
 def test_receipt_and_warranty_corrections_validate_and_preserve_sources(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database); now = datetime(2026, 9, 9, tzinfo=UTC)
     source = SourceRepository(database).add(Source(None, tmp_path / "records.txt", "c" * 64, SourceType.PLAIN_TEXT, 0, now, now, now))

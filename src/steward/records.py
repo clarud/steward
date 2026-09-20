@@ -63,8 +63,25 @@ class WarrantyRecordProposal:
     record: WarrantyRecord
     field_evidence: dict[str, int]
 
+
+@dataclass(frozen=True, slots=True)
+class HotelReservationRecord:
+    id: int | None
+    source_id: int
+    property_name: str | None
+    booking_reference: str | None
+    check_in_at: datetime | None
+    check_out_at: datetime | None
+    guest_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class HotelReservationRecordProposal:
+    record: HotelReservationRecord
+    field_evidence: dict[str, int]
+
 def record_review_snapshot(
-    proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal,
+    proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal | HotelReservationRecordProposal,
     fragments: list[tuple[int, str]],
 ) -> str:
     """Persist reviewed values and bind them to the exact extraction evidence.
@@ -87,7 +104,7 @@ class RecordService:
         self._database_path = database_path
 
     @staticmethod
-    def _validate_review_snapshot(connection: sqlite3.Connection, proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal, expected_snapshot: str | None) -> None:
+    def _validate_review_snapshot(connection: sqlite3.Connection, proposal: TravelRecordProposal | ReceiptRecordProposal | WarrantyRecordProposal | HotelReservationRecordProposal, expected_snapshot: str | None) -> None:
         """Validate against current evidence while holding the record write lock."""
         if expected_snapshot is None:
             return
@@ -154,9 +171,10 @@ class RecordService:
             "travel": ("travel_record_evidence", "travel_record_id"),
             "receipt": ("receipt_record_evidence", "receipt_record_id"),
             "warranty": ("warranty_record_evidence", "warranty_record_id"),
+            "hotel": ("hotel_reservation_record_evidence", "hotel_reservation_record_id"),
         }.get(record_type, (None, None))
         if table is None or identifier_column is None:
-            raise ValueError("Record type must be travel, receipt, or warranty.")
+            raise ValueError("Record type must be travel, receipt, warranty, or hotel.")
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 f"SELECT field_name, fragment_id FROM {table} WHERE {identifier_column} = ?",
@@ -347,6 +365,41 @@ class RecordService:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute("SELECT id, source_id, product_name, provider, warranty_number, coverage_ends_at FROM warranty_records ORDER BY id").fetchall()
         return [WarrantyRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, str(row[3]) if row[3] else None, str(row[4]) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None) for row in rows]
+
+    def propose_hotel_reservation_record(self, source_id: int, fragments: list[tuple[int, str]]) -> HotelReservationRecordProposal:
+        property_name = booking_reference = guest_name = None
+        check_in_at = check_out_at = None
+        evidence: dict[str, int] = {}
+        for fragment_id, text in fragments:
+            if property_name is None and (match := re.search(r"(?:Hotel|Property):\s*([^\n]+)", text, re.I)):
+                property_name = " ".join(match.group(1).split()); evidence["property_name"] = fragment_id
+            if booking_reference is None and (match := re.search(r"(?:Booking|Reservation)(?: Reference| Number| No\.?| #)?:\s*([^\s]+)", text, re.I)):
+                booking_reference = match.group(1); evidence["booking_reference"] = fragment_id
+            if guest_name is None and (match := re.search(r"(?:Guest|Guest Name):\s*([^\n]+)", text, re.I)):
+                guest_name = " ".join(match.group(1).split()); evidence["guest_name"] = fragment_id
+            if check_in_at is None and (value := self._labeled_datetime("Check-in", text)):
+                check_in_at = value; evidence["check_in_at"] = fragment_id
+            if check_out_at is None and (value := self._labeled_datetime("Check-out", text)):
+                check_out_at = value; evidence["check_out_at"] = fragment_id
+        return HotelReservationRecordProposal(HotelReservationRecord(None, source_id, property_name, booking_reference, check_in_at, check_out_at, guest_name), evidence)
+
+    def create_hotel_reservation_from_proposal(self, proposal: HotelReservationRecordProposal, *, expected_snapshot: str | None = None, action_id: int | None = None) -> HotelReservationRecord:
+        if not proposal.field_evidence:
+            raise ValueError("Cannot create a hotel reservation record without extracted, evidenced fields")
+        record = proposal.record
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            self._validate_review_snapshot(connection, proposal, expected_snapshot)
+            cursor = connection.execute("INSERT INTO hotel_reservation_records (source_id, property_name, booking_reference, check_in_at, check_out_at, guest_name) VALUES (?, ?, ?, ?, ?, ?)", (record.source_id, record.property_name, record.booking_reference, record.check_in_at.isoformat() if record.check_in_at else None, record.check_out_at.isoformat() if record.check_out_at else None, record.guest_name))
+            record_id = int(cursor.lastrowid)
+            connection.executemany("INSERT INTO hotel_reservation_record_evidence (hotel_reservation_record_id, field_name, fragment_id) VALUES (?, ?, ?)", [(record_id, field, fragment) for field, fragment in proposal.field_evidence.items()])
+            self._accept_record_action(connection, action_id, "create_hotel_reservation_record", record.source_id, expected_snapshot, record_id)
+        return HotelReservationRecord(record_id, record.source_id, record.property_name, record.booking_reference, record.check_in_at, record.check_out_at, record.guest_name)
+
+    def list_hotel_reservation_records(self) -> list[HotelReservationRecord]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute("SELECT id, source_id, property_name, booking_reference, check_in_at, check_out_at, guest_name FROM hotel_reservation_records ORDER BY id").fetchall()
+        return [HotelReservationRecord(int(row[0]), int(row[1]), str(row[2]) if row[2] else None, str(row[3]) if row[3] else None, datetime.fromisoformat(str(row[4])) if row[4] else None, datetime.fromisoformat(str(row[5])) if row[5] else None, str(row[6]) if row[6] else None) for row in rows]
 
     def create_from_proposal(self, proposal: TravelRecordProposal, *, expected_snapshot: str | None = None, action_id: int | None = None) -> TravelRecord:
         """Persist an explicitly accepted proposal and its field-level evidence.

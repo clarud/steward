@@ -786,3 +786,16 @@ batch.
   originating chat ID as well. Legacy unbound actions fail closed for approval
   but can be declined and recreated deliberately. Focused application coverage
   verifies pagination, owner review, cross-chat refusal, and legacy recovery.
+
+## Post-session automated delivery: Hotel Reservation record foundation
+
+- Steward now has a durable local Hotel Reservation record schema with fields
+  for property, booking reference, guest, and timezone-aware check-in and
+  check-out times. Each saved value must retain a direct source-fragment
+  reference; a record with no evidenced field is refused.
+- This delivery is deliberately the persistence and provenance foundation only.
+  Telegram capture cards, proposal acceptance, record browsing, and search
+  integration will use this same proposal object in the next delivery rather
+  than duplicating parsing logic.
+- Focused record and migration tests passed, followed by the full pytest
+  regression suite at 100%.

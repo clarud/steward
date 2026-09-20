@@ -62,6 +62,8 @@ EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION = 52
 TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION = 53
 TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION = 54
 KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION = 55
+HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION = 56
+HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -547,6 +549,17 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION,
         "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN chat_id TEXT",
+    ),
+    (
+        HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE hotel_reservation_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            property_name TEXT, booking_reference TEXT, check_in_at TEXT, check_out_at TEXT, guest_name TEXT)""",
+    ),
+    (
+        HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE hotel_reservation_record_evidence (hotel_reservation_record_id INTEGER NOT NULL REFERENCES hotel_reservation_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (hotel_reservation_record_id, field_name))""",
     ),
 )
 
