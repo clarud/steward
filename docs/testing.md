@@ -35,6 +35,11 @@ safe test.
   authorized Telegram chat is refused before it can create a reminder-change
   review or see the current reminder timestamp; the owner path and stale-review
   protections remain covered.
+- Follow-up task-card and list coverage passed with the same boundary: a
+  non-owner chat cannot see another chat's reminder in a task card or task
+  list, open its edit prompt, or retrieve its timestamp through a reminder
+  question. The task remains readable and no reminder/task/Calendar state is
+  changed by the refusal.
 
 ### Session conclusion
 

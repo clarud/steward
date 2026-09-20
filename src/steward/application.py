@@ -2275,12 +2275,15 @@ class StewardTaskApplication:
         if command in {"/tasks", "/completed_tasks"}:
             if argument.strip() and (not argument.strip().isdigit() or int(argument) < 1):
                 return f"Use {command} with an optional positive page number."
-            return self._list_tasks(int(argument) if argument.strip() else 1, completed=command == "/completed_tasks")
+            return self._list_tasks(
+                int(argument) if argument.strip() else 1,
+                completed=command == "/completed_tasks", chat_id=event.chat_id,
+            )
         if command == "/task":
             if not separator or not argument.strip().isdigit():
                 return "Use /task followed by a numeric task ID."
             task_id = int(argument.strip())
-            response = self._task_detail(task_id)
+            response = self._task_detail(task_id, chat_id=event.chat_id)
             if self._contexts is not None and self._tasks.get(task_id) is not None:
                 self._contexts.set(event.platform, event.chat_id, "task", task_id)
             return response
@@ -2332,8 +2335,10 @@ class StewardTaskApplication:
                 return "Only an open task can have a reminder changed."
             if self._contexts is None or self._reminders is None:
                 return "Task-reminder editing is not configured for this process."
-            self._contexts.set(event.platform, event.chat_id, "task_reminder_edit", task.id or 0)
             reminder = self._reminders.reminder_for_task(task.id or 0)
+            if reminder is not None and reminder.chat_id != event.chat_id:
+                return "This reminder cannot be changed from this Telegram chat."
+            self._contexts.set(event.platform, event.chat_id, "task_reminder_edit", task.id or 0)
             current = timestamp_label(reminder.remind_at) if reminder is not None else "no pending reminder"
             return PresentedReply(
                 f"Current reminder: {current}\n\nSend the new reminder time as an ISO-8601 time with its UTC offset, for example:\n"
@@ -2463,6 +2468,12 @@ class StewardTaskApplication:
             )
         if normalized in {"do i have a reminder", "when is the reminder", "when is that reminder"}:
             reminder = self._reminders.reminder_for_task(context.identifier) if self._reminders is not None else None
+            if reminder is not None and reminder.chat_id != event.chat_id:
+                return PresentedReply(
+                    "This task has no Telegram reminder managed by this chat.",
+                    (ReplyAction("Open task", f"/task {task.id}"),),
+                    title="Task reminder", icon="⏰", reference=("task", task.id or 0),
+                )
             label = f"Reminder: {timestamp_label(reminder.remind_at)}" if reminder is not None else "No Telegram reminder is scheduled."
             actions = [ReplyAction("Open task", f"/task {task.id}")]
             if task.status == "open" and self._reminders is not None:
@@ -2490,9 +2501,11 @@ class StewardTaskApplication:
                 (ReplyAction("View calendar", f"/calendar_get {event_id}"), ReplyAction("Open task", f"/task {task.id}")),
                 title="Linked Calendar event", icon="📅", reference=("task", task.id or 0),
             )
-        return self._task_detail(context.identifier)
+        return self._task_detail(context.identifier, chat_id=event.chat_id)
 
-    def _list_tasks(self, page: int = 1, *, completed: bool = False) -> str | PresentedReply:
+    def _list_tasks(
+        self, page: int = 1, *, completed: bool = False, chat_id: str | None = None
+    ) -> str | PresentedReply:
         tasks = self._tasks.list_completed() if completed else self._tasks.list_open()
         if completed and not tasks:
             return PresentedReply("No completed tasks yet.", (ReplyAction("Open tasks", "/tasks"),), title="Completed tasks", icon="✅")
@@ -2523,6 +2536,7 @@ class StewardTaskApplication:
                 f" (reminder {timestamp_label(reminder.remind_at)})"
                 if not completed and self._reminders is not None
                 and (reminder := self._reminders.reminder_for_task(task.id or 0)) is not None
+                and (chat_id is None or reminder.chat_id == chat_id)
                 else ""
             )
             for index, task in enumerate(visible, start=1)
@@ -2534,7 +2548,7 @@ class StewardTaskApplication:
             icon="✅",
         )
 
-    def _task_detail(self, task_id: int) -> str | PresentedReply:
+    def _task_detail(self, task_id: int, *, chat_id: str | None = None) -> str | PresentedReply:
         task = self._tasks.get(task_id)
         if task is None:
             return f"Task {task_id} was not found."
@@ -2543,7 +2557,9 @@ class StewardTaskApplication:
             lines.append(f"Due at: {timestamp_label(task.due_at)}")
         elif task.due_hint:
             lines.append(f"Due cue: {task.due_hint}")
-        if task.status == "open" and self._reminders is not None and (reminder := self._reminders.reminder_for_task(task_id)) is not None:
+        reminder = self._reminders.reminder_for_task(task_id) if self._reminders is not None else None
+        can_manage_reminder = reminder is None or chat_id is None or reminder.chat_id == chat_id
+        if task.status == "open" and reminder is not None and can_manage_reminder:
             lines.append(f"Reminder: {timestamp_label(reminder.remind_at)}")
         actions = [ReplyAction("Tasks", "/tasks")]
         if task.status == "open":
@@ -2551,10 +2567,10 @@ class StewardTaskApplication:
             actions.insert(1, ReplyAction("Change deadline", f"/edit_task_deadline {task_id}"))
             if task.due_at is not None:
                 actions.insert(2, ReplyAction("Clear deadline", f"/clear_task_deadline {task_id}"))
-            if self._reminders is not None:
-                label = "Change reminder" if self._reminders.reminder_for_task(task_id) is not None else "Set reminder"
+            if self._reminders is not None and can_manage_reminder:
+                label = "Change reminder" if reminder is not None else "Set reminder"
                 actions.insert(3, ReplyAction(label, f"/edit_task_reminder {task_id}"))
-                if self._reminders.reminder_for_task(task_id) is not None:
+                if reminder is not None:
                     actions.insert(4, ReplyAction("Cancel reminder", f"/clear_task_reminder {task_id}"))
         calendar_event_id = (
             self._calendar_links.task_event_id(task_id)
@@ -2662,7 +2678,7 @@ class StewardTaskApplication:
             # proposal which could only fail later at approval.  Reminder
             # delivery is intentionally chat-bound from creation through
             # cancellation and rescheduling.
-            return "This task's reminder belongs to a different Telegram chat."
+            return "This reminder cannot be changed from this Telegram chat."
         payload = {
             "task_id": str(task_id),
             "task_title": task.title,

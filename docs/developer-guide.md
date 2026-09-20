@@ -635,8 +635,9 @@ explicit operations:
   changes only the pending Telegram reminder. Its approval compares the shown
   reminder state again and refuses a stale review. An existing reminder cannot
   be redirected to a different Telegram chat: a non-owner is refused before
-  Steward renders a proposal or discloses the reminder time. The task deadline
-  and Calendar links remain untouched.
+  Steward renders a proposal or discloses the reminder time. Task cards, task
+  lists, reminder questions, and edit prompts likewise omit a reminder owned by
+  another chat. The task deadline and Calendar links remain untouched.
 - A task with a precise deadline also offers **Clear deadline**, while a task
   with a pending reminder offers **Cancel reminder**. Each creates a separate,
   chat-bound review and rechecks the displayed value before applying. Clearing

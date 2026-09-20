@@ -2709,8 +2709,22 @@ def test_task_reminder_edit_is_reviewed_and_preserves_deadline(tmp_path: Path) -
         task.id or 0, datetime(2026, 9, 18, 4, tzinfo=UTC), chat_id="200"
     )
 
-    assert denied_preview == "This task's reminder belongs to a different Telegram chat."
+    assert denied_preview == "This reminder cannot be changed from this Telegram chat."
     assert len(proposals.list_all()) == before_cross_chat
+
+    other_card = task_application.handle_command(make_event(text=f"/task {task.id}", chat_id="200"))
+    other_list = task_application.handle_command(make_event(text="/tasks", chat_id="200"))
+    denied_edit = task_application.handle_command(make_event(text=f"/edit_task_reminder {task.id}", chat_id="200"))
+    other_reminder = task_application.resolve_task_reference(make_event(text="do I have a reminder?", chat_id="200"))
+
+    assert isinstance(other_card, PresentedReply)
+    assert "Reminder:" not in other_card.text
+    assert all("reminder" not in action.label.casefold() for action in other_card.actions)
+    assert isinstance(other_list, PresentedReply) and "reminder " not in other_list.text
+    assert denied_edit == "This reminder cannot be changed from this Telegram chat."
+    assert isinstance(other_reminder, PresentedReply)
+    assert "managed by this chat" in other_reminder.text
+    assert "18 Sep 2026" not in other_reminder.text
 
     stale = task_application.propose_reminder(task.id or 0, datetime(2026, 9, 18, 4, tzinfo=UTC), chat_id="100")
     stale_id = int(stale.actions[0].command.rsplit(" ", 1)[1])
