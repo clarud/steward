@@ -27,6 +27,10 @@ safe test.
 - Later focused automated coverage also passed for privacy-gated claim-revision
   drafts, travel passenger provenance, and durable Telegram knowledge-card
   references.
+- The full suite also passed after a Telegram-adapter regression test for an
+  older research card: replying after unrelated research and a local restart
+  restores only that card's opaque, short-lived research token. This is
+  automated transport coverage, not a live external-research acceptance claim.
 
 ### Session conclusion
 
