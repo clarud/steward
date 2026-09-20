@@ -31,6 +31,10 @@ safe test.
   older research card: replying after unrelated research and a local restart
   restores only that card's opaque, short-lived research token. This is
   automated transport coverage, not a live external-research acceptance claim.
+- The full suite passed after reminder-owner proposal hardening. A different
+  authorized Telegram chat is refused before it can create a reminder-change
+  review or see the current reminder timestamp; the owner path and stale-review
+  protections remain covered.
 
 ### Session conclusion
 

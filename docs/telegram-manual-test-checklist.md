@@ -462,7 +462,8 @@ until a separate filesystem backup exists.
   are unchanged. Reject once, then approve a fresh review and check `/tasks`.
   Change the reminder through another test flow before approving a second card;
   the older review must refuse as stale. A task whose reminder belongs to a
-  different approved test chat must not redirect that reminder to this chat.
+  different approved test chat must refuse before displaying a reminder-change
+  review or its timestamp; it must not redirect that reminder to this chat.
 - Open a harmless task with both a precise deadline and a pending Telegram
   reminder. Choose **Clear deadline**, inspect the review, then reject once and
   approve a fresh review. Only the local deadline should disappear; an existing

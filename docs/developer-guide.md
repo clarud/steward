@@ -634,8 +634,9 @@ explicit operations:
 - **Set reminder**/**Change reminder** follows the same reviewed pattern but
   changes only the pending Telegram reminder. Its approval compares the shown
   reminder state again and refuses a stale review. An existing reminder cannot
-  be redirected to a different Telegram chat; the task deadline and Calendar
-  links remain untouched.
+  be redirected to a different Telegram chat: a non-owner is refused before
+  Steward renders a proposal or discloses the reminder time. The task deadline
+  and Calendar links remain untouched.
 - A task with a precise deadline also offers **Clear deadline**, while a task
   with a pending reminder offers **Cancel reminder**. Each creates a separate,
   chat-bound review and rechecks the displayed value before applying. Clearing

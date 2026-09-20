@@ -2704,6 +2704,14 @@ def test_task_reminder_edit_is_reviewed_and_preserves_deadline(tmp_path: Path) -
     assert proposals.get(proposal_id).status == "accepted"
     assert any(event.event_type is ActivityType.TASK_REMINDER_RESCHEDULED for event in activity.list_recent())
 
+    before_cross_chat = len(proposals.list_all())
+    denied_preview = task_application.propose_reminder(
+        task.id or 0, datetime(2026, 9, 18, 4, tzinfo=UTC), chat_id="200"
+    )
+
+    assert denied_preview == "This task's reminder belongs to a different Telegram chat."
+    assert len(proposals.list_all()) == before_cross_chat
+
     stale = task_application.propose_reminder(task.id or 0, datetime(2026, 9, 18, 4, tzinfo=UTC), chat_id="100")
     stale_id = int(stale.actions[0].command.rsplit(" ", 1)[1])
     reminders.reschedule(

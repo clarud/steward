@@ -2657,6 +2657,12 @@ class StewardTaskApplication:
         if task.status != "open":
             return "Only an open task can have a reminder changed."
         existing = self._reminders.reminder_for_task(task_id)
+        if existing is not None and existing.chat_id != chat_id:
+            # Do not disclose another chat's reminder time by rendering a
+            # proposal which could only fail later at approval.  Reminder
+            # delivery is intentionally chat-bound from creation through
+            # cancellation and rescheduling.
+            return "This task's reminder belongs to a different Telegram chat."
         payload = {
             "task_id": str(task_id),
             "task_title": task.title,
