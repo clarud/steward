@@ -156,7 +156,9 @@ Currently Telegram supports:
   explicit immediate-capture shortcut. Replying with bare `/save` to a staged
   attachment also accepts that exact pending item without downloading it again;
 - provisional capture of substantial text notes and explicit note/thought
-  prefixes, also requiring a save/discard decision;
+  prefixes, plus short record-like material such as hotel confirmations,
+  tickets, passports, appointments, contracts, and certificates; all requiring
+  a save/discard decision;
 - `/intake_context ID ...` records additional user guidance and revises a
   pending intake proposal without saving or moving the original;
 - `/help`, `/status`, Inbox/source/workspace/activity inspection, lexical

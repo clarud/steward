@@ -4818,7 +4818,9 @@ class StewardProvisionalIntakeApplication:
             "note ", "thought ", "remember ", "todo ", "task ",
         )
         personal_signals = (
-            "flight", "itinerary", "booking", "reservation", "receipt", "invoice", "warranty",
+            "flight", "itinerary", "booking", "reservation", "hotel", "boarding pass", "ticket",
+            "passport", "visa", "appointment", "contract", "certificate", "subscription",
+            "receipt", "invoice", "warranty",
             "deadline", "due ", "submit ", "remind me", "to do", "todo", "task",
         )
         return (

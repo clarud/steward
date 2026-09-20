@@ -4006,6 +4006,9 @@ def test_explicit_casual_capture_prefixes_stage_text_without_auto_saving() -> No
     assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="remember buy milk"))
     assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="thought improve task routing"))
     assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="note review CS3210 chapter 4"))
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="Hotel reservation confirmation: A1B2C3"))
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="Passport renewal appointment at 9am"))
+    assert StewardProvisionalIntakeApplication.should_propose_text(make_event(text="Warranty certificate for my laptop"))
     assert not StewardProvisionalIntakeApplication.should_propose_text(make_event(text="remembering this is useful"))
 
 
