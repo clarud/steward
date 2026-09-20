@@ -520,6 +520,11 @@ until a separate filesystem backup exists.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
   `/propose_receipt_record SOURCE_ID`, and `/propose_warranty_record SOURCE_ID`.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
+  Before deciding, use each displayed **Evidence** action and verify it opens
+  the exact supporting extracted section; **Open source** must remain the
+  broader original view. Repeat by reopening one record review through
+  `/pending`. Reading evidence must not save a record or make a stale preview
+  approvable.
 - After accepting one, use `/record travel ID`, `/record receipt ID`, or
   `/record warranty ID`. Verify each displayed current field identifies its
   supporting source fragment when that exact value is still present there, and

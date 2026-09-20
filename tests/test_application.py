@@ -678,6 +678,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     assert "flight_number: SQ638" in record_card.text and "arrival: Tokyo" in record_card.text
     assert "fragment" in record_card.text and "resume.pdf" in record_card.text
     assert str(tmp_path) not in record_card.text
+    assert any(action.command == f"/source_content {source.id} 1" for action in record_card.actions)
     assert any(action.command == f"/source {source.id}" for action in record_card.actions)
     assert RecordService(database).list_travel_records() == []
 
@@ -1224,6 +1225,10 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
         action_proposal_application=action_application,
         record_application=StewardRecordApplication(records, fragments, action_repository, activity),
+        read_application=StewardReadApplication(
+            sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database_path),
+            activity, tmp_path / "inbox",
+        ),
     )
 
     response = application.handle(make_event(text="/propose_travel_record 1"))
@@ -1231,6 +1236,12 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
     assert isinstance(response, PresentedReply)
     assert "flight: SQ638" in response.text
     assert "fragment 1" in response.text
+    assert any(action.command == "/source_content 1 1" for action in response.actions)
+    assert records.list_travel_records() == []
+
+    evidence = application.handle(make_event(text="/source_content 1 1"))
+    assert isinstance(evidence, PresentedReply)
+    assert "Flight SQ638" in evidence.text
     assert records.list_travel_records() == []
 
     accepted = application.handle(make_event(text="/approve_action 1"))
@@ -3047,6 +3058,7 @@ def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_pa
 
     assert isinstance(preview, PresentedReply)
     assert "Campus Cafe" in preview.text and "fragment 1" in preview.text
+    assert any(action.command == "/source_content 1 1" for action in preview.actions)
     assert records.list_receipt_records() == []
     assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 created from source 1."
     assert records.list_receipt_records()[0].merchant == "Campus Cafe"

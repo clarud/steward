@@ -254,6 +254,7 @@ class StewardReviewInboxApplication:
                 self._contexts.set(event.platform, event.chat_id, kind, identifier)
             title, description = self._action_summary(proposal.action_type, proposal.payload)
             source_action: ReplyAction | None = None
+            evidence_actions: tuple[ReplyAction, ...] = ()
             raw_source_id = proposal.payload.get("source_id")
             if isinstance(raw_source_id, str) and raw_source_id.isdigit():
                 candidate = self._sources.get_by_id(int(raw_source_id))
@@ -282,9 +283,24 @@ class StewardReviewInboxApplication:
                     for field, fragment_id in preview.field_evidence.items()
                 )
                 source_action = ReplyAction("Open source", f"/source {source_id}")
+                fragments_by_id = {part.id: part for part in parts if part.id is not None}
+                seen_fragment_ids: set[int] = set()
+                preview_actions: list[ReplyAction] = []
+                for fragment_id in preview.field_evidence.values():
+                    if fragment_id in seen_fragment_ids:
+                        continue
+                    seen_fragment_ids.add(fragment_id)
+                    fragment = fragments_by_id.get(fragment_id)
+                    if fragment is not None:
+                        preview_actions.append(ReplyAction(
+                            f"Evidence {len(preview_actions) + 1}",
+                            f"/source_content {source_id} {fragment.ordinal + 1}",
+                        ))
+                evidence_actions = tuple(preview_actions)
             actions = [ReplyAction("Accept", f"/approve_action {identifier}"), ReplyAction("Reject", f"/reject_action {identifier}")]
             if source_action is not None:
                 actions.insert(0, source_action)
+            actions[1:1] = evidence_actions
             if proposal.action_type == StewardCuratedNoteApplication.CREATE_CURATED_NOTE:
                 actions.insert(1, ReplyAction("Edit", f"/curate_edit {identifier}"))
             return PresentedReply(
@@ -1883,8 +1899,9 @@ class StewardRecordApplication:
             )
         return PresentedReply(
             f"{rendered}\n\nNo travel record has been saved yet.",
-            (
-                ReplyAction("Open source", f"/source {source_id}"),
+            (ReplyAction("Open source", f"/source {source_id}"),)
+            + self._preview_evidence_actions(source_id, proposal.field_evidence)
+            + (
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Organize Inbox", "/organize"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
@@ -2027,8 +2044,9 @@ class StewardRecordApplication:
             self._activity.record(ActivityType.ACTION_PROPOSED, object_id=str(pending.id), details=f"Create {label} record from source {source_id}")
         return PresentedReply(
             "\n".join(fields) + f"\n\nNo {label} record has been saved yet.",
-            (
-                ReplyAction("Open source", f"/source {source_id}"),
+            (ReplyAction("Open source", f"/source {source_id}"),)
+            + self._preview_evidence_actions(source_id, proposal.field_evidence)
+            + (
                 ReplyAction("Accept record", f"/approve_action {pending.id}"),
                 ReplyAction("Organize Inbox", "/organize"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
@@ -2036,6 +2054,32 @@ class StewardRecordApplication:
             title=f"Review {label} record",
             icon="🧾" if label == "receipt" else "🛡️",
         )
+
+    def _preview_evidence_actions(self, source_id: int, field_evidence: dict[str, int]) -> tuple[ReplyAction, ...]:
+        """Expose each distinct current preview fragment without accepting it.
+
+        A record proposal's fragment IDs are provenance metadata, not useful
+        Telegram instructions.  This makes the displayed evidence directly
+        inspectable before approval.  The regular source reader validates the
+        source's current availability; approval separately validates the full
+        record snapshot, so an evidence view can never make a stale preview
+        acceptable.
+        """
+
+        seen_fragment_ids: set[int] = set()
+        actions: list[ReplyAction] = []
+        for fragment_id in field_evidence.values():
+            if fragment_id in seen_fragment_ids:
+                continue
+            seen_fragment_ids.add(fragment_id)
+            fragment = self._fragments.get(fragment_id)
+            if fragment is None or fragment.source_id != source_id:
+                continue
+            actions.append(ReplyAction(
+                f"Evidence {len(actions) + 1}",
+                f"/source_content {source_id} {fragment.ordinal + 1}",
+            ))
+        return tuple(actions)
 
     def _record_detail(self, separator: str, argument: str) -> str | PresentedReply:
         """Show a record's current fields alongside only valid source evidence."""

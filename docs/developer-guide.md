@@ -2025,6 +2025,13 @@ remain future work.
   and `warranty-records`. They retain source-fragment evidence for a labeled
   product, provider, warranty number, or coverage-end timestamp. They do not
   infer warranty duration or eligibility from marketing language.
+- Before accepting a Travel, Receipt, or Warranty preview in Telegram, each
+  distinct supporting fragment is exposed as a compact **Evidence N** action.
+  It opens the exact stored extraction section; **Open source** remains the
+  broader original-file view. The same actions appear if that record review is
+  reopened through `/pending`. Inspection is read-only, and approval still
+  rechecks the complete preview snapshot so viewing evidence cannot validate a
+  stale proposal.
 - The read-only agent tool `search_records` now returns travel, receipt, and
   warranty result shapes, marked with `record_type`. It performs no mutation
   and applies the source privacy policy before a result can reach a cloud model.
