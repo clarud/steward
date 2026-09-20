@@ -383,7 +383,10 @@ class ProvisionalIntakeService:
             "passport", "visa", "receipt", "invoice", "warranty", "contract", "certificate",
             "subscription",
         )):
-            return "record", f"Likely record: {original_name}. No content was sent to a model."
+            return (
+                "record",
+                f"Likely record candidate: {original_name}. After you save it, Steward will propose only a supported, evidence-backed record when enough fields are available. No content was sent to a model.",
+            )
         source_type = source_type_for_path(path)
         label = source_type.value.replace("_", " ") if source_type else "unclassified file"
         return "document", f"Likely document ({label}): {original_name}. No content was sent to a model."
@@ -400,7 +403,10 @@ class ProvisionalIntakeService:
             "passport", "visa", "receipt", "invoice", "warranty", "contract", "certificate",
             "subscription",
         )):
-            return "record", "Likely life record. No content was sent to a model."
+            return (
+                "record",
+                "Likely life-record candidate. After you save it, Steward will propose only a supported, evidence-backed record when enough fields are available. No content was sent to a model.",
+            )
         if normalized.startswith(("thought:", "note:")):
             return "thought", "Likely personal thought or note. No content was sent to a model."
         return "knowledge", "Likely knowledge or reference note. No content was sent to a model."

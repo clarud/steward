@@ -158,7 +158,9 @@ Currently Telegram supports:
 - provisional capture of substantial text notes and explicit note/thought
   prefixes, plus short record-like material such as hotel confirmations,
   tickets, passports, appointments, contracts, and certificates; all requiring
-  a save/discard decision;
+  a save/discard decision. A record candidate is not a claimed record type:
+  after saving, Steward proposes only an implemented, evidence-backed record
+  review when extraction supports it;
 - `/intake_context ID ...` records additional user guidance and revises a
   pending intake proposal without saving or moving the original;
 - `/help`, `/status`, Inbox/source/workspace/activity inspection, lexical

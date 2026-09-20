@@ -193,7 +193,10 @@ def test_file_intake_classifies_hotel_and_ticket_filenames_as_records(tmp_path: 
     intake = service.stage_file(make_event(attachment=original.name), original)
 
     assert intake.category == "record"
-    assert intake.summary == "Likely record: hotel-reservation-ticket.pdf. No content was sent to a model."
+    assert intake.summary == (
+        "Likely record candidate: hotel-reservation-ticket.pdf. After you save it, Steward will propose only "
+        "a supported, evidence-backed record when enough fields are available. No content was sent to a model."
+    )
 
 
 def test_duplicate_delivery_reuses_one_pending_intake_without_a_second_capture(tmp_path: Path) -> None:
