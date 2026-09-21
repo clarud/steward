@@ -4928,7 +4928,7 @@ class StewardProvisionalIntakeApplication:
             or (len(text) >= 24 and any(signal in normalized for signal in personal_signals))
         )
 
-    def handle_command(self, event: IncomingEvent) -> CaptureResult | str | None:
+    def handle_command(self, event: IncomingEvent) -> CaptureResult | str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
         if command not in {"/intake_accept", "/intake_discard", "/intake_context", "/intake_analysis"}:
@@ -4971,7 +4971,16 @@ class StewardProvisionalIntakeApplication:
             return "Could not update this provisional intake because local staging is temporarily unavailable. Try again later."
         except ValueError as error:
             return str(error)
-        return f"Discarded provisional intake {intake.id}; its staged copy was removed."
+        if self._contexts is not None:
+            current = self._contexts.get(event.platform, event.chat_id)
+            if current is not None and current.identifier == intake.id and current.kind in {"intake", "intake_context"}:
+                self._contexts.clear(event.platform, event.chat_id)
+        return PresentedReply(
+            f"Discarded {intake.original_name}. Its staged local copy was removed and nothing was saved to Inbox.",
+            (ReplyAction("Inbox", "/inbox"), ReplyAction("Pending", "/pending"), ReplyAction("Home", "/home")),
+            title="Staged item discarded",
+            icon="↩️",
+        )
 
     def pending_category_for_acceptance(self, event: IncomingEvent) -> tuple[str, str, str | None] | None:
         """Return pending classification and routing guidance before acceptance.

@@ -930,3 +930,12 @@ batch.
   current-provider read. Writers that cannot return an ID retain the existing
   safe generic success card. Focused and full pytest regression verification
   passed at 100%.
+
+## Post-session automated delivery: intake-discard recovery
+
+- Choosing **Do not keep** for a staged Telegram item now produces an explicit
+  discard card with Inbox, Pending, and Home actions. It states that the local
+  staged copy was removed and nothing reached Inbox.
+- The corresponding pending intake context is cleared, so a later ordinary
+  message cannot accidentally be treated as added context for a discarded
+  item. Focused and full pytest regression verification passed at 100%.

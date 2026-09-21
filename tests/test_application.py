@@ -4367,6 +4367,30 @@ def test_short_personal_record_text_is_staged_without_being_saved(tmp_path: Path
     assert sources.list_all() == []
 
 
+def test_discarded_intake_removes_its_staged_copy_and_clears_its_context(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    intake_repository = ProvisionalIntakeRepository(database)
+    service = ProvisionalIntakeService(
+        tmp_path / "staging", intake_repository,
+        InboxCaptureService(tmp_path / "vault" / "inbox", SourceRepository(database)),
+        ActivityService(database), PrivacyService(database),
+    )
+    application = StewardProvisionalIntakeApplication(service, contexts=contexts)
+    staged = service.stage_text(make_event(text="note: do not keep this temporary detail"))
+    contexts.set("telegram", "100", "intake_context", staged.id or 0)
+
+    discarded = application.handle_command(make_event(text=f"/intake_discard {staged.id}"))
+
+    assert isinstance(discarded, PresentedReply)
+    assert discarded.title == "Staged item discarded"
+    assert "nothing was saved to Inbox" in discarded.text
+    assert [action.command for action in discarded.actions] == ["/inbox", "/pending", "/home"]
+    assert intake_repository.get(staged.id or 0).status == "discarded"
+    assert not staged.staged_path.exists()
+    assert contexts.get("telegram", "100") is None
+
+
 def test_shared_link_is_staged_without_fetching_or_saving(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"
     initialize_database(database_path)
