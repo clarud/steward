@@ -6671,7 +6671,7 @@ class StewardActionProposalApplication:
             reference=(f"record:{label}", record.id),
         )
 
-    def _review_record_correction(self, proposal_id: int, decision: str) -> str:
+    def _review_record_correction(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._records is None:
             return "Record correction is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -6697,7 +6697,20 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.RECORD_CORRECTED, object_id=str(record.id), details=f"{label.casefold()}:{proposal.payload['field']}")
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-        return f"{label} record {record.id} corrected: {proposal.payload['field']}."
+        record_type = label.casefold()
+        return PresentedReply(
+            f"Updated field: {proposal.payload['field']}\n"
+            "This is your reviewed correction. It does not rewrite the original source or claim new source evidence.",
+            (
+                ReplyAction("Open record", f"/record {record_type} {record.id}"),
+                ReplyAction("Open source", f"/source {record.source_id}"),
+                ReplyAction("All records", "/records"),
+                ReplyAction("Home", "/home"),
+            ),
+            title=f"{label} record corrected",
+            icon="✏️",
+            reference=(f"record:{record_type}", record.id),
+        )
 
     def propose_workspace(self, name: str, *, chat_id: str | None = None) -> str:
         """Create a durable workspace proposal without creating the workspace."""

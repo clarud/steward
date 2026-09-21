@@ -1314,7 +1314,11 @@ def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) 
     assert isinstance(preview, PresentedReply)
     assert preview.actions[0].command == f"/source {source.id}"
     assert records.list_travel_records()[0].arrival == "Tokyo"
-    assert application.handle(make_event(text="/approve_action 1")) == "Travel record 1 corrected: arrival."
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Travel record corrected"
+    assert accepted.reference == ("record:travel", record.id)
+    assert accepted.actions[0].command == f"/record travel {record.id}"
     assert records.list_travel_records()[0].arrival == "Osaka"
 
 
@@ -1369,7 +1373,11 @@ def test_telegram_receipt_correction_is_reviewed_before_mutation(tmp_path: Path)
     assert isinstance(preview, PresentedReply)
     assert preview.actions[0].command == f"/source {source.id}"
     assert records.list_receipt_records()[0].total_cents == 500
-    assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 corrected: total_cents."
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Receipt record corrected"
+    assert accepted.reference == ("record:receipt", receipt.id)
+    assert accepted.actions[0].command == f"/record receipt {receipt.id}"
     assert records.list_receipt_records()[0].total_cents == 1250
 
 

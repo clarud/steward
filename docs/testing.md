@@ -835,3 +835,12 @@ batch.
 - This is navigation only: it does not create a Calendar event, alter the
   original, or make a record correction. Focused approval coverage and the
   full pytest regression suite passed at 100%.
+
+## Post-session automated delivery: record-correction next actions
+
+- Accepted Travel, receipt, and warranty corrections now return an exact-record
+  card with source, record-list, and Home actions rather than a plain success
+  sentence. The card makes clear that a correction is user-supplied and does
+  not rewrite the original or invent source evidence.
+- Focused correction coverage and the full pytest regression suite passed at
+  100%.
