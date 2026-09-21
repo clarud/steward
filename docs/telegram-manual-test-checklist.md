@@ -49,13 +49,22 @@ until a separate filesystem backup exists.
 4. Add and scan a harmless test root locally:
 
    ```powershell
-   steward add-root "Telegram Test" "C:\path\to\test-vault" --exclude generated
-   steward scan-root "Telegram Test"
+   steward onboard-root "Telegram Test" "C:\path\to\test-vault" --exclude generated
    steward telegram
    ```
 
 5. Do not send credentials, real medical/financial documents, or confidential
    course material while testing cloud-backed models or research.
+
+### Existing-directory onboarding
+
+Use a disposable directory containing a supported note and an excluded
+subdirectory. Run `steward onboard-root "Telegram Test" PATH --exclude generated`.
+Confirm the output reports an in-place scan, the note is listed by `steward
+sources`, and the excluded file is absent. Run the same command again and confirm
+it says the existing authorization was reused with no duplicate sources. Then
+start Telegram and use `/sources` to open the note. The original note and its
+directory must retain their original name, location, and contents throughout.
 
 ## Core reads and routing
 
