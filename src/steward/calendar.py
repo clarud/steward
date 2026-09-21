@@ -555,6 +555,7 @@ class CalendarEventProposalService:
             return proposal
         if proposal.status != "pending":
             raise ValueError(f"Action proposal {proposal_id} was already {proposal.status}.")
+        completed_payload = dict(proposal.payload)
         if decision == "accepted":
             if calendar_writer is None:
                 raise ValueError("Calendar authorization is required to accept this proposal.")
@@ -563,13 +564,13 @@ class CalendarEventProposalService:
                 self._validate_record(record)
                 if proposal.payload.get("snapshot") != self._snapshot(record):
                     raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
-                calendar_writer.create_travel_event(record)
+                created_event = calendar_writer.create_travel_event(record)
             elif proposal.action_type == self.CREATE_TASK_EVENT:
                 task = self._task(int(proposal.payload["task_id"]))
                 self._validate_task(task)
                 if proposal.payload.get("snapshot") != self._snapshot(task):
                     raise ValueError("Calendar preview is stale. Request a fresh Calendar proposal before approving.")
-                calendar_writer.create_task_deadline_event(task)
+                created_event = calendar_writer.create_task_deadline_event(task)
             else:
                 try:
                     start = datetime.fromisoformat(proposal.payload["start"])
@@ -577,11 +578,14 @@ class CalendarEventProposalService:
                 except (KeyError, ValueError) as error:
                     raise ValueError("Calendar event proposal is incomplete. Create a fresh review.") from error
                 self._validate_adhoc(proposal.payload.get("summary", ""), start, end)
-                calendar_writer.create_adhoc_event(
+                created_event = calendar_writer.create_adhoc_event(
                     summary=proposal.payload["summary"], start=start, end=end,
                     idempotency_key=proposal.payload["idempotency_key"],
                 )
-        self._proposals.set_status(proposal_id, decision)
+            event_id = getattr(created_event, "id", None)
+            if isinstance(event_id, str) and event_id.strip():
+                completed_payload["calendar_event_id"] = event_id
+        self._proposals.set_status_with_payload(proposal_id, decision, completed_payload)
         self._activity.record(
             ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
             object_id=str(proposal_id),

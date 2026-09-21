@@ -298,11 +298,13 @@ def test_standalone_calendar_event_requires_review_and_reuses_its_stable_key(tmp
 
         def create_adhoc_event(self, *, summary, start, end, idempotency_key):
             self.calls.append((summary, start, end, idempotency_key))
+            return type("Event", (), {"id": "adhoc-event-opaque"})()
 
     writer = Writer()
     accepted = proposals.review(first.id or 0, "accepted", writer)  # type: ignore[arg-type]
 
     assert accepted.status == "accepted"
+    assert accepted.payload["calendar_event_id"] == "adhoc-event-opaque"
     assert writer.calls == [("Dentist appointment", start, end, first.payload["idempotency_key"])]
     assert activity.list_recent()[0].event_type is ActivityType.ACTION_ACCEPTED
 

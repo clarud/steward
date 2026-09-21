@@ -5963,11 +5963,18 @@ class StewardActionProposalApplication:
             except ValueError as error:
                 return str(error)
             if reviewed.status == "accepted":
+                event_id = reviewed.payload.get("calendar_event_id")
+                actions = [ReplyAction("Calendar", "/calendar")]
+                if event_id:
+                    actions.insert(0, ReplyAction("Open event", f"/calendar_get {event_id}"))
+                actions.append(ReplyAction("Home", "/home"))
                 return PresentedReply(
-                    "The Calendar event was created after your approval.",
-                    (ReplyAction("Calendar", "/calendar"), ReplyAction("Home", "/home")),
+                    "The Calendar event was created after your approval."
+                    + (" Open it to fetch its current provider state." if event_id else ""),
+                    tuple(actions),
                     title="Calendar event created",
                     icon="📅",
+                    reference=("calendar", event_id) if event_id else None,
                 )
             return PresentedReply(
                 "The Calendar event was not created.",

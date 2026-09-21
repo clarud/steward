@@ -5568,6 +5568,7 @@ def test_telegram_can_approve_a_task_calendar_proposal_with_the_calendar_writer(
 
         def create_task_deadline_event(self, received_task):
             self.received_task_id = received_task.id
+            return type("Event", (), {"id": "task-event-opaque"})()
 
     writer = Writer()
     pending = proposals.propose_task_event(task.id or 0, chat_id="100")
@@ -5582,8 +5583,13 @@ def test_telegram_can_approve_a_task_calendar_proposal_with_the_calendar_writer(
 
     assert isinstance(response, PresentedReply)
     assert response.title == "Calendar event created"
+    assert response.reference == ("calendar", "task-event-opaque")
+    assert [action.command for action in response.actions] == [
+        "/calendar_get task-event-opaque", "/calendar", "/home",
+    ]
     assert writer.received_task_id == task.id
     assert repository.get(pending.id or 0).status == "accepted"
+    assert repository.get(pending.id or 0).payload["calendar_event_id"] == "task-event-opaque"
 
 
 def test_telegram_can_explicitly_import_one_drive_file() -> None:

@@ -79,6 +79,25 @@ class ActionProposalRepository:
         if cursor.rowcount != 1:
             raise ValueError("Action proposal was not found or was already reviewed.")
 
+    def set_status_with_payload(self, proposal_id: int, status: str, payload: dict[str, str]) -> None:
+        """Finish one pending proposal while preserving an execution receipt.
+
+        The caller supplies a complete replacement payload rather than an
+        unconstrained patch.  This keeps the reviewed proposal's original
+        request plus a narrow external ID available for later audit/navigation.
+        """
+
+        if status not in {"accepted", "rejected"}:
+            raise ValueError("Action proposal status must be accepted or rejected.")
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                "UPDATE action_proposals SET payload_json = ?, status = ?, reviewed_at = ? "
+                "WHERE id = ? AND status = 'pending'",
+                (json.dumps(payload, sort_keys=True), status, datetime.now(UTC).isoformat(), proposal_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("Action proposal was not found or was already reviewed.")
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> ActionProposal:
         return ActionProposal(

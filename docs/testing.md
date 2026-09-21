@@ -919,3 +919,14 @@ batch.
 - A fresh privacy option still creates a separate review; this result card does
   not silently change the rule again. Focused and full regression verification
   passed at 100%.
+
+## Post-session automated delivery: approved Calendar-event navigation
+
+- An approved Calendar proposal now preserves the opaque ID returned by the
+  provider in its reviewed local proposal. When the writer returns that ID,
+  Telegram's success card exposes **Open event**, restores the exact Calendar
+  reference for replies, and still offers the general Calendar list and Home.
+- This is not a local Calendar mirror: opening the event performs the normal
+  current-provider read. Writers that cannot return an ID retain the existing
+  safe generic success card. Focused and full pytest regression verification
+  passed at 100%.
