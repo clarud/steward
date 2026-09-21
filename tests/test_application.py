@@ -2657,6 +2657,7 @@ def test_opened_task_allows_a_narrow_natural_completion_followup_after_restart(t
     assert isinstance(completed, PresentedReply)
     assert completed.title == "Task completed"
     assert "No Calendar event was changed" in completed.text
+    assert any(action.command == "/home" for action in completed.actions)
     assert TaskService(database).get(task.id or 0).status == "completed"
     assert [event.event_type for event in ActivityService(database).list_recent()].count("task_completed") == 1
 

@@ -2494,7 +2494,11 @@ class StewardTaskApplication:
             self._activity.record(ActivityType.TASK_COMPLETED, object_id=str(completed.id), details=completed.title)
             return PresentedReply(
                 f"Task {completed.id} completed: {completed.title}.\n\nNo Calendar event was changed.",
-                (ReplyAction("Completed tasks", "/completed_tasks"), ReplyAction("Open task", f"/task {completed.id}")),
+                (
+                    ReplyAction("Completed tasks", "/completed_tasks"),
+                    ReplyAction("Open task", f"/task {completed.id}"),
+                    ReplyAction("Home", "/home"),
+                ),
                 title="Task completed",
             )
         if normalized in {"remove that calendar link", "unlink that calendar event", "unlink that event"}:

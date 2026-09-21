@@ -844,3 +844,9 @@ batch.
   not rewrite the original or invent source evidence.
 - Focused correction coverage and the full pytest regression suite passed at
   100%.
+
+## Post-session automated delivery: task-completion navigation
+
+- The existing exact-task completion card now also offers Home, alongside the
+  completed-task list and exact completed task. Focused restart/reference
+  coverage and the full pytest regression suite passed at 100%.
