@@ -3777,9 +3777,13 @@ def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> N
     assert isinstance(preview, PresentedReply)
     assert "record remains unchanged" in preview.text
     assert records.list_references(record.id or 0) == ()
-    assert application.handle(make_event(text="/approve_action 1")) == (
-        "Travel reference 1 added to record 1: booking_url (fragment 1)."
-    )
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Travel reference saved"
+    assert accepted.reference == ("record:travel", record.id)
+    assert [action.command for action in accepted.actions] == [
+        f"/record travel {record.id}", f"/source {source.id}", "/home",
+    ]
     assert "booking_url = https://example.com/ABC (fragment 1)" in application.handle(
         make_event(text=f"/travel_references {record.id}")
     )

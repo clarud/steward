@@ -6722,7 +6722,7 @@ class StewardActionProposalApplication:
             icon="↩️",
         )
 
-    def _review_travel_reference(self, proposal_id: int, decision: str) -> str:
+    def _review_travel_reference(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._records is None:
             return "Travel-reference review is not configured on this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -6736,7 +6736,14 @@ class StewardActionProposalApplication:
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"Travel-reference proposal {proposal.id} rejected."
+            record_id = int(proposal.payload["record_id"])
+            return PresentedReply(
+                "The additional travel reference was not saved.",
+                (ReplyAction("Open record", f"/record travel {record_id}"), ReplyAction("Home", "/home")),
+                title="Travel reference declined",
+                icon="↩️",
+                reference=("record:travel", record_id),
+            )
         try:
             reference = self._records.add_reference(
                 int(proposal.payload["record_id"]),
@@ -6754,9 +6761,20 @@ class StewardActionProposalApplication:
                 details=f"record:{reference.travel_record_id} fragment:{reference.fragment_id}",
             )
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
-        return (
-            f"Travel reference {reference.id} added to record {reference.travel_record_id}: "
-            f"{reference.reference_type} (fragment {reference.fragment_id})."
+        record = self._records.get_travel_record(reference.travel_record_id)
+        if record is None:
+            return "The travel reference was saved, but its record is no longer available to open."
+        return PresentedReply(
+            f"Added {reference.reference_type} from source fragment {reference.fragment_id}. "
+            "The original source remains unchanged.",
+            (
+                ReplyAction("Open record", f"/record travel {record.id}"),
+                ReplyAction("Open source", f"/source {record.source_id}"),
+                ReplyAction("Home", "/home"),
+            ),
+            title="Travel reference saved",
+            icon="✈️",
+            reference=("record:travel", record.id) if record.id is not None else None,
         )
 
     def _review_document_record(self, proposal_id: int, decision: str) -> str | PresentedReply:

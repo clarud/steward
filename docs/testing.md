@@ -1023,3 +1023,12 @@ batch.
 - This only restores staged review context; it does not save the item, permit
   model analysis, or make an organization decision. Focused intake tests and
   the full pytest regression suite passed at 100%.
+
+## Post-session automated delivery: Travel-reference provenance navigation
+
+- Accepting a reviewed, fragment-backed additional Travel reference now returns
+  a receipt with **Open record**, **Open source**, and Home, retaining the
+  exact Travel record reference for later Telegram replies. Declining it also
+  returns safely to that record.
+- The original source is never modified. Focused Travel record/reference tests
+  and the full pytest regression suite passed at 100%.
