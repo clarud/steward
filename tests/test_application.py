@@ -4610,6 +4610,7 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
     assert accepted.title == "Source organized"
     assert accepted.text == "Moved the source to Steward."
     assert [action.command for action in accepted.actions] == ["/source 1", "/workspace 1", "/home"]
+    assert accepted.reference == ("workspace", 1)
     assert (tmp_path / "vault" / "projects" / "Steward" / "telegram-100-11-Steward-notes.md").is_file()
     assert proposals.get(1).status == "accepted"
 
@@ -5040,6 +5041,7 @@ def test_telegram_organization_can_replace_a_move_with_an_accepted_inbox_outcome
     assert kept.title == "Kept in Inbox"
     assert kept.text == "Kept cs3210-notes.md in Inbox. No file was moved."
     assert [action.command for action in kept.actions] == ["/source 1", "/inbox", "/home"]
+    assert kept.reference == ("source", 1)
     assert source_path.is_file()
     assert proposals.get(2).status == "accepted"
 

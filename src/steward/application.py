@@ -5442,12 +5442,14 @@ class StewardOrganizationApprovalApplication:
                 f"Did not organize {filename}. The original remains where it was.",
                 self._organization_result_actions(proposal.source_id, inbox=True),
                 title="Organization declined", icon="↩️",
+                reference=("source", proposal.source_id),
             )
         if proposal.suggested_path is None:
             return PresentedReply(
                 f"Kept {filename} in Inbox. No file was moved.",
                 self._organization_result_actions(proposal.source_id, inbox=True),
                 title="Kept in Inbox", icon="📥",
+                reference=("source", proposal.source_id),
             )
         workspace = next(
             (item for item in self._workspaces.list_all() if item.id == proposal.workspace_id), None
@@ -5462,6 +5464,7 @@ class StewardOrganizationApprovalApplication:
             f"Moved {filename} to {target}.",
             tuple(actions),
             title="Source organized", icon="📁",
+            reference=("workspace", workspace.id) if workspace is not None and workspace.id is not None else ("source", proposal.source_id),
         )
 
     @staticmethod

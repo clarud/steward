@@ -879,3 +879,13 @@ batch.
   the proposal's LangGraph approval, move policy, workspace selection, or
   original-file preservation guarantees. Focused and full pytest regression
   verification passed at 100%.
+
+## Post-session automated delivery: durable organization-result references
+
+- An older Telegram result card for an approved organization move now restores
+  the exact selected workspace when the user replies to it, even after other
+  navigation or a restart. Keep-Inbox and declined cards instead restore the
+  exact source, which is the only object their outcome identifies.
+- The stored reference is opaque and chat-scoped. It adds navigation context
+  only; it cannot authorize another move or expose a local filesystem path.
+  Focused and full pytest regression verification passed at 100%.

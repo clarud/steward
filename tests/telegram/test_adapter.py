@@ -190,6 +190,53 @@ def test_reply_to_older_source_card_restores_exact_durable_reference(tmp_path) -
     assert references.get("telegram", "other-chat", "101") is None
 
 
+def test_reply_to_older_organization_result_restores_exact_workspace_reference(tmp_path) -> None:
+    """An older completed-move card selects its workspace, not the newest card."""
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"move one", "move two"}:
+                workspace_id = 1 if event.text.endswith("one") else 2
+                return PresentedReply(
+                    f"Moved source to workspace {workspace_id}",
+                    reference=("workspace", workspace_id),
+                )
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 400
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="move one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="move two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+
+    replied_card = type("Replied", (), {"message_id": 401, "text": "Moved source to workspace 1", "caption": None})()
+    reply = Message(text="open that workspace", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    asyncio.run(TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    ).handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=workspace:1"]
+    assert contexts.get("telegram", "100").kind == "workspace"
+    assert contexts.get("telegram", "100").identifier == 1
+
+
 def test_reply_to_older_research_card_restores_exact_token_after_restart(tmp_path) -> None:
     """A reply selects the displayed ephemeral research result, not the newest one."""
 
