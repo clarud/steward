@@ -3987,7 +3987,16 @@ class StewardRootsApplication:
             return "Use /roots with an optional positive page number."
         roots = self._roots.list_all()
         if not roots:
-            return "No locally authorized source roots. Add one from the local CLI or setup UI."
+            return PresentedReply(
+                "No local source roots are authorized yet.\n\n"
+                "On the Steward computer, run:\n"
+                'steward onboard-root "My Notes" "C:\\path\\to\\notes"\n\n'
+                "This indexes the directory in place; original files stay where they are. "
+                "Telegram cannot choose or browse local folders.",
+                (ReplyAction("Home", "/home"),),
+                title="Set up a local source root",
+                icon="🗂️",
+            )
         pages = max(1, (len(roots) + 7) // 8)
         page = min(max(int(argument.strip()) if argument.strip() else 1, 1), pages)
         visible = roots[(page - 1) * 8:page * 8]

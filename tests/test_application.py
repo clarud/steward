@@ -1872,6 +1872,24 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     assert str(root_path) not in missing.text
 
 
+def test_roots_command_explains_safe_local_onboarding_when_no_roots_exist(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        roots_application=StewardRootsApplication(SourceRootRepository(database_path)),
+    )
+
+    response = application.handle(make_event(text="/roots"))
+
+    assert isinstance(response, PresentedReply)
+    assert response.title == "Set up a local source root"
+    assert 'steward onboard-root "My Notes" "C:\\path\\to\\notes"' in response.text
+    assert "original files stay where they are" in response.text
+    assert "Telegram cannot choose or browse local folders" in response.text
+    assert str(tmp_path) not in response.text
+    assert [(action.label, action.command) for action in response.actions] == [("Home", "/home")]
+
+
 def test_roots_command_paginates_many_authorized_roots_without_paths(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     roots = SourceRootRepository(database_path)

@@ -858,3 +858,13 @@ batch.
   cards also offer Home after the concept/evidence next actions.
 - Focused conflict evidence and resolution coverage and the full pytest
   regression suite passed at 100%.
+
+## Post-session automated delivery: local root setup handoff
+
+- When `/roots` finds no authorized roots, Telegram now shows the exact
+  `steward onboard-root NAME PATH` command to run on the Steward computer.
+  It explicitly states that onboarding indexes the existing directory in place
+  and that Telegram cannot choose or browse local folders.
+- Focused root-navigation coverage verifies the card, its safe Home action,
+  and that no local path is disclosed. The full pytest regression suite passed
+  at 100%.
