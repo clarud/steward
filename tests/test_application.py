@@ -4250,6 +4250,7 @@ def test_provisional_intake_collects_context_from_an_ordinary_followup(tmp_path:
     assert "Provisional intake" not in card.text
     assert isinstance(prompt, PresentedReply)
     assert prompt.title == "Add context"
+    assert prompt.reference == ("intake_context", 1)
     assert isinstance(revised, PresentedReply)
     assert "CS3210 OpenMP assignment" in revised.text
     assert sources.list_all() == []
@@ -4505,6 +4506,7 @@ def test_generic_filename_intake_routes_to_a_unique_evidence_backed_record_revie
     reviewed = application.handle(make_event(text="/intake_accept 1"))
 
     assert isinstance(staged, PresentedReply)
+    assert staged.reference == ("intake", 1)
     assert "Type: document" in staged.text
     assert isinstance(reviewed, PresentedReply)
     assert reviewed.title == "Review receipt record"

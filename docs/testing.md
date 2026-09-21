@@ -1013,3 +1013,13 @@ batch.
 - The runtime suite covers normal exit, abrupt exit, live-owner exclusion, and
   bounded abrupt-owner recovery. All four focused runtime tests and the full
   pytest regression suite passed at 100%.
+
+## Post-session automated delivery: durable direct-intake references
+
+- Fresh attachment/text intake cards now preserve their exact staged intake ID
+  for Telegram replies, as does the separate **Add context** prompt. A user
+  can therefore return to an older capture card or context prompt after other
+  navigation/restart without attaching guidance to a different staged item.
+- This only restores staged review context; it does not save the item, permit
+  model analysis, or make an organization decision. Focused intake tests and
+  the full pytest regression suite passed at 100%.

@@ -4957,6 +4957,7 @@ class StewardProvisionalIntakeApplication:
                         "I will update this pending review; nothing will be saved yet.",
                         title="Add context",
                         icon="💬",
+                        reference=("intake_context", intake_id),
                     )
                 intake = self._service.add_context(intake_id, event.chat_id, context)
                 return self._review_card(intake)
@@ -5060,6 +5061,7 @@ class StewardProvisionalIntakeApplication:
             self._actions(intake),
             title=f"Review {intake.original_name}",
             icon="📄",
+            reference=("intake", intake.id or 0),
         )
 
     @staticmethod
