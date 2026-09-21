@@ -3739,7 +3739,11 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     assert "No file will move" in preview.text
     assert "CS3210" in preview.text and "note.md" in preview.text
     assert workspaces.list_source_ids(1) == ()
-    assert application.handle(make_event(text="/approve_action 1")) == "Source 1 linked to workspace 1. No file moved."
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Source linked to workspace"
+    assert accepted.reference == ("workspace", 1)
+    assert [action.command for action in accepted.actions] == ["/workspace 1", "/source 1", "/home"]
     assert source_path.is_file()
     linked = application.handle(make_event(text="/source_workspaces 1"))
     assert "already linked" in linked.text

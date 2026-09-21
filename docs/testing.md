@@ -1039,3 +1039,11 @@ batch.
   source/Home receipt with the exact source preserved for later Telegram
   follow-up. A declined review creates no record and never changes the source.
 - Focused record coverage and the full pytest regression suite passed at 100%.
+
+## Post-session automated delivery: workspace-link receipt navigation
+
+- Reviewed source-to-workspace links now return exact workspace/source cards on
+  approval and an exact source card on rejection. The link remains semantic:
+  neither outcome moves the original file.
+- Focused workspace-link coverage and the full pytest regression suite passed
+  at 100%.

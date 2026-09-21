@@ -6655,7 +6655,7 @@ class StewardActionProposalApplication:
 
     def _review_workspace_link(
         self, proposal_id: int, decision: str, event: IncomingEvent
-    ) -> str:
+    ) -> str | PresentedReply:
         if self._workspaces is None or self._sources is None:
             return "Workspace linking is not configured for this Steward process."
         proposal = self._repository.get(proposal_id)
@@ -6672,8 +6672,24 @@ class StewardActionProposalApplication:
         except ValueError as error:
             return str(error)
         if decision == "rejected":
-            return f"Link proposal {proposal.id} rejected."
-        return f"Source {source_id} linked to workspace {workspace_id}. No file moved."
+            return PresentedReply(
+                "The source was not linked to that workspace. No file moved.",
+                (ReplyAction("Open source", f"/source {source_id}"), ReplyAction("Home", "/home")),
+                title="Workspace link declined",
+                icon="↩️",
+                reference=("source", source_id),
+            )
+        return PresentedReply(
+            "The source is linked to the workspace. No file moved.",
+            (
+                ReplyAction("Open workspace", f"/workspace {workspace_id}"),
+                ReplyAction("Open source", f"/source {source_id}"),
+                ReplyAction("Home", "/home"),
+            ),
+            title="Source linked to workspace",
+            icon="📁",
+            reference=("workspace", workspace_id),
+        )
 
     def _review_travel_record(self, proposal_id: int, decision: str) -> str | PresentedReply:
         if self._records is None or self._fragments is None:
