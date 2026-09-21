@@ -615,6 +615,7 @@ def test_pending_review_inbox_keeps_colliding_domain_ids_distinct(tmp_path: Path
     detail = reviews.handle_command(make_event(text=f"/review organization {organization}"))
     assert isinstance(detail, PresentedReply)
     assert detail.title == "Organize resume.pdf"
+    assert detail.reference == ("organization", organization)
     assert "No match yet." in detail.text
     assert "Your context: This is for my job search." in detail.text
     assert {action.command for action in detail.actions} == {
@@ -703,6 +704,7 @@ def test_pending_intake_review_keeps_the_complete_safe_intake_controls(tmp_path:
 
     assert isinstance(card, PresentedReply)
     assert card.title == f"Review {staged.original_name}"
+    assert card.reference == ("intake", staged.id)
     assert "No model will analyze this item after you save it." in card.text
     assert {action.command for action in card.actions} == {
         f"/intake_accept {staged.id}",
@@ -959,6 +961,7 @@ def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tm
 
     assert isinstance(card, PresentedReply)
     assert card.title == "Create workspace CS3210 Revision"
+    assert card.reference == ("action", proposal.id)
     accepted = application.handle(make_event(text="yes"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Workspace created"
@@ -1500,6 +1503,7 @@ def test_pending_knowledge_review_offers_the_same_exact_evidence_navigation(tmp_
     card = reviews.handle_command(make_event(text=f"/review knowledge {proposal.id}"))
 
     assert isinstance(card, PresentedReply)
+    assert card.reference == ("knowledge", proposal.id)
     assert any(action.command == f"/source_content {source.id} 1" for action in card.actions)
     assert any(action.command == f"/source {source.id}" for action in card.actions)
 

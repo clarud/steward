@@ -310,6 +310,7 @@ class StewardReviewInboxApplication:
                 tuple(actions),
                 title=title,
                 icon="⚠️",
+                reference=("action", identifier),
             )
         if kind == "organization":
             proposal = self._organizations.get(identifier)
@@ -343,7 +344,8 @@ class StewardReviewInboxApplication:
                     ReplyAction("Inbox", f"/organization_keep_inbox {identifier}"),
                     ReplyAction("Reject", f"/organization_reject {identifier}"),
                 ),
-                title=f"Organize {filename}", icon="📁"
+                title=f"Organize {filename}", icon="📁",
+                reference=("organization", identifier),
             )
         if kind == "intake" and self._intakes is not None:
             intake = self._intakes.get(identifier)
@@ -367,7 +369,8 @@ class StewardReviewInboxApplication:
                     ReplyAction("Add context", f"/intake_context {identifier}"),
                     ReplyAction("Do not keep", f"/intake_discard {identifier}"),
                 ),
-                title=f"Review {intake.original_name}", icon="📄"
+                title=f"Review {intake.original_name}", icon="📄",
+                reference=("intake", identifier),
             )
         if kind == "knowledge" and self._knowledge is not None:
             proposal = self._knowledge.get(identifier)
@@ -398,7 +401,8 @@ class StewardReviewInboxApplication:
             return PresentedReply(
                 f"Suggested change: {proposal.operation.value}\nWhy: {proposal.rationale}\nEvidence fragment: {proposal.fragment_id}",
                 tuple(actions),
-                title="Knowledge update", icon="🧠"
+                title="Knowledge update", icon="🧠",
+                reference=("knowledge", identifier),
             )
         return "That review type is unavailable. Send /pending for the current list."
 

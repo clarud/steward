@@ -970,3 +970,15 @@ batch.
   navigation only: the note is still saved solely by its explicit approval.
 - Focused curated-note coverage and the full pytest regression suite passed at
   100%. Live Telegram acceptance remains open.
+
+## Post-session automated delivery: durable pending-review references
+
+- Opened pending **action**, **organization**, **intake**, and **knowledge**
+  review cards now preserve their own opaque proposal reference for Telegram.
+  A reply to an older card can therefore restore that exact pending decision
+  after other navigation or an adapter restart; it never selects an item by
+  page position or inferred text.
+- This only restores the existing chat-bound review context. Approval,
+  rejection, source access, model boundaries, and external-write policies are
+  unchanged. Focused review-routing coverage and the full pytest regression
+  suite passed at 100%. Live Telegram acceptance remains open.
