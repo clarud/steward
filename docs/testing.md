@@ -799,3 +799,17 @@ batch.
   than duplicating parsing logic.
 - Focused record and migration tests passed, followed by the full pytest
   regression suite at 100%.
+
+## Post-session automated delivery: Hotel Reservation Telegram workflow
+
+- A source named as a hotel or reservation can now produce a chat-bound Hotel
+  Reservation review, and `/propose_hotel_record SOURCE_ID` provides the same
+  explicit route. The preview exposes property, booking reference, guest, and
+  check-in/out fields only when extraction directly found them.
+- Accepting the review rebuilds the proposal from current local fragments and
+  rejects stale evidence before a single transactional local write. Hotel cards
+  support source/evidence reads and `/records`; `search_records` can retrieve
+  permitted saved hotel fields for a read-only agent. No Calendar event is
+  inferred or created from a hotel reservation.
+- Focused Telegram, record, and read-only tool coverage passed, followed by
+  the full pytest regression suite at 100%.

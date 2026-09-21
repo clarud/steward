@@ -1253,6 +1253,42 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
     assert records.list_travel_records()[0].flight_number == "SQ638"
 
 
+def test_telegram_hotel_record_is_reviewed_before_persistence(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "hotel-reservation.md"; source_path.write_text("reservation", encoding="utf-8")
+    source = SourceRepository(database).add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 9, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0,
+            "Hotel: Marina Bay Hotel\nReservation Number: H-42\nGuest: Ada Lovelace\nCheck-in: 2026-10-01T15:00:00+08:00\nCheck-out: 2026-10-03T11:00:00+08:00", "lines 1-5"),
+    )))
+    records = RecordService(database); activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=StewardActionProposalApplication(
+            proposals, ActionProposalService(proposals, WorkspaceRepository(database), activity),
+            CalendarEventProposalService(proposals, records, activity), record_service=records,
+            fragment_repository=fragments, activity_service=activity,
+        ),
+        record_application=StewardRecordApplication(records, fragments, proposals, activity),
+    )
+
+    preview = application.handle(make_event(text="/propose_hotel_record 1"))
+
+    assert isinstance(preview, PresentedReply)
+    assert "property_name: Marina Bay Hotel (fragment 1)" in preview.text
+    assert records.list_hotel_reservation_records() == []
+
+    accepted = application.handle(make_event(text="/approve_action 1"))
+
+    assert accepted == "Hotel record 1 created from source 1."
+    assert records.list_hotel_reservation_records()[0].booking_reference == "H-42"
+    detail = application.handle(make_event(text="/record hotel 1"))
+    assert isinstance(detail, PresentedReply)
+    assert "check in: 1 Oct 2026" in detail.text
+
+
 def test_telegram_travel_correction_is_reviewed_before_mutation(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

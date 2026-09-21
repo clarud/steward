@@ -88,12 +88,13 @@ def _external_import_failure(operation: str, retry_command: str) -> PresentedRep
 def _stale_record_review(action_type: str, source_id: int, proposal_id: int) -> PresentedReply:
     """Offer explicit recovery without approving newly extracted values."""
     record_type = action_type.removeprefix("create_").removesuffix("_record")
+    command_type = "hotel" if record_type == "hotel_reservation" else record_type
     return PresentedReply(
         f"The {record_type} preview for source {source_id} is stale or predates snapshot protection.\n\n"
         "Nothing was saved. Open a fresh preview to check the current fields, then approve it separately. "
         "You can dismiss this old review without deleting the source.",
         (
-            ReplyAction("Fresh preview", f"/propose_{record_type}_record {source_id}"),
+            ReplyAction("Fresh preview", f"/propose_{command_type}_record {source_id}"),
             ReplyAction("View source", f"/source {source_id}"),
             ReplyAction("Dismiss old review", f"/reject_action {proposal_id}"),
         ),
@@ -260,7 +261,7 @@ class StewardReviewInboxApplication:
                 candidate = self._sources.get_by_id(int(raw_source_id))
                 if candidate is not None:
                     source_action = ReplyAction("Open source", f"/source {candidate.id}")
-            if proposal.action_type in {"create_travel_record", "create_receipt_record", "create_warranty_record"}:
+            if proposal.action_type in {"create_travel_record", "create_receipt_record", "create_warranty_record", "create_hotel_reservation_record"}:
                 if self._records is None or self._fragments is None:
                     return "Record preview is unavailable. Open the original record proposal before approving."
                 source_id = int(proposal.payload["source_id"])
@@ -272,6 +273,7 @@ class StewardReviewInboxApplication:
                     "create_travel_record": self._records.propose_travel_record,
                     "create_receipt_record": self._records.propose_receipt_record,
                     "create_warranty_record": self._records.propose_warranty_record,
+                    "create_hotel_reservation_record": self._records.propose_hotel_reservation_record,
                 }[proposal.action_type]
                 preview = builder(source_id, [(part.id, part.text) for part in parts])
                 if proposal.payload.get("snapshot") != record_review_snapshot(preview, [(part.id, part.text) for part in parts]):
@@ -1579,6 +1581,7 @@ class StewardRecordApplication:
     CREATE_TRAVEL_RECORD = "create_travel_record"
     CREATE_RECEIPT_RECORD = "create_receipt_record"
     CREATE_WARRANTY_RECORD = "create_warranty_record"
+    CREATE_HOTEL_RESERVATION_RECORD = "create_hotel_reservation_record"
     CORRECT_TRAVEL_RECORD = "correct_travel_record"
     CORRECT_RECEIPT_RECORD = "correct_receipt_record"
     CORRECT_WARRANTY_RECORD = "correct_warranty_record"
@@ -1612,7 +1615,7 @@ class StewardRecordApplication:
             record_type, _, identifier = argument.strip().partition(" ")
             if (
                 self._contexts is not None
-                and record_type.casefold() in {"travel", "receipt", "warranty"}
+                and record_type.casefold() in {"travel", "receipt", "warranty", "hotel"}
                 and identifier.isdigit()
                 and self._record_exists(record_type.casefold(), int(identifier))
             ):
@@ -1624,7 +1627,7 @@ class StewardRecordApplication:
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
             return self._propose_travel_reference(separator, argument, chat_id=event.chat_id)
-        if command in {"/propose_receipt_record", "/propose_warranty_record"}:
+        if command in {"/propose_receipt_record", "/propose_warranty_record", "/propose_hotel_record"}:
             return self._propose_document_record(command, separator, argument, chat_id=event.chat_id)
         if command in {"/correct_travel_record", "/correct_receipt_record", "/correct_warranty_record"}:
             return self._propose_record_correction(command, separator, argument, chat_id=event.chat_id)
@@ -1652,6 +1655,7 @@ class StewardRecordApplication:
                 "travel": self._records.list_travel_records,
                 "receipt": self._records.list_receipt_records,
                 "warranty": self._records.list_warranty_records,
+                "hotel": self._records.list_hotel_reservation_records,
             }.get(record_type)
             record = next((item for item in records() if item.id == context.identifier), None) if records else None
             if record is None:
@@ -1682,6 +1686,12 @@ class StewardRecordApplication:
             "open that warranty": "warranty",
             "show the last warranty": "warranty",
             "open the last warranty": "warranty",
+            "show that hotel": "hotel",
+            "open that hotel": "hotel",
+            "show the last hotel": "hotel",
+            "open the last hotel": "hotel",
+            "show that reservation": "hotel",
+            "open that reservation": "hotel",
         }.get(normalized)
         if normalized in {
             "show details", "show the details", "show record details",
@@ -1707,6 +1717,7 @@ class StewardRecordApplication:
             "travel": self._records.list_travel_records,
             "receipt": self._records.list_receipt_records,
             "warranty": self._records.list_warranty_records,
+            "hotel": self._records.list_hotel_reservation_records,
         }.get(requested_type)
         record = next((item for item in records() if item.id == context.identifier), None) if records else None
         if record is None:
@@ -1753,6 +1764,16 @@ class StewardRecordApplication:
                 "who provides the warranty": "provider",
                 "what is the warranty number": "warranty_number",
                 "what product is this": "product_name",
+            },
+            "hotel": {
+                "when do i check in": "check_in_at",
+                "when is check in": "check_in_at",
+                "when do i check out": "check_out_at",
+                "when is check out": "check_out_at",
+                "what is the booking reference": "booking_reference",
+                "what is the reservation number": "booking_reference",
+                "who is the guest": "guest_name",
+                "which hotel is it": "property_name",
             },
         }
         return fields_by_phrase.get(record_type, {}).get(normalized)
@@ -1818,6 +1839,7 @@ class StewardRecordApplication:
             "travel": self._records.list_travel_records,
             "receipt": self._records.list_receipt_records,
             "warranty": self._records.list_warranty_records,
+            "hotel": self._records.list_hotel_reservation_records,
         }.get(record_type)
         return records is not None and any(record.id == record_id for record in records())
 
@@ -1837,6 +1859,8 @@ class StewardRecordApplication:
             return self._propose_document_record_for_source("receipt", source_id, chat_id=chat_id)
         if "warranty" in normalized:
             return self._propose_document_record_for_source("warranty", source_id, chat_id=chat_id)
+        if any(term in normalized for term in ("hotel", "reservation")):
+            return self._propose_document_record_for_source("hotel", source_id, chat_id=chat_id)
         if any(term in normalized for term in ("flight", "itinerary", "booking")):
             return self._propose_travel_record_for_source(source_id, chat_id=chat_id)
 
@@ -1848,6 +1872,7 @@ class StewardRecordApplication:
             "travel": len(self._records.propose_travel_record(source_id, evidence).field_evidence),
             "receipt": len(self._records.propose_receipt_record(source_id, evidence).field_evidence),
             "warranty": len(self._records.propose_warranty_record(source_id, evidence).field_evidence),
+            "hotel": len(self._records.propose_hotel_reservation_record(source_id, evidence).field_evidence),
         }
         # One incidental label is too weak for autonomous routing. A generic
         # filename needs at least two independently extracted fields and a
@@ -2008,8 +2033,11 @@ class StewardRecordApplication:
     def _propose_document_record(
         self, command: str, separator: str, argument: str, *, chat_id: str | None = None
     ) -> str | PresentedReply:
-        label = "receipt" if command == "/propose_receipt_record" else "warranty"
-        action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
+        label = {
+            "/propose_receipt_record": "receipt",
+            "/propose_warranty_record": "warranty",
+            "/propose_hotel_record": "hotel",
+        }[command]
         if not separator or not argument.strip().isdigit():
             return f"Use {command} followed by a numeric source ID."
         source_id = int(argument.strip())
@@ -2019,7 +2047,11 @@ class StewardRecordApplication:
     def _propose_document_record_for_source(
         self, label: str, source_id: int, *, chat_id: str | None = None
     ) -> PresentedReply | None:
-        action_type = self.CREATE_RECEIPT_RECORD if label == "receipt" else self.CREATE_WARRANTY_RECORD
+        action_type = {
+            "receipt": self.CREATE_RECEIPT_RECORD,
+            "warranty": self.CREATE_WARRANTY_RECORD,
+            "hotel": self.CREATE_HOTEL_RESERVATION_RECORD,
+        }[label]
         fragments = self._fragments.list_for_source(source_id)
         if not fragments:
             return None
@@ -2027,6 +2059,8 @@ class StewardRecordApplication:
             self._records.propose_receipt_record(source_id, [(item.id or 0, item.text) for item in fragments])
             if label == "receipt"
             else self._records.propose_warranty_record(source_id, [(item.id or 0, item.text) for item in fragments])
+            if label == "warranty"
+            else self._records.propose_hotel_reservation_record(source_id, [(item.id or 0, item.text) for item in fragments])
         )
         if not proposal.field_evidence:
             return None
@@ -2087,14 +2121,15 @@ class StewardRecordApplication:
         record_type, identifier_separator, identifier = argument.strip().partition(" ")
         record_type = record_type.casefold()
         if not separator or not identifier_separator or not identifier.isdigit():
-            return "Use /record followed by travel, receipt, or warranty and a numeric record ID."
+            return "Use /record followed by travel, receipt, warranty, or hotel and a numeric record ID."
         records = {
             "travel": self._records.list_travel_records,
             "receipt": self._records.list_receipt_records,
             "warranty": self._records.list_warranty_records,
+            "hotel": self._records.list_hotel_reservation_records,
         }.get(record_type)
         if records is None:
-            return "Record type must be travel, receipt, or warranty."
+            return "Record type must be travel, receipt, warranty, or hotel."
         record = next((item for item in records() if item.id == int(identifier)), None)
         if record is None:
             return f"{record_type.title()} record {identifier} was not found."
@@ -2146,6 +2181,14 @@ class StewardRecordApplication:
                 ("purchased at", "purchased_at", timestamp_label(getattr(record, "purchased_at")) if getattr(record, "purchased_at") else None),
                 ("receipt number", "receipt_number", getattr(record, "receipt_number")),
             )
+        if record_type == "hotel":
+            return (
+                ("property", "property_name", getattr(record, "property_name")),
+                ("booking reference", "booking_reference", getattr(record, "booking_reference")),
+                ("check in", "check_in_at", timestamp_label(getattr(record, "check_in_at")) if getattr(record, "check_in_at") else None),
+                ("check out", "check_out_at", timestamp_label(getattr(record, "check_out_at")) if getattr(record, "check_out_at") else None),
+                ("guest", "guest_name", getattr(record, "guest_name")),
+            )
         return (
             ("product", "product_name", getattr(record, "product_name")),
             ("provider", "provider", getattr(record, "provider")),
@@ -2181,11 +2224,12 @@ class StewardRecordApplication:
         record_type, identifier_separator, identifier = argument.strip().partition(" ")
         record_type = record_type.casefold()
         if not separator or not identifier_separator or not identifier.isdigit():
-            return "Use /record_evidence followed by travel, receipt, or warranty and a numeric record ID."
+            return "Use /record_evidence followed by travel, receipt, warranty, or hotel and a numeric record ID."
         records = {
             "travel": self._records.list_travel_records,
             "receipt": self._records.list_receipt_records,
             "warranty": self._records.list_warranty_records,
+            "hotel": self._records.list_hotel_reservation_records,
         }.get(record_type)
         record = next((item for item in records() if item.id == int(identifier)), None) if records else None
         if record is None:
@@ -2218,6 +2262,10 @@ class StewardRecordApplication:
             f"Warranty {record.id}: {record.product_name or '(product unknown)'}"
             for record in self._records.list_warranty_records()
         )
+        lines.extend(
+            f"Hotel {record.id}: {record.property_name or '(property unknown)'}"
+            for record in self._records.list_hotel_reservation_records()
+        )
         if not lines:
             return "No saved records."
         record_links = [
@@ -2226,6 +2274,8 @@ class StewardRecordApplication:
             ("receipt", record.id or 0) for record in self._records.list_receipt_records()
         ] + [
             ("warranty", record.id or 0) for record in self._records.list_warranty_records()
+        ] + [
+            ("hotel", record.id or 0) for record in self._records.list_hotel_reservation_records()
         ]
         pages = max(1, (len(record_links) + 7) // 8)
         page = min(max(page, 1), pages)
@@ -5749,6 +5799,7 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CREATE_TRAVEL_RECORD,
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
+            StewardRecordApplication.CREATE_HOTEL_RESERVATION_RECORD,
             StewardRecordApplication.CORRECT_TRAVEL_RECORD,
             StewardRecordApplication.CORRECT_RECEIPT_RECORD,
             StewardRecordApplication.CORRECT_WARRANTY_RECORD,
@@ -5795,6 +5846,7 @@ class StewardActionProposalApplication:
         if proposal is not None and proposal.action_type in {
             StewardRecordApplication.CREATE_RECEIPT_RECORD,
             StewardRecordApplication.CREATE_WARRANTY_RECORD,
+            StewardRecordApplication.CREATE_HOTEL_RESERVATION_RECORD,
         }:
             return self._review_document_record(proposal_id, decision)
         if proposal is not None and proposal.action_type in {
@@ -6570,7 +6622,11 @@ class StewardActionProposalApplication:
         proposal = self._repository.get(proposal_id)
         if proposal is None:
             return "Action proposal was not found."
-        label = "receipt" if proposal.action_type == StewardRecordApplication.CREATE_RECEIPT_RECORD else "warranty"
+        label = {
+            StewardRecordApplication.CREATE_RECEIPT_RECORD: "receipt",
+            StewardRecordApplication.CREATE_WARRANTY_RECORD: "warranty",
+            StewardRecordApplication.CREATE_HOTEL_RESERVATION_RECORD: "hotel",
+        }[proposal.action_type]
         if proposal.status == decision:
             return f"{label.title()} proposal {proposal.id} {proposal.status}."
         if proposal.status != "pending":
@@ -6584,14 +6640,20 @@ class StewardActionProposalApplication:
         fragments = [(item.id or 0, item.text) for item in self._fragments.list_for_source(source_id)]
         extracted = (
             self._records.propose_receipt_record(source_id, fragments)
-            if label == "receipt" else self._records.propose_warranty_record(source_id, fragments)
+            if label == "receipt"
+            else self._records.propose_warranty_record(source_id, fragments)
+            if label == "warranty"
+            else self._records.propose_hotel_reservation_record(source_id, fragments)
         )
         if proposal.payload.get("snapshot") != record_review_snapshot(extracted, fragments):
             return _stale_record_review(proposal.action_type, source_id, proposal_id)
         try:
             record = (
                 self._records.create_receipt_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
-                if label == "receipt" else self._records.create_warranty_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
+                if label == "receipt"
+                else self._records.create_warranty_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
+                if label == "warranty"
+                else self._records.create_hotel_reservation_from_proposal(extracted, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
             )
         except ValueError as error:
             return str(error)

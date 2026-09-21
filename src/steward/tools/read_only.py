@@ -167,7 +167,7 @@ class ReadOnlyToolService:
         )
 
     def search_records(self, query: str, limit: int = 10) -> str:
-        """Find saved travel, receipt, and warranty records by their known fields."""
+        """Find saved travel, receipt, warranty, and hotel records by their known fields."""
         needle = query.casefold().strip()
         records = []
         for record in self._records.list_travel_records():
@@ -219,6 +219,23 @@ class ReadOnlyToolService:
                         "provider": record.provider,
                         "warranty_number": record.warranty_number,
                         "coverage_ends_at": record.coverage_ends_at.isoformat() if record.coverage_ends_at else None,
+                    }
+                )
+        for record in self._records.list_hotel_reservation_records():
+            if not self._permits_model(record.source_id):
+                continue
+            values = (record.property_name, record.booking_reference, record.guest_name)
+            if any(needle in value.casefold() for value in values if value):
+                records.append(
+                    {
+                        "record_type": "hotel",
+                        "id": record.id,
+                        "source_id": record.source_id,
+                        "property_name": record.property_name,
+                        "booking_reference": record.booking_reference,
+                        "check_in_at": record.check_in_at.isoformat() if record.check_in_at else None,
+                        "check_out_at": record.check_out_at.isoformat() if record.check_out_at else None,
+                        "guest_name": record.guest_name,
                     }
                 )
         return self._json(records[: self._limit(limit)])

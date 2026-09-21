@@ -9,6 +9,8 @@ from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentR
 from steward.knowledge import ConflictResolution, KnowledgeService, KnowledgeEnrichmentProposalRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.records import (
+    HotelReservationRecord,
+    HotelReservationRecordProposal,
     ReceiptRecord,
     ReceiptRecordProposal,
     RecordService,
@@ -142,7 +144,7 @@ def test_knowledge_tool_respects_evidence_privacy_and_surfaces_reviewed_conflict
     assert json.loads(local.search_knowledge("TLB"))["concept"] is None
 
 
-def test_read_only_record_search_includes_receipts_and_warranties(tmp_path: Path) -> None:
+def test_read_only_record_search_includes_receipts_warranties_and_hotels(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 8, tzinfo=UTC)
     sources = SourceRepository(database)
@@ -157,10 +159,17 @@ def test_read_only_record_search_includes_receipts_and_warranties(tmp_path: Path
     records.create_warranty_from_proposal(
         WarrantyRecordProposal(WarrantyRecord(None, source.id or 0, "Laptop Pro", "Example Corp", "W-100", None), {"product_name": fragment.id or 0})
     )
+    records.create_hotel_reservation_from_proposal(
+        HotelReservationRecordProposal(
+            HotelReservationRecord(None, source.id or 0, "Marina Bay Hotel", "H-42", None, None, "Ada Lovelace"),
+            {"property_name": fragment.id or 0},
+        )
+    )
     service = ReadOnlyToolService(sources, SourceFragmentRepository(database), LexicalSearchService(sources, SourceFragmentRepository(database)), KnowledgeService(database), records, WorkspaceRepository(database), ActivityService(database))
 
     assert json.loads(service.search_records("corner"))[0]["record_type"] == "receipt"
     assert json.loads(service.search_records("laptop"))[0]["record_type"] == "warranty"
+    assert json.loads(service.search_records("marina"))[0]["record_type"] == "hotel"
 
 
 def test_read_only_tools_do_not_return_private_source_text_to_cloud_agent(tmp_path: Path) -> None:
