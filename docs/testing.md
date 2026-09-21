@@ -949,3 +949,12 @@ batch.
   Telegram process and, where applicable, a harmless provider-backed Calendar
   or research result. Automated coverage is recorded with each implementation
   delivery above.
+
+## Post-session automated delivery: workspace-creation navigation
+
+- Accepting a chat-bound **Create workspace** review now returns a workspace
+  receipt with **Open workspace**, **Workspaces**, and **Home**. The receipt
+  keeps the opaque workspace ID as its Telegram reply reference, so replying
+  to it can restore that exact workspace rather than relying on a list position.
+- Focused workspace-review coverage and the full pytest regression suite passed
+  at 100%. Live Telegram acceptance remains open.

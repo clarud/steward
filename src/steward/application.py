@@ -5996,11 +5996,19 @@ class StewardActionProposalApplication:
         except ValueError as error:
             return str(error)
         if workspace is not None:
+            workspace_id = workspace.id
+            if workspace_id is None:  # Defensive: persisted workspaces always have an ID.
+                return "The workspace was created, but its local identifier was unavailable. Open Workspaces to find it."
             return PresentedReply(
                 f"{workspace.name} is now available for organizing and retrieving your material.",
-                (ReplyAction("Workspaces", "/workspaces"), ReplyAction("Home", "/home")),
+                (
+                    ReplyAction("Open workspace", f"/workspace {workspace_id}"),
+                    ReplyAction("Workspaces", "/workspaces"),
+                    ReplyAction("Home", "/home"),
+                ),
                 title="Workspace created",
                 icon="📁",
+                reference=("workspace", workspace_id),
             )
         return PresentedReply(
             "The requested action was applied." if proposal.status == "accepted" else "The requested action was not applied.",

@@ -963,7 +963,11 @@ def test_active_review_accepts_a_clear_text_confirmation_for_the_exact_action(tm
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Workspace created"
     assert actions.get(proposal.id or 0).status == "accepted"
-    assert [workspace.name for workspace in workspaces.list_all()] == ["CS3210 Revision"]
+    created_workspace = workspaces.list_all()[0]
+    assert created_workspace.name == "CS3210 Revision"
+    assert accepted.reference == ("workspace", created_workspace.id)
+    assert accepted.actions[0].label == "Open workspace"
+    assert accepted.actions[0].command == f"/workspace {created_workspace.id}"
     assert contexts.get("telegram", "100") is None
 
 
@@ -5222,7 +5226,11 @@ def test_telegram_can_list_and_explicitly_review_a_pending_action_proposal(tmp_p
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Workspace created"
     assert "Compiler Project is now available" in accepted.text
-    assert WorkspaceRepository(database_path).list_all()[0].name == "Compiler Project"
+    created_workspace = WorkspaceRepository(database_path).list_all()[0]
+    assert created_workspace.name == "Compiler Project"
+    assert accepted.reference == ("workspace", created_workspace.id)
+    assert accepted.actions[0].label == "Open workspace"
+    assert accepted.actions[0].command == f"/workspace {created_workspace.id}"
 
     legacy, _ = service.propose_workspace_creation("Local-only legacy proposal")
     assert legacy is not None
