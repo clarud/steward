@@ -6206,16 +6206,17 @@ class StewardActionProposalApplication:
             return f"Task-deadline proposal {proposal.id} was already {proposal.status}."
         if proposal.status != "pending":
             return f"Task-deadline proposal {proposal.id} was already {proposal.status}."
+        task_id = int(proposal.payload["task_id"])
         if decision == "rejected":
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return PresentedReply(
                 "The task deadline was not changed.",
-                (ReplyAction("Open task", f"/task {proposal.payload['task_id']}"),),
+                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Home", "/home")),
                 title="Deadline kept", icon="↩️",
+                reference=("task", task_id),
             )
-        task_id = int(proposal.payload["task_id"])
         old_value = proposal.payload.get("old_due_at") or None
         try:
             task = self._tasks.reschedule_due_at(
@@ -6256,16 +6257,17 @@ class StewardActionProposalApplication:
             return f"Task-reminder proposal {proposal.id} was already {proposal.status}."
         if proposal.status != "pending":
             return f"Task-reminder proposal {proposal.id} was already {proposal.status}."
+        task_id = int(proposal.payload["task_id"])
         if decision == "rejected":
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return PresentedReply(
                 "The task reminder was not changed.",
-                (ReplyAction("Open task", f"/task {proposal.payload['task_id']}"),),
+                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Home", "/home")),
                 title="Reminder kept", icon="↩️",
+                reference=("task", task_id),
             )
-        task_id = int(proposal.payload["task_id"])
         old_value = proposal.payload.get("old_remind_at") or None
         old_chat_id = proposal.payload.get("old_chat_id") or None
         try:
@@ -6316,8 +6318,9 @@ class StewardActionProposalApplication:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return PresentedReply(
                 "The local task deadline was kept. No Calendar event or Telegram reminder was changed.",
-                (ReplyAction("Open task", f"/task {task_id}"),),
+                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Home", "/home")),
                 title="Deadline kept", icon="↩️",
+                reference=("task", task_id),
             )
         try:
             task = self._tasks.clear_due_at(
@@ -6359,8 +6362,9 @@ class StewardActionProposalApplication:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return PresentedReply(
                 "The Telegram reminder was kept. No task deadline or Calendar event was changed.",
-                (ReplyAction("Open task", f"/task {task_id}"),),
+                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Home", "/home")),
                 title="Reminder kept", icon="↩️",
+                reference=("task", task_id),
             )
         try:
             task = self._task_reminders.cancel(

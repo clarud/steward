@@ -982,3 +982,13 @@ batch.
   rejection, source access, model boundaries, and external-write policies are
   unchanged. Focused review-routing coverage and the full pytest regression
   suite passed at 100%. Live Telegram acceptance remains open.
+
+## Post-session automated delivery: task review-decline navigation
+
+- Declining a reviewed deadline/reminder change, deadline clear, or reminder
+  cancellation now offers **Open task** and **Home** and retains the exact
+  task as the Telegram reply reference. The accepted and declined outcomes now
+  have the same safe return path without implying that Calendar changed.
+- Focused task scheduling coverage (including an explicit declined deadline
+  review) and the full pytest regression suite passed at 100%. Live Telegram
+  acceptance remains open.

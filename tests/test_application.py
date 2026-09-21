@@ -2759,6 +2759,17 @@ def test_task_deadline_edit_is_reviewed_and_refuses_a_stale_preview(tmp_path: Pa
     assert proposals.get(stale_id).status == "pending"
     assert tasks.get(task.id or 0).due_at == datetime(2026, 9, 21, 9, tzinfo=UTC)
 
+    rejected_review = task_application.propose_deadline(
+        task.id or 0, datetime(2026, 9, 22, 9, tzinfo=UTC), chat_id="100"
+    )
+    rejected_id = int(rejected_review.actions[0].command.rsplit(" ", 1)[1])
+    rejected = actions.handle_command(make_event(text=f"/reject_action {rejected_id}"))
+
+    assert isinstance(rejected, PresentedReply)
+    assert rejected.title == "Deadline kept"
+    assert rejected.reference == ("task", task.id)
+    assert [action.command for action in rejected.actions] == [f"/task {task.id}", "/home"]
+
 
 def test_task_reminder_edit_is_reviewed_and_preserves_deadline(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
