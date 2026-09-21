@@ -1739,7 +1739,11 @@ check those choices before an explicitly confirmed restore.
 `telegram_runtime_lock(data_dir)` holds an exclusive SQLite transaction in
 `telegram-runtime.db` for the polling process lifetime. The file is not a PID
 marker: its existence after shutdown does not mean Steward is still running.
-The OS releases ownership when the connection/process closes.
+The OS releases ownership when the connection/process closes. On Windows, that
+release can be observable a moment after an abrupt process exit, so acquisition
+retries a busy/locked transaction for at most one second before reporting that
+another runtime owns the directory. The retry is bounded and still requires the
+same exclusive transaction; it cannot allow two polling processes to run.
 
 `tests/test_runtime.py` checks normal exit, abrupt `os._exit`, and a live
 cross-process contender. The latter waits for an explicit lock-acquired

@@ -3,6 +3,11 @@
 from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
+from time import monotonic, sleep
+
+
+_LOCK_RELEASE_GRACE_SECONDS = 1.0
+_LOCK_RETRY_INTERVAL_SECONDS = 0.05
 
 
 class RuntimeAlreadyRunningError(RuntimeError):
@@ -20,14 +25,21 @@ def telegram_runtime_lock(data_dir: Path):
     data_dir.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(data_dir / "telegram-runtime.db", timeout=0)
     try:
-        try:
-            connection.execute("BEGIN EXCLUSIVE")
-        except sqlite3.OperationalError as error:
-            if getattr(error, "sqlite_errorcode", None) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
-                raise RuntimeAlreadyRunningError(
-                    "Telegram is already running for this Steward data directory. Stop that instance before starting another."
-                ) from error
-            raise
+        deadline = monotonic() + _LOCK_RELEASE_GRACE_SECONDS
+        while True:
+            try:
+                connection.execute("BEGIN EXCLUSIVE")
+                break
+            except sqlite3.OperationalError as error:
+                if getattr(error, "sqlite_errorcode", None) not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                    raise
+                if monotonic() >= deadline:
+                    raise RuntimeAlreadyRunningError(
+                        "Telegram is already running for this Steward data directory. Stop that instance before starting another."
+                    ) from error
+                # Windows can briefly retain SQLite's OS lock after an abrupt
+                # process exit. This bounded retry cannot permit two owners.
+                sleep(_LOCK_RETRY_INTERVAL_SECONDS)
         yield
     finally:
         connection.close()

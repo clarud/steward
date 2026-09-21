@@ -3,6 +3,7 @@ import subprocess
 import sys
 import queue
 import threading
+import time
 
 import pytest
 
@@ -74,3 +75,30 @@ def test_live_process_excludes_contender_until_owner_is_killed(tmp_path: Path) -
             owner.kill()
         owner.communicate(timeout=15)
         reader.join(timeout=2)
+
+
+def test_runtime_lock_waits_briefly_for_an_abrupt_owner_lock_release(tmp_path: Path) -> None:
+    """The bounded grace period makes crash recovery reliable on Windows."""
+
+    script = (
+        "import sys; from pathlib import Path; "
+        "from steward.runtime import telegram_runtime_lock; "
+        "guard=telegram_runtime_lock(Path(sys.argv[1])); guard.__enter__(); "
+        "print('LOCKED', flush=True); sys.stdin.read()"
+    )
+    owner = subprocess.Popen(
+        [sys.executable, "-c", script, str(tmp_path)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert owner.stdout.readline().strip() == "LOCKED"
+        owner.kill()
+        owner.wait(timeout=15)
+        started = time.monotonic()
+        with telegram_runtime_lock(tmp_path):
+            pass
+        assert time.monotonic() - started < 2
+    finally:
+        if owner.poll() is None:
+            owner.kill()
+        owner.communicate(timeout=15)

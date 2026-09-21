@@ -1003,3 +1003,13 @@ batch.
   passed at 100%. One initial full run encountered a transient Windows
   subprocess SQLite-lock release race in `test_runtime`; its isolated rerun
   passed before the successful complete retry.
+
+## Post-session automated delivery: Windows Telegram-runtime recovery
+
+- Telegram runtime ownership now waits for at most one second when SQLite is
+  briefly busy/locked after an abrupt local owner exit. It continues to require
+  the same exclusive transaction, so an actually live competing polling
+  process still fails safely rather than permitting duplicate workers.
+- The runtime suite covers normal exit, abrupt exit, live-owner exclusion, and
+  bounded abrupt-owner recovery. All four focused runtime tests and the full
+  pytest regression suite passed at 100%.
