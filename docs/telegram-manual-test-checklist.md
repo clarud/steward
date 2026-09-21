@@ -236,7 +236,10 @@ directory must retain their original name, location, and contents throughout.
 - Send a harmless `https://...` link. Verify it is staged as a **reference**;
   Steward must not fetch it, send it to a model, or save it until you choose
   **Save**.
-- Choose **Do not keep**. Verify no file appears in Inbox.
+- Choose **Do not keep**. Verify no file appears in Inbox, the result says the
+  staged local copy was removed, and its **Inbox**, **Pending**, and **Home**
+  actions work. Then send an ordinary harmless message: it must not be treated
+  as late context for the discarded item.
 - Send another document, add `/intake_context ID CS3210 OpenMP assignment`,
   then choose **Save to Inbox**. Verify the original appears once in Inbox.
 - Prefer the card flow as well: choose **Add context**, then reply normally
@@ -555,6 +558,12 @@ directory must retain their original name, location, and contents throughout.
   uncreated. This action must also be available on a correction proposal.
 - For an accepted travel record, use `/calendar_travel RECORD_ID`; verify no
   Google Calendar event exists until the review action is accepted.
+- After approving a harmless Calendar proposal, confirm the success card offers
+  **Open event** when Google returned an event ID. Open it and verify Steward
+  fetches the current provider event, not a cached local copy. Open another
+  event, then reply to the old success card with `show that event`; it must
+  return to the event created by that approval. If the configured writer cannot
+  return an event ID, the generic Calendar/Home card is the expected fallback.
 - Open a harmless Travel record and then say **show details**, **when does this
   flight leave?**, **what is the flight number?**, or **what is the booking
   reference?**. Each must reopen or answer from only that exact local record
@@ -575,6 +584,10 @@ directory must retain their original name, location, and contents throughout.
   workspace card. The moved source must appear in its linked-source list as
   well as at its approved filesystem destination. Reopening or retrying the
   accepted review must not add a second link.
+- After accepting that move, keep the **Source organized** result card, open a
+  different workspace, and then reply to the older result with `open that
+  workspace`. Repeat after restarting Telegram. It must open the workspace
+  selected by the original move, not the newer workspace or a guessed target.
 - Upload a harmless file with a generic filename but labelled receipt fields
   such as `Merchant`, `Total`, and `Receipt Number`. After **Save**, it should
   offer a receipt-record review based on extracted evidence. A generic file
@@ -628,7 +641,12 @@ directory must retain their original name, location, and contents throughout.
   change** card with **Open source**, and `/privacy SOURCE_ID` still shows the
   previous rule until you approve. After approval, confirm restricted source
   content is not sent to a cloud-backed model. Reject a second proposed change
-  and verify the existing rule remains unchanged.
+  and verify the existing rule remains unchanged. Each approved or declined
+  result should offer **Open source**, **Privacy options**, and **Home**;
+  reopening Privacy options must create a fresh review rather than silently
+  changing the rule again. After opening another source, reply to the old
+  result with a source follow-up and confirm it selects the privacy-reviewed
+  source, not the newer one.
 - Open a harmless source card and say **keep this local**. Steward must create
   the same **Review privacy change** card for that exact source; it must not
   change the rule before approval. Try the phrase without opening a source
@@ -685,6 +703,12 @@ directory must retain their original name, location, and contents throughout.
   card with `keep that research` or `save that research`. Verify only that
   still-live, reviewed card is retained; Steward must not rerun research,
   select a different result, or retain anything after the card expires.
+- After retaining either the reviewed research note or one selected source,
+  verify the result card identifies the exact Inbox source and offers **Read
+  content**, **Source details**, **Inbox**, and **Home**. Open another source,
+  then reply to the retained-research card with a source follow-up; it must use
+  the retained source. Repeating `keep that research` after retention should
+  safely explain that the one-time research card is no longer available.
 - With a deliberately unavailable test research provider, verify the failure
   reply is retry-oriented and does not expose a provider diagnostic or local
   configuration path.

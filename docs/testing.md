@@ -939,3 +939,13 @@ batch.
 - The corresponding pending intake context is cleared, so a later ordinary
   message cannot accidentally be treated as added context for a discarded
   item. Focused and full pytest regression verification passed at 100%.
+
+## Pending live Telegram acceptance additions
+
+- The manual Telegram checklist now includes the new discard result/context
+  cleanup, approved-Calendar-event card, organization-result workspace reply,
+  retained-research source card, and privacy-result source-card journeys.
+- These are not recorded as live-passed yet: each needs the configured local
+  Telegram process and, where applicable, a harmless provider-backed Calendar
+  or research result. Automated coverage is recorded with each implementation
+  delivery above.
