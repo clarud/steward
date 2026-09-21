@@ -245,6 +245,10 @@ directory must retain their original name, location, and contents throughout.
 - Prefer the card flow as well: choose **Add context**, then reply normally
   with `CS3210 OpenMP assignment`. Restart the bot before replying once; the
   reply should still revise the same pending card without saving it.
+- Open a second harmless staged item after that prompt, then reply to the
+  older original staging card and to the older **Add context** prompt. After a
+  bot restart, each must restore the exact first staged item; neither reply may
+  save it or attach guidance to the newer item.
 - If local staging is deliberately unavailable in a test setup, verify an
   intake accept/discard/context retry message never exposes the staging path.
 - While an intake or organization proposal is pending, stop the local bot with
