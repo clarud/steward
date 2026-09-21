@@ -6695,15 +6695,20 @@ class StewardActionProposalApplication:
                 record = self._records.create_from_proposal(record_proposal, expected_snapshot=proposal.payload["snapshot"], action_id=proposal_id)
             except ValueError as error:
                 return str(error)
-            actions = [ReplyAction("Records", "/records"), ReplyAction("Home", "/home")]
+            actions = [
+                ReplyAction("Open record", f"/record travel {record.id}"),
+                ReplyAction("Records", "/records"),
+                ReplyAction("Home", "/home"),
+            ]
             if self._calendar_proposals is not None:
-                actions.insert(0, ReplyAction("Add to calendar", f"/calendar_travel {record.id}"))
+                actions.insert(1, ReplyAction("Add to calendar", f"/calendar_travel {record.id}"))
             return PresentedReply(
                 "The travel details are saved with source-backed fields. "
                 "A Calendar event still needs its own review.",
                 tuple(actions),
                 title="Travel record saved",
                 icon="✈️",
+                reference=("record:travel", record.id) if record.id is not None else None,
             )
         self._repository.set_status(proposal_id, decision)
         if self._activity is not None:

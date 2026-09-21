@@ -992,3 +992,14 @@ batch.
 - Focused task scheduling coverage (including an explicit declined deadline
   review) and the full pytest regression suite passed at 100%. Live Telegram
   acceptance remains open.
+
+## Post-session automated delivery: travel-record receipt navigation
+
+- An approved Travel record now opens its exact provenance-backed record first,
+  retains the typed record reference for later Telegram replies, and still
+  offers its separate **Add to calendar** review action, Records, and Home.
+  No Calendar event is created by saving the record.
+- Focused travel-record/Calendar-navigation tests and a full pytest retry
+  passed at 100%. One initial full run encountered a transient Windows
+  subprocess SQLite-lock release race in `test_runtime`; its isolated rerun
+  passed before the successful complete retry.

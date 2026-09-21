@@ -1256,7 +1256,9 @@ def test_travel_record_preview_is_evidence_backed_and_does_not_persist(tmp_path:
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Travel record saved"
     assert "Calendar event still needs its own review" in accepted.text
-    assert accepted.actions[0].command == "/calendar_travel 1"
+    assert accepted.reference == ("record:travel", 1)
+    assert accepted.actions[0].command == "/record travel 1"
+    assert accepted.actions[1].command == "/calendar_travel 1"
     assert records.list_travel_records()[0].flight_number == "SQ638"
 
 
