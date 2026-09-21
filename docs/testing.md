@@ -889,3 +889,13 @@ batch.
 - The stored reference is opaque and chat-scoped. It adds navigation context
   only; it cannot authorize another move or expose a local filesystem path.
   Focused and full pytest regression verification passed at 100%.
+
+## Post-session automated delivery: Calendar task-link result navigation
+
+- Reviewed task-to-existing-Calendar-event link and unlink result cards now
+  retain the exact opaque Calendar event reference and include Home. A reply
+  to an older result card can therefore reopen the current provider event,
+  rather than using a newer event selected elsewhere in the chat.
+- The task/event relationship remains local-only. The result card neither
+  creates nor edits Google Calendar content; the reference is navigation state
+  only. Focused and full pytest regression verification passed at 100%.

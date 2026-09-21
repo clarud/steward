@@ -2466,6 +2466,10 @@ def test_telegram_can_review_and_save_a_local_existing_task_calendar_association
     accepted = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Task linked to Calendar"
+    assert accepted.reference == ("calendar", "existing-event")
+    assert [action.command for action in accepted.actions] == [
+        f"/task {task.id}", "/calendar_get existing-event", "/home",
+    ]
     assert links.associated_event_id_for_task(task.id or 0) == "existing-event"
     assert links.associated_task_id_for_event("existing-event") == task.id
     assert proposals.get(1).status == "accepted"
@@ -2495,6 +2499,10 @@ def test_telegram_can_review_and_save_a_local_existing_task_calendar_association
     removed = application.handle(make_event(text="/approve_action 2"))
     assert isinstance(removed, PresentedReply)
     assert removed.title == "Task unlinked from Calendar"
+    assert removed.reference == ("calendar", "existing-event")
+    assert [action.command for action in removed.actions] == [
+        f"/task {task.id}", "/calendar_get existing-event", "/home",
+    ]
     assert links.associated_event_id_for_task(task.id or 0) is None
     assert ActivityType.TASK_CALENDAR_UNLINKED in [item.event_type for item in activity.list_recent()]
     assert calls == calls_before_unlink

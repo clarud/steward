@@ -5981,6 +5981,7 @@ class StewardActionProposalApplication:
                 "The task and Calendar event remain separate. Google Calendar was not changed.",
                 (ReplyAction("Pending", "/pending"), ReplyAction("Home", "/home")),
                 title="Task link declined", icon="↩️",
+                reference=("calendar", str(proposal.payload["event_id"])),
             )
         if self._tasks is None or self._calendar_links is None or self._calendar_reader_factory is None:
             return "Existing task-to-Calendar associations are not configured for this Steward process."
@@ -6008,8 +6009,13 @@ class StewardActionProposalApplication:
         result = "The existing local relationship was already present." if not created else "The local task-to-Calendar relationship was saved."
         return PresentedReply(
             f"{result}\n\nGoogle Calendar was not changed.",
-            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+            (
+                ReplyAction("Open task", f"/task {task_id}"),
+                ReplyAction("Open event", f"/calendar_get {event_id}"),
+                ReplyAction("Home", "/home"),
+            ),
             title="Task linked to Calendar", icon="📅",
+            reference=("calendar", event_id),
         )
 
     def _review_task_calendar_unlink(
@@ -6034,8 +6040,13 @@ class StewardActionProposalApplication:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
             return PresentedReply(
                 "The local task-to-Calendar relationship remains. Google Calendar was not changed.",
-                (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+                (
+                    ReplyAction("Open task", f"/task {task_id}"),
+                    ReplyAction("Open event", f"/calendar_get {event_id}"),
+                    ReplyAction("Home", "/home"),
+                ),
                 title="Calendar link kept", icon="↩️",
+                reference=("calendar", event_id),
             )
         if self._calendar_links is None:
             return "Existing task-to-Calendar associations are not configured on this Steward process."
@@ -6054,8 +6065,13 @@ class StewardActionProposalApplication:
         result = "The local task-to-Calendar relationship was removed." if removed else "The local relationship was already absent."
         return PresentedReply(
             f"{result}\n\nGoogle Calendar was not changed.",
-            (ReplyAction("Open task", f"/task {task_id}"), ReplyAction("Open event", f"/calendar_get {event_id}")),
+            (
+                ReplyAction("Open task", f"/task {task_id}"),
+                ReplyAction("Open event", f"/calendar_get {event_id}"),
+                ReplyAction("Home", "/home"),
+            ),
             title="Task unlinked from Calendar", icon="📅",
+            reference=("calendar", event_id),
         )
 
     def _review_task(self, proposal_id: int, decision: str) -> str | PresentedReply:
