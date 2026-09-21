@@ -850,3 +850,11 @@ batch.
 - The existing exact-task completion card now also offers Home, alongside the
   completed-task list and exact completed task. Focused restart/reference
   coverage and the full pytest regression suite passed at 100%.
+
+## Post-session automated delivery: knowledge-conflict navigation
+
+- Knowledge conflict review cards retain their explicit keep/disputed/revision
+  choices and evidence/source actions, and now include Home. Resolved conflict
+  cards also offer Home after the concept/evidence next actions.
+- Focused conflict evidence and resolution coverage and the full pytest
+  regression suite passed at 100%.

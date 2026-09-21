@@ -1533,9 +1533,11 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     assert recorded.title == "Knowledge conflict recorded"
     assert [action.label for action in recorded.actions] == [
         "Keep claim", "Mark disputed", "Needs revision", "Show evidence", "Open source",
+        "Home",
     ]
-    assert recorded.actions[-2].command == f"/source_content {source.id} 1"
-    assert recorded.actions[-1].command == f"/source {source.id}"
+    assert recorded.actions[-3].command == f"/source_content {source.id} 1"
+    assert recorded.actions[-2].command == f"/source {source.id}"
+    assert recorded.actions[-1].command == "/home"
     assert knowledge.get_claim(claim.id or 0) == claim
     concept_card = application.handle(make_event(text="/knowledge TLB"))
     assert isinstance(concept_card, PresentedReply)
@@ -1545,6 +1547,7 @@ def test_telegram_conflict_review_shows_claim_evidence_and_preserves_the_claim(t
     assert isinstance(resolved, PresentedReply)
     assert resolved.title == "Conflict resolved"
     assert "visibly disputed" in resolved.text
+    assert any(action.command == "/home" for action in resolved.actions)
     assert knowledge.get_claim(claim.id or 0) == claim
     concept_card = application.handle(make_event(text="/knowledge TLB"))
     assert "Conflict status: unresolved" not in concept_card.text

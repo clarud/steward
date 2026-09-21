@@ -3661,6 +3661,7 @@ class StewardKnowledgeApplication:
                     actions.insert(0, suggestion)
             if claim is not None:
                 actions.append(ReplyAction("View concept", f"/concept {claim.concept_id}"))
+            actions.append(ReplyAction("Home", "/home"))
             return PresentedReply(
                 descriptions[proposal.conflict_resolution],
                 tuple(actions),
@@ -3857,7 +3858,7 @@ class StewardKnowledgeApplication:
             ReplyAction("Keep claim", f"/resolve_knowledge_conflict {proposal.id} keep_existing"),
             ReplyAction("Mark disputed", f"/resolve_knowledge_conflict {proposal.id} disputed"),
             ReplyAction("Needs revision", f"/resolve_knowledge_conflict {proposal.id} needs_revision"),
-        ) + self._evidence_source_action(proposal)
+        ) + self._evidence_source_action(proposal) + (ReplyAction("Home", "/home"),)
 
     def _claim_revision_suggestion_action(
         self, proposal: StoredKnowledgeEnrichmentProposal,
