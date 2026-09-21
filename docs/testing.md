@@ -1032,3 +1032,10 @@ batch.
   returns safely to that record.
 - The original source is never modified. Focused Travel record/reference tests
   and the full pytest regression suite passed at 100%.
+
+## Post-session automated delivery: rejected-record source navigation
+
+- Declined Travel, receipt, warranty, and hotel record reviews now provide a
+  source/Home receipt with the exact source preserved for later Telegram
+  follow-up. A declined review creates no record and never changes the source.
+- Focused record coverage and the full pytest regression suite passed at 100%.

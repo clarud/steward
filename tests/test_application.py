@@ -3260,7 +3260,11 @@ def test_telegram_warranty_preview_can_be_rejected_without_persisting(tmp_path: 
     )
 
     assert isinstance(application.handle(make_event(text="/propose_warranty_record 1")), PresentedReply)
-    assert application.handle(make_event(text="/reject_action 1")) == "Warranty proposal 1 rejected."
+    declined = application.handle(make_event(text="/reject_action 1"))
+    assert isinstance(declined, PresentedReply)
+    assert declined.title == "Warranty record declined"
+    assert declined.reference == ("source", source.id)
+    assert [action.command for action in declined.actions] == [f"/source {source.id}", "/home"]
     assert records.list_warranty_records() == []
 
 

@@ -6717,9 +6717,13 @@ class StewardActionProposalApplication:
             self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
         return PresentedReply(
             "The travel record was not created.",
-            (ReplyAction("Home", "/home"),),
+            (
+                ReplyAction("Open source", f"/source {proposal.payload['source_id']}"),
+                ReplyAction("Home", "/home"),
+            ),
             title="Travel record declined",
             icon="↩️",
+            reference=("source", int(proposal.payload["source_id"])),
         )
 
     def _review_travel_reference(self, proposal_id: int, decision: str) -> str | PresentedReply:
@@ -6796,7 +6800,14 @@ class StewardActionProposalApplication:
             self._repository.set_status(proposal_id, decision)
             if self._activity is not None:
                 self._activity.record(ActivityType.ACTION_REJECTED, object_id=str(proposal_id), details=proposal.action_type)
-            return f"{label.title()} proposal {proposal.id} rejected."
+            source_id = int(proposal.payload["source_id"])
+            return PresentedReply(
+                f"The {label} record was not created.",
+                (ReplyAction("Open source", f"/source {source_id}"), ReplyAction("Home", "/home")),
+                title=f"{label.title()} record declined",
+                icon="↩️",
+                reference=("source", source_id),
+            )
         source_id = int(proposal.payload["source_id"])
         fragments = [(item.id or 0, item.text) for item in self._fragments.list_for_source(source_id)]
         extracted = (
