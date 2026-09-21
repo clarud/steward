@@ -3275,7 +3275,10 @@ def test_telegram_research_is_ephemeral_until_the_user_explicitly_retains_it(tmp
     assert "ephemeral, not saved" in preview.text
     assert SourceRepository(database).list_all() == []
     retained = application.handle(make_event(text="/research_retain What is a TLB?"))
-    assert "Retained external research note" in retained
+    assert isinstance(retained, PresentedReply)
+    assert "Retained reviewed external research note" in retained.text
+    assert retained.reference == ("source", 1)
+    assert [action.command for action in retained.actions] == ["/source_content 1", "/source 1", "/inbox", "/home"]
     assert len(SourceRepository(database).list_all()) == 1
 
 
@@ -3303,7 +3306,8 @@ def test_telegram_research_card_retains_the_exact_reviewed_bundle_once(tmp_path:
     retained = application.handle(make_event(text=token_command))
 
     assert provider.calls == 1
-    assert "Retained the reviewed external research note" in retained
+    assert isinstance(retained, PresentedReply)
+    assert "Retained reviewed external research note" in retained.text
     note = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
     assert "answer version 1" in note
     assert application.handle(make_event(text=token_command)) == (
@@ -3331,7 +3335,8 @@ def test_telegram_research_retention_card_survives_a_local_restart(tmp_path: Pat
     )
     retained = restarted.handle_command(make_event(text=token_command))
 
-    assert "Retained the reviewed external research note" in retained
+    assert isinstance(retained, PresentedReply)
+    assert "Retained reviewed external research note" in retained.text
     assert "Reviewed answer" in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
 
 
@@ -3368,7 +3373,9 @@ def test_telegram_can_explicitly_retain_the_referenced_research_card_after_resta
     )
     retained = restarted.handle(make_event(text="keep that research"))
 
-    assert "Retained the reviewed external research note" in retained
+    assert isinstance(retained, PresentedReply)
+    assert "Retained reviewed external research note" in retained.text
+    assert retained.reference == ("source", 1)
     assert provider.calls == 1
     assert "The reviewed answer." in SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
     assert restarted.handle(make_event(text="keep that research")) == (
@@ -3431,10 +3438,13 @@ def test_telegram_research_card_can_retain_one_selected_source_without_the_full_
     assert "/research_retain_source_token " in source_command
     retained = application.handle(make_event(text=source_command))
     content = SourceRepository(database).list_all()[0].path.read_text(encoding="utf-8")
-    assert "Retained selected external source" in retained
+    assert isinstance(retained, PresentedReply)
+    assert "Retained selected external source" in retained.text
     assert "Kernel docs" in content and "https://example.com/tlb" in content
     assert "complete answer is not" not in content
-    assert "Already retained selected external source" in application.handle(make_event(text=source_command))
+    duplicate = application.handle(make_event(text=source_command))
+    assert isinstance(duplicate, PresentedReply)
+    assert "Already retained selected external source" in duplicate.text
 
 
 def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(tmp_path: Path) -> None:

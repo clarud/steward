@@ -899,3 +899,13 @@ batch.
 - The task/event relationship remains local-only. The result card neither
   creates nor edits Google Calendar content; the reference is navigation state
   only. Focused and full pytest regression verification passed at 100%.
+
+## Post-session automated delivery: retained-research navigation
+
+- Retaining an explicitly reviewed research note or one selected research
+  source now produces a source card with **Read content**, **Source details**,
+  **Inbox**, and **Home**. The card identifies the exact retained Inbox source
+  and persists a chat-scoped source reference for later replies.
+- Retention remains explicit and does not rerun research. A duplicate request
+  reopens the existing source rather than saving another copy. Focused and full
+  pytest regression verification passed at 100%.
