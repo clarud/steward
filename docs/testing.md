@@ -868,3 +868,14 @@ batch.
 - Focused root-navigation coverage verifies the card, its safe Home action,
   and that no local path is disclosed. The full pytest regression suite passed
   at 100%.
+
+## Post-session automated delivery: organization-decision next actions
+
+- Accepting or declining an organization proposal now returns a compact result
+  card rather than ending on a plain sentence. The card opens the exact source,
+  then its selected workspace after a move or Inbox after a keep/decline;
+  Home is always available.
+- This is navigation after the existing reviewed decision. It does not change
+  the proposal's LangGraph approval, move policy, workspace selection, or
+  original-file preservation guarantees. Focused and full pytest regression
+  verification passed at 100%.

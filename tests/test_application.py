@@ -4606,7 +4606,10 @@ def test_telegram_capture_pauses_then_resumes_an_organization_approval(tmp_path:
         )
     )
 
-    assert accepted == "Moved the source to Steward."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Source organized"
+    assert accepted.text == "Moved the source to Steward."
+    assert [action.command for action in accepted.actions] == ["/source 1", "/workspace 1", "/home"]
     assert (tmp_path / "vault" / "projects" / "Steward" / "telegram-100-11-Steward-notes.md").is_file()
     assert proposals.get(1).status == "accepted"
 
@@ -4683,7 +4686,10 @@ def test_telegram_attachment_intake_to_organization_is_a_reviewed_end_to_end_flo
 
     accepted = application.handle(make_event(text="/organization_accept 1"))
 
-    assert accepted == "Moved telegram-100-901-lecture-notes.md to CS3210."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Source organized"
+    assert accepted.text == "Moved telegram-100-901-lecture-notes.md to CS3210."
+    assert [action.command for action in accepted.actions] == ["/source 1", "/workspace 1", "/home"]
     assert not source.path.exists()
     assert (tmp_path / "vault" / "projects" / "CS3210" / source.path.name).is_file()
     assert proposals.get(1).status == "accepted"
@@ -4723,7 +4729,10 @@ def test_telegram_organization_approval_survives_a_process_restart(tmp_path: Pat
     accepted = restarted.handle_decision(make_event(text="/organization_accept 1"))
     restarted_connection.close()
 
-    assert accepted == "Moved Steward-design.md to Steward."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Source organized"
+    assert accepted.text == "Moved Steward-design.md to Steward."
+    assert [action.command for action in accepted.actions] == ["/source 1", "/workspace 1", "/home"]
     assert proposals.get(1).status == "accepted"
     assert (tmp_path / "vault" / "projects" / "Steward" / "Steward-design.md").is_file()
 
@@ -4866,7 +4875,8 @@ def test_uncertain_capture_can_be_refined_with_existing_workspace_context(tmp_pa
     assert "Your context: CS3210 lecture notes" in revised.text
     assert proposals.get(1).status == "rejected"
     accepted = app.handle_decision(make_event(text="/organization_accept 2"))
-    assert accepted == "Moved unrelated.md to CS3210."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.text == "Moved unrelated.md to CS3210."
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
 
 
@@ -4941,7 +4951,9 @@ def test_uncertain_capture_can_propose_a_new_workspace_then_move_after_review(tm
     assert isinstance(revised, PresentedReply)
     assert proposals.get(2).workspace_name == "Distributed Systems"
     assert WorkspaceRepository(database).list_all() == []
-    assert app.handle_decision(make_event(text="/organization_accept 2")) == "Moved distributed-systems.md to Distributed Systems."
+    accepted = app.handle_decision(make_event(text="/organization_accept 2"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.text == "Moved distributed-systems.md to Distributed Systems."
     restarted_connection.close()
     assert [workspace.name for workspace in WorkspaceRepository(database).list_all()] == ["Distributed Systems"]
     assert (tmp_path / "vault" / "projects" / "Distributed Systems" / "distributed-systems.md").is_file()
@@ -5023,7 +5035,11 @@ def test_telegram_organization_can_replace_a_move_with_an_accepted_inbox_outcome
     assert proposals.get(2).proposal_type == "keep_in_inbox"
     assert source_path.is_file()
 
-    assert application.handle_decision(make_event(text="/organization_accept 2")) == "Kept cs3210-notes.md in Inbox."
+    kept = application.handle_decision(make_event(text="/organization_accept 2"))
+    assert isinstance(kept, PresentedReply)
+    assert kept.title == "Kept in Inbox"
+    assert kept.text == "Kept cs3210-notes.md in Inbox. No file was moved."
+    assert [action.command for action in kept.actions] == ["/source 1", "/inbox", "/home"]
     assert source_path.is_file()
     assert proposals.get(2).status == "accepted"
 
@@ -5060,7 +5076,9 @@ def test_context_revised_organization_proposal_survives_a_restart(tmp_path: Path
 
     revised = restarted.handle_followup(make_event(text="CS3210"))
     assert isinstance(revised, PresentedReply)
-    assert restarted.handle_decision(make_event(text="/organization_accept 2")) == "Moved unrelated.md to CS3210."
+    accepted = restarted.handle_decision(make_event(text="/organization_accept 2"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.text == "Moved unrelated.md to CS3210."
     restarted_connection.close()
     assert (tmp_path / "vault" / "projects" / "CS3210" / "unrelated.md").is_file()
 

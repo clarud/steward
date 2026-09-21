@@ -5307,7 +5307,7 @@ class StewardOrganizationApprovalApplication:
             title=f"Organize {filename}", icon="📁",
         )
 
-    def handle_decision(self, event: IncomingEvent) -> str | None:
+    def handle_decision(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Resume exactly this chat's paused graph for an explicit decision."""
 
         if (event.text or "").strip().partition(" ")[0].partition("@")[0] == "/organization_proposals":
@@ -5438,16 +5438,41 @@ class StewardOrganizationApprovalApplication:
         source = self._sources.get_by_id(proposal.source_id) if self._sources is not None else None
         filename = source.path.name if source is not None else "the source"
         if decision == "rejected":
-            return f"Did not organize {filename}."
+            return PresentedReply(
+                f"Did not organize {filename}. The original remains where it was.",
+                self._organization_result_actions(proposal.source_id, inbox=True),
+                title="Organization declined", icon="↩️",
+            )
         if proposal.suggested_path is None:
-            return f"Kept {filename} in Inbox."
+            return PresentedReply(
+                f"Kept {filename} in Inbox. No file was moved.",
+                self._organization_result_actions(proposal.source_id, inbox=True),
+                title="Kept in Inbox", icon="📥",
+            )
         workspace = next(
             (item for item in self._workspaces.list_all() if item.id == proposal.workspace_id), None
         )
         target = proposal.workspace_name or (
             workspace.name if workspace is not None else "the selected destination"
         )
-        return f"Moved {filename} to {target}."
+        actions = list(self._organization_result_actions(proposal.source_id))
+        if workspace is not None and workspace.id is not None:
+            actions.insert(1, ReplyAction("Open workspace", f"/workspace {workspace.id}"))
+        return PresentedReply(
+            f"Moved {filename} to {target}.",
+            tuple(actions),
+            title="Source organized", icon="📁",
+        )
+
+    @staticmethod
+    def _organization_result_actions(source_id: int, *, inbox: bool = False) -> tuple[ReplyAction, ...]:
+        """Offer bounded navigation after a completed organization decision."""
+
+        actions = [ReplyAction("Open source", f"/source {source_id}")]
+        if inbox:
+            actions.append(ReplyAction("Inbox", "/inbox"))
+        actions.append(ReplyAction("Home", "/home"))
+        return tuple(actions)
 
     def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Use the next ordinary message as a requested workspace correction.
