@@ -54,10 +54,17 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 pytest
-steward scan path\to\your\vault
+steward onboard-root "School Notes" "C:\Users\you\Documents\School Notes"
 ```
 
 Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
+
+`onboard-root` is the recommended first-run path for an existing directory: it
+locally authorizes that one directory and scans supported files where they
+already live. It never moves, copies, renames, or rewrites originals. Add a
+repeatable exclusion when needed, for example `--exclude generated`. The same
+command can be safely re-run for the same root; later refresh it with
+`steward scan-root "School Notes"`.
 
 ## Check local runtime health
 

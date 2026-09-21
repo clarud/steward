@@ -258,6 +258,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude", action="append", type=Path, default=[],
         help="Root-relative directory to exclude (repeatable)",
     )
+    root_onboard = subcommands.add_parser(
+        "onboard-root",
+        help="Locally authorize and scan an existing directory in one step",
+    )
+    root_onboard.add_argument("name", help="Human-readable name for this local source root")
+    root_onboard.add_argument("path", type=Path, help="Existing directory to authorize and scan in place")
+    root_onboard.add_argument(
+        "--exclude", action="append", type=Path, default=[],
+        help="Root-relative directory to exclude from this root (repeatable)",
+    )
     root_relocate = subcommands.add_parser("relocate-root", help="Rebind a missing root after verifying tracked source hashes")
     root_relocate.add_argument("name", help="Existing authorized source-root name")
     root_relocate.add_argument("path", type=Path, help="Existing replacement directory")
@@ -902,6 +912,49 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"Scan complete for {root.name}: "
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
+        )
+        return
+
+    if arguments.command == "onboard-root":
+        database_path = settings.data_dir / "steward.db"
+        try:
+            initialize_database(database_path)
+            roots = SourceRootRepository(database_path)
+            existing = roots.get_by_name(arguments.name)
+            requested_path = arguments.path.resolve()
+            if existing is not None:
+                if existing.path != requested_path:
+                    print(f"A source root named {existing.name!r} already exists at a different path. No state was changed.")
+                    return
+                if tuple(arguments.exclude) and existing.exclusions != tuple(arguments.exclude):
+                    print(f"Source root {existing.name!r} already exists with different exclusions. Use its existing configuration or create a differently named root.")
+                    return
+                root = existing
+                onboarding = "Existing authorization reused"
+            else:
+                root = roots.add(arguments.name, requested_path, exclusions=tuple(arguments.exclude))
+                onboarding = "Authorized"
+            if not root.enabled:
+                print(f"Source root {root.name!r} is disabled. Enable it locally before scanning.")
+                return
+            if not root.path.is_dir():
+                print(f"Source root {root.name!r} is unavailable: {root.path}")
+                return
+            result = SourceService(
+                source_repository=SourceRepository(database_path),
+                fragment_repository=SourceFragmentRepository(database_path),
+                markdown_extractor=MarkdownExtractor(),
+            ).scan_source_root(root.path, exclusions=root.exclusions)
+        except (sqlite3.Error, ValueError) as error:
+            if isinstance(error, sqlite3.Error):
+                _print_scan_database_error("Onboarding scan", error)
+            else:
+                print(f"Root onboarding was not completed: {error}")
+            return
+        print(
+            f"{onboarding} source root {root.name!r} and scanned it in place: "
+            f"new={result.new} updated={result.updated} unchanged={result.unchanged} missing={result.missing}\n"
+            "Original files were not moved, copied, or rewritten."
         )
         return
 

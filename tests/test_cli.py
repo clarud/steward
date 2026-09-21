@@ -271,6 +271,29 @@ def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, mo
     assert sources.get_by_path((generated / "output.md").resolve()) is None
 
 
+def test_cli_onboard_root_authorizes_and_scans_an_existing_directory_in_place(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "existing-notes"; vault.mkdir()
+    note = vault / "note.md"; note.write_text("# Existing note", encoding="utf-8")
+    generated = vault / "generated"; generated.mkdir()
+    (generated / "output.md").write_text("# Generated", encoding="utf-8")
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+
+    main(["onboard-root", "Existing Notes", str(vault), "--exclude", "generated"])
+
+    output = capsys.readouterr().out
+    assert "Authorized source root 'Existing Notes' and scanned it in place: new=1" in output
+    assert "Original files were not moved, copied, or rewritten." in output
+    root = SourceRootRepository(data_dir / "steward.db").get_by_name("Existing Notes")
+    assert root is not None and root.path == vault.resolve() and root.exclusions == (Path("generated"),)
+    sources = SourceRepository(data_dir / "steward.db")
+    assert sources.get_by_path(note.resolve()) is not None
+    assert sources.get_by_path((generated / "output.md").resolve()) is None
+
+    main(["onboard-root", "Existing Notes", str(vault), "--exclude", "generated"])
+
+    assert "Existing authorization reused" in capsys.readouterr().out
+
+
 def test_cli_can_disable_a_root_before_scan(tmp_path: Path, monkeypatch, capsys) -> None:
     vault = tmp_path / "vault"; vault.mkdir()
     data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))

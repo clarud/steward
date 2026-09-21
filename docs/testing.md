@@ -813,3 +813,15 @@ batch.
   inferred or created from a hotel reservation.
 - Focused Telegram, record, and read-only tool coverage passed, followed by
   the full pytest regression suite at 100%.
+
+## Post-session automated delivery: existing-directory onboarding
+
+- `steward onboard-root NAME PATH` now combines the existing local-only root
+  authorization and in-place scan into a single first-run command. Optional
+  root-relative exclusions are preserved, and a repeat invocation with the
+  same configuration reuses the authorization instead of duplicating it.
+- The command refuses conflicting names/configurations, never gives Telegram
+  filesystem browsing ability, and never moves, copies, renames, or rewrites
+  the chosen directory's originals. Focused CLI coverage verifies indexing,
+  exclusion handling, and safe repeat onboarding, followed by the full pytest
+  regression suite at 100%.
