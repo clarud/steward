@@ -4298,11 +4298,18 @@ class StewardPrivacyApplication:
                 object_id=str(proposal.id),
                 details=proposal.action_type,
             )
+        if self._contexts is not None:
+            self._contexts.set(event.platform, event.chat_id, "source", source_id)
         return PresentedReply(
             text,
-            (ReplyAction("Home", "/home"),),
+            (
+                ReplyAction("Open source", f"/source {source_id}"),
+                ReplyAction("Privacy options", f"/privacy_options {source_id}"),
+                ReplyAction("Home", "/home"),
+            ),
             title=title,
             icon=icon,
+            reference=("source", source_id),
         )
 
 

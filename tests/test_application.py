@@ -1974,6 +1974,10 @@ def test_telegram_privacy_change_is_reviewed_before_it_changes_model_access(tmp_
 
     assert isinstance(accepted, PresentedReply)
     assert accepted.title == "Privacy rule applied"
+    assert accepted.reference == ("source", source.id)
+    assert [action.command for action in accepted.actions] == [
+        f"/source {source.id}", f"/privacy_options {source.id}", "/home",
+    ]
     assert privacy.rule_for(source.id or 0) is PrivacyRule.NO_MODEL
     assert proposals.get(1).status == "accepted"
     repeated = application.handle(make_event(text="/approve_action 1"))

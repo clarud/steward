@@ -909,3 +909,13 @@ batch.
 - Retention remains explicit and does not rerun research. A duplicate request
   reopens the existing source rather than saving another copy. Focused and full
   pytest regression verification passed at 100%.
+
+## Post-session automated delivery: privacy-review result navigation
+
+- Applied or declined source-privacy reviews now return to the exact source
+  with **Open source**, **Privacy options**, and **Home** actions. The card
+  persists only the opaque, chat-scoped source reference, allowing ordinary
+  source follow-ups after a restart without exposing a local path.
+- A fresh privacy option still creates a separate review; this result card does
+  not silently change the rule again. Focused and full regression verification
+  passed at 100%.
