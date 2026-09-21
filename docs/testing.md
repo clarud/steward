@@ -825,3 +825,13 @@ batch.
   the chosen directory's originals. Focused CLI coverage verifies indexing,
   exclusion handling, and safe repeat onboarding, followed by the full pytest
   regression suite at 100%.
+
+## Post-session automated delivery: record-save next actions
+
+- After accepting a receipt, warranty, or existing Hotel Reservation review,
+  Telegram now returns a compact saved-record card rather than an opaque ID in
+  plain text. The card opens that exact record, its authoritative source, the
+  record list, or Home.
+- This is navigation only: it does not create a Calendar event, alter the
+  original, or make a record correction. Focused approval coverage and the
+  full pytest regression suite passed at 100%.

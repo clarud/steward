@@ -6657,7 +6657,19 @@ class StewardActionProposalApplication:
             )
         except ValueError as error:
             return str(error)
-        return f"{label.title()} record {record.id} created from source {source_id}."
+        return PresentedReply(
+            "The record is saved locally with its reviewed source-backed fields. "
+            "Open it to inspect the current values and provenance; no Calendar event was created.",
+            (
+                ReplyAction("Open record", f"/record {label} {record.id}"),
+                ReplyAction("Open source", f"/source {source_id}"),
+                ReplyAction("All records", "/records"),
+                ReplyAction("Home", "/home"),
+            ),
+            title=f"{label.title()} record saved",
+            icon="📎",
+            reference=(f"record:{label}", record.id),
+        )
 
     def _review_record_correction(self, proposal_id: int, decision: str) -> str:
         if self._records is None:

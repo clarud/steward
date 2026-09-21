@@ -1282,7 +1282,10 @@ def test_telegram_hotel_record_is_reviewed_before_persistence(tmp_path: Path) ->
 
     accepted = application.handle(make_event(text="/approve_action 1"))
 
-    assert accepted == "Hotel record 1 created from source 1."
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Hotel record saved"
+    assert accepted.reference == ("record:hotel", 1)
+    assert accepted.actions[0].command == "/record hotel 1"
     assert records.list_hotel_reservation_records()[0].booking_reference == "H-42"
     detail = application.handle(make_event(text="/record hotel 1"))
     assert isinstance(detail, PresentedReply)
@@ -3118,7 +3121,10 @@ def test_telegram_receipt_preview_and_approval_preserve_fragment_evidence(tmp_pa
     assert "Campus Cafe" in preview.text and "fragment 1" in preview.text
     assert any(action.command == "/source_content 1 1" for action in preview.actions)
     assert records.list_receipt_records() == []
-    assert application.handle(make_event(text="/approve_action 1")) == "Receipt record 1 created from source 1."
+    accepted = application.handle(make_event(text="/approve_action 1"))
+    assert isinstance(accepted, PresentedReply)
+    assert accepted.title == "Receipt record saved"
+    assert accepted.actions[0].command == "/record receipt 1"
     assert records.list_receipt_records()[0].merchant == "Campus Cafe"
 
 
