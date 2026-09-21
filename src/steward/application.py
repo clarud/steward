@@ -3355,7 +3355,11 @@ class StewardCuratedNoteApplication:
                 ReplyAction("Save note", f"/approve_action {proposal.id}"),
                 ReplyAction("Edit", f"/curate_edit {proposal.id}"),
                 ReplyAction("Discard", f"/reject_action {proposal.id}"),
+                ReplyAction("Home", "/home"),
             ),
+            title="Curated note ready",
+            icon="🧠",
+            reference=("action", proposal.id or 0),
         )
 
     def _synthesize_reply(
@@ -6623,11 +6627,20 @@ class StewardActionProposalApplication:
         if self._activity is not None:
             self._activity.record(ActivityType.ACTION_ACCEPTED, object_id=str(proposal_id), details=proposal.action_type)
         state = "already exists in Inbox" if result.duplicate else "was saved to Inbox"
+        source_id = result.source.id
+        actions: list[ReplyAction] = [ReplyAction("Inbox", "/inbox")]
+        if source_id is not None:
+            actions[0:0] = [
+                ReplyAction("Read note", f"/source_content {source_id}"),
+                ReplyAction("Source details", f"/source {source_id}"),
+            ]
+        actions.append(ReplyAction("Home", "/home"))
         return PresentedReply(
             f"The curated note {state}.",
-            (ReplyAction("Inbox", "/inbox"), ReplyAction("Home", "/home")),
+            tuple(actions),
             title="Curated note saved",
             icon="🧠",
+            reference=("source", source_id) if source_id is not None else None,
         )
 
     def _review_workspace_link(

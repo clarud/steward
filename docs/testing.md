@@ -958,3 +958,15 @@ batch.
   to it can restore that exact workspace rather than relying on a list position.
 - Focused workspace-review coverage and the full pytest regression suite passed
   at 100%. Live Telegram acceptance remains open.
+
+## Post-session automated delivery: curated-note review navigation
+
+- A staged curated note now has a titled, durable review card with **Save
+  note**, **Edit**, **Discard**, and **Home**. Its opaque action reference lets
+  a reply to that exact card select the intended review after later navigation
+  or an adapter restart.
+- Once approved, the receipt links to the exact saved Inbox source through
+  **Read note** and **Source details**, then offers Inbox and Home. This is
+  navigation only: the note is still saved solely by its explicit approval.
+- Focused curated-note coverage and the full pytest regression suite passed at
+  100%. Live Telegram acceptance remains open.

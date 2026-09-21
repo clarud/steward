@@ -3471,11 +3471,18 @@ def test_telegram_curated_note_requires_review_before_becoming_an_inbox_source(t
     preview = application.handle(make_event(text="/propose_note A TLB caches recent address translations."))
 
     assert isinstance(preview, PresentedReply)
+    assert preview.title == "Curated note ready"
+    assert preview.reference == ("action", 1)
+    assert [action.label for action in preview.actions] == ["Save note", "Edit", "Discard", "Home"]
     assert SourceRepository(database).list_all() == []
     saved = application.handle(make_event(text="/approve_action 1"))
     assert isinstance(saved, PresentedReply)
     assert saved.title == "Curated note saved"
-    assert len(SourceRepository(database).list_all()) == 1
+    source = SourceRepository(database).list_all()[0]
+    assert saved.reference == ("source", source.id)
+    assert [action.command for action in saved.actions] == [
+        f"/source_content {source.id}", f"/source {source.id}", "/inbox", "/home",
+    ]
 
 
 def test_telegram_can_stage_a_replied_to_discussion_as_a_curated_note(tmp_path: Path) -> None:
