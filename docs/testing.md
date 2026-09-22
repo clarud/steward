@@ -1047,3 +1047,18 @@ batch.
   neither outcome moves the original file.
 - Focused workspace-link coverage and the full pytest regression suite passed
   at 100%.
+
+## Post-session acceptance finding: intake context and pending workspace links
+
+- Live Telegram acceptance on 23 September 2026 found two routing defects:
+  an explicit second `note:` was consumed as context for an older staged note,
+  and replying **show that workspace** to a pending workspace-link review did
+  not open the workspace named by that review.
+- Both are corrected. Explicit capture prefixes now start a separate staged
+  intake instead of being treated as pending context. Pending workspace-link
+  cards remain safely bound to their exact action for approval/rejection, but
+  their narrow workspace-navigation phrases now resolve to the workspace in
+  that same proposal.
+- Focused regressions and the complete pytest suite passed at 100%. The two
+  corrected paths require a short live Telegram retest before this acceptance
+  item is closed.

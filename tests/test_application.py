@@ -3756,6 +3756,28 @@ def test_telegram_workspace_link_is_reviewed_and_never_moves_the_source(tmp_path
     assert workspaces.list_source_ids(2) == ()
 
 
+def test_pending_workspace_link_card_can_open_its_exact_workspace(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    source_path = tmp_path / "note.md"; source_path.write_text("# Note", encoding="utf-8")
+    sources = SourceRepository(database)
+    sources.add(Source(None, source_path, "a" * 64, SourceType.MARKDOWN, 6, now, now, now))
+    activity = ActivityService(database); workspaces = WorkspaceRepository(database)
+    workspace = WorkspaceService(workspaces, activity).create("CS3210")
+    proposals = ActionProposalRepository(database); contexts = ReviewContextRepository(database)
+    links = StewardWorkspaceLinkApplication(proposals, workspaces, sources, activity)
+    preview = links.handle_command(make_event(text=f"/propose_link_source {workspace.id} 1"))
+    assert isinstance(preview, PresentedReply)
+    contexts.set("telegram", "100", "action", 1)
+    actions = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, workspaces, activity),
+        workspace_repository=workspaces, source_repository=sources, contexts=contexts,
+    )
+
+    assert actions.workspace_link_followup_command(make_event(text="show that workspace")) == f"/workspace {workspace.id}"
+    assert actions.workspace_link_followup_command(make_event(text="yes")) is None
+
+
 def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)
@@ -4266,6 +4288,43 @@ def test_provisional_intake_collects_context_from_an_ordinary_followup(tmp_path:
     assert isinstance(revised, PresentedReply)
     assert "CS3210 OpenMP assignment" in revised.text
     assert sources.list_all() == []
+
+
+def test_explicit_second_note_is_not_consumed_as_context_for_an_older_intake(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    activity = ActivityService(database_path)
+    capture_service = InboxCaptureService(
+        tmp_path / "vault" / "inbox", SourceRepository(database_path), activity_service=activity
+    )
+    service = ProvisionalIntakeService(
+        tmp_path / ".steward" / "cache" / "intake", ProvisionalIntakeRepository(database_path),
+        capture_service, activity, PrivacyService(database_path),
+    )
+    provisional = StewardProvisionalIntakeApplication(
+        service, contexts=ReviewContextRepository(database_path),
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(capture_service),
+        provisional_intake_application=provisional,
+    )
+
+    first = application.handle(replace(make_event(text="note: First CS3210 test item"), message_id="41"))
+    prompt = application.handle(replace(make_event(text="/intake_context 1"), message_id="42"))
+    second = application.handle(replace(make_event(text="note: Second CS4226 test item"), id="telegram:43", message_id="43"))
+    revised = application.handle(replace(make_event(text="This belongs to CS3210 parallel computing"), id="telegram:44", message_id="44"))
+
+    assert isinstance(first, PresentedReply)
+    assert isinstance(prompt, PresentedReply) and prompt.title == "Add context"
+    assert isinstance(second, PresentedReply)
+    assert second.reference == ("intake", 2)
+    assert isinstance(revised, PresentedReply)
+    assert revised.reference == ("intake", 1)
+    assert "CS3210 parallel computing" in revised.text
+    intakes = ProvisionalIntakeRepository(database_path).list_all()
+    assert len(intakes) == 2
+    assert "CS3210 parallel computing" in intakes[0].summary
+    assert "CS3210 parallel computing" not in intakes[1].summary
 
 
 def test_provisional_intake_context_followup_survives_a_restart(tmp_path: Path) -> None:

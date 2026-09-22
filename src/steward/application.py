@@ -5031,6 +5031,11 @@ class StewardProvisionalIntakeApplication:
 
         if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
             return None
+        # An explicit capture prefix is stronger evidence of a new item than a
+        # previously displayed "Add context" prompt. A user can therefore
+        # stage another note before replying to an older prompt.
+        if self.should_propose_text(event):
+            return None
         context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != "intake_context":
             return None
@@ -5770,6 +5775,7 @@ class StewardActionProposalApplication:
         knowledge_service: KnowledgeService | None = None,
         calendar_reader_factory: Callable[[], CalendarService] | None = None,
         calendar_links: CalendarLinkRepository | None = None,
+        contexts: ReviewContextRepository | None = None,
     ) -> None:
         self._repository = repository
         self._service = service
@@ -5789,6 +5795,37 @@ class StewardActionProposalApplication:
         self._knowledge = knowledge_service
         self._calendar_reader_factory = calendar_reader_factory
         self._calendar_links = calendar_links
+        self._contexts = contexts
+
+    def workspace_link_followup_command(self, event: IncomingEvent) -> str | None:
+        """Resolve navigation from one exact pending workspace-link review.
+
+        A Telegram review card remains an ``action`` reference so bare yes/no
+        can only decide that proposal. Link proposals also identify a
+        workspace, so these narrow navigation phrases may safely open it.
+        """
+
+        if self._contexts is None:
+            return None
+        normalized = (event.text or "").strip().casefold().rstrip("?!. ")
+        if normalized not in {
+            "show that workspace", "open that workspace", "show its sources",
+            "show that workspace's sources", "what sources are in it",
+            "show its files", "show that workspace's files",
+        }:
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "action" or not isinstance(context.identifier, int):
+            return None
+        proposal = self._repository.get(context.identifier)
+        if proposal is None or proposal.action_type != StewardWorkspaceLinkApplication.LINK_SOURCE:
+            return None
+        if proposal.payload.get("chat_id") != event.chat_id:
+            return None
+        workspace_id = proposal.payload.get("workspace_id")
+        if not isinstance(workspace_id, str) or not workspace_id.isdigit() or int(workspace_id) < 1:
+            return None
+        return f"/workspace {workspace_id}"
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
@@ -7152,6 +7189,14 @@ class StewardEventApplication:
             link_response = self._workspace_link_application.handle_command(event)
             if link_response is not None:
                 return link_response
+        if self._action_proposal_application is not None and self._read_application is not None:
+            workspace_link_followup = self._action_proposal_application.workspace_link_followup_command(event)
+            if workspace_link_followup is not None:
+                workspace_response = self._read_application.handle_command(
+                    replace(event, text=workspace_link_followup)
+                )
+                if workspace_response is not None:
+                    return workspace_response
         if self._integration_status_application is not None:
             integration_response = self._integration_status_application.handle_command(event)
             if integration_response is not None:

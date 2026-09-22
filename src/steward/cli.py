@@ -1592,6 +1592,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 knowledge_service=KnowledgeService(database_path),
                 calendar_reader_factory=_calendar_reader_factory(settings),
                 calendar_links=CalendarLinkRepository(database_path),
+                contexts=review_contexts,
             ),
             drive_import_application=StewardDriveImportApplication(
                 _drive_inbox_importer(settings, capture_service), contexts=review_contexts
