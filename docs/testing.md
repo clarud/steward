@@ -1076,3 +1076,18 @@ batch.
   not manufacture one.
 - Focused action-navigation regressions and the complete pytest suite passed at
   100%. Live Telegram acceptance remains open.
+
+## Post-session automated delivery: guided record correction
+
+- Travel, receipt, and warranty detail cards now expose **Correct**. The user
+  selects a supported field, supplies a replacement (or explicitly clears it),
+  and receives the existing reviewable correction proposal rather than a direct
+  record update. Hotel corrections are not offered because the current record
+  service has no corresponding correction operation.
+- The selected record/field is stored as an opaque chat-bound input context, so
+  a Telegram restart between field selection and replacement still stages the
+  intended correction. `cancel` returns to the current record without changing
+  it. The original source is never rewritten, and the record remains unchanged
+  until proposal approval.
+- Focused restart/picker coverage and the complete pytest suite passed at 100%.
+  Live Telegram acceptance remains open.

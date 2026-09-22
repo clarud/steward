@@ -5668,6 +5668,46 @@ def test_opened_record_answers_exact_field_questions_with_current_provenance(tmp
     assert f"Source evidence: fragment {warranty_fragment.id}" in coverage.text
 
 
+def test_telegram_record_correction_picker_stages_a_review_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    now = datetime(2026, 10, 1, 9, tzinfo=UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "receipt.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    fragment = fragments.replace_for_source(ExtractionResult(source.id or 0, (
+        SourceFragment(None, source.id or 0, None, 0, "Merchant: Campus Cafe\nTotal: SGD 5.00", "lines 1-2"),
+    )))[0]
+    records = RecordService(database)
+    receipt = records.create_receipt_from_proposal(records.propose_receipt_record(
+        source.id or 0, [(fragment.id or 0, fragment.text)],
+    ))
+    activity = ActivityService(database); proposals = ActionProposalRepository(database)
+    contexts = ReviewContextRepository(database)
+
+    def build() -> StewardEventApplication:
+        return StewardEventApplication(
+            StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+            record_application=StewardRecordApplication(records, fragments, proposals, activity, contexts=contexts),
+        )
+
+    opened = build().handle(make_event(text=f"/record receipt {receipt.id}"))
+    picker = build().handle(make_event(text=f"/record_correct receipt {receipt.id}"))
+    total_command = next(action.command for action in picker.actions if action.label == "Total")
+    prompt = build().handle(make_event(text=total_command))
+    review = build().handle(make_event(text="15.25"))
+
+    assert isinstance(opened, PresentedReply)
+    assert any(action.label == "Correct" for action in opened.actions)
+    assert isinstance(picker, PresentedReply) and picker.title == "Correct receipt record"
+    assert isinstance(prompt, PresentedReply) and prompt.title == "Correct Total"
+    assert prompt.reference == ("record_correction", f"receipt:{receipt.id}:total_cents")
+    assert isinstance(review, PresentedReply) and review.title == "Review receipt correction"
+    assert review.reference == ("action", 1)
+    assert "total_cents → 15.25" in review.text
+    assert records.list_receipt_records()[0].total_cents == 500
+    assert proposals.get(1).status == "pending"
+
+
 def test_opened_travel_record_can_naturally_propose_calendar_review(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 10, 1, 9, tzinfo=UTC)

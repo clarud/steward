@@ -1590,6 +1590,23 @@ class StewardRecordApplication:
     CORRECT_RECEIPT_RECORD = "correct_receipt_record"
     CORRECT_WARRANTY_RECORD = "correct_warranty_record"
     ADD_TRAVEL_REFERENCE = "add_travel_record_reference"
+    _CORRECTABLE_FIELDS = {
+        "travel": (
+            ("Flight", "flight_number"), ("Departure", "departure"),
+            ("Arrival", "arrival"), ("Depart time", "departure_time"),
+            ("Arrive time", "arrival_time"), ("Booking", "booking_reference"),
+            ("Passenger", "passenger"),
+        ),
+        "receipt": (
+            ("Merchant", "merchant"), ("Total", "total_cents"),
+            ("Currency", "currency"), ("Purchase time", "purchased_at"),
+            ("Receipt no.", "receipt_number"),
+        ),
+        "warranty": (
+            ("Product", "product_name"), ("Provider", "provider"),
+            ("Warranty no.", "warranty_number"), ("Coverage end", "coverage_ends_at"),
+        ),
+    }
 
     def __init__(
         self,
@@ -1627,6 +1644,10 @@ class StewardRecordApplication:
             return response
         if command == "/record_evidence":
             return self._record_evidence(separator, argument)
+        if command == "/record_correct":
+            return self._correction_picker(separator, argument)
+        if command == "/record_correct_field":
+            return self._correction_value_prompt(event, separator, argument)
         if command == "/travel_references":
             return self._travel_references(separator, argument)
         if command == "/propose_travel_reference":
@@ -1640,6 +1661,34 @@ class StewardRecordApplication:
         if not separator or not argument.strip().isdigit():
             return "Use /propose_travel_record followed by a numeric source ID."
         return self._propose_travel_record_for_source(int(argument.strip()), chat_id=event.chat_id)
+
+    def handle_followup(self, event: IncomingEvent) -> str | PresentedReply | None:
+        """Stage a correction value only after the exact picker requested it."""
+
+        if self._contexts is None or not (event.text or "").strip() or (event.text or "").startswith("/"):
+            return None
+        context = self._contexts.get(event.platform, event.chat_id)
+        if context is None or context.kind != "record_correction" or not isinstance(context.identifier, str):
+            return None
+        record_type, separator, remainder = context.identifier.partition(":")
+        record_id, field_separator, field = remainder.partition(":")
+        if not separator or not field_separator or record_type not in self._CORRECTABLE_FIELDS or not record_id.isdigit():
+            self._contexts.clear(event.platform, event.chat_id)
+            return "That record-correction prompt is no longer available. Open the record and choose Correct again."
+        value = (event.text or "").strip()
+        if value.casefold() in {"cancel", "never mind", "nevermind"}:
+            self._contexts.set(event.platform, event.chat_id, f"record:{record_type}", int(record_id))
+            return self._record_detail(" ", f"{record_type} {record_id}")
+        if value.casefold() == "clear":
+            value = ""
+        command = {
+            "travel": "/correct_travel_record",
+            "receipt": "/correct_receipt_record",
+            "warranty": "/correct_warranty_record",
+        }[record_type]
+        return self.handle_command(
+            replace(event, text=f"{command} {record_id} {field} {value}")
+        )
 
     def resolve_record_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Resolve a narrow navigation or provenance follow-up for one selected record."""
@@ -2032,6 +2081,9 @@ class StewardRecordApplication:
                 ReplyAction("Apply correction", f"/approve_action {pending.id}"),
                 ReplyAction("Reject", f"/reject_action {pending.id}"),
             ),
+            title=f"Review {record_type.casefold()} correction",
+            icon="✏️",
+            reference=("action", pending.id or 0),
         )
 
     def _propose_document_record(
@@ -2155,6 +2207,8 @@ class StewardRecordApplication:
                 actions.insert(0, ReplyAction("View calendar", f"/calendar_get {event_id}"))
         if supported_evidence:
             actions.append(ReplyAction("Evidence", f"/record_evidence {record_type} {record.id}"))
+        if record_type in self._CORRECTABLE_FIELDS:
+            actions.append(ReplyAction("Correct", f"/record_correct {record_type} {record.id}"))
         actions.append(ReplyAction("Records", "/records"))
         return PresentedReply(
             "\n".join(lines) + f"\n\nOriginal: source {record.source_id}",
@@ -2162,6 +2216,57 @@ class StewardRecordApplication:
             title=f"{record_type.title()} record {identifier}",
             icon="✈️" if record_type == "travel" else "🧾" if record_type == "receipt" else "🛡️",
             reference=(f"record:{record_type}", int(identifier)),
+        )
+
+    def _correction_picker(self, separator: str, argument: str) -> str | PresentedReply:
+        record_type, identifier_separator, identifier = argument.strip().partition(" ")
+        record_type = record_type.casefold()
+        if not separator or not identifier_separator or not identifier.isdigit():
+            return "Use /record_correct followed by travel, receipt, or warranty and a numeric record ID."
+        if record_type not in self._CORRECTABLE_FIELDS:
+            return "Guided correction is available for travel, receipt, and warranty records."
+        if not self._record_exists(record_type, int(identifier)):
+            return f"{record_type.title()} record {identifier} was not found."
+        actions = tuple(
+            ReplyAction(label, f"/record_correct_field {record_type} {identifier} {field}")
+            for label, field in self._CORRECTABLE_FIELDS[record_type]
+        ) + (ReplyAction("Back", f"/record {record_type} {identifier}"),)
+        return PresentedReply(
+            "Choose the field to correct. Steward will ask for a replacement value, then show a review. "
+            "The original source and record remain unchanged until approval.",
+            actions,
+            title=f"Correct {record_type} record",
+            icon="✏️",
+            reference=(f"record:{record_type}", int(identifier)),
+        )
+
+    def _correction_value_prompt(
+        self, event: IncomingEvent, separator: str, argument: str
+    ) -> str | PresentedReply:
+        parts = argument.split()
+        if not separator or len(parts) != 3 or not parts[1].isdigit():
+            return "Choose a field from the record correction card."
+        record_type, record_id_text, field = parts
+        record_type = record_type.casefold()
+        if record_type not in self._CORRECTABLE_FIELDS or field not in {
+            name for _, name in self._CORRECTABLE_FIELDS[record_type]
+        }:
+            return "That field cannot be corrected from this record card."
+        record_id = int(record_id_text)
+        if not self._record_exists(record_type, record_id):
+            return f"{record_type.title()} record {record_id} was not found."
+        if self._contexts is None:
+            return "Guided correction is not configured on this Steward process."
+        token = f"{record_type}:{record_id}:{field}"
+        self._contexts.set(event.platform, event.chat_id, "record_correction", token)
+        label = next(label for label, name in self._CORRECTABLE_FIELDS[record_type] if name == field)
+        return PresentedReply(
+            f"Send the replacement for {label}. Send `clear` to remove this value or `cancel` to return to the record. "
+            "Steward will create a review; it will not update the record yet.",
+            (ReplyAction("Cancel", f"/record {record_type} {record_id}"),),
+            title=f"Correct {label}",
+            icon="✏️",
+            reference=("record_correction", token),
         )
 
     @staticmethod
@@ -7206,6 +7311,9 @@ class StewardEventApplication:
             record_response = self._record_application.handle_command(event)
             if record_response is not None:
                 return record_response
+            record_followup = self._record_application.handle_followup(event)
+            if record_followup is not None:
+                return record_followup
         if self._task_application is not None:
             task_reference = self._task_application.resolve_task_reference(event)
             if task_reference is not None:
