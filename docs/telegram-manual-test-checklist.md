@@ -80,9 +80,12 @@ directory must retain their original name, location, and contents throughout.
 - Repeat the older-card test with two workspace details, two task details, and two
   details of the same record type. Reply to the first card after opening the second
   and after restarting Steward. Use `show that workspace`, `show that task`, and
-  the matching `show that flight`, `show that receipt`, or `show that warranty`
-  phrase. Steward must reopen the object attached to the replied-to message, not
-  the newest chat-wide selection. List cards must not select their first entry.
+  the matching `show that flight`, `show that receipt`, `show that warranty`,
+  or `show that hotel` phrase. For a Hotel Reservation review, also try `open
+  that reservation`. Steward must reopen the object attached to the replied-to
+  message, not the newest chat-wide selection. A type-mismatched phrase (for
+  example, `show that receipt` on a hotel review) must not guess another record.
+  List cards must not select their first entry.
 
 - Repeat with two Calendar event detail cards, including an event whose ID is
   numeric-looking if available. Reply `show that event` to the older card after
@@ -420,14 +423,16 @@ directory must retain their original name, location, and contents throughout.
   action must fetch the current event rather than rendering the saved travel
   fields as if they were authoritative Calendar data.
 
-- Reopen a travel, receipt, or warranty extraction proposal through `/pending`.
+- Reopen a travel, receipt, warranty, or Hotel Reservation extraction proposal
+  through `/pending`.
   Check the source filename, current field values, and evidence fragment IDs.
   Merely opening the preview must not create a record. These previews use the
   reviewed field values and evidence fingerprints. Approval refuses changed
   evidence or legacy proposals without snapshots; request a new proposal to
   review the current values. Test this by re-extracting changed content after
   opening a preview, then pressing its old Accept button. No record should be
-  created. Travel, receipt, and warranty paths have automated regression coverage.
+  created. Travel, receipt, warranty, and Hotel Reservation paths have automated
+  regression coverage.
   Snapshot validation and record persistence share a SQLite write transaction;
   automated two-connection tests verify concurrent evidence writes are blocked.
   The source must still be active. For these Telegram record approvals, record
@@ -439,7 +444,7 @@ directory must retain their original name, location, and contents throughout.
   Pressing Fresh preview must show the new fields without saving a record;
   a second explicit approval is required. Dismissing the old review must
   leave the source intact. Automated application tests exercise the fresh
-  preview button route for travel, receipt, and warranty records.
+  preview button route for travel, receipt, warranty, and Hotel Reservation records.
 
 - Send `/propose_task remind me to compare OpenMP scheduling before Tuesday`.
   Verify it is a proposal, not yet a task or Calendar event.
@@ -536,20 +541,30 @@ directory must retain their original name, location, and contents throughout.
   creates a review rather than an event. A task with only a vague due cue, a task
   without a deadline, and a completed unlinked task must not be silently scheduled.
 - With harmless extracted fixtures, run `/propose_travel_record SOURCE_ID`,
-  `/propose_receipt_record SOURCE_ID`, and `/propose_warranty_record SOURCE_ID`.
+  `/propose_receipt_record SOURCE_ID`, `/propose_warranty_record SOURCE_ID`,
+  and `/propose_hotel_record SOURCE_ID`.
   Verify shown fields name supporting fragment IDs. Reject one and accept one.
   Before deciding, use each displayed **Evidence** action and verify it opens
   the exact supporting extracted section; **Open source** must remain the
   broader original view. Repeat by reopening one record review through
   `/pending`. Reading evidence must not save a record or make a stale preview
   approvable.
-- After accepting one, use `/record travel ID`, `/record receipt ID`, or
-  `/record warranty ID`. Verify each displayed current field identifies its
+- After accepting one, use `/record travel ID`, `/record receipt ID`,
+  `/record warranty ID`, or `/record hotel ID`. Verify each displayed current field identifies its
   supporting source fragment when that exact value is still present there, and
   **Open source** returns to the original. Use **Evidence** to open the exact
   extracted section for each currently supported field. Correct a field, then
   reopen the record: it must be labelled **not source-evidenced** instead of
   inheriting stale extraction provenance, and it must not appear in Evidence.
+- Open a harmless saved Hotel Reservation record, choose **Correct**, select
+  **Guest**, and enter a harmless replacement name. Restart Steward before
+  sending the replacement once to verify the selected record and field survive.
+  The resulting review must name the Hotel record ID, `guest_name`, and the
+  replacement; the record must remain unchanged before approval. Reply `show
+  that hotel` or `open that reservation` to the review, then reject it and
+  confirm the saved guest value remains unchanged. Repeat with an explicitly
+  approved harmless correction and confirm the new current value is labelled
+  **not source-evidenced** while the original fragment remains available.
 - With at least nine harmless saved records, use `/records`. Verify **Next** and
   **Previous** show at most eight compact rows per page, and an **Open** action
   from page two opens the exact record type and ID displayed there.
