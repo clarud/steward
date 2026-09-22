@@ -3773,9 +3773,20 @@ def test_pending_workspace_link_card_can_open_its_exact_workspace(tmp_path: Path
         proposals, ActionProposalService(proposals, workspaces, activity),
         workspace_repository=workspaces, source_repository=sources, contexts=contexts,
     )
+    reader = StewardReadApplication(
+        sources, SourceFragmentRepository(database), LexicalSearchService(sources, SourceFragmentRepository(database)),
+        workspaces, activity, tmp_path / "inbox", contexts=contexts,
+    )
+    application = StewardEventApplication(
+        StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
+        action_proposal_application=actions, read_application=reader,
+    )
 
     assert actions.workspace_link_followup_command(make_event(text="show that workspace")) == f"/workspace {workspace.id}"
     assert actions.workspace_link_followup_command(make_event(text="yes")) is None
+    opened = application.handle(make_event(text="show that workspace"))
+    assert isinstance(opened, PresentedReply)
+    assert opened.title == "CS3210"
 
 
 def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:
