@@ -177,6 +177,14 @@ def test_hotel_reservation_proposal_persists_field_evidence(tmp_path: Path) -> N
     reservation = service.create_hotel_reservation_from_proposal(proposal)
     assert service.field_evidence("hotel", reservation.id or 0)["check_out_at"] == fragment.id
     assert service.list_hotel_reservation_records() == [reservation]
+    corrected = service.correct_hotel_reservation_field(reservation.id or 0, "guest_name", "Grace Hopper")
+    assert corrected.guest_name == "Grace Hopper"
+    assert corrected.source_id == source.id
+    assert service.list_hotel_reservation_records()[0].guest_name == "Grace Hopper"
+    with pytest.raises(ValueError, match="timezone offset"):
+        service.validate_hotel_reservation_field("check_in_at", "2026-10-04T15:00:00")
+    with pytest.raises(ValueError, match="Hotel field"):
+        service.validate_hotel_reservation_field("merchant", "Marina Bay Hotel")
 
 
 def test_receipt_and_warranty_corrections_validate_and_preserve_sources(tmp_path: Path) -> None:

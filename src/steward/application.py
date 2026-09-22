@@ -1589,6 +1589,7 @@ class StewardRecordApplication:
     CORRECT_TRAVEL_RECORD = "correct_travel_record"
     CORRECT_RECEIPT_RECORD = "correct_receipt_record"
     CORRECT_WARRANTY_RECORD = "correct_warranty_record"
+    CORRECT_HOTEL_RESERVATION_RECORD = "correct_hotel_reservation_record"
     ADD_TRAVEL_REFERENCE = "add_travel_record_reference"
     _CORRECTABLE_FIELDS = {
         "travel": (
@@ -1605,6 +1606,11 @@ class StewardRecordApplication:
         "warranty": (
             ("Product", "product_name"), ("Provider", "provider"),
             ("Warranty no.", "warranty_number"), ("Coverage end", "coverage_ends_at"),
+        ),
+        "hotel": (
+            ("Property", "property_name"), ("Booking", "booking_reference"),
+            ("Check in", "check_in_at"), ("Check out", "check_out_at"),
+            ("Guest", "guest_name"),
         ),
     }
 
@@ -1654,7 +1660,7 @@ class StewardRecordApplication:
             return self._propose_travel_reference(separator, argument, chat_id=event.chat_id)
         if command in {"/propose_receipt_record", "/propose_warranty_record", "/propose_hotel_record"}:
             return self._propose_document_record(command, separator, argument, chat_id=event.chat_id)
-        if command in {"/correct_travel_record", "/correct_receipt_record", "/correct_warranty_record"}:
+        if command in {"/correct_travel_record", "/correct_receipt_record", "/correct_warranty_record", "/correct_hotel_record"}:
             return self._propose_record_correction(command, separator, argument, chat_id=event.chat_id)
         if command != "/propose_travel_record":
             return None
@@ -1685,6 +1691,7 @@ class StewardRecordApplication:
             "travel": "/correct_travel_record",
             "receipt": "/correct_receipt_record",
             "warranty": "/correct_warranty_record",
+            "hotel": "/correct_hotel_record",
         }[record_type]
         return self.handle_command(
             replace(event, text=f"{command} {record_id} {field} {value}")
@@ -2059,6 +2066,7 @@ class StewardRecordApplication:
             "/correct_travel_record": ("Travel", self.CORRECT_TRAVEL_RECORD, self._records.list_travel_records, self._records.validate_travel_field),
             "/correct_receipt_record": ("Receipt", self.CORRECT_RECEIPT_RECORD, self._records.list_receipt_records, self._records.validate_receipt_field),
             "/correct_warranty_record": ("Warranty", self.CORRECT_WARRANTY_RECORD, self._records.list_warranty_records, self._records.validate_warranty_field),
+            "/correct_hotel_record": ("Hotel", self.CORRECT_HOTEL_RESERVATION_RECORD, self._records.list_hotel_reservation_records, self._records.validate_hotel_reservation_field),
         }[command]
         record = next((item for item in records() if item.id == int(record_id)), None)
         if record is None:
@@ -2222,9 +2230,9 @@ class StewardRecordApplication:
         record_type, identifier_separator, identifier = argument.strip().partition(" ")
         record_type = record_type.casefold()
         if not separator or not identifier_separator or not identifier.isdigit():
-            return "Use /record_correct followed by travel, receipt, or warranty and a numeric record ID."
+            return "Use /record_correct followed by travel, receipt, warranty, or hotel and a numeric record ID."
         if record_type not in self._CORRECTABLE_FIELDS:
-            return "Guided correction is available for travel, receipt, and warranty records."
+            return "Guided correction is available for travel, receipt, warranty, and hotel records."
         if not self._record_exists(record_type, int(identifier)):
             return f"{record_type.title()} record {identifier} was not found."
         actions = tuple(
@@ -5966,6 +5974,7 @@ class StewardActionProposalApplication:
             CalendarEventProposalService.CREATE_TRAVEL_EVENT: "travel",
             StewardRecordApplication.CORRECT_RECEIPT_RECORD: "receipt",
             StewardRecordApplication.CORRECT_WARRANTY_RECORD: "warranty",
+            StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD: "hotel",
         }.get(proposal.action_type)
         if normalized in {"show that trip", "open that trip", "show that flight", "open that flight"} and record_type != "travel":
             return None
@@ -6084,6 +6093,7 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CORRECT_TRAVEL_RECORD,
             StewardRecordApplication.CORRECT_RECEIPT_RECORD,
             StewardRecordApplication.CORRECT_WARRANTY_RECORD,
+            StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD,
             StewardRecordApplication.ADD_TRAVEL_REFERENCE,
         }:
             proposal_chat = proposal.payload.get("chat_id")
@@ -6134,6 +6144,7 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CORRECT_TRAVEL_RECORD,
             StewardRecordApplication.CORRECT_RECEIPT_RECORD,
             StewardRecordApplication.CORRECT_WARRANTY_RECORD,
+            StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD,
         }:
             return self._review_record_correction(proposal_id, decision)
         if proposal is not None and proposal.action_type == StewardRecordApplication.CREATE_TRAVEL_RECORD:
@@ -7063,6 +7074,7 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CORRECT_TRAVEL_RECORD: ("Travel", self._records.correct_travel_field),
             StewardRecordApplication.CORRECT_RECEIPT_RECORD: ("Receipt", self._records.correct_receipt_field),
             StewardRecordApplication.CORRECT_WARRANTY_RECORD: ("Warranty", self._records.correct_warranty_field),
+            StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD: ("Hotel", self._records.correct_hotel_reservation_field),
         }[proposal.action_type]
         try:
             record = correct(int(proposal.payload["record_id"]), proposal.payload["field"], proposal.payload["value"])

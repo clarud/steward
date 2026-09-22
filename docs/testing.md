@@ -1079,11 +1079,10 @@ batch.
 
 ## Post-session automated delivery: guided record correction
 
-- Travel, receipt, and warranty detail cards now expose **Correct**. The user
+- Travel, receipt, warranty, and hotel detail cards now expose **Correct**. The user
   selects a supported field, supplies a replacement (or explicitly clears it),
-  and receives the existing reviewable correction proposal rather than a direct
-  record update. Hotel corrections are not offered because the current record
-  service has no corresponding correction operation.
+  and receives a reviewable correction proposal rather than a direct record
+  update.
 - The selected record/field is stored as an opaque chat-bound input context, so
   a Telegram restart between field selection and replacement still stages the
   intended correction. `cancel` returns to the current record without changing

@@ -240,6 +240,26 @@ class RecordService:
     def validate_warranty_field(self, field: str, value: str) -> None:
         self._normalized_warranty_field(field, value)
 
+    def correct_hotel_reservation_field(self, record_id: int, field: str, value: str) -> HotelReservationRecord:
+        """Apply one explicit correction to a hotel reservation without altering its source."""
+        record = next((item for item in self.list_hotel_reservation_records() if item.id == record_id), None)
+        if record is None:
+            raise ValueError(f"Hotel record {record_id} was not found.")
+        normalized = self._normalized_hotel_reservation_field(field, value)
+        stored = normalized.isoformat() if isinstance(normalized, datetime) else normalized
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(f"UPDATE hotel_reservation_records SET {field} = ? WHERE id = ?", (stored, record_id))
+        values = {
+            "property_name": record.property_name, "booking_reference": record.booking_reference,
+            "check_in_at": record.check_in_at, "check_out_at": record.check_out_at,
+            "guest_name": record.guest_name,
+        }
+        values[field] = normalized
+        return HotelReservationRecord(record.id, record.source_id, **values)
+
+    def validate_hotel_reservation_field(self, field: str, value: str) -> None:
+        self._normalized_hotel_reservation_field(field, value)
+
     @staticmethod
     def _normalized_travel_field(field: str, value: str) -> object | None:
         allowed = {"flight_number", "departure", "arrival", "departure_time", "arrival_time", "booking_reference", "passenger"}
@@ -300,6 +320,22 @@ class RecordService:
             if timestamp.tzinfo is None:
                 raise ValueError("coverage_ends_at must be ISO-8601 with a timezone offset.")
             return timestamp
+        return normalized
+
+    @staticmethod
+    def _normalized_hotel_reservation_field(field: str, value: str) -> object | None:
+        if field not in {"property_name", "booking_reference", "check_in_at", "check_out_at", "guest_name"}:
+            raise ValueError(
+                "Hotel field must be property_name, booking_reference, check_in_at, check_out_at, or guest_name."
+            )
+        normalized: object | None = " ".join(value.split()) or None
+        if field in {"check_in_at", "check_out_at"} and normalized is not None:
+            try:
+                normalized = datetime.fromisoformat(str(normalized))
+            except ValueError as error:
+                raise ValueError(f"{field} must be ISO-8601 with a timezone offset.") from error
+            if normalized.tzinfo is None:
+                raise ValueError(f"{field} must be ISO-8601 with a timezone offset.")
         return normalized
 
     def propose_receipt_record(self, source_id: int, fragments: list[tuple[int, str]]) -> ReceiptRecordProposal:
