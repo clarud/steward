@@ -1109,3 +1109,9 @@ batch.
   convenience field.
 - Malformed function arguments remain ignored rather than becoming a local tool
   call. Tool execution still happens only in Steward's allowlisted `ToolNode`.
+
+## Post-session automated delivery: compact research retention actions
+
+- External research cards now use **Keep note** and numbered **Keep N** actions.
+  The full source title and URL remain in the card body, so compact Telegram
+  buttons do not obscure which external source the user is explicitly retaining.

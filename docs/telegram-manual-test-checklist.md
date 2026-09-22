@@ -716,7 +716,7 @@ directory must retain their original name, location, and contents throughout.
   filename, approval removes it from `/sources`, and its original file remains
   on disk unchanged.
 - Use `/research QUESTION`. Verify it says **ephemeral, not saved**. Choose
-  **Keep this reviewed note** only when you want that exact labeled card,
+  **Keep note** only when you want that exact labeled card,
   including its provider answer and external URLs, retained in Inbox.
 - After opening other cards or restarting Telegram, reply to the older research
   card with `keep that research` or `save that research`. Verify only that
@@ -731,7 +731,7 @@ directory must retain their original name, location, and contents throughout.
 - With a deliberately unavailable test research provider, verify the failure
   reply is retry-oriented and does not expose a provider diagnostic or local
   configuration path.
-- From the same research card, choose exactly one **Keep source** action.
+- From the same research card, choose exactly one compact **Keep N** action.
   Verify it creates a separate Inbox Markdown reference containing that source's
   URL, title, query, provider, and any search-result snippet—not a downloaded
   copy of the webpage.

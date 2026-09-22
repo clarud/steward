@@ -3487,7 +3487,8 @@ def test_research_source_choices_paginate_without_rerunning_the_provider(tmp_pat
     assert isinstance(second, PresentedReply)
     assert "page 2 of 2" in second.text and "Source 9" in second.text
     assert "Source 1" not in second.text
-    keep_source = next(action.command for action in second.actions if action.label.startswith("Keep source 9"))
+    assert [action.label for action in second.actions[:2]] == ["Keep note", "Keep 9"]
+    keep_source = next(action.command for action in second.actions if action.label == "Keep 9")
     assert "/research_retain_source_token " in keep_source and keep_source.endswith(" 9")
     assert provider.calls == 1
 

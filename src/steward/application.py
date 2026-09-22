@@ -3183,10 +3183,10 @@ class StewardResearchApplication:
         token = self._cache_bundle(event.chat_id, bundle)
         if self._contexts is not None:
             self._contexts.set(event.platform, event.chat_id, "research", token)
-        actions = [ReplyAction("Keep this reviewed note", f"/research_retain_token {token}")]
+        actions = [ReplyAction("Keep note", f"/research_retain_token {token}")]
         actions.extend(
             ReplyAction(
-                f"Keep source {index}: {source.title[:32]}",
+                f"Keep {index}",
                 f"/research_retain_source_token {token} {index}",
             )
             for index, source in enumerate(bundle.sources[:8], start=1)
@@ -3211,10 +3211,10 @@ class StewardResearchApplication:
         visible = bundle.sources[start:start + 8]
         sources = "\n".join(f"- {source.title}: {source.url}" for source in visible)
         text = f"External research sources — page {page} of {pages}\n\n{sources}"
-        actions = [ReplyAction("Keep this reviewed note", f"/research_retain_token {token}")]
+        actions = [ReplyAction("Keep note", f"/research_retain_token {token}")]
         actions.extend(
             ReplyAction(
-                f"Keep source {index}: {source.title[:32]}",
+                f"Keep {index}",
                 f"/research_retain_source_token {token} {index}",
             )
             for index, source in enumerate(visible, start=start + 1)
