@@ -68,8 +68,9 @@ class OpenAICompatibleToolCallingModel:
             )
             raise ModelGatewayError("The OpenAI-compatible tool-agent request could not be completed.") from error
 
-        calls = self._tool_calls(getattr(response, "output", ()))
-        text = str(getattr(response, "output_text", "") or "").strip()
+        output = getattr(response, "output", ())
+        calls = self._tool_calls(output)
+        text = self._output_text(output, getattr(response, "output_text", ""))
         if calls:
             return AIMessage(content=text, tool_calls=calls)
         if not text:
@@ -134,12 +135,15 @@ class OpenAICompatibleToolCallingModel:
     def _tool_calls(raw_output: object) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
         for item in raw_output or ():
-            if getattr(item, "type", None) != "function_call":
+            if OpenAICompatibleToolCallingModel._field(item, "type") != "function_call":
                 continue
-            name = getattr(item, "name", None)
-            arguments = getattr(item, "arguments", "{}")
+            name = OpenAICompatibleToolCallingModel._field(item, "name")
+            arguments = OpenAICompatibleToolCallingModel._field(item, "arguments", "{}")
             # Responses uses call_id, while some compatible shims use id.
-            call_id = getattr(item, "call_id", None) or getattr(item, "id", None)
+            call_id = (
+                OpenAICompatibleToolCallingModel._field(item, "call_id")
+                or OpenAICompatibleToolCallingModel._field(item, "id")
+            )
             if not isinstance(name, str) or not name.strip() or not isinstance(call_id, str):
                 continue
             try:
@@ -149,3 +153,35 @@ class OpenAICompatibleToolCallingModel:
             if isinstance(parsed_arguments, dict):
                 calls.append({"name": name, "args": parsed_arguments, "id": call_id})
         return calls
+
+    @staticmethod
+    def _field(item: object, name: str, default: object | None = None) -> object | None:
+        """Read either SDK attribute objects or JSON-like shim response items."""
+        if isinstance(item, dict):
+            return item.get(name, default)
+        return getattr(item, name, default)
+
+    @classmethod
+    def _output_text(cls, raw_output: object, convenience_text: object) -> str:
+        """Recover a final text answer when a compatible shim omits ``output_text``.
+
+        Function calls remain separate from text.  This only reads documented
+        message/output-text content shapes and never invents an answer from a
+        tool request or raw provider diagnostic.
+        """
+        text = str(convenience_text or "").strip()
+        if text:
+            return text
+        extracted: list[str] = []
+        for item in raw_output or ():
+            if cls._field(item, "type") not in {"message", "output_text"}:
+                continue
+            content = cls._field(item, "content")
+            parts = content if isinstance(content, (list, tuple)) else (item,)
+            for part in parts:
+                if cls._field(part, "type") not in {"output_text", "text", "message"}:
+                    continue
+                value = cls._field(part, "text") or cls._field(part, "value")
+                if isinstance(value, str) and value.strip():
+                    extracted.append(value.strip())
+        return "\n".join(extracted)

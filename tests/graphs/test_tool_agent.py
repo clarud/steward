@@ -444,6 +444,48 @@ def test_openai_compatible_tool_adapter_replays_tool_messages_as_response_items(
     ]
 
 
+def test_openai_compatible_tool_adapter_accepts_json_shim_items_and_message_content() -> None:
+    class Response:
+        output = [
+            {"type": "function_call", "name": "search_sources", "arguments": {"query": "TLB"}, "id": "call-1"},
+        ]
+        output_text = ""
+
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            return Response()
+
+    class Client:
+        responses = Responses()
+
+    adapter = OpenAICompatibleToolCallingModel(
+        api_key="test", model="model", base_url="https://gateway.example/v1", client=Client()
+    )
+    call = adapter.invoke([HumanMessage("Find TLB notes")])
+
+    assert call.tool_calls[0]["name"] == "search_sources"
+    assert call.tool_calls[0]["args"] == {"query": "TLB"}
+
+    class TextResponse:
+        output = [{"type": "message", "content": [{"type": "output_text", "text": "TLBs cache translations."}]}]
+        output_text = ""
+
+    class TextResponses:
+        @staticmethod
+        def create(**_kwargs):
+            return TextResponse()
+
+    class TextClient:
+        responses = TextResponses()
+
+    answer = OpenAICompatibleToolCallingModel(
+        api_key="test", model="model", base_url="https://gateway.example/v1", client=TextClient()
+    ).invoke([HumanMessage("What is a TLB?")])
+
+    assert answer.content == "TLBs cache translations."
+
+
 def test_soclaas_transport_failure_is_a_secret_free_gateway_error(caplog) -> None:
     class Responses:
         @staticmethod

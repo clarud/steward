@@ -1100,3 +1100,12 @@ batch.
 - This does not decide, approve, or alter the pending review. The generic
   **show that record** route remains available, while the existing flight/trip
   phrases remain restricted to Travel records.
+
+## Post-session automated delivery: Responses-API compatibility recovery
+
+- The SoCLaaS/OpenAI-compatible tool adapter now accepts equivalent SDK-object
+  and JSON-shaped Responses output items. It also recovers a final message from
+  documented message content when a gateway omits the optional `output_text`
+  convenience field.
+- Malformed function arguments remain ignored rather than becoming a local tool
+  call. Tool execution still happens only in Steward's allowlisted `ToolNode`.
