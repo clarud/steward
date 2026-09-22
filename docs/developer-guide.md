@@ -1150,11 +1150,13 @@ replacement proposal and displayed as **Your context**. It explains the user's
 choice during review but is not evidence from the source and cannot authorize a
 move by itself.
 
-The first LangGraph approval graph demonstrates a durable pause with
-`interrupt()` and later resume. On acceptance it calls that same approval
-service, so a resumed workflow executes the move rather than merely changing a
-proposal status. Wiring the paused approval conversation into Telegram is a
-later transport step.
+The organization-approval LangGraph demonstrates a durable pause with
+`interrupt()` and later resume. Telegram creates a chat-scoped approval thread,
+renders the paused review, then resumes that exact thread with
+`Command(resume=...)` after an explicit decision. On acceptance it calls the
+same approval service, so a resumed workflow executes the reviewed move rather
+than merely changing a proposal status. No irreversible filesystem mutation is
+performed before the interrupt.
 
 The knowledge model starts deliberately small: concepts have aliases, claims
 point to supporting source fragments, and enrichment proposals classify new
@@ -1182,14 +1184,17 @@ the travel record and fragment exist; `add_reference()` is idempotent for the
 same record/type/value and returns the existing reference on a retry. The CLI
 exposes `add-travel-record-reference RECORD_ID TYPE VALUE FRAGMENT_ID` and
 `travel-record-references RECORD_ID` for explicit inspection.
-Telegram-created record proposals also retain the initiating chat ID. This
-covers Travel, receipt, and warranty creation, record corrections, and Travel
-record-reference proposals. Another authorized chat cannot approve a bound
-review or make its record mutation; the originating chat retains the ordinary
-approve/reject controls. This is a transport authorization boundary, not a
-second identity system: direct CLI proposals remain local operations and
-legacy proposals without a chat ID stay compatible with the existing local
-review flow.
+Receipt, warranty, and Hotel Reservation records follow the same proposal,
+field-level provenance, and explicit acceptance model. A later user correction
+is deliberately stored as a current record value rather than pretending it was
+extracted from the original source; the unchanged source evidence stays
+inspectable. Telegram-created Travel, receipt, warranty, and Hotel Reservation
+proposals and corrections retain the initiating chat ID. Another authorized
+chat cannot approve a bound review or make its record mutation; the originating
+chat retains the ordinary approve/reject controls. This is a transport
+authorization boundary, not a second identity system: direct CLI proposals
+remain local operations and legacy proposals without a chat ID stay compatible
+with the existing local review flow.
 `FileMutationService.undo_move()` supplies rollback data and writes its own
 `SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
 filesystem changes.
