@@ -5959,11 +5959,18 @@ class StewardActionProposalApplication:
             event_id = proposal.payload.get("event_id")
             return f"/calendar_get {event_id}" if isinstance(event_id, str) and event_id.strip() else None
 
-        record_phrases = {
-            "show that record", "open that record", "show the record", "open the record",
-            "show that trip", "open that trip", "show that flight", "open that flight",
+        record_phrase_types = {
+            "show that record": None, "open that record": None,
+            "show the record": None, "open the record": None,
+            "show that trip": "travel", "open that trip": "travel",
+            "show that flight": "travel", "open that flight": "travel",
+            "show that receipt": "receipt", "open that receipt": "receipt",
+            "show that warranty": "warranty", "open that warranty": "warranty",
+            "show that hotel": "hotel", "open that hotel": "hotel",
+            "show that reservation": "hotel", "open that reservation": "hotel",
         }
-        if normalized not in record_phrases:
+        expected_record_type = record_phrase_types.get(normalized)
+        if normalized not in record_phrase_types:
             return None
         record_id = positive_id("record_id")
         if record_id is None:
@@ -5976,7 +5983,7 @@ class StewardActionProposalApplication:
             StewardRecordApplication.CORRECT_WARRANTY_RECORD: "warranty",
             StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD: "hotel",
         }.get(proposal.action_type)
-        if normalized in {"show that trip", "open that trip", "show that flight", "open that flight"} and record_type != "travel":
+        if expected_record_type is not None and record_type != expected_record_type:
             return None
         return f"/record {record_type} {record_id}" if record_type is not None else None
 

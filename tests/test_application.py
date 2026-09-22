@@ -3868,6 +3868,15 @@ def test_pending_action_review_navigation_is_exact_and_chat_bound(tmp_path: Path
     assert actions.reviewed_action_navigation_command(make_event(text="yes")) is None
     assert actions.reviewed_action_navigation_command(make_event(text="show that record", chat_id="other")) is None
 
+    hotel_correction = proposals.add(
+        StewardRecordApplication.CORRECT_HOTEL_RESERVATION_RECORD,
+        {"record_id": "12", "field": "guest_name", "value": "Ada", "chat_id": "100"},
+    )
+    contexts.set("telegram", "100", "action", hotel_correction.id or 0)
+    assert actions.reviewed_action_navigation_command(make_event(text="show that hotel")) == "/record hotel 12"
+    assert actions.reviewed_action_navigation_command(make_event(text="open that reservation")) == "/record hotel 12"
+    assert actions.reviewed_action_navigation_command(make_event(text="show that receipt")) is None
+
 
 def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)

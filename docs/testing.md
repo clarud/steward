@@ -1090,3 +1090,13 @@ batch.
   until proposal approval.
 - Focused restart/picker coverage and the complete pytest suite passed at 100%.
   Live Telegram acceptance remains open.
+
+## Post-session automated delivery: type-specific pending-record navigation
+
+- An active, chat-bound record review now accepts exact read-only follow-ups
+  such as **show that receipt**, **show that warranty**, **show that hotel**,
+  and **open that reservation**. These phrases reopen only the record ID held
+  by that review; a phrase for the wrong record type is refused.
+- This does not decide, approve, or alter the pending review. The generic
+  **show that record** route remains available, while the existing flight/trip
+  phrases remain restricted to Travel records.
