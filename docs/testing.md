@@ -1062,3 +1062,17 @@ batch.
 - Focused regressions and the complete pytest suite passed at 100%. The two
   corrected paths require a short live Telegram retest before this acceptance
   item is closed.
+
+## Post-session automated delivery: pending action-review navigation
+
+- A reply to an exact pending action-review card can now use narrowly scoped
+  follow-ups to reopen the concrete object named by that review: a task,
+  existing Calendar event, Travel/receipt/warranty record, or linked workspace.
+  The route is derived only from the review's persisted, chat-bound payload;
+  it never guesses an ID from text.
+- Approval remains independent. `yes` and `no` still target the pending action
+  review, while navigation merely opens current read-only detail cards. Another
+  chat cannot use the reference, and proposals without an existing object do
+  not manufacture one.
+- Focused action-navigation regressions and the complete pytest suite passed at
+  100%. Live Telegram acceptance remains open.

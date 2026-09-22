@@ -3789,6 +3789,37 @@ def test_pending_workspace_link_card_can_open_its_exact_workspace(tmp_path: Path
     assert opened.title == "CS3210"
 
 
+def test_pending_action_review_navigation_is_exact_and_chat_bound(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    activity = ActivityService(database); workspaces = WorkspaceRepository(database)
+    proposals = ActionProposalRepository(database); contexts = ReviewContextRepository(database)
+    actions = StewardActionProposalApplication(
+        proposals, ActionProposalService(proposals, workspaces, activity), contexts=contexts,
+    )
+
+    task = proposals.add(StewardTaskApplication.RESCHEDULE_TASK, {"task_id": "7", "chat_id": "100"})
+    contexts.set("telegram", "100", "action", task.id or 0)
+    assert actions.reviewed_action_navigation_command(make_event(text="show that task")) == "/task 7"
+
+    association = proposals.add(
+        StewardCalendarApplication.ASSOCIATE_TASK_EVENT,
+        {"task_id": "7", "event_id": "calendar-event-42", "chat_id": "100"},
+    )
+    contexts.set("telegram", "100", "action", association.id or 0)
+    assert actions.reviewed_action_navigation_command(make_event(text="show that task")) == "/task 7"
+    assert actions.reviewed_action_navigation_command(make_event(text="show that event")) == "/calendar_get calendar-event-42"
+
+    correction = proposals.add(
+        StewardRecordApplication.CORRECT_RECEIPT_RECORD,
+        {"record_id": "9", "field": "total", "value": "12.50", "chat_id": "100"},
+    )
+    contexts.set("telegram", "100", "action", correction.id or 0)
+    assert actions.reviewed_action_navigation_command(make_event(text="show that record")) == "/record receipt 9"
+    assert actions.reviewed_action_navigation_command(make_event(text="show that flight")) is None
+    assert actions.reviewed_action_navigation_command(make_event(text="yes")) is None
+    assert actions.reviewed_action_navigation_command(make_event(text="show that record", chat_id="other")) is None
+
+
 def test_telegram_travel_reference_is_reviewed_and_grounded(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     now = datetime(2026, 9, 10, tzinfo=UTC)

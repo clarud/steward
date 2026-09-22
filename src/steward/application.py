@@ -5797,35 +5797,80 @@ class StewardActionProposalApplication:
         self._calendar_links = calendar_links
         self._contexts = contexts
 
-    def workspace_link_followup_command(self, event: IncomingEvent) -> str | None:
-        """Resolve navigation from one exact pending workspace-link review.
+    def reviewed_action_navigation_command(self, event: IncomingEvent) -> str | None:
+        """Resolve one bounded navigation phrase from an exact action review.
 
-        A Telegram review card remains an ``action`` reference so bare yes/no
-        can only decide that proposal. Link proposals also identify a
-        workspace, so these narrow navigation phrases may safely open it.
+        An actionable Telegram card deliberately persists as an ``action``
+        reference so a bare yes/no decides only that proposal. Some proposals
+        also carry a concrete, already-existing object. This method can reopen
+        that object for a narrow read-only phrase without changing the review
+        binding or inferring an object from conversational text.
         """
 
         if self._contexts is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
-        if normalized not in {
-            "show that workspace", "open that workspace", "show its sources",
-            "show that workspace's sources", "what sources are in it",
-            "show its files", "show that workspace's files",
-        }:
-            return None
         context = self._contexts.get(event.platform, event.chat_id)
         if context is None or context.kind != "action" or not isinstance(context.identifier, int):
             return None
         proposal = self._repository.get(context.identifier)
-        if proposal is None or proposal.action_type != StewardWorkspaceLinkApplication.LINK_SOURCE:
+        if proposal is None or proposal.payload.get("chat_id") != event.chat_id:
             return None
-        if proposal.payload.get("chat_id") != event.chat_id:
+
+        def positive_id(name: str) -> int | None:
+            value = proposal.payload.get(name)
+            return int(value) if isinstance(value, str) and value.isdigit() and int(value) > 0 else None
+
+        workspace_phrases = {
+            "show that workspace", "open that workspace", "show its sources",
+            "show that workspace's sources", "what sources are in it",
+            "show its files", "show that workspace's files",
+        }
+        if normalized in workspace_phrases and proposal.action_type == StewardWorkspaceLinkApplication.LINK_SOURCE:
+            workspace_id = positive_id("workspace_id")
+            return f"/workspace {workspace_id}" if workspace_id is not None else None
+
+        task_phrases = {
+            "show that task", "open that task", "show the task", "open the task",
+            "show task details", "show the task details",
+        }
+        if normalized in task_phrases:
+            task_id = positive_id("task_id")
+            return f"/task {task_id}" if task_id is not None else None
+
+        event_phrases = {
+            "show that event", "open that event", "show the event", "open the event",
+            "show that calendar event", "open that calendar event",
+        }
+        if normalized in event_phrases:
+            event_id = proposal.payload.get("event_id")
+            return f"/calendar_get {event_id}" if isinstance(event_id, str) and event_id.strip() else None
+
+        record_phrases = {
+            "show that record", "open that record", "show the record", "open the record",
+            "show that trip", "open that trip", "show that flight", "open that flight",
+        }
+        if normalized not in record_phrases:
             return None
-        workspace_id = proposal.payload.get("workspace_id")
-        if not isinstance(workspace_id, str) or not workspace_id.isdigit() or int(workspace_id) < 1:
+        record_id = positive_id("record_id")
+        if record_id is None:
             return None
-        return f"/workspace {workspace_id}"
+        record_type = {
+            StewardRecordApplication.CORRECT_TRAVEL_RECORD: "travel",
+            StewardRecordApplication.ADD_TRAVEL_REFERENCE: "travel",
+            CalendarEventProposalService.CREATE_TRAVEL_EVENT: "travel",
+            StewardRecordApplication.CORRECT_RECEIPT_RECORD: "receipt",
+            StewardRecordApplication.CORRECT_WARRANTY_RECORD: "warranty",
+        }.get(proposal.action_type)
+        if normalized in {"show that trip", "open that trip", "show that flight", "open that flight"} and record_type != "travel":
+            return None
+        return f"/record {record_type} {record_id}" if record_type is not None else None
+
+    def workspace_link_followup_command(self, event: IncomingEvent) -> str | None:
+        """Backward-compatible narrow workspace-navigation helper."""
+
+        command = self.reviewed_action_navigation_command(event)
+        return command if command is not None and command.startswith("/workspace ") else None
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         text = (event.text or "").strip()
@@ -7189,14 +7234,22 @@ class StewardEventApplication:
             link_response = self._workspace_link_application.handle_command(event)
             if link_response is not None:
                 return link_response
-        if self._action_proposal_application is not None and self._read_application is not None:
-            workspace_link_followup = self._action_proposal_application.workspace_link_followup_command(event)
-            if workspace_link_followup is not None:
-                workspace_response = self._read_application.handle_command(
-                    replace(event, text=workspace_link_followup)
-                )
-                if workspace_response is not None:
-                    return workspace_response
+        if self._action_proposal_application is not None:
+            action_navigation = self._action_proposal_application.reviewed_action_navigation_command(event)
+            if action_navigation is not None:
+                navigation_event = replace(event, text=action_navigation)
+                if action_navigation.startswith(("/workspace ", "/source ")) and self._read_application is not None:
+                    navigation_response = self._read_application.handle_command(navigation_event)
+                elif action_navigation.startswith("/task ") and self._task_application is not None:
+                    navigation_response = self._task_application.handle_command(navigation_event)
+                elif action_navigation.startswith("/record ") and self._record_application is not None:
+                    navigation_response = self._record_application.handle_command(navigation_event)
+                elif action_navigation.startswith("/calendar_get ") and self._calendar_application is not None:
+                    navigation_response = self._calendar_application.handle_command(navigation_event)
+                else:
+                    navigation_response = None
+                if navigation_response is not None:
+                    return navigation_response
         if self._integration_status_application is not None:
             integration_response = self._integration_status_application.handle_command(event)
             if integration_response is not None:
