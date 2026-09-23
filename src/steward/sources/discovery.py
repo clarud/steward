@@ -15,6 +15,7 @@ SUPPORTED_SOURCE_TYPES = {
     ".pdf": SourceType.PDF,
     ".docx": SourceType.DOCX,
     ".pptx": SourceType.PPTX,
+    ".xlsx": SourceType.XLSX,
     ".html": SourceType.HTML,
     ".htm": SourceType.HTML,
     ".png": SourceType.IMAGE,

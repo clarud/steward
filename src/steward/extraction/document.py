@@ -304,6 +304,55 @@ class PptxExtractor:
         return ExtractionResult(source.id, tuple(fragments))
 
 
+class XlsxExtractor:
+    """Extract non-empty worksheet rows with sheet/cell-range provenance."""
+
+    _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.XLSX:
+            raise ValueError("XlsxExtractor requires an XLSX Source.")
+        try:
+            with ZipFile(source.path) as archive:
+                shared = self._shared_strings(archive)
+                workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+                relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+                targets = {item.attrib.get("Id"): item.attrib.get("Target") for item in relationships}
+                fragments = []
+                for sheet in workbook.findall(f".//{{{self._MAIN}}}sheet"):
+                    relationship_id = sheet.attrib.get(f"{{{self._REL}}}id")
+                    target = targets.get(relationship_id)
+                    if not target:
+                        continue
+                    worksheet = ElementTree.fromstring(archive.read("xl/" + target.lstrip("/")))
+                    sheet_name = sheet.attrib.get("name", "Sheet")
+                    for row in worksheet.findall(f".//{{{self._MAIN}}}row"):
+                        values = []
+                        cells = row.findall(f"{{{self._MAIN}}}c")
+                        for cell in cells:
+                            value = cell.find(f"{{{self._MAIN}}}v")
+                            if value is None or value.text is None:
+                                continue
+                            raw = value.text
+                            values.append(shared[int(raw)] if cell.attrib.get("t") == "s" else raw)
+                        if values:
+                            row_number = row.attrib.get("r", "?")
+                            fragments.append(SourceFragment(None, source.id, sheet_name, len(fragments), " | ".join(values), f"{sheet_name}!row {row_number}"))
+        except (BadZipFile, OSError, ElementTree.ParseError, KeyError, ValueError, IndexError) as error:
+            raise DocumentExtractionError(f"Could not read XLSX {source.path}.") from error
+        return ExtractionResult(source.id, tuple(fragments))
+
+    def _shared_strings(self, archive: ZipFile) -> list[str]:
+        try:
+            root = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+        except KeyError:
+            return []
+        return ["".join(part.text or "" for part in item.iter(f"{{{self._MAIN}}}t")) for item in root.findall(f"{{{self._MAIN}}}si")]
+
+
 class HtmlExtractor:
     """Extract visible HTML text into heading-delimited fragments."""
 
@@ -367,6 +416,7 @@ class ExtractionService:
             SourceType.PDF: PdfExtractor(),
             SourceType.DOCX: DocxExtractor(),
             SourceType.PPTX: PptxExtractor(),
+            SourceType.XLSX: XlsxExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
             SourceType.CODE: CodeExtractor(),

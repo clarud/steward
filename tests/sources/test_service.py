@@ -85,6 +85,23 @@ def test_source_service_extracts_pptx_slide_text_with_slide_provenance(tmp_path:
     assert [(item.text, item.location) for item in fragments.list_for_source(source.id or 0)] == [("Parallel speedup", "slide 1")]
 
 
+def test_source_service_extracts_xlsx_rows_with_sheet_provenance(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "sheets"; vault.mkdir(); source_path = vault / "deadlines.xlsx"
+    with ZipFile(source_path, "w") as archive:
+        archive.writestr("xl/sharedStrings.xml", '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>CS3210</t></si></sst>')
+        archive.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Deadlines" r:id="rId1"/></sheets></workbook>')
+        archive.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+        archive.writestr("xl/worksheets/sheet1.xml", '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2"><c r="A2" t="s"><v>0</v></c><c r="B2"><v>27</v></c></row></sheetData></worksheet>')
+    sources = SourceRepository(database_path); fragments = SourceFragmentRepository(database_path)
+
+    SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    source = sources.get_by_path(source_path.resolve())
+    assert source is not None and source.source_type is SourceType.XLSX
+    assert [(item.heading, item.text, item.location) for item in fragments.list_for_source(source.id or 0)] == [("Deadlines", "CS3210 | 27", "Deadlines!row 2")]
+
+
 def test_source_code_extraction_uses_stable_bounded_line_ranges(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     vault = tmp_path / "project"; vault.mkdir()
