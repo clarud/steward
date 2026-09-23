@@ -1,6 +1,6 @@
 # Steward Developer Guide
 
-This guide describes the implementation currently in the repository. Steward can register local Markdown, plain-text, DOCX, HTML, images with optional local OCR, and native-text PDF files, extract structured
+This guide describes the implementation currently in the repository. Steward can register local Markdown, plain-text, source code, Jupyter notebooks, DOCX, PPTX, XLSX, HTML, images with optional local OCR, and native-text PDF files, extract structured
 fragments, retrieve them using lexical, semantic, or hybrid search, and
 generate grounded answers from retrieved fragments. A minimal LangGraph
 workflow orchestrates those existing services. A Telegram adapter can deliver
@@ -101,7 +101,7 @@ are:
 id             SQLite identity; assigned only after persistence
 path           resolved absolute location of the original file
 content_hash   SHA-256 fingerprint of its current bytes
-source_type    currently Markdown
+source_type    inferred supported format (for example markdown, pdf, code, pptx)
 size_bytes     current file size
 modified_at    file timestamp reported by the filesystem
 first_seen_at  when Steward first registered it
@@ -115,9 +115,10 @@ duplicate content but may still be intentionally kept in two locations.
 
 ### Discovery and hashing
 
-`discover_markdown_files(root)` validates the supplied root, recursively uses
-`Path.rglob("*")`, keeps files with the `.md` suffix, resolves them to absolute
-paths, and returns them in deterministic sorted order.
+`discover_source_files(root)` validates the supplied root, recursively uses
+`Path.rglob("*")`, keeps known supported suffixes, resolves them to absolute
+paths, and returns them in deterministic sorted order. The legacy
+`discover_markdown_files` helper remains for focused Markdown callers.
 
 `sha256_file(path)` streams a file in 64 KiB chunks into `hashlib.sha256()`.
 Chunking avoids loading an entire large file into memory. The hexadecimal
@@ -125,7 +126,7 @@ digest is a 64-character representation of the file's SHA-256 hash.
 
 ### Scan lifecycle
 
-`scan_markdown_root(root, source_repository)` compares the observed filesystem
+`scan_source_root(root, source_repository)` compares the observed filesystem
 against active rows in `sources`.
 
 ```text
@@ -196,6 +197,17 @@ Fragments are derived data. Replacing them is safer than attempting a fragile
 line-by-line update algorithm, because the original Markdown remains available
 to rebuild from. It also prevents stale fragments from being returned after a
 file has been edited.
+
+## Active document extraction
+
+`ExtractionService` chooses a deterministic extractor from `SourceType` and
+stores only derived `SourceFragment` rows. Markdown keeps heading/line context;
+PDF keeps page context; DOCX keeps paragraph context; PPTX keeps slide context;
+XLSX keeps sheet/row context; notebooks keep markdown/code cell context; and
+code keeps bounded line ranges. HTML and email preserve readable sections, and
+images or scanned PDFs use optional local OCR. A parser failure never replaces
+the original: the source remains registered and its stale fragments are removed
+until a successful re-extraction.
 
 ## SQLite and migrations
 
