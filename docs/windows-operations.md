@@ -27,8 +27,8 @@ expected database tables, enabled-root availability, or a nonblank Telegram toke
 are missing. Zero configured roots is valid for Inbox-only use; disabled roots
 do not fail this check. This is local readiness, not an integrity scan or network
 probe. Database availability and token configuration do not prove successful
-Telegram, model, or OAuth requests. Check `/status` and a
-non-sensitive question in Telegram after starting the bot:
+Telegram or model requests. Send `/home` and a harmless `/find` in Telegram
+after starting the bot:
 
 ```powershell
 & $stewardExecutable telegram
@@ -42,7 +42,7 @@ No activation script is needed when using the virtual environment's absolute
 executable. Keep `.env` local, with explicit data/inbox paths where practical.
 Shell-only environment variables may not be present in a scheduled process;
 existing process environment also takes precedence over `.env`. Do not put keys
-in task arguments. Complete OAuth authorization locally before unattended use.
+in task arguments.
 
 ## 2. Register one logon task (explicit operator action)
 
@@ -99,10 +99,10 @@ Get-ScheduledTask -TaskName $stewardTaskName | Select-Object TaskName, State
 
 Stopping through Task Scheduler can terminate an in-flight operation. Prefer a
 quiet period with no capture, mutation, or approval underway. Inspect state after
-restart rather than blindly resubmitting a write. Confirm all other CLI/watcher
+restart rather than blindly resubmitting a write. Confirm all other CLI
 writers are stopped before paired database backup or restore. Follow the README
-backup procedure; copy originals separately. Never delete a database or checkpoint
-file merely to clear a stuck review. A leftover `telegram-runtime.db` file is not
+backup procedure; copy originals separately. Never delete a database merely to clear a
+stuck state. A leftover `telegram-runtime.db` file is not
 evidence that a process still holds the lock.
 
 For a missing root, check the drive/mount and OneDrive file availability first.
@@ -127,8 +127,8 @@ Start-ScheduledTask -TaskName $stewardTaskName
 ```
 
 Deployment acceptance is still required on the actual machine: log out/in, verify
-one poller, check available roots, resume a pending review, and exercise outage
-recovery using the Telegram manual checklist. This runbook does not certify those
+one poller, check available roots, confirm the 15-minute rescan sends a filed
+notice, and exercise outage recovery using the Telegram manual checklist. This runbook does not certify those
 checks as completed.
 
 ## 5. Rehearsal record
@@ -140,13 +140,13 @@ real code paths without touching the user's operational database or vault:
   relocation verified the replacement bytes before preserving the source ID;
 - CLI backup and confirmed restore produced write-once snapshots plus the required
   pre-restore safety copy;
-- restored knowledge state was reopened and reviewed from a fresh Python process;
+- restored state was reopened from a fresh Python process;
 - a runtime-lock owner process was terminated and a later process safely acquired
   the same lock;
 - an actual refused loopback connection reached the Ollama adapter and returned
   its bounded `ModelGatewayError` without raw socket diagnostics.
 
-The installation's `steward health --strict` preflight passed: both databases were
+The installation's `steward health --strict` preflight passed: the database was
 available, one authorized root was available, and a Telegram token was configured.
 On 2026-09-20, the user explicitly authorized registration of the local
 `Steward Telegram` task. It uses this project's

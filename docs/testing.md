@@ -1,8 +1,9 @@
 # Testing
 
-Automated tests prove services and transport behaviour. Only a local run
-proves that the real bot token, model provider, OAuth credentials, and
-filesystem work together, so Steward uses both.
+Automated tests prove services, flows, and transport behaviour. Only a local
+run proves that the real bot token, model provider, and filesystem work
+together, and only an evaluation on real files shows whether Find is good.
+Steward uses all three.
 
 ## Automated
 
@@ -12,20 +13,42 @@ filesystem work together, so Steward uses both.
 ```
 
 - Tests create temporary databases and folders. They never touch `.steward/`,
-  the Inbox, or a real vault.
-- Models, Telegram, and Google are replaced by fakes. No test makes a network
-  call.
+  the Inbox, or a real vault. No test makes a network call.
 - Layout mirrors `src/`: `tests/sources`, `tests/extraction`, `tests/retrieval`,
-  `tests/answer`, `tests/graphs`, `tests/telegram`, `tests/storage`, plus
-  `tests/test_application.py` for the `steward.app` use cases and
-  `tests/test_cli.py` for commands.
-- `tests/storage/test_database.py` checks the migration ledger and the
-  destructive-migration snapshot. Add a test there for any new migration.
+  `tests/graphs`, `tests/app`, `tests/telegram`, `tests/storage`,
+  `tests/evaluation`, plus `tests/test_cli.py`.
+- **Flows** (`tests/graphs/`) use a `ScriptedModel` that returns queued replies
+  and fails if a flow makes more calls than scripted. They cover the role
+  contracts, repair, fallbacks, the reformulation loop, the checker, parallel
+  summary workers, the cache, and the budget limits. One test reproduces the
+  real-data failure where a wrong planner guess hid the right file.
+- `tests/storage/test_database.py` checks the migration ledger and the snapshot
+  taken before each destructive migration. Add a test there for any new
+  migration.
 - `tests/test_recovery_workflow.py` rehearses backup, restore, and a fresh
   interpreter reading the restored state.
-- `tests/evaluation/` holds retrieval cases. `steward evaluate-retrieval VAULT
-  CASES.yaml --mode hybrid` runs cases against a real index and reports
-  Recall@5 and MRR.
+
+## Evaluating Find on real data
+
+Write cases for files you actually look for, in words you'd actually use:
+
+```yaml
+cases:
+  - {query: "that AVX question from tut 4", file: CS3210/Tutorials/tut04.pdf}
+  - {query: "the cache CPUs use for address translation", file: virtual-memory.md}
+```
+
+`file` matches the end of the result's path. Then compare the modes on a copy
+of your data:
+
+```powershell
+steward evaluate-retrieval cases.yaml --mode keyword
+steward evaluate-retrieval cases.yaml --mode hybrid
+steward evaluate-retrieval cases.yaml --mode find    # uses the configured model
+```
+
+Each mode reports hit@1, hit@3, MRR, and the misses. Aim for about 25 cases
+across formats and courses, including vague ones.
 
 ## Against real data, safely
 
@@ -38,38 +61,44 @@ $env:STEWARD_DATA_DIR = "$env:TEMP\steward-check"
 steward health --strict
 steward roots
 steward scan-root "Y4S1"
-steward hybrid-search "TLB"
+steward search "TLB"
 Remove-Item Env:STEWARD_DATA_DIR
 ```
 
-`scan-root` only reads the originals; it writes to the copied database.
+`scan-root` only reads the originals; it writes to the copied database. The
+first run on an older database applies pending migrations and snapshots it
+first if any are destructive.
 
 ## Live Telegram acceptance
 
 Follow [telegram-manual-test-checklist.md](telegram-manual-test-checklist.md)
-with a harmless test root. Record results below. Never record tokens,
-credentials, private file content, or absolute paths beyond what reproduces a
-safe test.
+with a harmless test root, and record results below. Never record tokens,
+credentials, private file content, or absolute paths.
 
 ## Results
 
+### 2026-09-24: multi-agent flows and minimal surface (ADR-009)
+
+- Full suite: 255 passed; pyflakes clean.
+- Migrations 66–69 applied to a copy of the real database, with snapshots before
+  66 and 68.
+- `evaluate-retrieval` on a copy of real data, 3 hand-written cases, SoCLaaS
+  model:
+
+  | Mode | Hit@1 | Hit@3 | MRR |
+  |---|---|---|---|
+  | keyword | 0% | 0% | 0.000 |
+  | hybrid | 100% | 100% | 1.000 |
+  | find (planner guesses as hard filters) | 33% | 33% | 0.333 |
+  | find (planner guesses as soft boosts) | 100% | 100% | 1.000 |
+
+  Find used 2 model calls per case. Keyword mode requires every word to match,
+  so natural-language requests miss. Three cases are too few to show that
+  Find beats hybrid; a 25-case set is the next step.
+- Not yet run: the live Telegram checklist after these changes.
+
 ### 2026-09-24: legacy removal (ADR-007)
 
-- Full suite: 405 passed. The suite was 656 before this change; the difference
-  is the deleted legacy tests. Nothing live failed.
-- Core install in a clean virtual environment without extras: `search` works,
-  and `hybrid-search` and `drive-authorize` print the extra to install.
-- Migration 65 on a copy of the real database: snapshot written first, 25 legacy
-  tables dropped, 3 non-privacy action proposals removed. Sources, fragments,
-  embeddings, activity, roots, and Telegram state unchanged. `health --strict`,
-  `roots`, `activity` (including retired event types), `scan-root`, `search`,
-  and `hybrid-search` succeeded on the copy.
-- Not yet run: the live Telegram checklist after the change, and `ask` against a
-  cloud model.
-
-### 2026-09-23: source-centric baseline
-
-Full suite passed after the all-format watcher, root scan telemetry, reviewed
-move reconciliation, location history, and PPTX/XLSX/notebook/code extraction.
-Live Telegram checks passed for root telemetry, source reading and retrieval,
-grounded source replies, Inbox staging/save/discard, and the privacy picker.
+Full suite passed after the legacy tests were deleted. Migration 65 on a copy of
+the real database snapshotted first, dropped 25 legacy tables, and left sources,
+fragments, embeddings, activity, roots, and Telegram state unchanged.

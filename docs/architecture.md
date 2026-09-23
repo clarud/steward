@@ -1,16 +1,17 @@
 # Architecture
 
 ```text
-      CLI (steward …)                 Telegram (steward telegram)
-             │                                   │
-     steward.cli.commands              steward.telegram.adapter
-             │                                   │
-             │                  steward.app.events.StewardEventApplication
-             │                                   │  routes to
-             │       read · intake · roots · privacy · question · agent
-             └───────────────┬───────────────────┘
-                             │  composed by steward.cli.bootstrap
-     sources · extraction · retrieval · answer · intake · capture · privacy · activity
+      CLI (steward …)                    Telegram (steward telegram)
+             │                                     │  + rescan every 15 minutes
+     steward.cli.commands                steward.telegram.adapter
+             │                                     │
+             │                    steward.app.events.StewardEventApplication
+             │                            files · intake · answers
+             └───────────────┬─────────────────────┘
+                             │  composed by steward.cli.bootstrap (build_flows)
+            graphs: find · ask · summarize   ──uses──▶  roles (model contracts)
+                             │
+     sources · extraction · retrieval · capture · intake · roots · activity
                              │
           SQLite (.steward/steward.db)  +  authorized folders and the Inbox
 ```
@@ -19,54 +20,49 @@
 
 | Layer | Package | Responsibility |
 |---|---|---|
-| Transport | `steward.cli`, `steward.telegram` | Parse input, normalise events, deliver replies. No domain rules. |
-| Composition | `steward.cli.bootstrap` | Build services from `Settings` once, for both the CLI and Telegram. |
-| Use cases | `steward.app` | One module per job: `read`, `intake`, `roots`, `privacy`, `question`, `agent`, and the `events` router. |
-| Domain services | `steward.sources`, `extraction`, `retrieval`, `answer`, `intake`, `capture`, `privacy`, `activity`, `roots` | Deterministic logic plus SQL behind small repositories. |
-| Orchestration | `steward.graphs` | LangGraph workflows over the services above. |
-| Storage | `steward.storage` | SQLite migrations, snapshot, and restore. |
+| Transport | `steward.cli`, `steward.telegram` | Parse input, normalise events, deliver replies, schedule rescans. No domain rules. |
+| Composition | `steward.cli.bootstrap` | Build services and flows from `Settings`, once, for both the CLI and Telegram. |
+| Use cases | `steward.app` | `files`, `intake`, and `answers`, plus the `events` router. They return `PresentedReply` cards. |
+| Flows | `steward.graphs` | LangGraph workflows: Find, Ask, Summarize. |
+| Roles | `steward.roles` | One prompt and JSON contract per model role, plus budgets and repair. |
+| Domain services | `sources`, `extraction`, `retrieval`, `capture`, `intake`, `roots`, `activity` | Deterministic logic and SQL behind small repositories. |
+| Storage | `steward.storage` | Append-only migrations, snapshot, and restore. |
 
 ## Data
 
-The filesystem is the human-readable home of original files. SQLite holds
-source identity, hashes, paths, extracted fragments, the FTS5 index,
-embeddings, privacy rules, Inbox context, move proposals, location history,
-root profiles and scan results, activity, and Telegram delivery state. Every
-derived row can be rebuilt from the originals.
+The filesystem holds the originals. SQLite holds source identity, hashes, paths,
+extracted fragments, the FTS5 index, embeddings, cached summaries, Inbox
+context, location history, root scans, activity, and Telegram delivery state.
+Every derived row can be rebuilt from the originals.
 
-## Retrieval and answers
+## Model flows
 
-```text
-question → hybrid retrieval (FTS5 + embeddings, reciprocal-rank fusion)
-         → drop fragments the privacy rule forbids for this model
-         → bounded context with [F1]… labels → model → citations verified
-```
+Three flows use a model. Each has a fixed graph shape, narrow roles with JSON
+contracts, a call budget, and a deterministic fallback:
 
-Two LangGraph workflows exist:
+| Flow | Shape | Budget |
+|---|---|---|
+| Find | plan → 4 retrievers in parallel → per-file fusion → judge → (reformulate once) | 4 calls |
+| Ask | plan → gather → answer → (one extra search) → check | 5 calls |
+| Summarize | cache → split → parallel notes → combine (coverage retry) → check → save | 2N+3 calls |
 
-- `graphs.retrieval_answer`: the grounded-answer pipeline used for ordinary
-  questions. It is a fixed workflow, not an agent.
-- `graphs.tool_agent`: a single tool-calling loop behind `/agent` and
-  `steward agent`. It can call only `search_sources`, `read_source`, and
-  `search_activity`, under a call budget and a tool policy.
-
-Steward is not multi-agent today.
-
-## Model providers
+See [multi-agent-flows.md](multi-agent-flows.md). Everything else (browse, read,
+send original, upload, scan, INBOX.md) makes no model call.
 
 `answer.gateway` defines one `ModelGateway.generate()` protocol, implemented for
-Gemini, OpenAI, SoCLaaS (OpenAI-compatible), and local Ollama. `ModelRouter`
-sends local-only evidence to the local gateway, or declines if none is
-configured. Tool-calling adapters for the agent live in `steward.graphs`.
+Gemini, OpenAI, SoCLaaS (OpenAI-compatible), and local Ollama. Roles are plain
+prompt-and-parse, so every provider works the same way.
 
 ## Working alongside Codex
 
-Codex changes files; Steward observes them. A full `scan-root` is the
-reconciliation authority. The watcher only hints that something changed. A
-same-folder rename with exactly one content-hash match becomes a reviewable
-move proposal.
+Codex changes files; Steward observes them. The Telegram bot rescans every
+authorized root every 15 minutes, and `scan-root` does it on demand. When
+exactly one missing file and one newly seen file share a content hash, the scan
+merges them: the source keeps its ID and history, and gains a location-history
+row. If the file came from a Telegram upload, the chat is told where it was
+filed. Anything ambiguous stays as separate files, which remain searchable.
 
-`INBOX.md` in the Inbox lists every file waiting to be filed: when and how it
-arrived, its intended root and note, and that root's guidance files. Tell Codex
-"file my Inbox using INBOX.md"; filed files drop off the list. Steward writes nothing else outside its data
-directory and never starts Codex.
+`INBOX.md` lists every file waiting in the Inbox: when and how it arrived, its
+intended root and note, and that root's guidance files. Tell Codex "file my
+Inbox using INBOX.md". Steward writes nothing outside its data directory and
+Inbox, and never starts Codex.

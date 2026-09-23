@@ -25,7 +25,7 @@ already set in the shell.
 | Variable | Purpose |
 |---|---|
 | `STEWARD_DATA_DIR` | Data directory, default `.steward` |
-| `STEWARD_INBOX_DIR` | Inbox for uploads and imports, default `vault/inbox` |
+| `STEWARD_INBOX_DIR` | Inbox for Telegram uploads, default `vault/inbox` |
 | `STEWARD_LOG_LEVEL` | `DEBUG` … `CRITICAL`, default `INFO` |
 | `STEWARD_MODEL_PROVIDER` | `gemini` (default), `openai`, `soclaas`, or `local` |
 | `GEMINI_API_KEY`, `STEWARD_GEMINI_MODEL` | Gemini |
@@ -33,14 +33,13 @@ already set in the shell.
 | `SOCLAAS_API_KEY`, `SOCLAAS_MODEL`, `SOCLAAS_BASE_URL` | SoCLaaS (`STEWARD_SOCLAAS_*` aliases accepted) |
 | `STEWARD_LOCAL_MODEL`, `STEWARD_LOCAL_MODEL_URL` | Local Ollama |
 | `TELEGRAM_BOT_TOKEN`, `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` | Telegram bot and chat allowlist |
-| `STEWARD_GOOGLE_CLIENT_SECRETS` | OAuth desktop-client JSON for Drive/Gmail |
 
 API keys are never part of `Settings`, so they cannot be logged with it.
 
-The data directory contains `steward.db` (operational), `checkpoints.db`
-(LangGraph conversation state), `telegram-runtime.db` (single-poller lock),
-`backups/`, `cache/intake/` (staged uploads),
-`config/` (OAuth tokens), and `logs/`.
+The data directory contains `steward.db`, `telegram-runtime.db` (single-poller
+lock), `backups/`, `cache/intake/` (staged uploads), and `logs/`. Log output
+passes through `RedactingFormatter`, which replaces Telegram bot tokens with
+`bot<redacted>`; `httpx` request lines are logged only at WARNING.
 
 ## Sources and roots
 
@@ -57,27 +56,26 @@ directory by name, with optional root-relative exclusions and an enabled flag.
 `steward roots` and Telegram root cards show. `relocate-root NAME PATH --confirm`
 rebinds a root that moved outside Steward: in one write transaction it checks
 that every registered file exists under the new directory with the same
-SHA-256, then rewrites the paths and keeps every ID. Stop the poller and
-watcher first. Optional **root profiles** (`set-root-profile`) store a purpose,
-existing guidance files inside the root, and authority labels. They appear only
-as filing guidance in `INBOX.md`.
+SHA-256, then rewrites the paths and keeps every ID. Stop the bot first.
+`remove-root` stops tracking a root and forgets its files; nothing on disk is
+touched.
 
 **Scanning** (`sources/scanning.py`, `sources/service.py`). Discovery walks the
 root for supported suffixes in sorted order. For each file: new path → add;
 changed hash or metadata → update and re-extract; unchanged → refresh
 `last_seen_at`. Active rows no longer found become `missing`. Scans are
-idempotent.
+idempotent, and a file whose extraction fails is logged and skipped without
+stopping the scan. The Telegram bot runs `rescan_all` every 15 minutes: every
+available root, move reconciliation, `INBOX.md`, and vectors for any new
+fragments (`index_missing_vectors`).
 
-**Moves** (`sources/moves.py`). After a scan, `SourceMoveReconciliationService`
-pairs a missing source with a new source in the same root when exactly one
-content hash matches on each side. The proposal records its root. Accepting it
-(`review-move ID --accept` or `/moves`) keeps the old source ID, appends to
-`source_location_history`, and is refused if either path has left the reviewed
-root. Duplicate content never produces a proposal.
-
-**Watching** (`file_watching.py`). `watch-root` debounces `watchdog` events and
-then hashes the path before changing anything. Events are hints; `scan-root` is
-the reconciliation authority.
+**Moves** (`sources/moves.py`). `MoveReconciler` runs after every scan. It
+first marks Inbox files that have left the Inbox as missing (the Inbox itself is
+not scanned). Then, for each content hash with exactly one missing source and
+exactly one present source first seen after the missing one was last seen, it
+merges them: the old ID keeps the new path, and `source_location_history`
+records the old one. Copies and ambiguous cases are left alone. `filed_notices`
+tells the uploading Telegram chat where an Inbox file was filed.
 
 ## Extraction
 
@@ -110,15 +108,16 @@ versions. Never edit an existing migration.
 Migrations listed in `DESTRUCTIVE_MIGRATIONS` delete user data. Before one runs
 on an existing database, `_snapshot_before_destructive_migrations()` writes
 `DATA_DIR/backups/pre-migration-<version>-<timestamp>/steward.db`. If that
-snapshot fails, nothing is migrated. Migration 65 is the only destructive one:
-it drops the legacy tables (ADR-007).
+snapshot fails, nothing is migrated. Destructive migrations so far: 65 (legacy
+domains, ADR-007), 66 (privacy, action proposals, delivery recovery, and root
+profiles), and 68 (move proposals), per ADR-009. Migration 69 adds
+`source_summaries`.
 
 `snapshot_database()` uses SQLite's backup API from a read-only connection and
 reserves its destination with exclusive creation, so it never overwrites.
 `restore_database()` validates the candidate (`quick_check`, an application
-table, and a matching operational/checkpoint role), then writes a safety copy
-before replacing anything. `steward backup` snapshots both databases in
-sequence; stop writers for a consistent pair.
+table, and a matching role), then writes a safety copy before replacing
+anything. `steward backup` snapshots `steward.db`.
 
 ## Retrieval
 
@@ -132,64 +131,56 @@ sequence; stop writers for a consistent pair.
 - **Hybrid** (`retrieval/hybrid.py`): reciprocal-rank fusion, `1 / (60 + rank)`
   per list. The fused score ranks results; it is not a probability.
 
-All three modes accept the same scope: `--type TYPE` (repeatable) and
-`--root "NAME"`, resolved only against authorized roots. Users never supply a
-raw path. When lexical search finds no content, `/search` falls back to
-registered filenames and relative paths, labelled **Filename matches**, without
-opening any file.
+All three modes accept a type scope (`--type`, repeatable) and a folder scope
+(`--path-prefix` on the CLI, `--root "NAME"` on Telegram `/find`, which resolves
+only against authorized roots). `retrieval/files.py` turns fragment hits into
+**file** candidates: `group_by_file` keeps each file's best fragment, and
+`fuse` applies reciprocal-rank fusion per file across several ranked lists, with
+an optional boost.
 
-`steward evaluate-retrieval VAULT CASES.yaml [--mode hybrid]` reports Recall@5,
-MRR, and every miss for hand-written cases (`tests/evaluation/`).
+`steward evaluate-retrieval CASES.yaml --mode keyword|hybrid|find` scores a
+ranking function with hit@1, hit@3, and MRR (`evaluation.py`). A case is
+`{query, file}`, and `file` matches the end of the result's path.
 
-## Grounded answers and summaries
+## Model flows
 
-```text
-question → HybridRetriever → privacy filter → ContextBuilder → ModelGateway → verify citations
-```
+Find, Ask, and Summarize are described node by node in
+[multi-agent-flows.md](multi-agent-flows.md). In code:
 
-- `AnswerService` (`answer/service.py`) returns a fixed "not enough local
-  information" reply without calling a model when retrieval finds nothing.
-- `ContextBuilder` labels each fragment `[F1]`, `[F2]`… with filename, heading,
-  and location, capped at 12,000 characters (excerpts marked `[truncated]`).
-  Local directory structure is not sent.
-- `verify_citations` keeps only citations the answer actually used. A missing
-  or unknown key is flagged, and for summaries the text is withheld.
-- `ModelRouter` sends evidence from `local_model_only` sources to the local
-  Ollama gateway, or declines if none is configured. `no_model` fragments are
-  removed before context is built. `external_redacted` currently fails closed.
-- **Summaries and "Ask about it"** (`app/read.py`) use one source's fragments.
-  Over 60,000 characters they go through multi-pass `synthesize_long_document`,
-  and access is re-checked before the reply is shown.
+- `roles/structured.py`: `CallBudget`, `generate_json` (validate, one repair,
+  then raise), and `generate_text`.
+- `roles/find.py`, `roles/ask.py`, `roles/summarize.py`, `roles/checker.py`: one
+  prompt, contract, and validator per role. Validators reject IDs or keys that
+  were not supplied.
+- `graphs/find.py`, `graphs/ask.py`, `graphs/summarize.py`: the graphs.
+  `FindTools`, `AskTools`, and `SummarizeTools` hold the services each graph
+  may use. `run_find`, `run_ask`, and `run_summarize` return plain result
+  dataclasses.
+- `sources/summaries.py`: `SummaryRepository` caches complete summaries by
+  source, content hash, and model.
+- `app/answers.py`: runs a flow and renders its card. It keeps each chat's
+  last Find and Ask turn in memory for follow-ups.
+- `cli/bootstrap.py`: `build_flows` builds all three graphs for the CLI and
+  Telegram. Without a model gateway, Telegram's flows are disabled and say so.
 
-## LangGraph workflows
-
-- `graphs/retrieval_answer.py`: prepare → retrieve → answer | no_evidence, with
-  a SQLite checkpointer per thread (`cli:ask`, or per Telegram chat), so
-  follow-ups can use recent sources. Nodes call ordinary services.
-- `graphs/tool_agent.py`: one model ↔ `ToolNode` loop, at most 6 tool calls,
-  with repeated identical calls refused and a `ToolPolicy` gate on every call.
-  Provider adapters (`gemini_tools.py`, `ollama_tools.py`,
-  `openai_compatible_tools.py`) translate tool schemas. Reachable only through
-  `/agent` and `steward agent`; ordinary questions use the grounded graph.
-
-`observability.trace()` logs structured events (routes, fragment IDs, tool
-names) without source text, prompts, or model output.
+`observability.trace()` logs structured events (node, decision, calls used)
+without source text, prompts, or model output.
 
 ## Telegram
 
 `telegram/adapter.py` normalises each update into a platform-neutral
 `IncomingEvent` and runs the synchronous application in a worker thread.
 
-- **Router** (`app/events.py`): tries, in order, privacy, roots, moves, Codex
-  `/agent`, staged intake, source/activity references and read
-  commands, then Drive and Gmail. After that the deterministic `IntentResolver`
-  maps text to search, Inbox/activity, a grounded question, capture, or a
-  staged note.
+- **Router** (`app/events.py`): uploads and intake buttons go to `app/intake.py`;
+  `/find`, `/ask`, and `/note` are handled directly; a reply to a card with
+  text asks about that card's file (or adds a note to a staged upload); file,
+  browse, and Inbox commands go to `app/files.py`. Any other plain text gets a
+  card with **Find**, **Ask**, and **Save as note**, with no model call.
 - **Delivery ledger** (`telegram/delivery.py`): each update ID is claimed as
   `processing` before handling and marked `delivered` after the reply. Failures
   release the claim so Telegram can retry. This is at-least-once, so handlers
-  must be idempotent. Retries are bounded, and exhausted updates become dead
-  letters (`telegram-dead-letters`, `telegram-recover-dead-letter`).
+  must be idempotent. A claim left by a crashed process expires after a
+  15-minute lease.
 - **Buttons** (`telegram/callbacks.py`): callback data is an opaque,
   chat-scoped, expiring token mapped to a locally stored command, so no command
   text travels in the button.
@@ -204,57 +195,44 @@ names) without source text, prompts, or model output.
 - **Runtime lock** (`runtime.py`): an exclusive SQLite transaction in
   `telegram-runtime.db` prevents two pollers on one data directory. It cannot
   stop the same token running elsewhere.
+- **Periodic work**: `run_telegram_polling(periodic=...)` runs `rescan_all` and
+  sends filed notices every 15 minutes, off the event loop.
 
-## Inbox and imports
+## Inbox uploads
 
 Telegram uploads are staged in `cache/intake/` as a `ProvisionalIntake`
-(`intake.py`). The card explains the likely category without a model call and
-offers a model boundary for the saved item (`none`, `local`, or `external`),
-**Intended root**, extra context, save, or discard. Saving goes through
-`InboxCaptureService` (`capture.py`), which writes to the Inbox, registers and
-extracts the source, and stores intended root and context in
-`source_inbox_contexts`. `/save` captures immediately. Captures are idempotent
-by event and content hash.
-
-Drive and Gmail (`drive.py`, `gmail.py`, extra `google`) authorize lazily with
-read-only scopes, and only when the owner runs an explicit search or import. An
-import downloads one chosen original into the Inbox. Google-native documents
-are exported to a supported format.
+(`intake.py`). The card offers **Save**, **Intended root**, **Add note**, and
+**Discard**, and replying to it with text adds a note. Saving goes through
+`InboxCaptureService` (`capture.py`), which writes a readable filename into the
+Inbox (the note's title or the upload's name, de-duplicated), registers and
+extracts the source, and records its capture key in `inbox_captures` and its
+intended root and note in `source_inbox_contexts`. `/note TEXT` saves a note
+directly. Captures are idempotent by capture key.
 
 ## Inbox queue
 
 `InboxQueue` (`sources/inbox_queue.py`) writes `INBOX.md` in the Inbox: one
 entry per active Inbox source whose file is still there, with received time and
 origin, type, intended root and path, the owner's note, and guidance files
-(root-profile guidance plus any `AGENTS.md` or `COURSE_WORKFLOWS.md` at the
-intended root). It contains no file contents. `InboxCaptureService` refreshes it
+(any `AGENTS.md` or `COURSE_WORKFLOWS.md` at the intended root). It contains no file contents. `InboxCaptureService` refreshes it
 after every capture, intake acceptance refreshes it again once routing context
 is saved, and `scan-root` and `steward inbox` refresh it too. The file is only
 rewritten when its content changes, via a temporary file and atomic replace.
 A file Codex moves out of the Inbox drops off at the next refresh; Telegram's
 `/inbox` applies the same "still in the Inbox" rule.
 
-## Privacy
-
-`PrivacyService` stores one rule per source: `external_allowed` (default),
-`external_redacted` (fails closed), `local_model_only`, or `no_model`. The CLI
-`set-source-privacy` applies a rule directly. Telegram `/set_privacy` creates
-an `action_proposals` row that must be approved with `/approve_action`, and only
-from the chat that created it.
-
 ## Activity
 
-`ActivityService` appends audit events (captures, intake decisions, privacy
-changes, delivery recoveries). Details that look like paths are reduced to
+`ActivityService` appends audit events (scans, captures, intake decisions). Details that look like paths are reduced to
 filenames before they reach Telegram or a model. Event types from retired
 features still load (`ActivityType._missing_`).
 
 ## Known limitations
 
-- Citation checks confirm a key was supplied, not that the claim follows from
-  the evidence.
-- `external_redacted` has no redaction pipeline yet and blocks cloud models.
+- The checker uses the same model as the writer.
+- Snippets sent to a cloud provider leave the machine; use `local` (Ollama) to
+  keep everything local.
 - A crash after domain work but before the delivery ledger updates can repeat
   that work (at-least-once delivery).
-- Health checks are local. They do not probe Telegram, OAuth, or model servers.
+- Health checks are local. They do not probe Telegram or model servers.
 - Steward is single-user and single-process per data directory.
