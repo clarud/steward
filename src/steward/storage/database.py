@@ -70,6 +70,7 @@ SOURCE_LOCATION_HISTORY_SCHEMA_VERSION = 60
 PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION = 61
 SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
 SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
+SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION = 64
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -627,6 +628,10 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             authority_tiers TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""",
+    ),
+    (
+        SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
+        "ALTER TABLE source_move_proposals ADD COLUMN root_path TEXT",
     ),
 )
 

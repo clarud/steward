@@ -20,37 +20,43 @@ class SourceMoveProposal:
     status: str
     created_at: datetime
     reviewed_at: datetime | None = None
+    root_path: Path | None = None
 
 
 class SourceMoveProposalRepository:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
 
-    def create_pending(self, missing_source_id: int, discovered_source_id: int, content_hash: str) -> SourceMoveProposal:
+    def create_pending(
+        self, missing_source_id: int, discovered_source_id: int, content_hash: str, *, root_path: Path
+    ) -> SourceMoveProposal:
         created_at = datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
             try:
                 cursor = connection.execute(
                     """INSERT INTO source_move_proposals
-                       (missing_source_id, discovered_source_id, content_hash, status, created_at)
-                       VALUES (?, ?, ?, 'pending', ?)""",
-                    (missing_source_id, discovered_source_id, content_hash, created_at.isoformat()),
+                       (missing_source_id, discovered_source_id, content_hash, status, created_at, root_path)
+                       VALUES (?, ?, ?, 'pending', ?, ?)""",
+                    (missing_source_id, discovered_source_id, content_hash, created_at.isoformat(), str(root_path.resolve())),
                 )
             except sqlite3.IntegrityError:
                 row = connection.execute(
-                    """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at
+                    """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at, root_path
                        FROM source_move_proposals WHERE missing_source_id = ? OR discovered_source_id = ?""",
                     (missing_source_id, discovered_source_id),
                 ).fetchone()
                 if row is None:
                     raise
                 return self._from_row(row)
-        return SourceMoveProposal(int(cursor.lastrowid), missing_source_id, discovered_source_id, content_hash, "pending", created_at)
+        return SourceMoveProposal(
+            int(cursor.lastrowid), missing_source_id, discovered_source_id, content_hash,
+            "pending", created_at, root_path=root_path.resolve(),
+        )
 
     def list_pending(self) -> tuple[SourceMoveProposal, ...]:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at
+                """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at, root_path
                    FROM source_move_proposals WHERE status = 'pending' ORDER BY id"""
             ).fetchall()
         return tuple(self._from_row(row) for row in rows)
@@ -58,7 +64,7 @@ class SourceMoveProposalRepository:
     def get(self, proposal_id: int) -> SourceMoveProposal | None:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
-                """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at
+                """SELECT id, missing_source_id, discovered_source_id, content_hash, status, created_at, reviewed_at, root_path
                    FROM source_move_proposals WHERE id = ?""", (proposal_id,)
             ).fetchone()
         return self._from_row(row) if row is not None else None
@@ -74,11 +80,18 @@ class SourceMoveProposalRepository:
         reviewed_at = datetime.now(UTC)
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("UPDATE source_move_proposals SET status = ?, reviewed_at = ? WHERE id = ?", (status, reviewed_at.isoformat(), proposal_id))
-        return SourceMoveProposal(proposal.id, proposal.missing_source_id, proposal.discovered_source_id, proposal.content_hash, status, proposal.created_at, reviewed_at)
+        return SourceMoveProposal(
+            proposal.id, proposal.missing_source_id, proposal.discovered_source_id,
+            proposal.content_hash, status, proposal.created_at, reviewed_at, proposal.root_path,
+        )
 
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> SourceMoveProposal:
-        return SourceMoveProposal(int(row[0]), int(row[1]), int(row[2]), str(row[3]), str(row[4]), datetime.fromisoformat(str(row[5])), datetime.fromisoformat(str(row[6])) if row[6] else None)
+        return SourceMoveProposal(
+            int(row[0]), int(row[1]), int(row[2]), str(row[3]), str(row[4]),
+            datetime.fromisoformat(str(row[5])), datetime.fromisoformat(str(row[6])) if row[6] else None,
+            Path(str(row[7])) if len(row) > 7 and row[7] is not None else None,
+        )
 
 
 class SourceMoveReconciliationService:
@@ -97,7 +110,9 @@ class SourceMoveReconciliationService:
             matches = [new for new in active if new.content_hash == old.content_hash]
             old_matches = [prior for prior in missing if prior.content_hash == old.content_hash]
             if len(matches) == 1 and len(old_matches) == 1 and old.id is not None and matches[0].id is not None:
-                created.append(self._proposals.create_pending(old.id, matches[0].id, old.content_hash))
+                created.append(self._proposals.create_pending(
+                    old.id, matches[0].id, old.content_hash, root_path=resolved_root
+                ))
         return tuple(created)
 
     def accept(self, proposal_id: int):
@@ -111,6 +126,15 @@ class SourceMoveReconciliationService:
             return source
         if proposal.status != "pending":
             raise ValueError(f"Move proposal {proposal_id} is already {proposal.status}.")
+        if proposal.root_path is None:
+            raise ValueError("This legacy move proposal has no reviewed root; scan again to create a fresh proposal.")
+        missing = self._sources.get_by_id(proposal.missing_source_id)
+        discovered = self._sources.get_by_id(proposal.discovered_source_id)
+        if missing is None or discovered is None:
+            raise ValueError("Both proposed sources must still be registered.")
+        reviewed_root = proposal.root_path.resolve()
+        if not missing.path.is_relative_to(reviewed_root) or not discovered.path.is_relative_to(reviewed_root):
+            raise ValueError("The proposed paths no longer belong to the reviewed root; scan the relevant root again.")
         source = self._sources.replace_discovered_move(proposal.missing_source_id, proposal.discovered_source_id)
         self._proposals.review(proposal_id, "accepted")
         return source

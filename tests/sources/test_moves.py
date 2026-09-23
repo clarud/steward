@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
@@ -56,3 +57,30 @@ def test_duplicate_content_never_produces_an_automatic_move_match(tmp_path: Path
     ).propose_for_root(root)
 
     assert proposals == ()
+
+
+def test_move_acceptance_refuses_a_path_that_left_the_reviewed_root(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    first_root = tmp_path / "first"; first_root.mkdir()
+    second_root = tmp_path / "second"; second_root.mkdir()
+    original = first_root / "first.md"; original.write_text("same bytes", encoding="utf-8")
+    sources = SourceRepository(database)
+    scanner = SourceService(sources, SourceFragmentRepository(database), MarkdownExtractor())
+    scanner.scan_source_root(first_root)
+    original.rename(first_root / "renamed.md")
+    scanner.scan_source_root(first_root)
+    moves = SourceMoveReconciliationService(sources, SourceMoveProposalRepository(database))
+    proposal = moves.propose_for_root(first_root)[0]
+
+    moved = first_root / "renamed.md"
+    moved.rename(second_root / moved.name)
+    discovered = sources.get_by_id(proposal.discovered_source_id)
+    assert discovered is not None
+    sources.update(replace(discovered, path=second_root / moved.name))
+
+    try:
+        moves.accept(proposal.id or 0)
+    except ValueError as error:
+        assert "reviewed root" in str(error)
+    else:
+        raise AssertionError("A cross-root source must not preserve a same-root move identity.")
