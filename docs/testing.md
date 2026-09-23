@@ -226,6 +226,9 @@ safe test.
   never executed as instructions.
 - Focused root/profile, CLI, handoff, migration, and full regression tests
   passed locally at 100%. A real Y4S1 profile remains an explicit manual setup.
+- Telegram root details also render the approved purpose and authority labels,
+  never guidance-file paths or executable content. Full regression passed again
+  after this active-surface wiring.
 
 ## Session: 2026-09-16
 

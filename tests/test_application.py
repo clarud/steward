@@ -57,7 +57,7 @@ from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.reviews import ReviewContextRepository
 from steward.knowledge import KnowledgeEnrichmentProposalRepository, KnowledgeService
 from steward.knowledge_connector import KnowledgeConnector
-from steward.roots import SourceRootRepository
+from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.privacy import PrivacyRule, PrivacyService
 from steward.reviews import ReviewContextRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
@@ -1937,11 +1937,17 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     root_path = tmp_path / "notes"; root_path.mkdir()
     roots = SourceRootRepository(database_path)
     root = roots.add("School", root_path)
+    SourceRootProfileRepository(database_path).set(
+        root, purpose="School material", authority_tiers=("official", "notes"),
+    )
     from steward.sources import ScanResult
     roots.record_successful_scan(root, ScanResult(new=1, updated=2, unchanged=3, missing=4))
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
-        roots_application=StewardRootsApplication(roots, contexts=ReviewContextRepository(database_path)),
+        roots_application=StewardRootsApplication(
+            roots, contexts=ReviewContextRepository(database_path),
+            profiles=SourceRootProfileRepository(database_path),
+        ),
     )
 
     response = application.handle(make_event(text="/roots"))
@@ -1953,6 +1959,8 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     detail = application.handle(make_event(text="/root 1"))
     assert isinstance(detail, PresentedReply)
     assert detail.title == "School"
+    assert "Purpose: School material" in detail.text
+    assert "Authority tiers: official · notes" in detail.text
     assert "Last scan outcome: new=1 updated=2 unchanged=3 missing=4" in detail.text
     assert "Root paths and changes remain local-only." in detail.text
     assert detail.reference == ("root", 1)

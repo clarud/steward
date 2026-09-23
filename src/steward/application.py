@@ -52,7 +52,7 @@ from steward.intake import (
     ProvisionalIntakeRepository,
     ProvisionalIntakeService,
 )
-from steward.roots import SourceRootRepository
+from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.sources.inbox_context import SourceInboxContextRepository
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
@@ -4292,9 +4292,11 @@ class StewardRootsApplication:
         roots: SourceRootRepository,
         *,
         contexts: ReviewContextRepository | None = None,
+        profiles: SourceRootProfileRepository | None = None,
     ) -> None:
         self._roots = roots
         self._contexts = contexts
+        self._profiles = profiles
 
     def resolve_root_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Reopen only an explicitly viewed root without exposing its local path.
@@ -4367,8 +4369,7 @@ class StewardRootsApplication:
             icon="🗂️",
         )
 
-    @staticmethod
-    def _root_detail(root: object) -> PresentedReply:
+    def _root_detail(self, root: object) -> PresentedReply:
         health = str(getattr(root, "health"))
         guidance = (
             "Reconnect or restore this root locally, then scan it locally."
@@ -4383,8 +4384,14 @@ class StewardRootsApplication:
             f"Last scan outcome: new={counts[0]} updated={counts[1]} unchanged={counts[2]} missing={counts[3]}\n"
             if counts is not None else ""
         )
+        profile = self._profiles.get(identifier) if self._profiles is not None and isinstance(identifier, int) else None
+        profile_details = (
+            f"Purpose: {profile.purpose}\n"
+            + (f"Authority tiers: {' · '.join(profile.authority_tiers)}\n" if profile.authority_tiers else "")
+            if profile is not None else ""
+        )
         return PresentedReply(
-            f"Status: {health}\nLast successful scan: {scan_status}\n{outcome}Excluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
+            f"Status: {health}\n{profile_details}Last successful scan: {scan_status}\n{outcome}Excluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
             f"{guidance}\nRoot paths and changes remain local-only.",
             (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
             title=str(getattr(root, "name")), icon="🗂️",
