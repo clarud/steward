@@ -2,7 +2,6 @@
 
 from steward.app.agent import StewardToolAgentApplication
 from steward.app.events import StewardEventApplication
-from steward.app.handoff import StewardCodexHandoffApplication
 from steward.app.intake import (
     StewardCaptureApplication,
     StewardDriveImportApplication,
@@ -17,7 +16,6 @@ from steward.app.roots import StewardMoveReconciliationApplication, StewardRoots
 __all__ = [
     "TEXT_QUESTION_REQUIRED",
     "StewardCaptureApplication",
-    "StewardCodexHandoffApplication",
     "StewardDriveImportApplication",
     "StewardEventApplication",
     "StewardGmailImportApplication",

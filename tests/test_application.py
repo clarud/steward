@@ -14,7 +14,6 @@ from steward.app import (
     StewardToolAgentApplication,
     StewardRootsApplication,
     StewardPrivacyApplication,
-    StewardCodexHandoffApplication,
     TEXT_QUESTION_REQUIRED,
 )
 from steward.action_proposals import ActionProposalRepository
@@ -22,7 +21,7 @@ from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
-from steward.sources import CodexHandoffService, Source, SourceRepository, SourceType
+from steward.sources import Source, SourceRepository, SourceType
 from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
 from steward.storage import initialize_database
 from steward.retrieval import HybridSearchHit, LexicalSearchService, SemanticSearchHit
@@ -145,9 +144,9 @@ def test_help_explains_read_boundaries_and_reviewable_writes() -> None:
     help_text = StewardReadApplication.help_text()
 
     for command in ("/sources", "/inbox", "/source ID", "/hybrid_search", "/roots", "/moves",
-                    "/codex_handoff", "/privacy SOURCE_ID"):
+                    "INBOX.md", "/privacy SOURCE_ID"):
         assert command in help_text
-    assert "Codex organises saved Inbox files" in help_text
+    assert "listed in INBOX.md on your computer" in help_text
     for removed in ("/workspaces", "/tasks", "/research", "/calendar", "/records"):
         assert removed not in help_text
 
@@ -1379,7 +1378,7 @@ def test_reader_source_card_and_home_expose_only_live_actions(tmp_path: Path) ->
     assert isinstance(card, PresentedReply)
     assert [action.command for action in card.actions] == [
         f"/source_content {source.id}", f"/summarize_source {source.id}", f"/ask_source {source.id}",
-        f"/privacy_options {source.id}", f"/codex_handoff {source.id}",
+        f"/privacy_options {source.id}",
     ]
     assert reader.handle_command(make_event(text="/workspaces")) is None
 
@@ -1438,30 +1437,6 @@ def test_source_card_uses_a_safe_root_relative_location(tmp_path: Path) -> None:
     assert str(root_path) not in card.text
 
 
-def test_codex_handoff_without_ids_offers_an_inbox_picker(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"
-    initialize_database(database)
-    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
-    path = inbox / "incoming.md"; path.write_text("private source text", encoding="utf-8")
-    now = datetime.now(UTC)
-    sources = SourceRepository(database)
-    source = sources.add(Source(
-        None, path, "c" * 64, SourceType.MARKDOWN, path.stat().st_size, now, now, now,
-    ))
-    app = StewardCodexHandoffApplication(
-        CodexHandoffService(sources, SourceRootRepository(database), tmp_path / ".steward", inbox),
-        sources,
-        inbox,
-    )
-
-    picker = app.handle_command(make_event(text="/codex_handoff"))
-    prepared = app.handle_command(make_event(text=f"/codex_handoff {source.id}"))
-
-    assert isinstance(picker, PresentedReply)
-    assert "incoming.md" in picker.text
-    assert any(action.command == f"/codex_handoff {source.id}" for action in picker.actions)
-    assert isinstance(prepared, PresentedReply)
-    assert "metadata and guidance paths only" in prepared.text
 
 
 def test_source_search_parses_authorized_root_and_type_filters(tmp_path: Path) -> None:
@@ -1543,6 +1518,7 @@ def test_event_application_routes_owner_safe_reads(tmp_path: Path) -> None:
     inbox_card = application.handle(make_event(text="/inbox"))
     assert isinstance(inbox_card, PresentedReply)
     assert inbox_card.title == "Inbox" and "openmp.md" in inbox_card.text
+    assert "INBOX.md" in inbox_card.text
     search = application.handle(make_event(text="/search OpenMP"))
     assert isinstance(search, PresentedReply)
     assert search.title == "Search results" and "openmp.md" in search.text
@@ -1554,7 +1530,6 @@ def test_event_application_routes_owner_safe_reads(tmp_path: Path) -> None:
     assert isinstance(source_details, PresentedReply)
     assert source_details.title == "openmp.md"
     assert str(tmp_path) not in source_details.text
-    assert any(action.command == "/codex_handoff 1" for action in source_details.actions)
     natural_inbox = application.handle(make_event(text="what is in my inbox"))
     assert isinstance(natural_inbox, PresentedReply)
     assert "openmp.md" in natural_inbox.text

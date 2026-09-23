@@ -7,7 +7,7 @@
              │                                   │
              │                  steward.app.events.StewardEventApplication
              │                                   │  routes to
-             │       read · intake · roots · handoff · privacy · question · agent
+             │       read · intake · roots · privacy · question · agent
              └───────────────┬───────────────────┘
                              │  composed by steward.cli.bootstrap
      sources · extraction · retrieval · answer · intake · capture · privacy · activity
@@ -21,7 +21,7 @@
 |---|---|---|
 | Transport | `steward.cli`, `steward.telegram` | Parse input, normalise events, deliver replies. No domain rules. |
 | Composition | `steward.cli.bootstrap` | Build services from `Settings` once, for both the CLI and Telegram. |
-| Use cases | `steward.app` | One module per job: `read`, `intake`, `roots`, `handoff`, `privacy`, `question`, `agent`, and the `events` router. |
+| Use cases | `steward.app` | One module per job: `read`, `intake`, `roots`, `privacy`, `question`, `agent`, and the `events` router. |
 | Domain services | `steward.sources`, `extraction`, `retrieval`, `answer`, `intake`, `capture`, `privacy`, `activity`, `roots` | Deterministic logic plus SQL behind small repositories. |
 | Orchestration | `steward.graphs` | LangGraph workflows over the services above. |
 | Storage | `steward.storage` | SQLite migrations, snapshot, and restore. |
@@ -64,6 +64,9 @@ configured. Tool-calling adapters for the agent live in `steward.graphs`.
 Codex changes files; Steward observes them. A full `scan-root` is the
 reconciliation authority. The watcher only hints that something changed. A
 same-folder rename with exactly one content-hash match becomes a reviewable
-move proposal. `codex-handoff` writes `DATA_DIR/handoffs/<id>.json` with source
-metadata and root guidance paths. It contains no file contents and never
-starts Codex.
+move proposal.
+
+`INBOX.md` in the Inbox lists every file waiting to be filed: when and how it
+arrived, its intended root and note, and that root's guidance files. Tell Codex
+"file my Inbox using INBOX.md"; filed files drop off the list. Steward writes nothing else outside its data
+directory and never starts Codex.

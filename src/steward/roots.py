@@ -44,7 +44,7 @@ class SourceRootProfile:
     """Owner-reviewed descriptive metadata for one authorized root.
 
     These fields are not executable instructions. They guide display and a
-    metadata-only Codex handoff; they never grant a model filesystem access.
+    Inbox queue (INBOX.md) as filing guidance; they never grant a model filesystem access.
     """
 
     root_id: int

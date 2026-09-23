@@ -39,7 +39,7 @@ API keys are never part of `Settings`, so they cannot be logged with it.
 
 The data directory contains `steward.db` (operational), `checkpoints.db`
 (LangGraph conversation state), `telegram-runtime.db` (single-poller lock),
-`handoffs/` (Codex manifests), `backups/`, `cache/intake/` (staged uploads),
+`backups/`, `cache/intake/` (staged uploads),
 `config/` (OAuth tokens), and `logs/`.
 
 ## Sources and roots
@@ -59,8 +59,8 @@ rebinds a root that moved outside Steward: in one write transaction it checks
 that every registered file exists under the new directory with the same
 SHA-256, then rewrites the paths and keeps every ID. Stop the poller and
 watcher first. Optional **root profiles** (`set-root-profile`) store a purpose,
-existing guidance files inside the root, and authority labels. They are used only in Codex
-handoffs.
+existing guidance files inside the root, and authority labels. They appear only
+as filing guidance in `INBOX.md`.
 
 **Scanning** (`sources/scanning.py`, `sources/service.py`). Discovery walks the
 root for supported suffixes in sorted order. For each file: new path → add;
@@ -181,7 +181,7 @@ names) without source text, prompts, or model output.
 `IncomingEvent` and runs the synchronous application in a worker thread.
 
 - **Router** (`app/events.py`): tries, in order, privacy, roots, moves, Codex
-  handoff, `/agent`, staged intake, source/activity references and read
+  `/agent`, staged intake, source/activity references and read
   commands, then Drive and Gmail. After that the deterministic `IntentResolver`
   maps text to search, Inbox/activity, a grounded question, capture, or a
   staged note.
@@ -221,16 +221,18 @@ read-only scopes, and only when the owner runs an explicit search or import. An
 import downloads one chosen original into the Inbox. Google-native documents
 are exported to a supported format.
 
-## Codex handoff
+## Inbox queue
 
-`CodexHandoffService` (`sources/handoff.py`) writes
-`DATA_DIR/handoffs/<id>.json` with the chosen sources' IDs, filenames, local
-and root-relative paths, types, hashes, Inbox capture context, root profiles,
-the owner's note, and guidance file paths (profile guidance plus any
-`AGENTS.md` or `COURSE_WORKFLOWS.md` at the root or intended root). It contains
-no file contents, contacts nothing, and runs nothing. The manifest stays on the
-Steward computer. `/codex_handoff` without IDs shows a paginated
-picker of Inbox sources.
+`InboxQueue` (`sources/inbox_queue.py`) writes `INBOX.md` in the Inbox: one
+entry per active Inbox source whose file is still there, with received time and
+origin, type, intended root and path, the owner's note, and guidance files
+(root-profile guidance plus any `AGENTS.md` or `COURSE_WORKFLOWS.md` at the
+intended root). It contains no file contents. `InboxCaptureService` refreshes it
+after every capture, intake acceptance refreshes it again once routing context
+is saved, and `scan-root` and `steward inbox` refresh it too. The file is only
+rewritten when its content changes, via a temporary file and atomic replace.
+A file Codex moves out of the Inbox drops off at the next refresh; Telegram's
+`/inbox` applies the same "still in the Inbox" rule.
 
 ## Privacy
 

@@ -40,14 +40,13 @@ _PRIMARY_COMMANDS = (
     ("inbox", "show saved Inbox items"),
     ("sources", "browse registered files"),
     ("roots", "show authorized folders"),
-    ("codex_handoff", "prepare Inbox files for Codex"),
     ("help", "show more options"),
 )
 # Every command the live applications handle. Unknown commands still reach the
 # application through the catch-all handler and receive safe guidance.
 _COMMANDS = (
     "activity", "activity_event", "agent", "approve_action", "ask_source",
-    "codex_handoff", "codex_handoff_page", "drive_import", "drive_page", "drive_search",
+    "drive_import", "drive_page", "drive_search",
     "gmail_import", "gmail_page", "gmail_search", "help", "home",
     "hybrid_search", "inbox", "intake_accept", "intake_analysis",
     "intake_context", "intake_discard", "intake_root", "metrics", "moves",

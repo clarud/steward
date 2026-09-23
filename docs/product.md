@@ -32,8 +32,8 @@ authorize a folder → scan and extract → search by words or meaning
   the Inbox, change privacy, and import a chosen Drive file or Gmail message.
 - Tracks changes made by Codex and other tools, and preserves a file's identity
   across a reviewed rename or move.
-- Prepares metadata-only handoff manifests so Codex knows which Inbox files to
-  organise and which folder guidance applies.
+- Keeps `INBOX.md` listing what's waiting to be filed, with where you wanted
+  each file to go, so Codex can organise it on your computer.
 
 ## What Steward deliberately does not do
 

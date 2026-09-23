@@ -116,9 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_move_group = review_move_parser.add_mutually_exclusive_group(required=True)
     review_move_group.add_argument("--accept", action="store_true")
     review_move_group.add_argument("--reject", action="store_true")
-    handoff_parser = subcommands.add_parser("codex-handoff", help="Prepare a local metadata-only manifest for selected sources")
-    handoff_parser.add_argument("source_ids", type=int, nargs="+", help="Active source IDs to include")
-    handoff_parser.add_argument("--note", default="", help="Optional user guidance for Codex; stored locally in the manifest")
+    subcommands.add_parser("inbox", help="Refresh and summarise INBOX.md, the list of Inbox files waiting to be filed")
     for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
         root_toggle = subcommands.add_parser(command, help=help_text)
         root_toggle.add_argument("name", help="Authorized source-root name")

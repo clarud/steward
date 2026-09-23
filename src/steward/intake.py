@@ -331,6 +331,7 @@ class ProvisionalIntakeService:
                 intake.platform,
                 datetime.now(UTC),
             ))
+            self._capture.refresh_queue()
         decided = self._repository.decide(intake_id, "accepted")
         decided.staged_path.unlink(missing_ok=True)
         self._activity.record(

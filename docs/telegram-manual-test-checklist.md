@@ -12,7 +12,7 @@ Run the bot with `steward telegram` and record results in [testing.md](testing.m
 ## 1. Start and help
 
 1. Send `/home` and `/help`. Both describe finding files, reading, the Inbox,
-   roots, moves, Codex handoff, and privacy. Nothing mentions workspaces, tasks,
+   roots, moves, INBOX.md, and privacy. Nothing mentions workspaces, tasks,
    records, Calendar, or research.
 2. Send `/tasks` or `/workspaces`. Steward replies with safe guidance, not an
    error or a legacy feature.
@@ -58,16 +58,18 @@ says it lacks local information rather than guessing.
    context.
 4. Send a short note, then discard it. No source is created.
 
-## 6. Hand off to Codex and reconcile
+## 6. Pick up on the computer and reconcile
 
-1. `/codex_handoff` with no IDs, pick the uploaded file. The reply says the
-   manifest is local and metadata-only. Open the JSON on the computer; it has
-   no file contents.
+1. Open `INBOX.md` in the Inbox folder. The uploaded file is listed with its
+   intended root, note, and guidance files, and none of its contents. `/inbox`
+   says the same files are waiting.
 2. Move or rename that file within the root (by hand or with Codex), then run
    `steward scan-root "Telegram Test"`.
 3. `/moves` shows the rename with old and new names. **Preserve source ID**
    keeps its identity; the source card shows the new location.
-4. Two files with identical content never produce an automatic move match.
+4. Move the uploaded file out of the Inbox into the root and run `steward inbox`.
+   It no longer appears in `INBOX.md` or `/inbox`.
+5. Two files with identical content never produce an automatic move match.
 
 ## 7. Privacy
 

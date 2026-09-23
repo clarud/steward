@@ -17,7 +17,12 @@ from steward.capture import InboxCaptureService
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.extraction import DocumentExtractionError, MarkdownExtractor, SourceFragmentRepository
 from steward.logging import configure_logging
-from steward.sources import CodexHandoffService, SourceMoveProposalRepository, SourceMoveReconciliationService, SourceRepository, SourceType
+from steward.sources import (
+    SourceMoveProposalRepository,
+    SourceMoveReconciliationService,
+    SourceRepository,
+    SourceType,
+)
 from steward.sources.service import SourceService
 from steward.storage import initialize_database, restore_database, snapshot_database
 from steward.retrieval import (
@@ -33,7 +38,6 @@ from steward.telegram import (
     run_telegram_polling,
 )
 from steward.activity import ActivityService, ActivityType
-from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
 from steward.gmail import GmailInboxImportService, GmailService, authorize_gmail
@@ -46,6 +50,7 @@ from steward.cli.bootstrap import (
     build_source_agent_graph,
     build_telegram_application,
     health_report,
+    inbox_queue,
     model_gateway_from_settings,
     tool_calling_model_from_settings,
 )
@@ -201,6 +206,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             SourceMoveReconciliationService(
                 SourceRepository(database_path), SourceMoveProposalRepository(database_path)
             ).propose_for_root(root.path)
+            inbox_queue(settings).refresh()
         except sqlite3.Error as error:
             _print_scan_database_error("Root scan", error)
             return
@@ -294,22 +300,15 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             print(f"Source move was not changed: {error}")
         return
 
-    if arguments.command == "codex-handoff":
+    if arguments.command == "inbox":
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        try:
-            handoff = CodexHandoffService(
-                SourceRepository(database_path),
-                SourceRootRepository(database_path),
-                settings.data_dir,
-                settings.inbox_dir,
-                SourceInboxContextRepository(database_path),
-                SourceRootProfileRepository(database_path),
-            ).prepare(tuple(arguments.source_ids), note=arguments.note)
-        except ValueError as error:
-            print(f"Codex handoff was not prepared: {error}")
-            return
-        print(f"Prepared local Codex handoff {handoff.identifier}: {handoff.path}")
-        print("No source content was sent, no Codex session was invoked, and no files were changed.")
+        queue = inbox_queue(settings)
+        path = queue.refresh()
+        entries = queue.pending()
+        print(f"{len(entries)} file(s) waiting in the Inbox. List: {path}")
+        for entry in entries:
+            root = entry.intended_root.name if entry.intended_root is not None else "no intended root"
+            print(f"- {entry.source.path.name} ({entry.received_via}; {root})")
         return
 
     if arguments.command == "relocate-root":
@@ -792,6 +791,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                 SourceRepository(database_path),
                 SourceFragmentRepository(database_path),
                 ActivityService(database_path),
+                inbox_queue(settings),
             ),
         ).import_file(arguments.file_id)
         status = "Already imported" if result.duplicate else "Imported"
@@ -828,7 +828,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
         result = GmailInboxImportService(
             GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json")),
-            InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path)),
+            InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path), inbox_queue(settings)),
         ).import_message(arguments.message_id)
         print(("Already imported" if result.duplicate else "Imported") + f" Gmail message to Inbox: {result.source.path}")
         return

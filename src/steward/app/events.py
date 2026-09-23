@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from steward.app.agent import StewardToolAgentApplication
-from steward.app.handoff import StewardCodexHandoffApplication
 from steward.app.intake import (
     StewardCaptureApplication,
     StewardDriveImportApplication,
@@ -38,7 +37,6 @@ class StewardEventApplication:
         tool_agent_application: StewardToolAgentApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         move_reconciliation_application: StewardMoveReconciliationApplication | None = None,
-        codex_handoff_application: StewardCodexHandoffApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
     ) -> None:
         self._question_application = question_application
@@ -51,7 +49,6 @@ class StewardEventApplication:
         self._tool_agent_application = tool_agent_application
         self._roots_application = roots_application
         self._move_reconciliation_application = move_reconciliation_application
-        self._codex_handoff_application = codex_handoff_application
         self._privacy_application = privacy_application
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
@@ -77,10 +74,6 @@ class StewardEventApplication:
             move_response = self._move_reconciliation_application.handle_command(event)
             if move_response is not None:
                 return move_response
-        if self._codex_handoff_application is not None:
-            handoff_response = self._codex_handoff_application.handle_command(event)
-            if handoff_response is not None:
-                return handoff_response
         if self._tool_agent_application is not None:
             tool_response = self._tool_agent_application.handle_command(event)
             if tool_response is not None:

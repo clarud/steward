@@ -31,7 +31,7 @@ them back out**, from wherever you are.
 The loop:
 
 ```text
-upload on Telegram → lands in the Inbox → Codex files it into the right folder
+upload on Telegram → lands in the Inbox and INBOX.md → Codex files it into the right folder
 → Steward notices the move on the next scan → you find it later with a simple search
 ```
 
@@ -70,9 +70,9 @@ files, database, tokens, and model settings never leave it.
   will save, and adds it to the Inbox only after you confirm. **Intended root**
   records where you want it to end up; the file stays in the Inbox until Codex
   moves it.
-- **Hand off to Codex:** `/codex_handoff` lets you pick Inbox files and writes a
-  local, metadata-only manifest for Codex. It never sends file contents to
-  Codex and never runs Codex for you.
+- **Pick up on your computer:** every saved upload is listed in `INBOX.md`
+  inside the Inbox, with its intended root and note. Tell Codex "file my Inbox
+  using INBOX.md"; what happens next is up to you.
 - **After Codex moves things:** `/moves` shows renames and moves found by the
   last scan. Accepting one keeps the file's identity and history.
 - **Privacy:** `/privacy SOURCE_ID` controls whether a file may be sent to a
@@ -89,7 +89,7 @@ steward scan-root "Y4S1"                       # reconcile after Codex changes f
 steward watch-root "Y4S1"                      # refresh changed files as they happen
 steward reconcile-moves "Y4S1"                 # list reviewable renames/moves
 steward review-move 1 --accept                 # keep a moved file's identity
-steward codex-handoff 6 12 --note "File these under Week 5"
+steward inbox                                  # what's waiting in INBOX.md
 steward set-root-profile "Y4S1" --purpose "NUS Y4S1 coursework" --guidance AGENTS.md
 steward health --strict                        # local readiness check
 steward backup                                 # snapshot Steward's databases
@@ -102,8 +102,8 @@ move proposal.
 
 Root profiles are optional notes about a folder: its purpose, guidance files
 inside it (such as the folder's own `AGENTS.md`), and authority labels. They
-are included in Codex handoff manifests and are never treated as instructions
-by Steward.
+are listed in `INBOX.md` as filing guidance and are never treated as
+instructions by Steward.
 
 ## Optional extras
 

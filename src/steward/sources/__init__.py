@@ -10,7 +10,7 @@ from steward.sources.repository import (
 )
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
 from steward.sources.moves import SourceMoveProposal, SourceMoveProposalRepository, SourceMoveReconciliationService
-from steward.sources.handoff import CodexHandoff, CodexHandoffService
+from steward.sources.inbox_queue import InboxQueue, InboxQueueEntry
 from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
 
 __all__ = [
@@ -20,8 +20,8 @@ __all__ = [
     "SourceMoveProposal",
     "SourceMoveProposalRepository",
     "SourceMoveReconciliationService",
-    "CodexHandoff",
-    "CodexHandoffService",
+    "InboxQueue",
+    "InboxQueueEntry",
     "SourceInboxContext",
     "SourceInboxContextRepository",
     "SourceRepository",

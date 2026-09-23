@@ -561,9 +561,9 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     assert command_positions and intake_positions and fallback_positions
     assert command_positions[0] < fallback_positions[0]
     assert intake_positions[0] < fallback_positions[0]
-    for command in ("home", "search", "hybrid_search", "send_source", "codex_handoff", "moves"):
+    for command in ("home", "search", "hybrid_search", "send_source", "inbox", "moves"):
         assert ("command", command) in application.handlers
-    for removed in ("pending", "calendar", "tasks", "workspaces", "research"):
+    for removed in ("pending", "calendar", "tasks", "workspaces", "research", "codex_handoff"):
         assert ("command", removed) not in application.handlers
 
 

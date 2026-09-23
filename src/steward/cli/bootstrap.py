@@ -19,7 +19,6 @@ from steward.app import (
     StewardToolAgentApplication,
     StewardRootsApplication,
     StewardMoveReconciliationApplication,
-    StewardCodexHandoffApplication,
     StewardPrivacyApplication,
 )
 from steward.capture import InboxCaptureService
@@ -41,7 +40,7 @@ from steward.graphs import (
     OpenAICompatibleToolCallingModel,
     build_tool_agent_graph,
 )
-from steward.sources import CodexHandoffService, SourceMoveProposalRepository, SourceRepository
+from steward.sources import InboxQueue, SourceMoveProposalRepository, SourceRepository
 from steward.sources.export import SourceExportService
 from steward.storage import initialize_database
 from steward.retrieval import (
@@ -368,6 +367,18 @@ def _telegram_runtime_status(settings: Settings) -> tuple[str, ...]:
     )
 
 
+def inbox_queue(settings: Settings) -> InboxQueue:
+    """The INBOX.md list of Inbox files waiting to be filed on this computer."""
+    database_path = settings.data_dir / "steward.db"
+    return InboxQueue(
+        SourceRepository(database_path),
+        settings.inbox_dir,
+        roots=SourceRootRepository(database_path),
+        inbox_contexts=SourceInboxContextRepository(database_path),
+        profiles=SourceRootProfileRepository(database_path),
+    )
+
+
 def build_telegram_application(
     settings: Settings, model_gateway: ModelGateway, *, limit: int
 ) -> StewardEventApplication:
@@ -386,7 +397,9 @@ def build_telegram_application(
     profiles = SourceRootProfileRepository(database_path)
     lexical = LexicalSearchService(sources, fragments)
     semantic = SemanticSearchService(sources, SQLiteSemanticIndex(database_path, embedding_provider))
-    capture_service = InboxCaptureService(settings.inbox_dir, sources, fragments, activity)
+    capture_service = InboxCaptureService(
+        settings.inbox_dir, sources, fragments, activity, inbox_queue(settings),
+    )
     privacy = PrivacyService(database_path)
     review_contexts = ReviewContextRepository(database_path)
     tool_model = tool_calling_model_from_settings(settings)
@@ -441,13 +454,6 @@ def build_telegram_application(
         roots_application=StewardRootsApplication(roots, contexts=review_contexts, profiles=profiles),
         move_reconciliation_application=StewardMoveReconciliationApplication(
             sources, SourceMoveProposalRepository(database_path)
-        ),
-        codex_handoff_application=StewardCodexHandoffApplication(
-            CodexHandoffService(
-                sources, roots, settings.data_dir, settings.inbox_dir, inbox_contexts, profiles,
-            ),
-            sources,
-            settings.inbox_dir,
         ),
         privacy_application=StewardPrivacyApplication(
             privacy, sources, activity, ActionProposalRepository(database_path), contexts=review_contexts,

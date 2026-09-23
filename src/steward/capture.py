@@ -11,7 +11,7 @@ from shutil import copy2
 
 from steward.events import IncomingEvent
 from steward.extraction import DocumentExtractionError, ExtractionService, SourceFragmentRepository
-from steward.sources import Source, SourceRepository, SourceType, source_type_for_path
+from steward.sources import InboxQueue, Source, SourceRepository, SourceType, source_type_for_path
 from steward.sources.hashing import hash_file
 from steward.activity import ActivityService, ActivityType
 
@@ -36,8 +36,10 @@ class InboxCaptureService:
         source_repository: SourceRepository,
         fragment_repository: SourceFragmentRepository | None = None,
         activity_service: ActivityService | None = None,
+        inbox_queue: InboxQueue | None = None,
     ) -> None:
         self._inbox_dir = inbox_dir
+        self._inbox_queue = inbox_queue
         self._source_repository = source_repository
         self._fragment_repository = fragment_repository
         self._extraction_service = (
@@ -118,6 +120,17 @@ class InboxCaptureService:
             except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
                 logger.warning("Captured %s but could not extract text: %s", source.path, error)
 
+    def refresh_queue(self) -> None:
+        """Rewrite INBOX.md so the Steward computer sees what is waiting to be filed."""
+        if self._inbox_queue is None:
+            return
+        try:
+            self._inbox_queue.refresh()
+        except OSError as error:
+            # The capture itself succeeded; a stale list must not undo it.
+            logger.warning("Could not update the Inbox queue: %s", error)
+
     def _record(self, source: Source) -> None:
+        self.refresh_queue()
         if self._activity_service is not None:
             self._activity_service.record(ActivityType.SOURCE_CAPTURED, object_id=str(source.id), details=str(source.path))

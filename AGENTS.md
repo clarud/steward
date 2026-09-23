@@ -49,12 +49,11 @@ src/steward/
 │   ├── read.py       sources, Inbox, search, content, summaries, activity
 │   ├── intake.py     staged uploads, /save, Drive/Gmail imports
 │   ├── roots.py      authorized roots and move review
-│   ├── handoff.py    metadata-only Codex handoff
 │   ├── privacy.py    reviewed privacy-rule changes
 │   ├── question.py   grounded question → retrieval graph
 │   └── agent.py      explicit /agent tool loop
 ├── telegram/         transport: adapter, callbacks, delivery ledger, presentation
-├── sources/          Source model, discovery, hashing, scanning, moves, handoff, export
+├── sources/          Source model, discovery, hashing, scanning, moves, Inbox queue, export
 ├── extraction/       per-format extractors and fragment/FTS5 repository
 ├── retrieval/        lexical (FTS5), semantic (embeddings), hybrid (RRF)
 ├── answer/           context building, citations, model gateways and routing

@@ -319,11 +319,11 @@ class StewardReadApplication:
             "/hybrid_search QUESTION [--type TYPE] [--root \"ROOT\"] — combined local search\n"
             "/roots — authorized folders\n"
             "/moves — review unambiguous same-root rename/move matches\n"
-            "/codex_handoff [SOURCE_ID ...] — pick Inbox material or prepare a local metadata-only manifest\n"
             "/activity [term] — source lifecycle history\n"
             "/privacy SOURCE_ID — source model-access rule\n\n"
             "Send a file or substantial note to stage it locally, then choose Save to Inbox or Discard. "
-            "Codex organises saved Inbox files; Steward reconciles the moves on the next scan."
+            "Saved files are listed in INBOX.md on your computer for Codex to file; "
+            "Steward reconciles the moves on the next scan."
         )
 
     def status(self) -> str:
@@ -350,8 +350,18 @@ class StewardReadApplication:
         return "\n".join(lines)
 
     def inbox(self, page: int) -> str | PresentedReply:
-        sources = [source for source in self._sources.list_active() if self._is_inbox(source.path)]
-        return self._source_list("Inbox", sources, page)
+        # Only files still in the Inbox: once filed elsewhere they are no longer waiting.
+        sources = [
+            source for source in self._sources.list_active()
+            if self._is_inbox(source.path) and source.path.is_file()
+        ]
+        listing = self._source_list("Inbox", sources, page)
+        if isinstance(listing, PresentedReply):
+            return PresentedReply(
+                listing.text + "\n\nOn your computer these are listed in Inbox/INBOX.md, ready to file.",
+                listing.actions, title=listing.title, icon=listing.icon,
+            )
+        return listing
 
     def sources(self, page: int) -> str | PresentedReply:
         return self._source_list("Registered sources", self._sources.list_all(), page)
@@ -397,7 +407,6 @@ class StewardReadApplication:
                 ReplyAction("Ask about it", f"/ask_source {source_id}"),
             )
             + (ReplyAction("Privacy", f"/privacy_options {source_id}"),)
-            + (ReplyAction("Prepare handoff", f"/codex_handoff {source_id}"),)
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ()),
             title=source.path.name,
             icon="📄",
