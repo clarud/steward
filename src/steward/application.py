@@ -1096,6 +1096,7 @@ class StewardReadApplication:
             "/semantic_search QUESTION — local meaning-based search\n"
             "/hybrid_search QUESTION — combined local search\n"
             "/roots — authorized folders\n"
+            "/moves — review unambiguous same-root rename/move matches\n"
             "/activity [term] — source lifecycle history\n"
             "/privacy SOURCE_ID — source model-access rule\n\n"
             "Send a file or substantial note to stage it locally, then choose Save to Inbox or Discard. "
