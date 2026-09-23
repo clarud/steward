@@ -29,6 +29,8 @@ Automated baseline completed locally:
   slide-number and XLSX sheet/row provenance.
 - Notebook extraction is covered with deterministic markdown/code cell
   provenance in `tests/sources/test_service.py`.
+- Full regression suite passed again locally on 23 September 2026 after the
+  PPTX, XLSX, notebook, and code-line extraction additions.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate
