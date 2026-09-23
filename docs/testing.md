@@ -27,6 +27,8 @@ Automated baseline completed locally:
 - `tests/sources/test_service.py` covers deterministic source-code extraction
   and stable line-range provenance for Python source files, plus PPTX
   slide-number and XLSX sheet/row provenance.
+- Notebook extraction is covered with deterministic markdown/code cell
+  provenance in `tests/sources/test_service.py`.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate

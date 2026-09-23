@@ -425,7 +425,7 @@ while pending, cross-root refusal, and rollback after a failed update.
 registered as `code` and extracted deterministically with file-level
 provenance. Code now uses bounded line-range fragments for retrieval. PPTX,
 with slide-number provenance, is supported locally. XLSX rows now retain sheet
-and row provenance. Notebooks remain outstanding.
+and row provenance. Jupyter notebooks retain markdown/code cell provenance.
 
 - Add PPTX extraction with slide-number provenance.
 - Add source-code extraction with language/path provenance and conservative

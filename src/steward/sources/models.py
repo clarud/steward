@@ -17,6 +17,7 @@ class SourceType(StrEnum):
     DOCX = "docx"
     PPTX = "pptx"
     XLSX = "xlsx"
+    NOTEBOOK = "notebook"
     HTML = "html"
     IMAGE = "image"
     CODE = "code"

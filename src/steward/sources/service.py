@@ -88,6 +88,7 @@ class SourceService:
                     SourceType.DOCX,
                     SourceType.PPTX,
                     SourceType.XLSX,
+                    SourceType.NOTEBOOK,
                     SourceType.HTML,
                     SourceType.IMAGE,
                     SourceType.CODE,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import json
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -353,6 +354,30 @@ class XlsxExtractor:
         return ["".join(part.text or "" for part in item.iter(f"{{{self._MAIN}}}t")) for item in root.findall(f"{{{self._MAIN}}}si")]
 
 
+class NotebookExtractor:
+    """Extract readable Jupyter markdown and code cells with cell provenance."""
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.NOTEBOOK:
+            raise ValueError("NotebookExtractor requires an .ipynb Source.")
+        try:
+            notebook = json.loads(source.path.read_text(encoding="utf-8"))
+            cells = notebook["cells"]
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise DocumentExtractionError(f"Could not read notebook {source.path}.") from error
+        fragments = []
+        for cell_number, cell in enumerate(cells, start=1):
+            if not isinstance(cell, dict) or cell.get("cell_type") not in {"markdown", "code"}:
+                continue
+            raw = cell.get("source", [])
+            text = "".join(raw) if isinstance(raw, list) else raw if isinstance(raw, str) else ""
+            if text.strip():
+                fragments.append(SourceFragment(None, source.id, cell.get("cell_type"), len(fragments), text.strip(), f"cell {cell_number}"))
+        return ExtractionResult(source.id, tuple(fragments))
+
+
 class HtmlExtractor:
     """Extract visible HTML text into heading-delimited fragments."""
 
@@ -417,6 +442,7 @@ class ExtractionService:
             SourceType.DOCX: DocxExtractor(),
             SourceType.PPTX: PptxExtractor(),
             SourceType.XLSX: XlsxExtractor(),
+            SourceType.NOTEBOOK: NotebookExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
             SourceType.CODE: CodeExtractor(),

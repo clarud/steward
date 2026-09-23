@@ -102,6 +102,19 @@ def test_source_service_extracts_xlsx_rows_with_sheet_provenance(tmp_path: Path)
     assert [(item.heading, item.text, item.location) for item in fragments.list_for_source(source.id or 0)] == [("Deadlines", "CS3210 | 27", "Deadlines!row 2")]
 
 
+def test_source_service_extracts_notebook_cells_with_provenance(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "notebooks"; vault.mkdir(); source_path = vault / "queueing.ipynb"
+    source_path.write_text('{"cells":[{"cell_type":"markdown","source":["# Queueing\\n"]},{"cell_type":"code","source":"lambda_rate = 2"}]}', encoding="utf-8")
+    sources = SourceRepository(database_path); fragments = SourceFragmentRepository(database_path)
+
+    SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    source = sources.get_by_path(source_path.resolve())
+    assert source is not None and source.source_type is SourceType.NOTEBOOK
+    assert [(item.heading, item.text, item.location) for item in fragments.list_for_source(source.id or 0)] == [("markdown", "# Queueing", "cell 1"), ("code", "lambda_rate = 2", "cell 2")]
+
+
 def test_source_code_extraction_uses_stable_bounded_line_ranges(tmp_path: Path) -> None:
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     vault = tmp_path / "project"; vault.mkdir()
