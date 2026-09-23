@@ -6,6 +6,24 @@ generate grounded answers from retrieved fragments. A minimal LangGraph
 workflow orchestrates those existing services. A Telegram adapter can deliver
 isolated text questions to that application flow.
 
+## Active product mode: source-centric
+
+As of 23 September 2026, `source_centric` is Steward's default runtime mode.
+The active experience is deliberately narrow: explicitly authorized source
+roots, scans and reconciliation, supported-document extraction, provenance
+backed retrieval and grounded answers, a local Telegram Inbox, source privacy,
+activity lookup, and explicit Drive/Gmail imports. The tool agent can use only
+`search_sources`, `read_source`, and `search_activity`.
+
+This guide also documents Workspace, Knowledge, Record, Task, Calendar,
+research, organization, and broad-action code that remains in the repository.
+Those sections are historical/retained implementation reference, **not active
+default product surface**. In source-centric mode they are not composed into
+the CLI, Telegram application, or tool schemas. `STEWARD_PRODUCT_MODE=legacy`
+is an explicit local-development escape hatch, not a feature advertised to
+ordinary users. See [the source-centric pivot plan](source-centric-pivot-plan.md)
+and [ADR-006](adr/ADR-006-source-centric-active-surface.md).
+
 ## Design principles
 
 Steward's current implementation follows five important rules.

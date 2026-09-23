@@ -233,7 +233,7 @@ def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParse
     subcommands = parser.add_subparsers(dest="command")
     scan_parser = subcommands.add_parser("scan", help="Register supported source files under a root")
     scan_parser.add_argument("root", type=Path, help="Directory containing supported source files")
-    watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files")
+    watch_parser = subcommands.add_parser("watch", help="Watch a Markdown vault and incrementally refresh changed files (full scans reconcile all formats)")
     watch_parser.add_argument("root", type=Path)
     watch_root_parser = subcommands.add_parser("watch-root", help="Watch one locally authorized source root")
     watch_root_parser.add_argument("name", help="Authorized source-root name")

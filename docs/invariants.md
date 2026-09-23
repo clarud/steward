@@ -1,12 +1,12 @@
 # Core invariants
 
-1. Original sources remain authoritative and are never silently replaced by AI output.
-2. Meaningful derived knowledge preserves evidence provenance where practical.
-3. Uncertainty is valid: material may remain in Inbox and Steward may say it does not know.
-4. Filesystem placement and semantic relationships are distinct.
-5. LLMs propose; deterministic code validates and executes consequential effects.
-6. Durable mutations are auditable and destructive ones are reversible where practical.
-7. External systems are authoritative about their current state.
-8. Capabilities follow least privilege; Steward has no unrestricted filesystem or shell access.
-9. Complexity must solve a current requirement, and implementation understanding is part of done.
-
+1. Original local sources remain authoritative; Steward never silently replaces them with AI output.
+2. Only explicitly authorized roots and the configured Inbox are available to source services.
+3. A source keeps stable operational identity through ordinary rescans and approved root relocation; hashes detect content changes.
+4. Derived fragments, search indexes, embeddings, and summaries remain rebuildable and retain source/fragment provenance where shown.
+5. A model receives only context selected by retrieval and permitted by the source privacy rule; it has no arbitrary filesystem access.
+6. Deterministic code performs hashing, extraction, filesystem reads, database writes, imports, and recovery decisions.
+7. Inbox capture is safe under uncertainty: staging and explicit user review precede durable save or external import effects.
+8. Retrieval answers distinguish source-backed evidence from generated explanation and preserve citations where available.
+9. Source-centric mode does not initialize or advertise retained Workspace, Knowledge, Record, Task, Calendar, research, or broad-action flows.
+10. Scans are the reconciliation authority after external tools edit, move, or rename files; watchers are convenience notifications, not proof of consistency.

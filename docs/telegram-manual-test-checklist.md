@@ -4,6 +4,34 @@ Use a non-sensitive test vault for this checklist. Automated tests verify
 service and transport behavior, but only a local run can prove the real bot
 token, OAuth credentials, model provider, and machine filesystem work together.
 
+## Active source-centric checklist
+
+The default Telegram product is source-centric. Test this path before treating
+the retained legacy sections below as relevant.
+
+1. Start with `steward telegram`, then open `/home` and `/help`. Confirm the
+   interface describes source search, reading, Inbox capture, roots, privacy,
+   and explicit imports—not workspaces, records, Calendar, research, tasks, or
+   broad automation.
+2. Use `/roots`, then scan a harmless authorized root. Search for a phrase from
+   a known Markdown/PDF/DOCX file; select the result and use **Read content**.
+   Confirm the exact source and fragment are shown.
+3. Ask a grounded question about that material. Verify answer citations point to
+   the returned local source fragments. Ask a vague follow-up in reply to the
+   answer and confirm the intended source remains the reference.
+4. Send a harmless document and a short note. Confirm each is staged in the
+   local Inbox, explainable before saving, and only becomes a source after an
+   explicit decision. Reject one item and confirm no source is created.
+5. Change a source privacy rule, then try a model-backed summary or answer.
+   Confirm a remote-model restriction is explained clearly and that Read
+   content remains available.
+6. Rename or edit a harmless file outside Telegram, run `scan-root`, and verify
+   its source remains discoverable without duplicate identity. Treat a full scan
+   as the reconciliation authority after Codex or another external tool changes
+   files.
+
+## Retained legacy/historical acceptance checks
+
 ## Drive/Gmail pagination acceptance
 
 With locally authorized test accounts, search for a term matching more than five

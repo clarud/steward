@@ -1,5 +1,26 @@
 # Steward manual testing ledger
 
+## Source-centric pivot baseline — 2026-09-23
+
+The default runtime is now `STEWARD_PRODUCT_MODE=source_centric`. Its active
+surface is authorized source roots, scan/reconciliation, document extraction,
+lexical/semantic/hybrid retrieval, grounded answers, Telegram Inbox capture,
+per-source privacy, source/activity tool calls, and explicit Drive/Gmail
+imports. Workspace, Knowledge, Record, Task, Calendar, research, and broad
+action flows remain retained legacy code and are intentionally unwired from the
+default CLI, Telegram, and tool agent.
+
+Automated baseline completed locally:
+
+- `tests/test_config.py`, `tests/test_read_only_tools.py`, and `tests/test_cli.py`: 58 passed.
+- `tests/test_application.py`: passed.
+
+Still required before declaring the pivot acceptance-complete: run the active
+source-centric Telegram checklist with a harmless multi-format root, demonstrate
+one external edit/rename followed by scan reconciliation, and run the full test
+suite after the watcher/reconciliation phase lands. Historical entries below
+remain evidence for retained subsystems; they are not default-product promises.
+
 This document records live local acceptance results. It complements automated
 tests; it does not replace them. Do not record tokens, credentials, private
 source content, or local absolute paths beyond what is necessary to reproduce a
