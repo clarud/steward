@@ -458,6 +458,13 @@ fallback.
 **Outcome:** New information can enter immediately without forcing Steward to
 guess a destination.
 
+**Status (23 September 2026):** started. `codex-handoff` creates an explicit
+local metadata-only manifest for selected active sources, including hashes,
+root-relative paths, user guidance, and discovered `AGENTS.md` or
+`COURSE_WORKFLOWS.md` paths. It never reads source text into the manifest,
+invokes Codex, or changes files. Inbox intended-root context and Telegram
+handoff selection remain outstanding.
+
 - Associate each Inbox capture with an optional intended root, not a required
   Workspace.
 - Support saved files, notes, links, images/OCR, and selected Drive/Gmail

@@ -68,6 +68,7 @@ steward scan-root "Y4S1"
 steward watch-root "Y4S1"
 steward reconcile-moves "Y4S1"
 steward review-move 1 --accept
+steward codex-handoff 6 12 --note "Review these before organizing lecture notes"
 steward health --strict
 steward relocate-root "Y4S1" "D:\Archive\Y4S1" --confirm
 ```
@@ -77,6 +78,9 @@ tool. The watcher incrementally refreshes supported files; full scans remain the
 authoritative reconciliation mechanism for missed events, moves, and large
 batches. A same-root rename or move with one unambiguous content-hash match is
 shown as a reviewable move proposal; accepting it preserves the old source ID.
+`codex-handoff` creates a local JSON manifest containing selected source
+metadata and applicable root guidance paths. It never sends content to Codex or
+executes a Codex session.
 
 ## Documentation
 

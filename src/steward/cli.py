@@ -60,7 +60,7 @@ from steward.graphs import (
     build_tool_agent_graph,
 )
 from steward.logging import configure_logging
-from steward.sources import SourceMoveProposalRepository, SourceMoveReconciliationService, SourceRepository, SourceType
+from steward.sources import CodexHandoffService, SourceMoveProposalRepository, SourceMoveReconciliationService, SourceRepository, SourceType
 from steward.sources.service import SourceService
 from steward.sources.export import SourceExportService
 from steward.storage import initialize_database, restore_database, snapshot_database
@@ -314,6 +314,9 @@ def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParse
     review_move_group = review_move_parser.add_mutually_exclusive_group(required=True)
     review_move_group.add_argument("--accept", action="store_true")
     review_move_group.add_argument("--reject", action="store_true")
+    handoff_parser = subcommands.add_parser("codex-handoff", help="Prepare a local metadata-only manifest for selected sources")
+    handoff_parser.add_argument("source_ids", type=int, nargs="+", help="Active source IDs to include")
+    handoff_parser.add_argument("--note", default="", help="Optional user guidance for Codex; stored locally in the manifest")
     for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
         root_toggle = subcommands.add_parser(command, help=help_text)
         root_toggle.add_argument("name", help="Authorized source-root name")
@@ -1047,6 +1050,19 @@ def main(argv: Sequence[str] | None = None) -> None:
                 print(f"Rejected move proposal {proposal.id}; both source histories remain unchanged.")
         except ValueError as error:
             print(f"Source move was not changed: {error}")
+        return
+
+    if arguments.command == "codex-handoff":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        try:
+            handoff = CodexHandoffService(
+                SourceRepository(database_path), SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir
+            ).prepare(tuple(arguments.source_ids), note=arguments.note)
+        except ValueError as error:
+            print(f"Codex handoff was not prepared: {error}")
+            return
+        print(f"Prepared local Codex handoff {handoff.identifier}: {handoff.path}")
+        print("No source content was sent, no Codex session was invoked, and no files were changed.")
         return
 
     if arguments.command == "relocate-root":

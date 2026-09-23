@@ -10,6 +10,7 @@ from steward.sources.repository import (
 )
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
 from steward.sources.moves import SourceMoveProposal, SourceMoveProposalRepository, SourceMoveReconciliationService
+from steward.sources.handoff import CodexHandoff, CodexHandoffService
 
 __all__ = [
     "Source",
@@ -18,6 +19,8 @@ __all__ = [
     "SourceMoveProposal",
     "SourceMoveProposalRepository",
     "SourceMoveReconciliationService",
+    "CodexHandoff",
+    "CodexHandoffService",
     "SourceRepository",
     "SourceStatus",
     "SourceType",

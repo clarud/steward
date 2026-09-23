@@ -22,6 +22,8 @@ Automated baseline completed locally:
 - Full automated regression suite: passed locally on 23 September 2026 after
   the source-centric runtime, all-format watcher, root telemetry, and reviewed
   move-reconciliation changes.
+- `tests/sources/test_handoff.py` proves a Codex handoff contains selected
+  metadata and root guidance paths but omits original source text.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate
