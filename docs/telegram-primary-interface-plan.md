@@ -10,6 +10,14 @@ Telegram becomes the primary interface for normal use. It must not become an
 unrestricted remote shell: operational maintenance, OAuth, large downloads,
 and consequential actions retain explicit local or human-approval boundaries.
 
+> **Scope update (September 2026):**
+> [Source-Centric Product Pivot Plan](source-centric-pivot-plan.md) is the
+> controlling plan for new delivery work. This document remains the record of
+> the broad Telegram program and implemented capabilities, but its action-
+> oriented Workspace, Knowledge, Record, Calendar, and research goals are not
+> a mandate to enable or expand those features in the source-centric product
+> mode.
+
 ## Product principles
 
 - A Telegram feature may be a command, natural-language request, button flow,
