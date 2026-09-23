@@ -97,9 +97,11 @@ class SourceService:
                     fragments = self._fragment_repository.list_for_source(source.id or 0)
                 else:
                     continue
-            except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
+            except (OSError, ValueError, DocumentExtractionError) as error:
                 # The original remains registered.  Derived text is removed so a
                 # changed-but-unreadable file cannot remain searchable as its old content.
+                # ValueError covers text codec errors; one bad file must not stop
+                # the rest of the root from being extracted.
                 logger.warning("Could not extract %s: %s", source.path, error)
                 if source.id is None:
                     raise RuntimeError("Active sources must have an ID.") from error

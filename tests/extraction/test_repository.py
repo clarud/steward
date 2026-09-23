@@ -114,3 +114,22 @@ def test_fragment_repository_recovers_from_punctuation_heavy_fts_query(tmp_path:
     matches = repository.search("course (details")
 
     assert [match.fragment.source_id for match in matches] == [source.id]
+
+
+def test_fragment_repository_repairs_surrogates_from_pdf_text_layers(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    source_path = tmp_path / "tut02.md"
+    source_path.write_text("placeholder", encoding="utf-8")
+    source = register_source(database_path, source_path)
+    # PDF text layers can yield U+1D465 (math italic x) as a surrogate pair,
+    # and occasionally an unpaired half. Neither can be encoded as UTF-8.
+    text = "Let \ud835\udc65 be the load and \ud835 an orphan."
+
+    [stored] = SourceFragmentRepository(database_path).replace_for_source(ExtractionResult(
+        source.id or 0, (SourceFragment(None, source.id or 0, "Load \ud835\udc65", 0, text, "page 1"),),
+    ))
+
+    assert stored.text == "Let \U0001d465 be the load and \ufffd an orphan."
+    assert stored.heading == "Load \U0001d465"
+    assert SourceFragmentRepository(database_path).list_for_source(source.id or 0) == (stored,)

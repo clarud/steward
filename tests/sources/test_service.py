@@ -232,3 +232,29 @@ def test_source_service_reextracts_an_unchanged_source_only_when_explicitly_requ
     service.reextract_source(source.id or 0)
 
     assert [fragment.text for fragment in fragments.list_for_source(source.id or 0)] == ["first"]
+
+
+def test_source_service_keeps_scanning_when_extracted_text_cannot_be_stored(tmp_path: Path, monkeypatch) -> None:
+    from steward.extraction import document
+
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "vault"; vault.mkdir()
+    (vault / "a-bad.txt").write_text("bad", encoding="utf-8")
+    (vault / "b-good.txt").write_text("Still indexed", encoding="utf-8")
+    original = document.PlainTextExtractor.extract
+
+    def extract(self, source):
+        if source.path.name == "a-bad.txt":
+            raise UnicodeEncodeError("utf-8", "\ud835", 0, 1, "surrogates not allowed")
+        return original(self, source)
+
+    monkeypatch.setattr(document.PlainTextExtractor, "extract", extract)
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+
+    result = SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    good = sources.get_by_path((vault / "b-good.txt").resolve())
+    assert result.new == 2
+    assert good is not None
+    assert [fragment.text for fragment in fragments.list_for_source(good.id or 0)] == ["Still indexed"]

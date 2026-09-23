@@ -11,6 +11,22 @@ from steward.extraction.models import ExtractionResult, SourceFragment
 from steward.sources.models import SourceStatus, SourceType
 
 
+def storable_text(value: str | None) -> str | None:
+    """Return text SQLite can store as UTF-8.
+
+    Some PDF text layers yield math symbols (for example U+1D465) as UTF-16
+    surrogate pairs. Rejoin valid pairs into the real character and replace
+    any unpaired half with U+FFFD, rather than failing the whole write.
+    """
+    if value is None:
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return value.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return value
+
+
 class UnknownSourceError(ValueError):
     """Raised when fragment persistence targets a Source absent from SQLite."""
 
@@ -52,6 +68,12 @@ class SourceFragmentRepository:
             )
             stored_fragments: list[SourceFragment] = []
             for fragment in result.fragments:
+                fragment = replace(
+                    fragment,
+                    heading=storable_text(fragment.heading),
+                    text=storable_text(fragment.text) or "",
+                    location=storable_text(fragment.location) or "",
+                )
                 cursor = connection.execute(
                     """
                     INSERT INTO source_fragments (
