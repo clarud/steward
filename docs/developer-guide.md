@@ -50,6 +50,12 @@ accepts a user-supplied filesystem path. The same type/path scope reaches
 lexical FTS5, semantic vector retrieval, and hybrid reciprocal-rank fusion, so
 the three modes do not disagree about which originals are eligible.
 
+When lexical FTS5 returns no extracted-text result, `/search` has a separate
+metadata-only fallback over active registered filenames and their local relative
+paths. It applies the same type/root scope and labels the card **Filename
+matches** so it cannot be mistaken for evidence from document content. It never
+opens a file or searches unregistered filesystem paths.
+
 Each completed full root scan appends a concise local telemetry row. Root cards
 and the local `steward roots` command expose only its timestamp and
 `new`/`updated`/`unchanged`/`missing` counts. This is scan evidence, not a claim

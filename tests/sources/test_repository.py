@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -50,6 +51,23 @@ def test_repository_preserves_duplicate_content_at_different_paths(tmp_path: Pat
 
     assert first.id != second.id
     assert first.content_hash == second.content_hash
+
+
+def test_repository_finds_active_sources_by_filename_with_type_and_path_scope(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    course = tmp_path / "course"; course.mkdir()
+    other = tmp_path / "other"; other.mkdir()
+    repository = SourceRepository(database)
+    expected = repository.add(replace(
+        make_unregistered_source(course / "network-architecture.pdf"), source_type=SourceType.PDF,
+    ))
+    repository.add(make_unregistered_source(other / "network-architecture.md"))
+
+    matches = repository.search_filenames(
+        "network architecture", source_types={SourceType.PDF}, path_prefix=course,
+    )
+
+    assert matches == (expected,)
 
 
 def test_repository_rejects_a_second_source_at_the_same_path(tmp_path: Path) -> None:

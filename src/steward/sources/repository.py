@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Collection
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -87,6 +88,51 @@ class SourceRepository:
             ).fetchone()
 
         return self._source_from_row(row) if row is not None else None
+
+    def search_filenames(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
+    ) -> tuple[Source, ...]:
+        """Find active originals by filename/path terms, without reading content.
+
+        This is a deliberately conservative fallback for cases where someone
+        remembers a filename, folder term, or extension but the phrase is not
+        in an extracted fragment. It is not an arbitrary filesystem search.
+        """
+        terms = tuple(token.casefold() for token in query.split() if token.strip())
+        if not terms:
+            return ()
+        if limit <= 0:
+            raise ValueError("Search limit must be positive.")
+        selected_types = tuple(sorted({item.value for item in source_types or ()}))
+        type_filter = (
+            f" AND source_type IN ({', '.join('?' for _ in selected_types)})"
+            if selected_types else ""
+        )
+        normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
+        path_filter = " AND path LIKE ?" if normalized_prefix is not None else ""
+        term_filter = "".join(" AND lower(path) LIKE ?" for _ in terms)
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                f"""SELECT id, path, content_hash, source_type, size_bytes, modified_at,
+                           first_seen_at, last_seen_at, status
+                    FROM sources
+                    WHERE status = ?{type_filter}{path_filter}{term_filter}
+                    ORDER BY path COLLATE NOCASE, id
+                    LIMIT ?""",
+                (
+                    SourceStatus.ACTIVE.value,
+                    *selected_types,
+                    *((normalized_prefix + "%",) if normalized_prefix is not None else ()),
+                    *(f"%{term}%" for term in terms),
+                    limit,
+                ),
+            ).fetchall()
+        return tuple(self._source_from_row(row) for row in rows)
 
     def update(self, source: Source) -> None:
         """Replace metadata for an already-persisted Source."""

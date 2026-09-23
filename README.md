@@ -72,6 +72,10 @@ Search can be scoped locally, for example `/hybrid_search TLB --type pdf --root
 "CS3210"`. Supported types include `markdown`, `pdf`, `docx`, `pptx`, `xlsx`,
 `notebook`, `html`, `image`, and `code`.
 
+If ordinary lexical search has no matching extracted text, Steward also checks
+the local registered filename/path metadata and shows clearly labelled filename
+matches. It does not read unindexed file content to do this.
+
 Telegram is an interface, not the storage location: uploads are downloaded to
 the configured Inbox, and no remote model analyzes a source unless its privacy
 rule permits the chosen model.

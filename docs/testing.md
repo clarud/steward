@@ -209,6 +209,16 @@ safe test.
 - Repository and Telegram-root tests cover persistence and rendering. Live
   confirmation can be combined with the existing scan/root-status checklist.
 
+### Automated delivery: filename/path retrieval fallback — 23 September 2026
+
+- When lexical content search returns no fragment, `/search` now checks only
+  active registered filename/path metadata under the same local type/root scope.
+  The rendered result is explicitly labelled **Filename matches**, carries no
+  invented excerpt, and never searches arbitrary disk paths.
+- Repository, lexical/read-application, and full regression tests pass locally
+  at 100%. A live filename-fallback check was added to the source-centric
+  Telegram checklist.
+
 ## Session: 2026-09-16
 
 ### Automated verification

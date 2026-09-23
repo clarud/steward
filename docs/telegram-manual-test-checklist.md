@@ -25,6 +25,9 @@ the retained legacy sections below as relevant.
    --root "Telegram Test"`; confirm only sources from that root and type are
    eligible, and an unknown root gives a safe local clarification rather than a
    path prompt.
+   Search for a distinctive filename term that is absent from extracted text.
+   Confirm the result is labelled **Filename matches**, opens the expected
+   registered source, and does not claim a content excerpt matched.
 4. Send a harmless document and a short note. Confirm each is staged in the
    local Inbox, explainable before saving, and only becomes a source after an
    explicit decision. On one staged item, choose **Intended root**, select an

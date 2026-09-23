@@ -6213,3 +6213,26 @@ def test_source_search_parses_authorized_root_and_type_filters(tmp_path: Path) -
 
     assert response == "No local source fragments matched: 'TLB'."
     assert calls == [("TLB", {"limit": 5, "source_types": (SourceType.PDF,), "path_prefix": root_path})]
+
+
+def test_source_search_falls_back_to_filename_metadata_when_no_fragment_matches(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root_path = tmp_path / "CS4226"; root_path.mkdir()
+    roots = SourceRootRepository(database); roots.add("CS4226", root_path)
+    path = root_path / "lecture-network-architecture.pdf"; path.write_bytes(b"not parsed")
+    now = datetime.now(UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, path, "e" * 64, SourceType.PDF, path.stat().st_size, now, now, now))
+    reader = StewardReadApplication(
+        sources, SourceFragmentRepository(database),
+        LexicalSearchService(sources, SourceFragmentRepository(database)), None,
+        ActivityService(database), tmp_path / "inbox", source_centric=True, roots=roots,
+    )
+
+    result = reader.handle_command(make_event(text="/search network architecture"))
+
+    assert isinstance(result, PresentedReply)
+    assert result.title == "Filename matches"
+    assert "lecture-network-architecture.pdf" in result.text
+    assert "CS4226 / lecture-network-architecture.pdf" in result.text
+    assert result.actions[0].command == f"/source {source.id}"

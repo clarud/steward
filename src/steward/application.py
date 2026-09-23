@@ -1494,6 +1494,11 @@ class StewardReadApplication:
         except InvalidSearchQueryError:
             return "Those search terms are not valid. Try plain words without search operators."
         if not hits:
+            filenames = self._sources.search_filenames(
+                query, limit=5, source_types=source_types, path_prefix=path_prefix,
+            )
+            if filenames:
+                return self._filename_search_card(label, filenames)
             return f"No local source fragments matched: {query!r}."
         return self._search_card("Search results", label, hits)
 
@@ -1612,6 +1617,28 @@ class StewardReadApplication:
             if hit.source.id is not None:
                 actions.append(ReplyAction(f"Open {index}", f"/source {hit.source.id}"))
         return PresentedReply("\n".join(lines), tuple(actions), title=title, icon="🔎")
+
+    def _filename_search_card(self, query: str, sources: tuple[Source, ...]) -> PresentedReply:
+        """Render a metadata-only fallback when no extracted fragment matched."""
+        lines = [f"No extracted text matched. Filename/path matches for: {query}"]
+        actions: list[ReplyAction] = []
+        for index, source in enumerate(sources, start=1):
+            location = self._safe_source_location(source)
+            lines.append(f"\n{index}. {source.path.name}\n{location} · {source.source_type.value}")
+            if source.id is not None:
+                actions.append(ReplyAction(f"Open {index}", f"/source {source.id}"))
+        return PresentedReply("\n".join(lines), tuple(actions), title="Filename matches", icon="🔎")
+
+    def _safe_source_location(self, source: Source) -> str:
+        root = next(
+            (item for item in self._roots.list_all() if source.path.resolve().is_relative_to(item.path.resolve())),
+            None,
+        ) if self._roots is not None else None
+        if root is not None:
+            return f"{root.name} / {source.path.resolve().relative_to(root.path.resolve())}"
+        if source.path.resolve().is_relative_to(self._inbox_dir):
+            return f"Inbox / {source.path.name}"
+        return "Outside an authorized root"
 
     def _source_list(
         self, title: str, sources: list[Source], page: int
