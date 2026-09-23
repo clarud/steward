@@ -406,6 +406,69 @@ Acceptance criteria:
 - approval remains safe across process restart and duplicate callback delivery;
 - all decisions produce Activity events.
 
+#### Planned next refinement: evidence-backed workspace routing engine
+
+**Status: planned; not implemented.** The current organization rule deliberately
+uses only explicit workspace names in a filename or in user-supplied context.
+That is predictable and safe, but it cannot yet recognize that an ambiguously
+named document is about an existing course or project from its contents.
+
+The next organization engine should make a *proposal*, never an automatic file
+move:
+
+```text
+saved Source in Inbox
+→ extract locally and identify its eligible fragments
+→ retrieve related existing Sources and workspace-linked Sources
+→ rank existing workspace candidates
+→ assemble evidence, rationale, and uncertainty
+→ optional permitted model interpretation of that bounded evidence
+→ one reviewable proposal, or keep in Inbox
+→ explicit user approval
+→ deterministic move + workspace link + Activity event
+```
+
+Candidate ranking should combine several explainable signals rather than a
+single invented confidence number:
+
+- direct filename or user-context mention of a workspace;
+- lexical and semantic similarity between the new source fragments and sources
+  already linked to a workspace;
+- overlap with the workspace description, aliases, or known concepts;
+- consistency with the current conversation/workspace context, when it is
+  explicitly available;
+- conflicting evidence, ties between candidates, and lack of sufficient
+  extracted text.
+
+The card must show the *specific* supporting source titles/fragments and why
+they point to a candidate, for example: “CS3210: similar to two linked notes
+about OpenMP scheduling and shared-memory synchronization.” It must also say
+when the result came from local ranking alone versus a configured model's
+bounded interpretation.
+
+Safety and ownership rules:
+
+- only existing, locally authorized workspaces are candidates; a new workspace
+  remains a separate explicit proposal;
+- source text is not sent to a model until its privacy policy permits the
+  configured provider; local lexical/semantic ranking remains available when
+  cloud analysis is disallowed;
+- a close score, conflicting evidence, unsupported file type, failed
+  extraction, or insufficient evidence produces **Keep in Inbox**, not a
+  speculative destination;
+- user guidance can rerank/update the same pending proposal but cannot supply
+  an arbitrary filesystem path or silently perform a move;
+- final file movement, source-to-workspace linking, and Activity logging stay
+  deterministic and idempotent.
+
+Acceptance tests must cover a clearly related but ambiguously named CS3210
+file, a similarly named but unrelated file, tied workspace candidates,
+privacy-denied model analysis, local-only fallback, user-guidance revision,
+approval/rejection, duplicate delivery, and restart while the proposal is
+pending. A small labelled course/project corpus should measure whether the
+engine improves routing over the current explicit-name baseline before it is
+offered as a normal Telegram flow.
+
 ### 6. Knowledge and evidence workflows
 
 Expose concept lookup, claim inspection, knowledge connectors, enrichment
@@ -593,7 +656,12 @@ Implement:
 - workspace listing/creation proposal, source linking, and Inbox inspection;
 - organization proposal cards with evidence, target root/path, and rationale;
 - durable accept/reject/edit/context-supplement flows;
-- explicit handling for “new workspace likely” versus “leave in Inbox.”
+- explicit handling for “new workspace likely” versus “leave in Inbox.”;
+- after the current reliability work, the planned evidence-backed workspace
+  routing engine: local lexical/semantic candidate ranking, bounded
+  privacy-aware model interpretation where permitted, supporting-fragment
+  explanations, uncertainty/tie fallback to Inbox, and a labelled evaluation
+  corpus against the explicit-name baseline.
 
 Done when `Organize my inbox` produces the same safe pending proposal state as
 the CLI, survives process restart, and logs every decision. A user must be able
