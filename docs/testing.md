@@ -146,6 +146,14 @@ safe test.
   review until approved, block model answering while leaving Read content
   usable, and permit a reviewed restoration to `external_allowed`.
 
+### Full automated regression after active Telegram fixes — 23 September 2026
+
+- Ran `python -m pytest -q` from the project virtual environment after the
+  grounded-answer routing and source-centric privacy composition changes.
+- Result: passed at 100%. This covers the complete automated suite; the live
+  Telegram privacy retest and the remaining manual source-centric acceptance
+  checks are still required.
+
 ## Session: 2026-09-16
 
 ### Automated verification
