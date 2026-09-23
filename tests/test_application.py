@@ -6038,3 +6038,28 @@ def test_external_search_continuation_survives_restart_and_does_not_import(tmp_p
             invalid = application.handle_command(make_event(text=f"/{prefix}_page {malformed}"))
             assert "invalid" in invalid
         assert len(calls) == before
+
+
+def test_source_centric_reader_omits_workspace_actions_and_exposes_source_home(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime.now(UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(None, tmp_path / "tlb.md", "a" * 64, SourceType.MARKDOWN, 1, now, now, now))
+    fragments = SourceFragmentRepository(database)
+    reader = StewardReadApplication(
+        sources,
+        fragments,
+        LexicalSearchService(sources, fragments),
+        None,
+        ActivityService(database),
+        tmp_path / "inbox",
+    )
+
+    home = reader.handle_command(make_event(text="/home"))
+    card = reader.handle_command(make_event(text=f"/source {source.id}"))
+
+    assert isinstance(home, PresentedReply) and home.title == "Steward"
+    assert isinstance(card, PresentedReply)
+    assert "Workspaces" not in [action.label for action in card.actions]
+    assert "not active in source-centric mode" in reader.handle_command(make_event(text="/workspaces"))

@@ -2,6 +2,8 @@ from pathlib import Path
 from datetime import UTC, datetime, timedelta
 import sqlite3
 
+import pytest
+
 from steward.cli import (
     _configure_console_encoding,
     _is_calendar_question,
@@ -23,10 +25,32 @@ from steward.roots import SourceRootRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 
 
+@pytest.fixture(autouse=True)
+def legacy_cli_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep pre-pivot CLI behavior covered only through explicit legacy mode.
+
+    Source-centric command-surface tests override this setting deliberately.
+    """
+
+    monkeypatch.setenv("STEWARD_PRODUCT_MODE", "legacy")
+
+
 def test_cli_without_a_command_shows_help(capsys) -> None:
     main([])
 
     assert "usage: steward" in capsys.readouterr().out
+
+
+def test_source_centric_parser_omits_legacy_action_commands() -> None:
+    parser = build_parser("source_centric")
+    subparsers = next(action for action in parser._actions if getattr(action, "choices", None) is not None)
+
+    assert {"scan-root", "sources", "search", "agent", "telegram", "drive-import", "gmail-import"} <= set(subparsers.choices)
+    assert not {
+        "create-workspace", "propose-organization", "calendar-search",
+        "research", "propose-travel-record", "connect-knowledge",
+    } & set(subparsers.choices)
+    assert not hasattr(parser.parse_args(["agent", "find TLBs"]), "include_calendar")
 
 
 def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, monkeypatch, capsys) -> None:

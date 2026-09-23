@@ -20,7 +20,12 @@ from steward.records import (
 from steward.retrieval import LexicalSearchService
 from steward.sources import Source, SourceRepository, SourceType, SourceStatus
 from steward.storage import initialize_database
-from steward.tools import ReadOnlyToolService, build_read_only_tools
+from steward.tools import (
+    ReadOnlyToolService,
+    SourceReadOnlyToolService,
+    build_read_only_tools,
+    build_source_read_only_tools,
+)
 from steward.workspaces import WorkspaceRepository
 
 
@@ -84,6 +89,23 @@ def test_read_only_tools_expose_only_the_phase_21_safe_tool_set(tmp_path: Path) 
     assert [tool.name for tool in build_read_only_tools(service)] == [
         "search_sources", "read_source", "search_knowledge", "search_records",
         "search_workspaces", "search_activity",
+    ]
+
+
+def test_source_centric_tools_do_not_construct_or_expose_legacy_domains(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    sources = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    service = SourceReadOnlyToolService(
+        sources,
+        fragments,
+        LexicalSearchService(sources, fragments),
+        ActivityService(database),
+    )
+
+    assert [tool.name for tool in build_source_read_only_tools(service)] == [
+        "search_sources", "read_source", "search_activity",
     ]
 
 

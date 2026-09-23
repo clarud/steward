@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 VALID_MODEL_PROVIDERS = frozenset({"gemini", "local", "openai", "soclaas"})
+VALID_PRODUCT_MODES = frozenset({"source_centric", "legacy"})
 
 
 def load_environment_file() -> None:
@@ -31,6 +32,7 @@ class Settings:
     gemini_model: str | None
     local_model: str | None
     local_model_url: str
+    product_mode: str = "source_centric"
     telegram_allowed_chat_ids: frozenset[str] = frozenset()
 
     @classmethod
@@ -48,6 +50,7 @@ class Settings:
         gemini_model = os.environ.get("STEWARD_GEMINI_MODEL")
         local_model = os.environ.get("STEWARD_LOCAL_MODEL")
         local_model_url = os.environ.get("STEWARD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
+        product_mode = os.environ.get("STEWARD_PRODUCT_MODE", "source_centric").casefold()
         telegram_allowed_chat_ids = frozenset(
             value.strip()
             for value in os.environ.get("STEWARD_TELEGRAM_ALLOWED_CHAT_IDS", "").split(",")
@@ -65,6 +68,12 @@ class Settings:
                 "STEWARD_MODEL_PROVIDER must be one of "
                 f"{allowed_providers}; got {model_provider!r}."
             )
+        if product_mode not in VALID_PRODUCT_MODES:
+            allowed_modes = ", ".join(sorted(VALID_PRODUCT_MODES))
+            raise ValueError(
+                "STEWARD_PRODUCT_MODE must be one of "
+                f"{allowed_modes}; got {product_mode!r}."
+            )
 
         return cls(
             data_dir=data_dir,
@@ -77,5 +86,6 @@ class Settings:
             gemini_model=gemini_model,
             local_model=local_model,
             local_model_url=local_model_url,
+            product_mode=product_mode,
             telegram_allowed_chat_ids=telegram_allowed_chat_ids,
         )

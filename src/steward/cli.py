@@ -124,16 +124,18 @@ from steward.tools import (
     CalendarReadToolService,
     CalendarProposalToolService,
     ReadOnlyToolService,
+    SourceReadOnlyToolService,
     ToolPolicy,
     build_action_proposal_tools,
     build_calendar_proposal_tools,
     build_calendar_read_tools,
     build_read_only_tools,
+    build_source_read_only_tools,
     KNOWLEDGE_PROPOSAL_TOOL_DEFINITIONS,
     KnowledgeProposalToolService,
     build_knowledge_proposal_tools,
 )
-from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS
+from steward.tools.read_only import READ_ONLY_TOOL_DEFINITIONS, SOURCE_READ_ONLY_TOOL_DEFINITIONS
 from steward.tools.calendar_read import CALENDAR_READ_TOOL_DEFINITIONS
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -204,8 +206,29 @@ def _print_search_hit(hit: object) -> None:
     print(f"  {snippet[:160]}")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Create the command-line interface for currently available features."""
+LEGACY_COMMANDS = frozenset({
+    "research", "research-retain",
+    "create-workspace", "workspaces", "review-inbox-workspaces",
+    "connect-knowledge", "propose-knowledge-enrichment",
+    "knowledge-enrichment-proposals", "review-knowledge-enrichment",
+    "link-source", "propose-organization", "organization-proposals",
+    "review-proposal", "action-proposals", "review-action-proposal",
+    "propose-travel-record", "create-travel-record", "travel-records",
+    "propose-receipt-record", "create-receipt-record", "receipt-records",
+    "propose-warranty-record", "create-warranty-record", "warranty-records",
+    "travel-record-references", "add-travel-record-reference",
+    "calendar-authorize", "calendar-search", "calendar-get",
+    "calendar-create-travel-event", "calendar-propose-travel-event",
+    "calendar-review-travel-event",
+})
+
+
+def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParser:
+    """Create the command-line interface for one explicit product surface.
+
+    Legacy commands remain implemented for data compatibility and isolated tests,
+    but source-centric mode deliberately omits them from parser/help discovery.
+    """
     parser = argparse.ArgumentParser(prog="steward")
     subcommands = parser.add_subparsers(dest="command")
     scan_parser = subcommands.add_parser("scan", help="Register supported source files under a root")
@@ -320,11 +343,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persistent LangGraph conversation thread ID",
     )
     agent_parser = subcommands.add_parser(
-        "agent", help="Answer using Steward tools and create reviewable action proposals"
+        "agent", help="Answer using allowlisted local source-retrieval tools"
     )
-    agent_parser.add_argument("question", help="Question or safe action request for the agent")
+    agent_parser.add_argument("question", help="Question about saved local sources")
     agent_parser.add_argument("--thread-id", default="cli:agent", help="Persistent LangGraph thread ID")
-    agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
+    if product_mode == "legacy":
+        agent_parser.add_argument("--include-calendar", action="store_true", help="Allow current Google Calendar read tools after OAuth")
     research_parser = subcommands.add_parser("research", help="Research externally without retaining the sources")
     research_parser.add_argument("question")
     research_parser.add_argument("--provider", choices=("auto", "gemini", "duckduckgo"), default="auto")
@@ -491,6 +515,17 @@ def build_parser() -> argparse.ArgumentParser:
     gmail_import = subcommands.add_parser("gmail-import", help="Explicitly import one selected Gmail message into Inbox")
     gmail_import.add_argument("message_id")
     gmail_import.add_argument("--client-secrets", type=Path)
+    if product_mode != "legacy":
+        for action in parser._actions:
+            choices = getattr(action, "choices", None)
+            if choices is None:
+                continue
+            for command in LEGACY_COMMANDS:
+                choices.pop(command, None)
+            action._choices_actions[:] = [
+                choice for choice in action._choices_actions
+                if choice.dest not in LEGACY_COMMANDS
+            ]
     return parser
 
 
@@ -811,8 +846,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Run a Steward command."""
     _configure_console_encoding()
     load_environment_file()
-    arguments = build_parser().parse_args(argv)
     settings = Settings.from_environment()
+    arguments = build_parser(settings.product_mode).parse_args(argv)
     configure_logging(settings)
 
     if arguments.command == "health":
@@ -1251,43 +1286,48 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
-        sources = SourceRepository(database_path)
-        fragments = SourceFragmentRepository(database_path)
-        tool_agent_application = None
-        tool_model = _tool_calling_model_from_settings(settings)
-        if tool_model is not None:
-            tool_checkpoint_connection = sqlite3.connect(
+        if settings.product_mode == "source_centric":
+            sources = SourceRepository(database_path)
+            fragments = SourceFragmentRepository(database_path)
+            checkpoint_connection = sqlite3.connect(
                 settings.data_dir / "checkpoints.db", check_same_thread=False
             )
-            tool_checkpointer = SqliteSaver(tool_checkpoint_connection)
-            tool_checkpointer.setup()
-            tool_service = ReadOnlyToolService(
-                sources,
-                fragments,
-                LexicalSearchService(sources, fragments),
-                KnowledgeService(database_path),
-                RecordService(database_path),
-                WorkspaceRepository(database_path),
-                activity,
-                PrivacyService(database_path),
-                model_is_local=settings.model_provider == "local",
-            )
-            telegram_tools = build_read_only_tools(tool_service)
-            telegram_definitions = list(READ_ONLY_TOOL_DEFINITIONS)
-            calendar_token = settings.data_dir / "config" / "google-calendar-token.json"
-            if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") and calendar_token.is_file():
-                telegram_tools.extend(
-                    build_calendar_read_tools(CalendarReadToolService(_calendar_reader_factory(settings)))
-                )
-                telegram_definitions.extend(CALENDAR_READ_TOOL_DEFINITIONS)
-            tool_agent_application = StewardToolAgentApplication(
-                build_tool_agent_graph(
-                    tool_model,
-                    telegram_tools,
-                    checkpointer=tool_checkpointer,
-                    tool_policy=ToolPolicy(telegram_definitions),
+            checkpointer = SqliteSaver(checkpoint_connection)
+            checkpointer.setup()
+            source_tools = build_source_read_only_tools(
+                SourceReadOnlyToolService(
+                    sources,
+                    fragments,
+                    LexicalSearchService(sources, fragments),
+                    ActivityService(database_path),
+                    PrivacyService(database_path),
+                    model_is_local=settings.model_provider == "local",
                 )
             )
+            graph = build_tool_agent_graph(
+                tool_calling_model,
+                source_tools,
+                checkpointer=checkpointer,
+                tool_policy=ToolPolicy(SOURCE_READ_ONLY_TOOL_DEFINITIONS),
+            )
+            result = graph.invoke(
+                {
+                    "messages": [
+                        SystemMessage(
+                            "You are Steward, a local source-memory assistant. Use only the supplied "
+                            "source and activity read tools when needed. Answer from tool results, do not "
+                            "claim evidence you did not retrieve, and never propose or perform filesystem, "
+                            "workspace, record, Calendar, research, or knowledge actions."
+                        ),
+                        HumanMessage(arguments.question),
+                    ]
+                },
+                {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 12},
+            )
+            print(str(result["messages"][-1].content))
+            return
+        sources = SourceRepository(database_path)
+        fragments = SourceFragmentRepository(database_path)
         tool_service = ReadOnlyToolService(
             sources,
             fragments,
@@ -1467,6 +1507,105 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
             )
             return semantic_service.rebuild_semantic_index()
+
+        if settings.product_mode == "source_centric":
+            capture_service = InboxCaptureService(settings.inbox_dir, sources, fragments, activity)
+            privacy = PrivacyService(database_path)
+            review_contexts = ReviewContextRepository(database_path)
+            tool_agent_application = None
+            tool_model = _tool_calling_model_from_settings(settings)
+            if tool_model is not None:
+                tool_checkpoint_connection = sqlite3.connect(
+                    settings.data_dir / "checkpoints.db", check_same_thread=False
+                )
+                tool_checkpointer = SqliteSaver(tool_checkpoint_connection)
+                tool_checkpointer.setup()
+                tool_agent_application = StewardToolAgentApplication(
+                    build_tool_agent_graph(
+                        tool_model,
+                        build_source_read_only_tools(
+                            SourceReadOnlyToolService(
+                                sources,
+                                fragments,
+                                LexicalSearchService(sources, fragments),
+                                activity,
+                                privacy,
+                                model_is_local=settings.model_provider == "local",
+                            )
+                        ),
+                        checkpointer=tool_checkpointer,
+                        tool_policy=ToolPolicy(SOURCE_READ_ONLY_TOOL_DEFINITIONS),
+                    )
+                )
+            application = StewardEventApplication(
+                StewardQuestionApplication(graph),
+                StewardCaptureApplication(capture_service),
+                drive_import_application=StewardDriveImportApplication(
+                    _drive_inbox_importer(settings, capture_service), contexts=review_contexts
+                ),
+                gmail_import_application=StewardGmailImportApplication(
+                    _gmail_inbox_importer(settings, capture_service), contexts=review_contexts
+                ),
+                read_application=StewardReadApplication(
+                    sources,
+                    fragments,
+                    LexicalSearchService(sources, fragments),
+                    None,
+                    activity,
+                    settings.inbox_dir,
+                    deliveries=TelegramUpdateDeliveryRepository(database_path),
+                    semantic_search=SemanticSearchService(
+                        sources, SQLiteSemanticIndex(database_path, embedding_provider)
+                    ),
+                    hybrid_retriever=HybridRetriever(
+                        LexicalSearchService(sources, fragments),
+                        SemanticSearchService(
+                            sources, SQLiteSemanticIndex(database_path, embedding_provider)
+                        ),
+                    ),
+                    runtime_status=telegram_runtime_status,
+                    contexts=review_contexts,
+                    source_model=model_gateway,
+                    source_export=SourceExportService(
+                        sources, SourceRootRepository(database_path), settings.inbox_dir
+                    ),
+                    source_model_allowed=(
+                        privacy.permits_local_model
+                        if settings.model_provider == "local"
+                        else privacy.permits_external_model
+                    ),
+                    source_centric=True,
+                ),
+                provisional_intake_application=StewardProvisionalIntakeApplication(
+                    ProvisionalIntakeService(
+                        settings.data_dir / "cache" / "intake",
+                        ProvisionalIntakeRepository(database_path),
+                        capture_service,
+                        activity,
+                        privacy,
+                    ),
+                    contexts=review_contexts,
+                ),
+                tool_agent_application=tool_agent_application,
+                roots_application=StewardRootsApplication(
+                    SourceRootRepository(database_path), contexts=review_contexts
+                ),
+            )
+            try:
+                with telegram_runtime_lock(settings.data_dir):
+                    run_telegram_polling(
+                        token,
+                        application,
+                        application,
+                        allowed_chat_ids=settings.telegram_allowed_chat_ids,
+                        delivery_repository=TelegramUpdateDeliveryRepository(database_path),
+                        callback_repository=TelegramCallbackRepository(database_path),
+                        review_contexts=review_contexts,
+                        message_references=MessageReferenceRepository(database_path),
+                    )
+            except RuntimeAlreadyRunningError as error:
+                print(str(error))
+            return
 
         tasks = TaskService(database_path)
         task_reminders = TaskReminderService(database_path, tasks, activity)

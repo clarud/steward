@@ -1,6 +1,11 @@
 """Model-callable capabilities with explicit, narrow application boundaries."""
 
-from steward.tools.read_only import ReadOnlyToolService, build_read_only_tools
+from steward.tools.read_only import (
+    ReadOnlyToolService,
+    SourceReadOnlyToolService,
+    build_read_only_tools,
+    build_source_read_only_tools,
+)
 from steward.tools.policy import ToolAuthorization, ToolDefinition, ToolPolicy, ToolRisk
 from steward.tools.calendar_read import CalendarReadToolService, build_calendar_read_tools
 from steward.tools.write_proposals import (
@@ -21,7 +26,9 @@ from steward.tools.knowledge_write_proposals import (
 
 __all__ = [
     "ReadOnlyToolService",
+    "SourceReadOnlyToolService",
     "build_read_only_tools",
+    "build_source_read_only_tools",
     "ToolAuthorization",
     "ToolDefinition",
     "ToolPolicy",

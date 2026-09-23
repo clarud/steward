@@ -754,7 +754,7 @@ class StewardReadApplication:
         source_repository: SourceRepository,
         fragment_repository: SourceFragmentRepository,
         lexical_search: LexicalSearchService,
-        workspace_repository: WorkspaceRepository,
+        workspace_repository: WorkspaceRepository | None,
         activity_service: ActivityService,
         inbox_dir: Path,
         action_proposals: ActionProposalRepository | None = None,
@@ -766,8 +766,10 @@ class StewardReadApplication:
         source_model: ModelGateway | None = None,
         source_model_allowed: Callable[[int], bool] | None = None,
         source_export: SourceExportService | None = None,
+        source_centric: bool = False,
     ) -> None:
         self._source_export = source_export
+        self._source_centric = source_centric
         self._source_model = source_model
         self._source_model_allowed = source_model_allowed
         self._sources = source_repository
@@ -789,7 +791,17 @@ class StewardReadApplication:
         command = command.partition("@")[0].casefold()
         argument = argument.strip()
         if command == "/help":
-            return self.help_text()
+            return self.source_centric_help_text() if self._workspaces is None else self.help_text()
+        if command == "/home" and self._workspaces is None:
+            return PresentedReply(
+                "Ask about saved material, search sources, send a file or note to Inbox, or check root status.",
+                (
+                    ReplyAction("Sources", "/sources"),
+                    ReplyAction("Inbox", "/inbox"),
+                    ReplyAction("Roots", "/roots"),
+                ),
+                title="Steward", icon="🏠",
+            )
         if command == "/status":
             return self.status()
         if command == "/inbox":
@@ -797,6 +809,8 @@ class StewardReadApplication:
         if command == "/sources":
             return self.sources(self._page(argument))
         if command == "/source_memberships":
+            if self._workspaces is None:
+                return "Workspace links are disabled in source-centric mode. Sources remain available through search and Inbox."
             parts = argument.split()
             if len(parts) not in {1, 2} or not all(part.isdigit() and int(part) > 0 for part in parts):
                 return "Open a source and choose Workspaces, or use /source_memberships SOURCE_ID [PAGE]."
@@ -847,16 +861,20 @@ class StewardReadApplication:
                 self._contexts.set(event.platform, event.chat_id, "source", int(argument))
             return response
         if command == "/workspaces":
+            if self._workspaces is None:
+                return "Workspaces are retained legacy data and are not active in source-centric mode."
             if argument and (not argument.isdigit() or int(argument) < 1):
                 return "Use /workspaces with an optional positive page number."
             return self.workspaces(int(argument) if argument else 1)
         if command == "/workspace":
+            if self._workspaces is None:
+                return "Workspaces are retained legacy data and are not active in source-centric mode."
             parts = argument.split()
             if not 1 <= len(parts) <= 2 or any(not part.isdigit() or int(part) < 1 for part in parts):
                 return "Use /workspace followed by a numeric workspace ID and optional positive page number."
             identifier = int(parts[0])
             response = self.workspace(identifier, int(parts[1]) if len(parts) == 2 else 1)
-            if self._contexts is not None and any(item.id == identifier for item in self._workspaces.list_all()):
+            if self._contexts is not None and self._workspaces is not None and any(item.id == identifier for item in self._workspaces.list_all()):
                 self._contexts.set(event.platform, event.chat_id, "workspace", identifier)
             return response
         if command == "/activity":
@@ -893,6 +911,8 @@ class StewardReadApplication:
         context = self._contexts.get(event.platform, event.chat_id)
         if normalized in {"which workspace is this in", "which workspace is it in", "what workspace is this in",
                           "which workspaces is this in", "show its workspaces", "show workspace links"}:
+            if self._workspaces is None:
+                return "Workspace links are disabled in source-centric mode."
             if context is None or context.kind not in {"source", "source_question"}:
                 return "Open a source from /sources first so I know which workspace links you want."
             self._contexts.set(event.platform, event.chat_id, "source", int(context.identifier))
@@ -997,7 +1017,7 @@ class StewardReadApplication:
     def resolve_activity_reference(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Reopen only one explicitly inspected audit event in this chat."""
 
-        if self._contexts is None:
+        if self._contexts is None or self._workspaces is None:
             return None
         normalized = (event.text or "").strip().casefold().rstrip("?!. ")
         if normalized not in {
@@ -1063,6 +1083,25 @@ class StewardReadApplication:
             "Dead-letter recovery: /recover_dead_letter UPDATE_ID (creates a review; never replays a message)"
         )
 
+    @staticmethod
+    def source_centric_help_text() -> str:
+        return (
+            "Steward source-memory guide\n\n"
+            "Ask a question about your saved files, or use:\n"
+            "/home — source-memory start page\n"
+            "/sources [page] — registered sources\n"
+            "/inbox [page] — saved incoming files and notes\n"
+            "/source ID — details, extracted content, and source-specific questions\n"
+            "/search TERMS — local lexical search\n"
+            "/semantic_search QUESTION — local meaning-based search\n"
+            "/hybrid_search QUESTION — combined local search\n"
+            "/roots — authorized folders\n"
+            "/activity [term] — source lifecycle history\n"
+            "/privacy SOURCE_ID — source model-access rule\n\n"
+            "Send a file or substantial note to stage it locally, then choose Save to Inbox or Discard. "
+            "Workspace, Calendar, records, knowledge updates, and research actions are not active in source-centric mode."
+        )
+
     def status(self) -> str:
         active = self._sources.list_active()
         inbox_count = sum(self._is_inbox(source.path) for source in active)
@@ -1071,9 +1110,10 @@ class StewardReadApplication:
             "Steward is running locally.\n"
             f"Active sources: {len(active)}\n"
             f"Inbox sources: {inbox_count}\n"
-            f"Workspaces: {len(self._workspaces.list_all())}\n"
             f"Recent activity events shown by /activity: {pending_activity}"
         ]
+        if self._workspaces is not None:
+            lines.insert(3, f"Workspaces: {len(self._workspaces.list_all())}")
         if self._action_proposals is not None:
             pending = sum(proposal.status == "pending" for proposal in self._action_proposals.list_all())
             lines.append(f"Pending action reviews: {pending}")
@@ -1113,12 +1153,14 @@ class StewardReadApplication:
                 ReplyAction("Read content", f"/source_content {source_id}"),
                 ReplyAction("Summarize", f"/summarize_source {source_id}"),
                 ReplyAction("Ask about it", f"/ask_source {source_id}"),
-                ReplyAction("Privacy", f"/privacy_options {source_id}"),
             )
+            + ((ReplyAction("Privacy", f"/privacy_options {source_id}"),) if not self._source_centric else ())
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
             + ((ReplyAction("Workspaces", f"/source_memberships {source_id}"),
-                ReplyAction("Link workspace", f"/source_workspaces {source_id}"),
-                ReplyAction("Refresh text", f"/propose_reextract {source_id}")) if source.status.value == "active" else ()),
+                ReplyAction("Link workspace", f"/source_workspaces {source_id}"))
+               if source.status.value == "active" and self._workspaces is not None else ())
+            + ((ReplyAction("Refresh text", f"/propose_reextract {source_id}"),)
+               if source.status.value == "active" and not self._source_centric else ()),
             title=source.path.name,
             icon="📄",
             reference=("source", source_id),
@@ -1126,6 +1168,8 @@ class StewardReadApplication:
 
     def source_memberships(self, source_id: int, page: int = 1) -> str | PresentedReply:
         """Show actual semantic memberships, never infer them from the file path."""
+        if self._workspaces is None:
+            return "Workspace links are disabled in source-centric mode."
         source = self._sources.get_by_id(source_id)
         if source is None or source.status.value != "active":
             return "That source is unavailable. Choose an active source from /sources."
@@ -1162,8 +1206,7 @@ class StewardReadApplication:
                 "You can still read its extracted content, or propose a reviewed privacy change.",
                 (
                     ReplyAction("Read content", f"/source_content {source_id}"),
-                    ReplyAction("Change privacy", f"/privacy_options {source_id}"),
-                ),
+                ) + (() if self._source_centric else (ReplyAction("Change privacy", f"/privacy_options {source_id}"),)),
                 title="Model access blocked",
                 icon="🔒",
                 reference=("source", source_id),
@@ -1249,8 +1292,9 @@ class StewardReadApplication:
 
     def _extraction_recovery(self, source: Source) -> PresentedReply:
         guidance = _extraction_recovery_guidance(source)
-        actions = [ReplyAction("Review re-extraction", f"/propose_reextract {source.id}"),
-                   ReplyAction("Source details", f"/source {source.id}")]
+        actions = [ReplyAction("Source details", f"/source {source.id}")]
+        if not self._source_centric:
+            actions.insert(0, ReplyAction("Review re-extraction", f"/propose_reextract {source.id}"))
         if self._source_export is not None:
             actions.append(ReplyAction("Send original", f"/send_source {source.id}"))
         return PresentedReply(
@@ -1261,6 +1305,8 @@ class StewardReadApplication:
         )
 
     def workspaces(self, page: int = 1) -> str | PresentedReply:
+        if self._workspaces is None:
+            return "Workspaces are retained legacy data and are not active in source-centric mode."
         workspaces = self._workspaces.list_all()
         if not workspaces:
             return "No workspaces yet. Ask me to create a workspace and I will make a reviewable proposal."
@@ -1281,6 +1327,8 @@ class StewardReadApplication:
         )
 
     def workspace(self, workspace_id: int, page: int = 1) -> str | PresentedReply:
+        if self._workspaces is None:
+            return "Workspaces are retained legacy data and are not active in source-centric mode."
         workspace = next((item for item in self._workspaces.list_all() if item.id == workspace_id), None)
         if workspace is None:
             return f"Workspace {workspace_id} was not found."

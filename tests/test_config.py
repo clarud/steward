@@ -17,6 +17,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_LOCAL_MODEL_URL", raising=False)
+    monkeypatch.delenv("STEWARD_PRODUCT_MODE", raising=False)
     monkeypatch.delenv("STEWARD_TELEGRAM_ALLOWED_CHAT_IDS", raising=False)
 
     assert Settings.from_environment() == Settings(
@@ -30,6 +31,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         gemini_model=None,
         local_model=None,
         local_model_url="http://127.0.0.1:11434",
+        product_mode="source_centric",
         telegram_allowed_chat_ids=frozenset(),
     )
 
@@ -46,6 +48,19 @@ def test_settings_reject_invalid_model_provider(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(ValueError, match="STEWARD_MODEL_PROVIDER"):
         Settings.from_environment()
+
+
+def test_settings_reject_invalid_product_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEWARD_PRODUCT_MODE", "everything")
+
+    with pytest.raises(ValueError, match="STEWARD_PRODUCT_MODE"):
+        Settings.from_environment()
+
+
+def test_settings_accept_legacy_product_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STEWARD_PRODUCT_MODE", "legacy")
+
+    assert Settings.from_environment().product_mode == "legacy"
 
 
 def test_settings_accept_local_model_provider(monkeypatch: pytest.MonkeyPatch) -> None:
