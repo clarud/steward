@@ -23,6 +23,7 @@ from steward.application import (
     StewardPrivacyApplication,
     StewardOperationsApplication,
     StewardCalendarApplication,
+    StewardCodexHandoffApplication,
     StewardTaskApplication,
     StewardResearchApplication,
     StewardCuratedNoteApplication,
@@ -45,7 +46,7 @@ from steward.actions import FileMutationService
 from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, MarkdownExtractor, SourceFragment, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph
-from steward.sources import Source, SourceRepository, SourceType
+from steward.sources import CodexHandoffService, Source, SourceRepository, SourceType
 from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
@@ -6131,3 +6132,29 @@ def test_source_card_shows_saved_inbox_capture_context(tmp_path: Path) -> None:
     assert "Intended root: Y4S1" in card.text
     assert "Capture context: CS3210 lecture notes" in card.text
     assert "Capture origin: telegram" in card.text
+
+
+def test_codex_handoff_without_ids_offers_an_inbox_picker(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
+    path = inbox / "incoming.md"; path.write_text("private source text", encoding="utf-8")
+    now = datetime.now(UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, path, "c" * 64, SourceType.MARKDOWN, path.stat().st_size, now, now, now,
+    ))
+    app = StewardCodexHandoffApplication(
+        CodexHandoffService(sources, SourceRootRepository(database), tmp_path / ".steward", inbox),
+        sources,
+        inbox,
+    )
+
+    picker = app.handle_command(make_event(text="/codex_handoff"))
+    prepared = app.handle_command(make_event(text=f"/codex_handoff {source.id}"))
+
+    assert isinstance(picker, PresentedReply)
+    assert "incoming.md" in picker.text
+    assert any(action.command == f"/codex_handoff {source.id}" for action in picker.actions)
+    assert isinstance(prepared, PresentedReply)
+    assert "metadata and guidance paths only" in prepared.text

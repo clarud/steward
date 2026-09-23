@@ -1683,7 +1683,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                         settings.data_dir,
                         settings.inbox_dir,
                         SourceInboxContextRepository(database_path),
-                    )
+                    ),
+                    sources,
+                    settings.inbox_dir,
                 ),
                 privacy_application=StewardPrivacyApplication(
                     privacy,

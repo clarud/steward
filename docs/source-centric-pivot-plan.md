@@ -475,7 +475,8 @@ and capture origin are retained as local Inbox metadata; the original remains in
 Inbox and no model, Codex process, or filesystem move is triggered. Source cards
 and CLI/Telegram handoff manifests show that context, and an intended root adds
 its local guidance-document paths to the metadata-only manifest. Telegram
-handoff selection remains outstanding.
+`/codex_handoff` without IDs now opens a paginated Inbox picker; explicit IDs
+remain available for a deliberate multi-source batch.
 
 - Associate each Inbox capture with an optional intended root, not a required
   Workspace.

@@ -32,6 +32,11 @@ reviewed external workflow moves it. Source cards and local metadata-only Codex
 handoff manifests can expose this context, but neither sends the original body
 to a model nor grants filesystem authority.
 
+`/codex_handoff` without IDs presents a paginated list of active Inbox sources
+and prepares a one-source local manifest only after the owner chooses one.
+`/codex_handoff ID ...` remains the explicit batch form. Both paths call the
+same local handoff service and neither starts a Codex session.
+
 ## Design principles
 
 Steward's current implementation follows five important rules.

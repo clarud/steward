@@ -39,7 +39,8 @@ the retained legacy sections below as relevant.
    For a one-to-one same-root rename, open `/moves`, review the exact old/new
    filenames, and choose **Preserve source ID**. Never accept a proposed move
    merely because two unrelated files have matching contents.
-7. Select one or two harmless source IDs and send `/codex_handoff ID ...`.
+7. Send `/codex_handoff` with no IDs and choose one harmless Inbox source from
+   the paginated picker (or use `/codex_handoff ID ...` for an explicit batch).
    Confirm the reply says the manifest is local and metadata-only. Inspect the
    manifest on the Steward computer before sharing it with Codex; it must not
    contain the source body or trigger any file operation.

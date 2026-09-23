@@ -170,6 +170,17 @@ safe test.
   intended root for one harmless staged item, save it, inspect its source card
   and handoff manifest, and verify that the file remains in Inbox.
 
+### Automated delivery: Telegram Codex-handoff picker — 23 September 2026
+
+- `/codex_handoff` with no IDs now shows active Inbox sources in compact,
+  paginated pages. Choosing **Prepare #ID** creates the same local,
+  metadata-only manifest as the explicit-ID command. A source card also offers
+  **Prepare handoff** in source-centric mode.
+- The picker does not inspect source bodies, invoke Codex, or move a file.
+  Focused application, CLI, and handoff tests pass locally. Live Telegram
+  verification remains pending: open the picker, choose a harmless Inbox item,
+  inspect the generated manifest locally, and confirm no file changed.
+
 ## Session: 2026-09-16
 
 ### Automated verification

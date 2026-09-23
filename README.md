@@ -60,6 +60,10 @@ Before saving a staged capture, **Intended root** can retain optional routing
 context such as a course folder. It does not move the file: the original remains
 in Inbox until a separate reviewed workflow handles it.
 
+Use `/codex_handoff` in Telegram to pick a saved Inbox source, or supply source
+IDs for a deliberate batch. Steward writes a local metadata-only manifest; it
+does not contact Codex or change files.
+
 Telegram is an interface, not the storage location: uploads are downloaded to
 the configured Inbox, and no remote model analyzes a source unless its privacy
 rule permits the chosen model.
