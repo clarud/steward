@@ -14,6 +14,9 @@ Automated baseline completed locally:
 
 - `tests/test_config.py`, `tests/test_read_only_tools.py`, and `tests/test_cli.py`: 58 passed.
 - `tests/test_application.py`: passed.
+- The supported-file watcher refresh and root-scan telemetry tests pass in
+  `tests/test_file_watching.py`, `tests/sources/test_service.py`,
+  `tests/test_roots.py`, and `tests/test_cli.py`.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate

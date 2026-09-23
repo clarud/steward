@@ -6,8 +6,12 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from steward.sources.hashing import hash_file
+
+if TYPE_CHECKING:
+    from steward.sources.scanning import ScanResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +22,7 @@ class SourceRoot:
     enabled: bool
     created_at: datetime
     exclusions: tuple[Path, ...] = ()
+    last_scanned_at: datetime | None = None
 
     @property
     def health(self) -> str:
@@ -58,17 +63,49 @@ class SourceRootRepository:
     def list_all(self) -> tuple[SourceRoot, ...]:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
-                "SELECT id, name, path, enabled, created_at, exclusions FROM source_roots ORDER BY name"
+                """SELECT roots.id, roots.name, roots.path, roots.enabled, roots.created_at, roots.exclusions,
+                          scans.last_scanned_at
+                   FROM source_roots AS roots
+                   LEFT JOIN (
+                       SELECT root_id, MAX(scanned_at) AS last_scanned_at
+                       FROM source_root_scans GROUP BY root_id
+                   ) AS scans ON scans.root_id = roots.id
+                   ORDER BY roots.name"""
             ).fetchall()
         return tuple(self._from_row(row) for row in rows)
 
     def get_by_name(self, name: str) -> SourceRoot | None:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
-                "SELECT id, name, path, enabled, created_at, exclusions FROM source_roots WHERE name = ?",
+                """SELECT roots.id, roots.name, roots.path, roots.enabled, roots.created_at, roots.exclusions,
+                          scans.last_scanned_at
+                   FROM source_roots AS roots
+                   LEFT JOIN (
+                       SELECT root_id, MAX(scanned_at) AS last_scanned_at
+                       FROM source_root_scans GROUP BY root_id
+                   ) AS scans ON scans.root_id = roots.id
+                   WHERE roots.name = ?""",
                 (name.strip(),),
             ).fetchone()
         return self._from_row(row) if row is not None else None
+
+    def record_successful_scan(self, root: SourceRoot, result: ScanResult) -> SourceRoot:
+        """Persist concise local reconciliation telemetry after a completed scan."""
+
+        if root.id is None:
+            raise ValueError("A persisted source root ID is required to record a scan.")
+        scanned_at = datetime.now(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                """INSERT INTO source_root_scans
+                    (root_id, scanned_at, new_count, updated_count, unchanged_count, missing_count)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                (root.id, scanned_at.isoformat(), result.new, result.updated, result.unchanged, result.missing),
+            )
+        return SourceRoot(
+            root.id, root.name, root.path, root.enabled, root.created_at,
+            root.exclusions, scanned_at,
+        )
 
     def set_enabled(self, name: str, enabled: bool) -> SourceRoot:
         root = self.get_by_name(name)
@@ -78,7 +115,7 @@ class SourceRootRepository:
             return root
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("UPDATE source_roots SET enabled = ? WHERE id = ?", (int(enabled), root.id))
-        return SourceRoot(root.id, root.name, root.path, enabled, root.created_at, root.exclusions)
+        return SourceRoot(root.id, root.name, root.path, enabled, root.created_at, root.exclusions, root.last_scanned_at)
 
     def relocate_missing(self, name: str, new_path: Path) -> RootRelocation:
         """Rebind a missing root only when all tracked originals match by hash."""
@@ -130,7 +167,7 @@ class SourceRootRepository:
                     (candidate, size_bytes, modified_at, last_seen_at, source_id),
                 )
             connection.execute("UPDATE source_roots SET path = ? WHERE id = ?", (str(destination), root.id))
-        relocated = SourceRoot(root.id, root.name, destination, root.enabled, root.created_at, root.exclusions)
+        relocated = SourceRoot(root.id, root.name, destination, root.enabled, root.created_at, root.exclusions, root.last_scanned_at)
         return RootRelocation(relocated, len(replacements))
 
     @staticmethod
@@ -150,5 +187,6 @@ class SourceRootRepository:
         root = Path(str(row[2]))
         exclusions = tuple(Path(item) for item in json.loads(str(row[5])))
         return SourceRoot(
-            int(row[0]), str(row[1]), root, bool(row[3]), datetime.fromisoformat(str(row[4])), exclusions
+            int(row[0]), str(row[1]), root, bool(row[3]), datetime.fromisoformat(str(row[4])), exclusions,
+            datetime.fromisoformat(str(row[6])) if len(row) > 6 and row[6] is not None else None,
         )

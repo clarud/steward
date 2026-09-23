@@ -940,6 +940,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 fragment_repository=SourceFragmentRepository(database_path),
                 markdown_extractor=MarkdownExtractor(),
             ).scan_source_root(root.path, exclusions=root.exclusions)
+            SourceRootRepository(database_path).record_successful_scan(root, result)
         except sqlite3.Error as error:
             _print_scan_database_error("Root scan", error)
             return
@@ -980,6 +981,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 fragment_repository=SourceFragmentRepository(database_path),
                 markdown_extractor=MarkdownExtractor(),
             ).scan_source_root(root.path, exclusions=root.exclusions)
+            SourceRootRepository(database_path).record_successful_scan(root, result)
         except (sqlite3.Error, ValueError) as error:
             if isinstance(error, sqlite3.Error):
                 _print_scan_database_error("Onboarding scan", error)
@@ -1023,7 +1025,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
         service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
-        print("Watching for Markdown changes. Press Ctrl+C to stop.")
+        print("Watching supported source changes. Press Ctrl+C to stop.")
         run_file_watcher(arguments.root, service)
         return
 
@@ -1179,7 +1181,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             print("No locally authorized source roots."); return
         for root in roots:
             excluded = ", ".join(str(item) for item in root.exclusions) or "none"
-            print(f"{root.id}\t{root.name}\t{root.health}\t{root.path}\texcluded={excluded}")
+            last_scan = root.last_scanned_at.isoformat() if root.last_scanned_at is not None else "never"
+            print(f"{root.id}\t{root.name}\t{root.health}\tlast_scan={last_scan}\t{root.path}\texcluded={excluded}")
         return
 
     if arguments.command == "unregister-source":

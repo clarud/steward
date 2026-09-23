@@ -4224,8 +4224,10 @@ class StewardRootsApplication:
             else "This root is available for local scans."
         )
         identifier = getattr(root, "id")
+        last_scanned_at = getattr(root, "last_scanned_at", None)
+        scan_status = last_scanned_at.isoformat() if last_scanned_at is not None else "never"
         return PresentedReply(
-            f"Status: {health}\nExcluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
+            f"Status: {health}\nLast successful scan: {scan_status}\nExcluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
             f"{guidance}\nRoot paths and changes remain local-only.",
             (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
             title=str(getattr(root, "name")), icon="🗂️",

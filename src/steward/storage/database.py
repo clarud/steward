@@ -64,6 +64,7 @@ TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION = 54
 KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION = 55
 HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION = 56
 HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
+SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION = 58
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -560,6 +561,18 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
         """CREATE TABLE hotel_reservation_record_evidence (hotel_reservation_record_id INTEGER NOT NULL REFERENCES hotel_reservation_records(id) ON DELETE CASCADE,
             field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
             PRIMARY KEY (hotel_reservation_record_id, field_name))""",
+    ),
+    (
+        SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION,
+        """CREATE TABLE source_root_scans (
+            id INTEGER PRIMARY KEY,
+            root_id INTEGER NOT NULL REFERENCES source_roots(id) ON DELETE CASCADE,
+            scanned_at TEXT NOT NULL,
+            new_count INTEGER NOT NULL,
+            updated_count INTEGER NOT NULL,
+            unchanged_count INTEGER NOT NULL,
+            missing_count INTEGER NOT NULL
+        )""",
     ),
 )
 

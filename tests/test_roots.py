@@ -8,6 +8,7 @@ from steward.roots import SourceRootRepository
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceStatus, SourceType
 from steward.sources.hashing import hash_file
+from steward.sources.scanning import ScanResult
 
 
 def registered_source(path: Path) -> Source:
@@ -62,6 +63,18 @@ def test_source_root_reports_missing_when_an_enabled_path_disappears(tmp_path: P
     root_path.rmdir()
 
     assert root.health == "missing"
+
+
+def test_source_root_records_the_latest_successful_scan(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    path = tmp_path / "notes"; path.mkdir()
+    repository = SourceRootRepository(database)
+    root = repository.add("School", path)
+
+    recorded = repository.record_successful_scan(root, ScanResult(new=1, updated=0, unchanged=2, missing=0))
+
+    assert recorded.last_scanned_at is not None
+    assert SourceRootRepository(database).get_by_name("School").last_scanned_at == recorded.last_scanned_at
 
 
 def test_missing_root_relocation_atomically_rebinds_matching_sources(tmp_path: Path) -> None:
