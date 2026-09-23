@@ -26,14 +26,13 @@ class FileWatchService:
             resolved.is_relative_to(self._root)
             and not any(resolved.is_relative_to(exclusion) for exclusion in self._exclusions)
             and not any(parent.name in DEFAULT_EXCLUDED_DIRECTORY_NAMES for parent in resolved.parents)
-            and resolved.suffix.casefold() == ".md"
         ):
             self._pending[resolved] = monotonic() if observed_at is None else observed_at
 
     def flush(self, *, now: float | None = None) -> dict[Path, str]:
         current = monotonic() if now is None else now
         ready = [path for path, observed in self._pending.items() if current - observed >= self._debounce_seconds]
-        results = {path: self._source_service.refresh_markdown_path(path) for path in ready}
+        results = {path: self._source_service.refresh_source_path(path) for path in ready}
         for path in ready:
             del self._pending[path]
         return results

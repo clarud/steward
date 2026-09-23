@@ -379,6 +379,11 @@ model tool schemas omit disabled tools.
 
 **Outcome:** Steward is trustworthy after normal Codex edits.
 
+**Status (23 September 2026):** in progress. The watcher now debounces and
+refreshes every currently supported source type using content hashes; root scans
+remain the authoritative fallback. Root scan telemetry, extraction-failure
+reporting, and move reconciliation are still outstanding.
+
 - Replace Markdown-only watch handling with a generic supported-source event
   queue and debounced refresh path.
 - Add scheduled/explicit full-root reconciliation as the authoritative fallback

@@ -71,8 +71,9 @@ steward relocate-root "Y4S1" "D:\Archive\Y4S1" --confirm
 ```
 
 Run a scan after external edits, renames, or moves made by Codex or another
-tool. The current watcher is a Markdown-only convenience; full scans remain the
-all-format reconciliation mechanism until watcher expansion lands.
+tool. The watcher incrementally refreshes supported files; full scans remain the
+authoritative reconciliation mechanism for missed events, moves, and large
+batches.
 
 ## Documentation
 

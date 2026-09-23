@@ -41,6 +41,27 @@ def test_watcher_marks_deleted_registered_source_missing(tmp_path: Path) -> None
     assert watcher.flush(now=3.0) == {note.resolve(): "missing"}
 
 
+def test_watcher_refreshes_supported_plain_text_files(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root = tmp_path / "vault"; root.mkdir()
+    note = root / "schedule.txt"; note.write_text("first session", encoding="utf-8")
+    repository = SourceRepository(database)
+    fragments = SourceFragmentRepository(database)
+    watcher = FileWatchService(root, SourceService(repository, fragments, MarkdownExtractor()))
+
+    watcher.notify(note, observed_at=0.0)
+    assert watcher.flush(now=1.0) == {note.resolve(): "new"}
+    source = repository.get_by_path(note.resolve())
+    assert source is not None
+    assert source.source_type.value == "plain_text"
+    assert fragments.list_for_source(source.id or 0)[0].text == "first session"
+
+    note.write_text("second session", encoding="utf-8")
+    watcher.notify(note, observed_at=2.0)
+    assert watcher.flush(now=3.0) == {note.resolve(): "updated"}
+    assert fragments.list_for_source(source.id or 0)[0].text == "second session"
+
+
 def test_watcher_ignores_operational_and_configured_exclusions(tmp_path: Path) -> None:
     database = tmp_path / "steward.db"; initialize_database(database)
     root = tmp_path / "vault"; root.mkdir()
