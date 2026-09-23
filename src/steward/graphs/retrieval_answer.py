@@ -9,7 +9,6 @@ from langgraph.graph import END, START, StateGraph
 
 from steward.answer import AnswerCitation, AnswerService
 from steward.answer.service import Retriever
-from steward.retrieval import HybridSearchHit
 from steward.observability import trace
 
 

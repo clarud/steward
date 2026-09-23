@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 from steward.extraction import SourceFragment
+from steward.extras import MissingExtraError
 from steward.sources import Source, SourceRepository
 from steward.sources.models import SourceStatus, SourceType
 
@@ -41,7 +42,10 @@ class SentenceTransformerEmbeddingProvider:
         self._model_name = model_name
         # Import here so non-semantic commands do not load PyTorch at startup.
         # A normal search is offline after the user explicitly downloads a model.
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as error:
+            raise MissingExtraError("semantic", "Semantic and hybrid search") from error
 
         self._model = SentenceTransformer(
             model_name, local_files_only=not allow_download

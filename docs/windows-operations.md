@@ -5,11 +5,6 @@ task is an explicit deployment action. The commands below have not been used to
 register or start a task during development. Keep real Telegram acceptance
 separate from automated tests.
 
-> **Product mode:** run the default `STEWARD_PRODUCT_MODE=source_centric` for
-> local source roots, retrieval, Inbox, and Telegram. This guide may mention
-> retained OAuth or legacy integrations for operational history; they are not
-> enabled by the default source-centric interface.
-
 ## 1. Foreground preflight
 
 Use the same ordinary Windows account that owns the vault and authorized OAuth

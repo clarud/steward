@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from steward import cli
+from steward.cli import bootstrap as cli
 from steward.capture import CaptureResult
-from steward.application import StewardDriveImportApplication, StewardGmailImportApplication
+from steward.app import StewardDriveImportApplication, StewardGmailImportApplication
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
 from steward.reviews import ReviewContextRepository
@@ -34,7 +34,7 @@ def test_duplicate_import_card_targets_existing_source_without_inbox_claim(provi
     assert "existing source" in reply.text and "no new copy" in reply.text
     assert "Inbox" not in reply.text and "private-project" not in reply.text
     assert [action.command for action in reply.actions] == [
-        "/source_content 87", "/source 87", "/source_workspaces 87",
+        "/source_content 87", "/source 87",
     ]
 
 
@@ -130,7 +130,7 @@ def test_configured_search_reaches_all_pages_without_downloading(provider, tmp_p
     monkeypatch.setenv("STEWARD_GOOGLE_CLIENT_SECRETS", str(tmp_path / "synthetic-client.json"))
     monkeypatch.setattr(cli, "authorize_google_drive" if provider == "drive" else "authorize_gmail", authorize)
     settings = SimpleNamespace(data_dir=tmp_path)
-    importer_type = cli._ConfiguredDriveInboxImporter if provider == "drive" else cli._ConfiguredGmailInboxImporter
+    importer_type = cli.ConfiguredDriveInboxImporter if provider == "drive" else cli.ConfiguredGmailInboxImporter
     application_type = StewardDriveImportApplication if provider == "drive" else StewardGmailImportApplication
     database = tmp_path / "callbacks.db"
     initialize_database(database)

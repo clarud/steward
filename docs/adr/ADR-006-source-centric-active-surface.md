@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — 2026-09-23
+Accepted — 2026-09-23. The decision to retain legacy code and data is
+superseded by [ADR-007](ADR-007-remove-legacy-domains.md).
 
 ## Context
 

@@ -11,7 +11,7 @@ def event(text: str | None, attachments: tuple[str, ...] = ()) -> IncomingEvent:
 
 
 @pytest.mark.parametrize(("text", "intent"), [
-    ("/save a note", Intent.CAPTURE), ("/delete this", Intent.DELETE),
+    ("/save a note", Intent.CAPTURE), ("/delete this", Intent.UNKNOWN),
     ("/organize inbox", Intent.ORGANIZE), ("/inspect 4", Intent.INSPECT),
     ("What is a TLB?", Intent.ASK), ("hello", Intent.UNKNOWN),
     ("show me my upcoming events", Intent.ASK),

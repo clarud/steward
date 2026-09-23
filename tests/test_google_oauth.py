@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from steward.calendar import authorize_google_calendar
 from steward.drive import authorize_google_drive
 from steward.gmail import authorize_gmail
 
@@ -10,7 +9,6 @@ from steward.gmail import authorize_gmail
 @pytest.mark.parametrize(
     "authorize,api_name,api_version",
     (
-        (authorize_google_calendar, "calendar", "v3"),
         (authorize_google_drive, "drive", "v3"),
         (authorize_gmail, "gmail", "v1"),
     ),

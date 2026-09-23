@@ -16,7 +16,6 @@ from steward.events import IncomingEvent
 from steward.presentation import PresentedReply
 from steward.telegram.presentation import TelegramPresenter
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
-from steward.tasks import TaskReminderService
 from steward.telegram.callbacks import TelegramCallbackRepository
 from steward.telegram.delivery import TelegramUpdateDeliveryRepository
 
@@ -36,16 +35,26 @@ class IncomingFileEventHandler(IncomingEventHandler, Protocol):
 MAX_CLOUD_DOWNLOAD_BYTES = 20 * 1024 * 1024
 _LOGGER = logging.getLogger(__name__)
 _PRIMARY_COMMANDS = (
-    ("home", "review what needs your decision"),
-    ("pending", "show pending reviews"),
-    ("search", "search your saved material"),
-    ("calendar", "show current calendar events"),
-    ("tasks", "show open tasks"),
-    ("records", "show saved records"),
+    ("home", "start page"),
+    ("search", "find a file by words or meaning"),
     ("inbox", "show saved Inbox items"),
-    ("workspaces", "show workspaces"),
-    ("organize", "review Inbox organization"),
+    ("sources", "browse registered files"),
+    ("roots", "show authorized folders"),
+    ("codex_handoff", "prepare Inbox files for Codex"),
     ("help", "show more options"),
+)
+# Every command the live applications handle. Unknown commands still reach the
+# application through the catch-all handler and receive safe guidance.
+_COMMANDS = (
+    "activity", "activity_event", "agent", "approve_action", "ask_source",
+    "codex_handoff", "codex_handoff_page", "drive_import", "drive_page", "drive_search",
+    "gmail_import", "gmail_page", "gmail_search", "help", "home",
+    "hybrid_search", "inbox", "intake_accept", "intake_analysis",
+    "intake_context", "intake_discard", "intake_root", "metrics", "moves",
+    "privacy", "privacy_options", "reject_action",
+    "review_move", "root", "roots", "search", "semantic_search", "send_source",
+    "set_privacy", "source", "source_content", "sources", "status",
+    "summarize_source",
 )
 
 
@@ -316,11 +325,8 @@ class TelegramAdapter:
         review_commands = {
             "/approve_action": "action",
             "/reject_action": "action",
-            "/organization_accept": "organization",
-            "/organization_reject": "organization",
             "/intake_accept": "intake",
             "/intake_discard": "intake",
-            "/review_enrichment": "knowledge",
         }
         for action in response.actions:
             command, _, argument = action.command.partition(" ")
@@ -366,7 +372,6 @@ def run_telegram_polling(
     callback_repository: TelegramCallbackRepository | None = None,
     review_contexts: ReviewContextRepository | None = None,
     message_references: MessageReferenceRepository | None = None,
-    task_reminders: TaskReminderService | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it."""
 
@@ -374,35 +379,17 @@ def run_telegram_polling(
         raise ValueError("Telegram bot token must not be empty.")
 
     builder = ApplicationBuilder().token(token)
-    reminder_stop: asyncio.Event | None = None
-    reminder_worker: asyncio.Task | None = None
 
     async def start_services(application: object) -> None:
         """Set a small discovery menu without making Telegram startup depend on it."""
-        nonlocal reminder_stop, reminder_worker
         try:
             await application.bot.set_my_commands(  # type: ignore[attr-defined]
                 [BotCommand(command, description) for command, description in _PRIMARY_COMMANDS]
             )
         except Exception:
             _LOGGER.warning("Could not update Steward's Telegram command menu.")
-        if task_reminders is not None:
-            reminder_stop = asyncio.Event()
-            # Own this task explicitly: an infinite Application.create_task
-            # worker must not be awaited by Application.stop before we signal it.
-            reminder_worker = asyncio.create_task(
-                _task_reminder_loop(application, task_reminders, allowed_chat_ids, stop=reminder_stop),
-                name="steward-task-reminders",
-            )
-
-    async def stop_services(application: object) -> None:
-        if reminder_stop is not None:
-            reminder_stop.set()
-        if reminder_worker is not None:
-            await reminder_worker
 
     builder = builder.post_init(start_services)
-    builder = builder.post_stop(stop_services)
     application = builder.build()
     adapter = TelegramAdapter(
         event_handler,
@@ -415,109 +402,8 @@ def run_telegram_polling(
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
     )
-    application.add_handler(CommandHandler("action_proposals", adapter.handle_update))
-    application.add_handler(CommandHandler("create_workspace", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_reextract", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_rebuild_index", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_unregister_source", adapter.handle_update))
-    application.add_handler(CommandHandler("approve_action", adapter.handle_update))
-    application.add_handler(CommandHandler("reject_action", adapter.handle_update))
-    application.add_handler(CommandHandler("drive_import", adapter.handle_update))
-    application.add_handler(CommandHandler("drive_search", adapter.handle_update))
-    application.add_handler(CommandHandler("drive_page", adapter.handle_update))
-    application.add_handler(CommandHandler("gmail_import", adapter.handle_update))
-    application.add_handler(CommandHandler("gmail_search", adapter.handle_update))
-    application.add_handler(CommandHandler("gmail_page", adapter.handle_update))
-    application.add_handler(CommandHandler("help", adapter.handle_update))
-    application.add_handler(CommandHandler("home", adapter.handle_update))
-    application.add_handler(CommandHandler("pending", adapter.handle_update))
-    application.add_handler(CommandHandler("review", adapter.handle_update))
-    application.add_handler(CommandHandler("status", adapter.handle_update))
-    application.add_handler(CommandHandler("inbox", adapter.handle_update))
-    application.add_handler(CommandHandler("sources", adapter.handle_update))
-    application.add_handler(CommandHandler("source", adapter.handle_update))
-    application.add_handler(CommandHandler("source_content", adapter.handle_update))
-    application.add_handler(CommandHandler("summarize_source", adapter.handle_update))
-    application.add_handler(CommandHandler("ask_source", adapter.handle_update))
-    application.add_handler(CommandHandler("workspaces", adapter.handle_update))
-    application.add_handler(CommandHandler("workspace", adapter.handle_update))
-    application.add_handler(CommandHandler("activity", adapter.handle_update))
-    application.add_handler(CommandHandler("metrics", adapter.handle_update))
-    application.add_handler(CommandHandler("search", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar", adapter.handle_update))
-    application.add_handler(CommandHandler("semantic_search", adapter.handle_update))
-    application.add_handler(CommandHandler("hybrid_search", adapter.handle_update))
-    application.add_handler(CommandHandler("organize", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_proposals", adapter.handle_update))
-    application.add_handler(CommandHandler("agent", adapter.handle_update))
-    application.add_handler(CommandHandler("records", adapter.handle_update))
-    application.add_handler(CommandHandler("tasks", adapter.handle_update))
-    application.add_handler(CommandHandler("task", adapter.handle_update))
-    application.add_handler(CommandHandler("complete_task", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_task", adapter.handle_update))
-    application.add_handler(CommandHandler("edit_task_deadline", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_task_deadline", adapter.handle_update))
-    application.add_handler(CommandHandler("cancel_task_deadline", adapter.handle_update))
-    application.add_handler(CommandHandler("edit_task_reminder", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_task_reminder", adapter.handle_update))
-    application.add_handler(CommandHandler("cancel_task_reminder", adapter.handle_update))
-    application.add_handler(CommandHandler("research", adapter.handle_update))
-    application.add_handler(CommandHandler("research_retain", adapter.handle_update))
-    application.add_handler(CommandHandler("research_retain_token", adapter.handle_update))
-    application.add_handler(CommandHandler("research_retain_source_token", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_note", adapter.handle_update))
-    application.add_handler(CommandHandler("curate", adapter.handle_update))
-    application.add_handler(CommandHandler("curate_synthesize", adapter.handle_update))
-    application.add_handler(CommandHandler("curate_edit", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_link_source", adapter.handle_update))
-    application.add_handler(CommandHandler("source_workspaces", adapter.handle_update))
-    application.add_handler(CommandHandler("source_memberships", adapter.handle_update))
-    application.add_handler(CommandHandler("integrations", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_travel_record", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_receipt_record", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_warranty_record", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_hotel_record", adapter.handle_update))
-    application.add_handler(CommandHandler("travel_references", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_travel_reference", adapter.handle_update))
-    application.add_handler(CommandHandler("correct_travel_record", adapter.handle_update))
-    application.add_handler(CommandHandler("correct_receipt_record", adapter.handle_update))
-    application.add_handler(CommandHandler("correct_warranty_record", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_travel", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_task", adapter.handle_update))
-    application.add_handler(CommandHandler("knowledge", adapter.handle_update))
-    application.add_handler(CommandHandler("concepts", adapter.handle_update))
-    application.add_handler(CommandHandler("completed_tasks", adapter.handle_update))
-    application.add_handler(CommandHandler("concept", adapter.handle_update))
-    application.add_handler(CommandHandler("connect_knowledge", adapter.handle_update))
-    application.add_handler(CommandHandler("knowledge_proposals", adapter.handle_update))
-    application.add_handler(CommandHandler("knowledge_reviews", adapter.handle_update))
-    application.add_handler(CommandHandler("send_source", adapter.handle_update))
-    application.add_handler(CommandHandler("knowledge_proposal", adapter.handle_update))
-    application.add_handler(CommandHandler("propose_enrichment", adapter.handle_update))
-    application.add_handler(CommandHandler("review_enrichment", adapter.handle_update))
-    application.add_handler(CommandHandler("roots", adapter.handle_update))
-    application.add_handler(CommandHandler("root", adapter.handle_update))
-    application.add_handler(CommandHandler("privacy", adapter.handle_update))
-    application.add_handler(CommandHandler("set_privacy", adapter.handle_update))
-    application.add_handler(CommandHandler("deliveries", adapter.handle_update))
-    application.add_handler(CommandHandler("delivery_history", adapter.handle_update))
-    application.add_handler(CommandHandler("dead_letters", adapter.handle_update))
-    application.add_handler(CommandHandler("recover_dead_letter", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_search", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_get", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_linked_task", adapter.handle_update))
-    application.add_handler(CommandHandler("calendar_linked_trip", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_accept", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_reject", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_context", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_targets", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_target", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_new_workspace", adapter.handle_update))
-    application.add_handler(CommandHandler("organization_keep_inbox", adapter.handle_update))
-    application.add_handler(CommandHandler("intake_accept", adapter.handle_update))
-    application.add_handler(CommandHandler("intake_discard", adapter.handle_update))
-    application.add_handler(CommandHandler("intake_context", adapter.handle_update))
-    application.add_handler(CommandHandler("intake_analysis", adapter.handle_update))
+    for command in _COMMANDS:
+        application.add_handler(CommandHandler(command, adapter.handle_update))
     capture_adapter = TelegramAdapter(
         capture_handler,
         allowed_chat_ids=allowed_chat_ids,
@@ -536,49 +422,3 @@ def run_telegram_polling(
     application.add_handler(CallbackQueryHandler(adapter.handle_callback))
     application.run_polling()
 
-
-async def deliver_due_task_reminders(
-    bot: object,
-    reminders: TaskReminderService,
-    allowed_chat_ids: frozenset[str] = frozenset(),
-) -> int:
-    """Deliver claimed reminders, releasing a claim if Telegram does not accept it."""
-    delivered = 0
-    for reminder in await asyncio.to_thread(reminders.claim_due):
-        task_id = reminder.task.id or 0
-        if reminder.claim_token is None:
-            continue
-        if allowed_chat_ids and reminder.chat_id not in allowed_chat_ids:
-            await asyncio.to_thread(reminders.release, task_id, reminder.claim_token)
-            continue
-        text = (
-            f"Reminder: Task {task_id}: {reminder.task.title}\n"
-            f"Scheduled for: {reminder.remind_at.isoformat()}"
-        )
-        try:
-            await bot.send_message(chat_id=reminder.chat_id, text=text)  # type: ignore[attr-defined]
-        except Exception:
-            await asyncio.to_thread(reminders.release, task_id, reminder.claim_token)
-            continue
-        await asyncio.to_thread(reminders.acknowledge, task_id, reminder.claim_token)
-        delivered += 1
-    return delivered
-
-
-async def _task_reminder_loop(
-    application: object,
-    reminders: TaskReminderService,
-    allowed_chat_ids: frozenset[str],
-    *,
-    stop: asyncio.Event,
-) -> None:
-    """Poll due reminder records independently of Telegram update delivery."""
-    while not stop.is_set():
-        try:
-            await deliver_due_task_reminders(application.bot, reminders, allowed_chat_ids)  # type: ignore[attr-defined]
-        except Exception:
-            _LOGGER.warning("Reminder delivery cycle failed; retrying on the next cycle.")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=60)
-        except TimeoutError:
-            pass

@@ -1,129 +1,138 @@
 # Steward
 
-Steward is a local-first **source memory and retrieval assistant**. Point it at an
-existing directory of notes, course materials, documents, or project files; it
-records what is there, extracts supported content locally, tracks changes, and
-makes the collection searchable from the CLI or Telegram.
+Steward is a local-first companion to Codex for your personal files.
 
-It complements coding agents and file managers. Codex can create, move, rename,
-and edit files; Steward reconciles those changes on a scan and helps you find
-and read the material later—even when you do not remember its filename.
+Codex is great at *working on* files: organising folders, renaming, moving,
+and editing. Steward handles the other side: **getting files in, and getting
+them back out**, from wherever you are.
 
-## Active product surface
+- **Find files without remembering their names.** Search your folders in plain
+  language ("my CS3210 notes on queueing") and get the right file back, even
+  if you've forgotten its name, location, or format.
+- **Retrieve through Telegram.** Open, read, or receive a file from your phone.
+- **Summarise and ask questions.** Get a summary of a file, or ask questions
+  across your notes, with answers that cite their sources.
+- **Upload from anywhere.** Send files or quick notes to Steward on Telegram and
+  they land in a local Inbox, ready for Codex to organise later.
+- **Stays in sync with Codex.** When Codex renames or moves files, Steward
+  picks up the changes on its next scan and keeps each file's history.
+- **Easy setup.** Point Steward at a folder you already have. Nothing is copied
+  or moved, and your files stay on your machine.
 
-- Register one or more explicitly authorized local roots.
-- Scan and reconcile Markdown, text, source code, notebooks, PDF, DOCX, PPTX, XLSX, HTML, image/OCR, and supported
-  imported files without copying existing roots.
-- Preserve source identity, hashes, paths, extraction fragments, and provenance
-  in SQLite while originals stay in their human-readable locations.
-- Search lexically, semantically, or with hybrid retrieval; generate grounded
-  answers with fragment citations.
-- Use Telegram to search, open source details/content, ask grounded questions,
-  upload files or short notes into a local Inbox, and explicitly import Drive or
-  Gmail material.
-- Apply per-source privacy rules before a remote model receives any content.
-- Use the read-only tool agent for bounded source and activity lookup.
+## How Steward and Codex fit together
 
-`source_centric` is the default runtime mode. Earlier Workspace, Knowledge,
-Record, Task, Calendar, research, and broad action implementations remain in
-the repository as retained legacy code, but are not composed into the default
-CLI, Telegram, or agent experience.
+| | Codex | Steward |
+|---|---|---|
+| Role | Works *on* files | Finds and delivers files |
+| Where | At your computer | Anywhere, through Telegram |
+| Does | Organise, rename, move, edit | Upload, search, retrieve, summarise |
+| Changes files? | Yes, with your approval | No; your originals stay where they are |
+
+The loop:
+
+```text
+upload on Telegram → lands in the Inbox → Codex files it into the right folder
+→ Steward notices the move on the next scan → you find it later with a simple search
+```
 
 ## Quick start
 
-Create and activate a virtual environment, install the project, then configure
-`.env` from `.env.example`. `STEWARD_PRODUCT_MODE=source_centric` is the
-default.
+Requires Python 3.12+. From the repository root, in PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[all]"          # or pick extras: semantic, google, gemini
+Copy-Item .env.example .env      # then fill in your model key and Telegram token
+steward download-embedding-model # once, for meaning-based search
+```
+
+Point Steward at a folder you already have, then search it:
 
 ```powershell
 steward onboard-root "Y4S1" "C:\Users\clare\OneDrive\Desktop\Y4S1"
-steward scan-root "Y4S1"
-steward sources
-steward search "parallel scheduling"
 steward hybrid-search "the cache CPUs use for address translation"
 steward ask "What do my notes say about queueing?"
 ```
 
-Run `steward telegram` to use the local service through your configured,
-allowlisted Telegram bot. The service uses polling locally; originals, SQLite,
-tokens, and model configuration stay on the machine running Steward.
+Run `steward telegram` to use the same folders from your phone through your
+own allowlisted Telegram bot. Steward polls Telegram from your machine; your
+files, database, tokens, and model settings never leave it.
 
-## Telegram workflow
+## Using Steward from Telegram
 
-Use natural requests such as “find my CS3210 queueing notes”, “show that PDF”,
-or “read section 3”. Send a document or a short note to stage it in the local
-Inbox, review what would be saved, then explicitly accept it. The active bot
-also exposes source browsing, root status, search, source privacy changes, and
-explicit Drive/Gmail imports.
+- **Find:** send `find my CS3210 queueing notes`, or use
+  `/hybrid_search TLB --type pdf --root "CS3210"`. If no content matches,
+  Steward also checks registered filenames and labels those results clearly.
+- **Open and read:** tap a result to see its card, then **Read content**,
+  **Summarize**, **Ask about it**, or **Send original** to get the file itself.
+- **Upload:** send a document or a note. Steward stages it, explains what it
+  will save, and adds it to the Inbox only after you confirm. **Intended root**
+  records where you want it to end up; the file stays in the Inbox until Codex
+  moves it.
+- **Hand off to Codex:** `/codex_handoff` lets you pick Inbox files and writes a
+  local, metadata-only manifest for Codex. It never sends file contents to
+  Codex and never runs Codex for you.
+- **After Codex moves things:** `/moves` shows renames and moves found by the
+  last scan. Accepting one keeps the file's identity and history.
+- **Privacy:** `/privacy SOURCE_ID` controls whether a file may be sent to a
+  cloud model, only a local model, or no model at all.
 
-Before saving a staged capture, **Intended root** can retain optional routing
-context such as a course folder. It does not move the file: the original remains
-in Inbox until a separate reviewed workflow handles it.
+Source cards show a location relative to an authorized folder or the Inbox,
+never an absolute path.
 
-Use `/codex_handoff` in Telegram to pick a saved Inbox source, or supply source
-IDs for a deliberate batch. Steward writes a local metadata-only manifest; it
-does not contact Codex or change files.
-
-Source cards show a safe root-relative or Inbox-relative location and whether
-derived text is ready to read. They never reveal an absolute local path in
-Telegram.
-
-Search can be scoped locally, for example `/hybrid_search TLB --type pdf --root
-"CS3210"`. Supported types include `markdown`, `pdf`, `docx`, `pptx`, `xlsx`,
-`notebook`, `html`, `image`, and `code`.
-
-If ordinary lexical search has no matching extracted text, Steward also checks
-the local registered filename/path metadata and shows clearly labelled filename
-matches. It does not read unindexed file content to do this.
-
-Telegram is an interface, not the storage location: uploads are downloaded to
-the configured Inbox, and no remote model analyzes a source unless its privacy
-rule permits the chosen model.
-
-## Operations
+## Everyday commands
 
 ```powershell
-steward roots
-steward scan-root "Y4S1"
-steward watch-root "Y4S1"
-steward reconcile-moves "Y4S1"
-steward review-move 1 --accept
-steward codex-handoff 6 12 --note "Review these before organizing lecture notes"
-steward health --strict
-steward relocate-root "Y4S1" "D:\Archive\Y4S1" --confirm
+steward roots                                  # authorized folders and last scan
+steward scan-root "Y4S1"                       # reconcile after Codex changes files
+steward watch-root "Y4S1"                      # refresh changed files as they happen
+steward reconcile-moves "Y4S1"                 # list reviewable renames/moves
+steward review-move 1 --accept                 # keep a moved file's identity
+steward codex-handoff 6 12 --note "File these under Week 5"
+steward set-root-profile "Y4S1" --purpose "NUS Y4S1 coursework" --guidance AGENTS.md
+steward health --strict                        # local readiness check
+steward backup                                 # snapshot Steward's databases
 ```
 
-Run a scan after external edits, renames, or moves made by Codex or another
-tool. The watcher incrementally refreshes supported files; full scans remain the
-authoritative reconciliation mechanism for missed events, moves, and large
-batches. A same-root rename or move with one unambiguous content-hash match is
-shown as a reviewable move proposal; accepting it preserves the old source ID.
-Root status shows the timestamp and concise new/updated/unchanged/missing counts
-from the latest successful full scan.
+Run a full scan after Codex (or anything else) edits, renames, or moves files.
+The watcher is a convenience; the scan is the source of truth. A rename or move
+within one folder that matches exactly one file by content becomes a reviewable
+move proposal.
 
-Optional root profiles are local descriptive metadata: use `set-root-profile`
-to record a purpose, existing root-contained guidance files, and ordered
-authority labels. They are included only in a metadata-only Codex handoff; they
-are never executable instructions.
-`codex-handoff` creates a local JSON manifest containing selected source
-metadata and applicable root guidance paths. It never sends content to Codex or
-executes a Codex session.
+Root profiles are optional notes about a folder: its purpose, guidance files
+inside it (such as the folder's own `AGENTS.md`), and authority labels. They
+are included in Codex handoff manifests and are never treated as instructions
+by Steward.
+
+## Optional extras
+
+| Extra | Enables |
+|---|---|
+| `semantic` | Meaning-based and hybrid search (installs PyTorch) |
+| `google` | Explicit Google Drive and Gmail imports into the Inbox |
+| `gemini` | The Gemini model provider (the default `STEWARD_MODEL_PROVIDER`) |
+| `all` | All of the above |
+
+Without an extra, the related command explains which one to install.
+
+## Data and safety
+
+- Your original files are the source of truth. Steward stores paths, hashes,
+  extracted text, search indexes, and activity in local SQLite, all of which
+  can be rebuilt from the originals.
+- Steward reads only folders you explicitly authorize, plus its Inbox.
+- Steward never moves, renames, or deletes your files. Codex does that, with
+  your approval.
+- A model sees only retrieved excerpts that the file's privacy rule allows.
+  Answers cite the exact sections they used.
 
 ## Documentation
 
-- [Source-centric pivot plan](docs/source-centric-pivot-plan.md) — active
-  product direction and staged migration.
-- [Product](docs/product.md), [architecture](docs/architecture.md), and
-  [invariants](docs/invariants.md) — current product contract.
-- [Developer guide](docs/developer-guide.md) — implementation details, including
-  retained legacy subsystems clearly marked as non-default.
-- [Telegram checklist](docs/telegram-manual-test-checklist.md) and
-  [testing ledger](docs/testing.md) — manual acceptance procedures and outcomes.
-
-## Data and safety model
-
-Original files are authoritative. SQLite stores operational metadata and
-rebuildable derived state such as fragments, indexes, embeddings, and model
-summaries. Source paths are only accessed when you explicitly authorize their
-root. Consequential filesystem or external actions are outside the active
-source-centric surface.
+- [Product](docs/product.md): what Steward is and isn't.
+- [Architecture](docs/architecture.md): how the pieces fit.
+- [Invariants](docs/invariants.md): rules the code must never break.
+- [Developer guide](docs/developer-guide.md): implementation details.
+- [Testing](docs/testing.md) and the [Telegram checklist](docs/telegram-manual-test-checklist.md).
+- [Windows operations](docs/windows-operations.md): running Steward at login.
+- [Decision records](docs/adr/).

@@ -6,6 +6,8 @@ import json
 from typing import Protocol
 from urllib import request
 
+from steward.extras import MissingExtraError
+
 
 class ModelGateway(Protocol):
     """Generate text from explicitly supplied instructions and input."""
@@ -60,7 +62,10 @@ class GeminiModelGateway:
             raise ValueError("A Gemini model name is required.")
 
         # The import is local so non-answering commands do not require this SDK.
-        from google import genai
+        try:
+            from google import genai
+        except ImportError as error:
+            raise MissingExtraError("gemini", "The Gemini model provider") from error
 
         self._client = genai.Client(api_key=api_key)
         self._model = model

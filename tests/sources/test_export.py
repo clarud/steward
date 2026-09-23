@@ -27,21 +27,20 @@ def test_original_export_enforces_roots_exclusions_size_and_freshness(tmp_path):
     roots.add("Notes", root)
     exported = service.export(source.id)
     assert exported.filename == "notes.pdf" and exported.content == content
-    from steward.application import StewardReadApplication
+    from steward.app import StewardReadApplication
     from steward.extraction import SourceFragmentRepository
     from steward.retrieval import LexicalSearchService
-    from steward.workspaces import WorkspaceRepository
     from steward.activity import ActivityService
     from steward.events import IncomingEvent
     from steward.reviews import ReviewContextRepository
     from dataclasses import replace
     fragments = SourceFragmentRepository(database)
-    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database), ActivityService(database), tmp_path / "inbox", source_export=service)
+    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), ActivityService(database), tmp_path / "inbox", source_export=service)
     assert any(action.command == f"/send_source {source.id}" for action in reader.source(source.id).actions)
     contexts = ReviewContextRepository(database)
     contexts.set("telegram", "100", "source_question", source.id)
     # Recreate the reader to prove the reference comes from persisted context.
-    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), WorkspaceRepository(database), ActivityService(database), tmp_path / "inbox", source_export=service, contexts=ReviewContextRepository(database))
+    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), ActivityService(database), tmp_path / "inbox", source_export=service, contexts=ReviewContextRepository(database))
     event = IncomingEvent("request-1", "telegram", "100", "1", None, now, "send me that PDF")
     preview = reader.resolve_source_reference(event)
     assert preview.document is None

@@ -13,10 +13,7 @@ class Intent(StrEnum):
     CAPTURE = "capture"
     SEARCH = "search"
     ORGANIZE = "organize"
-    CREATE_WORKSPACE = "create_workspace"
-    DELETE = "delete"
     INSPECT = "inspect"
-    ACTION = "action"
     UNKNOWN = "unknown"
 
 
@@ -38,7 +35,6 @@ class IntentResolver:
         referenced_objects = (event.reply_to_id,) if event.reply_to_id is not None else ()
         mapping = {
             "/save": Intent.CAPTURE,
-            "/delete": Intent.DELETE,
             "/organize": Intent.ORGANIZE,
             "/inspect": Intent.INSPECT,
         }
@@ -54,8 +50,6 @@ class IntentResolver:
             return IntentDecision(Intent.SEARCH, referenced_objects=referenced_objects)
         if normalized.startswith(("organize ", "sort ")):
             return IntentDecision(Intent.ORGANIZE, referenced_objects=referenced_objects)
-        if normalized.startswith(("create a workspace", "create workspace", "new workspace")):
-            return IntentDecision(Intent.CREATE_WORKSPACE, referenced_objects=referenced_objects)
         if text.endswith("?") or normalized.startswith(
             (
                 "what ", "where ", "when ", "who ", "why ", "how ", "do i ", "can i ",

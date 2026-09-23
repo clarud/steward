@@ -1,43 +1,69 @@
 # Architecture
 
-## Active source-centric path
-
 ```text
-CLI / Telegram
-      ↓
-event and command adapters
-      ↓
-Source, extraction, retrieval, Inbox, privacy, and activity services
-      ↓
-SQLite operational metadata + explicitly authorized local filesystem roots
+      CLI (steward …)                 Telegram (steward telegram)
+             │                                   │
+     steward.cli.commands              steward.telegram.adapter
+             │                                   │
+             │                  steward.app.events.StewardEventApplication
+             │                                   │  routes to
+             │       read · intake · roots · handoff · privacy · question · agent
+             └───────────────┬───────────────────┘
+                             │  composed by steward.cli.bootstrap
+     sources · extraction · retrieval · answer · intake · capture · privacy · activity
+                             │
+          SQLite (.steward/steward.db)  +  authorized folders and the Inbox
 ```
 
-The filesystem remains the human-readable home of original files. SQLite holds
-source identity, hashes, paths, extraction fragments, full-text search data,
-embeddings/index references, privacy rules, and activity metadata. It does not
-replace an existing vault.
+## Layers
 
-Retrieval combines deterministic lexical/semantic services. A grounded answer
-graph receives only retrieved fragments, not arbitrary filesystem access:
+| Layer | Package | Responsibility |
+|---|---|---|
+| Transport | `steward.cli`, `steward.telegram` | Parse input, normalise events, deliver replies. No domain rules. |
+| Composition | `steward.cli.bootstrap` | Build services from `Settings` once, for both the CLI and Telegram. |
+| Use cases | `steward.app` | One module per job: `read`, `intake`, `roots`, `handoff`, `privacy`, `question`, `agent`, and the `events` router. |
+| Domain services | `steward.sources`, `extraction`, `retrieval`, `answer`, `intake`, `capture`, `privacy`, `activity`, `roots` | Deterministic logic plus SQL behind small repositories. |
+| Orchestration | `steward.graphs` | LangGraph workflows over the services above. |
+| Storage | `steward.storage` | SQLite migrations, snapshot, and restore. |
+
+## Data
+
+The filesystem is the human-readable home of original files. SQLite holds
+source identity, hashes, paths, extracted fragments, the FTS5 index,
+embeddings, privacy rules, Inbox context, move proposals, location history,
+root profiles and scan results, activity, and Telegram delivery state. Every
+derived row can be rebuilt from the originals.
+
+## Retrieval and answers
 
 ```text
-question → retrieve fragment IDs → build permitted context → model → cited answer
+question → hybrid retrieval (FTS5 + embeddings, reciprocal-rank fusion)
+         → drop fragments the privacy rule forbids for this model
+         → bounded context with [F1]… labels → model → citations verified
 ```
 
-The source tool agent is similarly bounded to `search_sources`, `read_source`,
-and `search_activity`. LangGraph orchestrates these services and persists only
-conversation/checkpoint state; domain logic and side effects remain in normal
-Python services.
+Two LangGraph workflows exist:
 
-## Product modes and retained code
+- `graphs.retrieval_answer`: the grounded-answer pipeline used for ordinary
+  questions. It is a fixed workflow, not an agent.
+- `graphs.tool_agent`: a single tool-calling loop behind `/agent` and
+  `steward agent`. It can call only `search_sources`, `read_source`, and
+  `search_activity`, under a call budget and a tool policy.
 
-`source_centric` is the default setting. It composes source ingestion,
-extraction, retrieval, Inbox, privacy, activity, explicit external imports, and
-the bounded read-only agent. It does not compose Workspace, Knowledge, Record,
-Task, Calendar, research, or broad-action services into CLI, Telegram, or agent
-flows.
+Steward is not multi-agent today.
 
-Those modules remain in the repository without destructive migration so that
-past data and experiments are preserved. `legacy` is an explicit local
-development mode, not an advertised default interface. The detailed staged
-migration lives in [the pivot plan](source-centric-pivot-plan.md).
+## Model providers
+
+`answer.gateway` defines one `ModelGateway.generate()` protocol, implemented for
+Gemini, OpenAI, SoCLaaS (OpenAI-compatible), and local Ollama. `ModelRouter`
+sends local-only evidence to the local gateway, or declines if none is
+configured. Tool-calling adapters for the agent live in `steward.graphs`.
+
+## Working alongside Codex
+
+Codex changes files; Steward observes them. A full `scan-root` is the
+reconciliation authority. The watcher only hints that something changed. A
+same-folder rename with exactly one content-hash match becomes a reviewable
+move proposal. `codex-handoff` writes `DATA_DIR/handoffs/<id>.json` with source
+metadata and root guidance paths. It contains no file contents and never
+starts Codex.

@@ -14,35 +14,26 @@ class ActivityType(StrEnum):
     INTAKE_ANALYSIS_SELECTED = "intake_analysis_selected"
     INTAKE_ACCEPTED = "intake_accepted"
     INTAKE_DISCARDED = "intake_discarded"
-    WORKSPACE_CREATED = "workspace_created"
-    SOURCE_LINKED_TO_WORKSPACE = "source_linked_to_workspace"
-    RECORD_CORRECTED = "record_corrected"
-    TRAVEL_REFERENCE_ADDED = "travel_reference_added"
-    ORGANIZATION_PROPOSED = "organization_proposed"
-    ORGANIZATION_ACCEPTED = "organization_accepted"
-    ORGANIZATION_REJECTED = "organization_rejected"
-    SOURCE_MOVED = "source_moved"
-    SOURCE_MOVE_UNDONE = "source_move_undone"
-    SOURCE_REEXTRACTED = "source_reextracted"
-    SEMANTIC_INDEX_REBUILT = "semantic_index_rebuilt"
     ACTION_PROPOSED = "action_proposed"
     ACTION_ACCEPTED = "action_accepted"
     ACTION_REJECTED = "action_rejected"
-    TASK_CREATED = "task_created"
-    TASK_COMPLETED = "task_completed"
-    TASK_RESCHEDULED = "task_rescheduled"
-    TASK_REMINDER_RESCHEDULED = "task_reminder_rescheduled"
-    TASK_CALENDAR_ASSOCIATED = "task_calendar_associated"
-    TASK_CALENDAR_UNLINKED = "task_calendar_unlinked"
-    TASK_REMINDER_SENT = "task_reminder_sent"
     TELEGRAM_DELIVERY_RECOVERED = "telegram_delivery_recovered"
     SOURCE_PRIVACY_CHANGED = "source_privacy_changed"
-    CALENDAR_EVENT_CREATED = "calendar_event_created"
-    KNOWLEDGE_ENRICHMENT_PROPOSED = "knowledge_enrichment_proposed"
-    KNOWLEDGE_ENRICHMENT_ACCEPTED = "knowledge_enrichment_accepted"
-    KNOWLEDGE_ENRICHMENT_REJECTED = "knowledge_enrichment_rejected"
-    KNOWLEDGE_CONFLICT_RESOLVED = "knowledge_conflict_resolved"
-    KNOWLEDGE_CLAIM_REVISED = "knowledge_claim_revised"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ActivityType | None":
+        """Keep audit rows written by retired features readable.
+
+        The audit log is append-only, so older databases may contain event
+        types that current code never emits. They load as pseudo-members that
+        preserve the stored value for display and counting.
+        """
+        if not isinstance(value, str) or not value:
+            return None
+        member = str.__new__(cls, value)
+        member._name_ = value.upper()
+        member._value_ = value
+        return member
 
 @dataclass(frozen=True, slots=True)
 class ActivityEvent:

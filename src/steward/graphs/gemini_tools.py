@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from steward.answer.gateway import ModelGatewayError
+from steward.extras import MissingExtraError
 
 
 class GeminiToolCallingModel:
@@ -22,7 +23,10 @@ class GeminiToolCallingModel:
         if not model.strip():
             raise ValueError("A Gemini model name is required.")
         if client is None:
-            from google import genai
+            try:
+                from google import genai
+            except ImportError as error:
+                raise MissingExtraError("gemini", "The Gemini model provider") from error
 
             client = genai.Client(api_key=api_key)
         self._client = client

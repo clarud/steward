@@ -71,6 +71,42 @@ PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION = 61
 SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
 SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
 SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION = 64
+LEGACY_TABLES_DROPPED_SCHEMA_VERSION = 65
+
+# Tables owned by the retired workspace, organization, knowledge, record, task,
+# Calendar, and research features (see ADR-007). Children precede parents so
+# the drop succeeds with foreign keys enforced.
+LEGACY_TABLES = (
+    "claim_revisions",
+    "claim_evidence",
+    "knowledge_enrichment_versions",
+    "knowledge_enrichment_proposals",
+    "concept_aliases",
+    "claims",
+    "concepts",
+    "calendar_event_links",
+    "calendar_task_event_links",
+    "task_calendar_associations",
+    "task_reminders",
+    "tasks",
+    "travel_record_evidence",
+    "travel_record_references",
+    "travel_records",
+    "receipt_record_evidence",
+    "receipt_records",
+    "warranty_record_evidence",
+    "warranty_records",
+    "hotel_reservation_record_evidence",
+    "hotel_reservation_records",
+    "organization_approval_threads",
+    "organization_proposals",
+    "workspace_sources",
+    "workspaces",
+    "ephemeral_research_cards",
+)
+# Migrations that delete user data. An existing database is snapshotted before
+# any of them runs, and the migration is not applied if the snapshot fails.
+DESTRUCTIVE_MIGRATIONS = frozenset({LEGACY_TABLES_DROPPED_SCHEMA_VERSION})
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -633,6 +669,11 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
         SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
         "ALTER TABLE source_move_proposals ADD COLUMN root_path TEXT",
     ),
+    (
+        LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
+        tuple(f"DROP TABLE IF EXISTS {table}" for table in LEGACY_TABLES)
+        + ("DELETE FROM action_proposals WHERE action_type != 'set_source_privacy'",),
+    ),
 )
 
 
@@ -643,6 +684,7 @@ def initialize_database(database_path: Path) -> None:
     file, migration ledger, and every unapplied schema migration.
     """
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    _snapshot_before_destructive_migrations(database_path)
 
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
@@ -675,6 +717,32 @@ def initialize_database(database_path: Path) -> None:
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (version, datetime.now(UTC).isoformat()),
             )
+
+
+def _snapshot_before_destructive_migrations(database_path: Path) -> Path | None:
+    """Back up an existing database before a pending migration deletes data.
+
+    A new database has nothing to lose, and a database that already applied
+    every destructive migration needs no further copy. Otherwise the snapshot
+    must succeed first; its error propagates and no migration runs.
+    """
+    if not database_path.is_file():
+        return None
+    with closing(sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+        has_ledger = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        if has_ledger is None:
+            return None
+        applied = {row[0] for row in connection.execute("SELECT version FROM schema_migrations")}
+    pending = sorted(DESTRUCTIVE_MIGRATIONS - applied)
+    if not pending:
+        return None
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    destination = (
+        database_path.parent / "backups" / f"pre-migration-{pending[0]}-{timestamp}" / database_path.name
+    )
+    return snapshot_database(database_path, destination)
 
 
 def snapshot_database(source_path: Path, destination_path: Path) -> Path:

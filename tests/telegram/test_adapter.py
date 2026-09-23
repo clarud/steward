@@ -9,14 +9,11 @@ import steward.telegram.adapter as telegram_adapter
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply, ReplyAction
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
-from steward.activity import ActivityService, ActivityType
 from steward.storage import initialize_database
-from steward.tasks import TaskReminderService, TaskService
 from steward.telegram import (
     TelegramCallbackRepository,
     TelegramAdapter,
     TelegramUpdateDeliveryRepository,
-    deliver_due_task_reminders,
     normalize_telegram_update,
     run_telegram_polling,
 )
@@ -321,9 +318,7 @@ def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:
     ("command", "kind"),
     [
         ("/approve_action 9", "action"),
-        ("/organization_accept 9", "organization"),
         ("/intake_accept 9", "intake"),
-        ("/review_enrichment 9 accepted", "knowledge"),
     ],
 )
 def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(
@@ -555,48 +550,21 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     run_telegram_polling("token", FakeEventHandler(), FakeEventHandler())
 
     command_positions = [index for index, handler in enumerate(application.handlers) if handler == ("command", "save")]
-    unregister_positions = [
+    intake_positions = [
         index for index, handler in enumerate(application.handlers)
-        if handler == ("command", "propose_unregister_source")
+        if handler == ("command", "intake_accept")
     ]
     fallback_positions = [
         index for index, handler in enumerate(application.handlers)
         if handler == ("message", str(telegram_adapter.filters.COMMAND))
     ]
-    assert command_positions and unregister_positions and fallback_positions
+    assert command_positions and intake_positions and fallback_positions
     assert command_positions[0] < fallback_positions[0]
-    assert unregister_positions[0] < fallback_positions[0]
-    assert ("command", "home") in application.handlers
-    assert ("command", "pending") in application.handlers
-    assert ("command", "calendar_linked_trip") in application.handlers
-    assert ("command", "calendar") in application.handlers
-
-
-def test_due_task_reminders_are_acknowledged_only_after_telegram_accepts_them(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    activity = ActivityService(database); tasks = TaskService(database)
-    reminder_service = TaskReminderService(database, tasks, activity)
-    task = tasks.create("Submit CS3210 lab")
-    reminder_service.schedule(task.id or 0, "100", datetime(2020, 1, 1, tzinfo=UTC))
-
-    bot = FakeBot()
-
-    assert asyncio.run(deliver_due_task_reminders(bot, reminder_service)) == 1
-    assert bot.sent == [("100", "Reminder: Task 1: Submit CS3210 lab\nScheduled for: 2020-01-01T00:00:00+00:00")]
-    assert asyncio.run(deliver_due_task_reminders(bot, reminder_service)) == 0
-    assert activity.list_recent()[0].event_type is ActivityType.TASK_REMINDER_SENT
-
-
-def test_failed_task_reminder_delivery_releases_the_claim_for_retry(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    activity = ActivityService(database); tasks = TaskService(database)
-    reminder_service = TaskReminderService(database, tasks, activity)
-    task = tasks.create("Submit CS3210 lab")
-    reminder_service.schedule(task.id or 0, "100", datetime(2020, 1, 1, tzinfo=UTC))
-
-    assert asyncio.run(deliver_due_task_reminders(FakeBot(fail=True), reminder_service)) == 0
-    retry_bot = FakeBot()
-    assert asyncio.run(deliver_due_task_reminders(retry_bot, reminder_service)) == 1
+    assert intake_positions[0] < fallback_positions[0]
+    for command in ("home", "search", "hybrid_search", "send_source", "codex_handoff", "moves"):
+        assert ("command", command) in application.handlers
+    for removed in ("pending", "calendar", "tasks", "workspaces", "research"):
+        assert ("command", removed) not in application.handlers
 
 
 def test_document_over_cloud_limit_is_not_downloaded() -> None:
@@ -658,26 +626,6 @@ def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> Non
     assert event.attachments == ("telegram-photo-7.jpg",)
 
 
-def test_reminder_worker_stops_promptly_and_survives_delivery_failure(monkeypatch) -> None:
-    async def scenario():
-        stop = asyncio.Event()
-        called = asyncio.Event()
-
-        async def failing_cycle(*_args):
-            called.set()
-            raise OSError("temporary database failure")
-
-        monkeypatch.setattr(telegram_adapter, "deliver_due_task_reminders", failing_cycle)
-        worker = asyncio.create_task(telegram_adapter._task_reminder_loop(
-            type("App", (), {"bot": object()})(), object(), frozenset(), stop=stop,
-        ))
-        await asyncio.wait_for(called.wait(), timeout=1)
-        await asyncio.sleep(0)
-        assert not worker.done()
-        stop.set()
-        await asyncio.wait_for(worker, timeout=1)
-
-    asyncio.run(scenario())
 
 
 def test_photo_over_cloud_limit_is_not_downloaded() -> None:

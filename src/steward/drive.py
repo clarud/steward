@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
+from steward.extras import MissingExtraError
 from steward.search_page import SearchPage
 
 
@@ -161,11 +162,14 @@ def authorize_google_drive(client_secrets_path: Path, token_path: Path) -> Drive
     """Run local OAuth if needed and create a read-only Google Drive client."""
     if not client_secrets_path.is_file():
         raise FileNotFoundError(client_secrets_path)
-    from google.auth.transport.requests import Request
-    from google.auth.exceptions import RefreshError
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
+    try:
+        from google.auth.transport.requests import Request
+        from google.auth.exceptions import RefreshError
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from googleapiclient.discovery import build
+    except ImportError as error:
+        raise MissingExtraError("google", "Google Drive import") from error
 
     credentials = None
     if token_path.is_file():

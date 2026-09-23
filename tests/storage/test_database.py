@@ -60,6 +60,8 @@ from steward.storage.database import (
     SOURCE_INBOX_CONTEXT_SCHEMA_VERSION,
     SOURCE_ROOT_PROFILE_SCHEMA_VERSION,
     SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
+    LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
+    LEGACY_TABLES,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -83,11 +85,8 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         ).fetchall()
         source_columns = connection.execute("PRAGMA table_info(sources)").fetchall()
         message_reference_columns = connection.execute("PRAGMA table_info(telegram_message_references)").fetchall()
-        enrichment_columns = connection.execute("PRAGMA table_info(knowledge_enrichment_proposals)").fetchall()
-        claim_revision_columns = connection.execute("PRAGMA table_info(claim_revisions)").fetchall()
         intake_columns = connection.execute("PRAGMA table_info(provisional_intakes)").fetchall()
-        organization_columns = connection.execute("PRAGMA table_info(organization_proposals)").fetchall()
-        travel_columns = connection.execute("PRAGMA table_info(travel_records)").fetchall()
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
     assert [migration[0] for migration in migrations] == [
         INITIAL_SCHEMA_VERSION,
@@ -154,6 +153,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             SOURCE_INBOX_CONTEXT_SCHEMA_VERSION,
             SOURCE_ROOT_PROFILE_SCHEMA_VERSION,
             SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
+            LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -170,16 +170,8 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
     assert [column[1] for column in message_reference_columns] == [
         "platform", "chat_id", "message_id", "reference_kind", "reference_id", "created_at",
     ]
-    assert [column[1] for column in enrichment_columns][-3:] == [
-        "conflict_resolution", "conflict_resolved_at", "chat_id",
-    ]
-    assert [column[1] for column in claim_revision_columns] == [
-        "action_proposal_id", "conflict_proposal_id", "original_claim_id",
-        "replacement_claim_id", "created_at",
-    ]
     assert [column[1] for column in intake_columns][-2:] == ["diagnostic", "intended_root_id"]
-    assert organization_columns[-1][1] == "user_guidance"
-    assert travel_columns[-1][1] == "passenger"
+    assert not set(LEGACY_TABLES) & tables
 
 
 def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
@@ -193,7 +185,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION
+    assert migration_count == LEGACY_TABLES_DROPPED_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:
@@ -287,3 +279,78 @@ def test_restore_refuses_invalid_snapshot_without_touching_active_state(tmp_path
     assert not safety.exists()
     with sqlite3.connect(active) as connection:
         assert connection.execute("SELECT details FROM activity_events").fetchall() == [("preserve me",)]
+
+
+def _database_before_legacy_drop(tmp_path: Path, monkeypatch) -> Path:
+    """Build a database at the last schema version that still had legacy tables."""
+    from steward.storage import database as database_module
+
+    database = tmp_path / "data" / "steward.db"
+    current = database_module.MIGRATIONS
+    monkeypatch.setattr(
+        database_module, "MIGRATIONS",
+        tuple(item for item in current if item[0] != LEGACY_TABLES_DROPPED_SCHEMA_VERSION),
+    )
+    initialize_database(database)
+    monkeypatch.setattr(database_module, "MIGRATIONS", current)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO sources (path, content_hash, source_type, size_bytes, modified_at, first_seen_at, last_seen_at, status) "
+            "VALUES ('/notes/a.md', 'hash', 'markdown', 1, 'now', 'now', 'now', 'active')"
+        )
+        connection.execute("INSERT INTO workspaces (name, created_at, status) VALUES ('School', 'now', 'active')")
+        connection.execute(
+            "INSERT INTO action_proposals (action_type, payload_json, status, created_at) VALUES "
+            "('create_workspace', '{}', 'pending', 'now'), ('set_source_privacy', '{}', 'pending', 'now')"
+        )
+    return database
+
+
+def _tables(database: Path) -> set[str]:
+    with sqlite3.connect(database) as connection:
+        return {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def test_legacy_tables_are_dropped_only_after_a_snapshot(tmp_path: Path, monkeypatch) -> None:
+    database = _database_before_legacy_drop(tmp_path, monkeypatch)
+
+    initialize_database(database)
+
+    [snapshot] = (database.parent / "backups").glob("pre-migration-65-*/steward.db")
+    assert {"workspaces", "tasks", "concepts"} <= _tables(snapshot)
+    with sqlite3.connect(snapshot) as connection:
+        assert connection.execute("SELECT name FROM workspaces").fetchall() == [("School",)]
+    remaining = _tables(database)
+    assert not set(LEGACY_TABLES) & remaining
+    assert {"sources", "action_proposals", "telegram_update_deliveries", "source_roots"} <= remaining
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM sources").fetchone() == (1,)
+        assert connection.execute("SELECT action_type FROM action_proposals").fetchall() == [("set_source_privacy",)]
+
+    initialize_database(database)
+
+    assert len(list((database.parent / "backups").glob("pre-migration-*"))) == 1
+
+
+def test_legacy_tables_survive_when_the_pre_migration_snapshot_fails(tmp_path: Path, monkeypatch) -> None:
+    from steward.storage import database as database_module
+
+    database = _database_before_legacy_drop(tmp_path, monkeypatch)
+
+    def refuse(_source: Path, _destination: Path) -> Path:
+        raise ValueError("disk full")
+
+    monkeypatch.setattr(database_module, "snapshot_database", refuse)
+
+    with pytest.raises(ValueError, match="disk full"):
+        initialize_database(database)
+    assert "workspaces" in _tables(database)
+
+
+def test_new_databases_skip_the_pre_migration_snapshot(tmp_path: Path) -> None:
+    database = tmp_path / "data" / "steward.db"
+
+    initialize_database(database)
+
+    assert not (database.parent / "backups").exists()
+    assert not set(LEGACY_TABLES) & _tables(database)

@@ -1,25 +1,47 @@
 # Product
 
-Steward is a single-user, local-first source memory and retrieval assistant.
-Its active job is to make an existing personal file base easy to adopt, keep it
-indexed as it changes, and retrieve the right source through CLI or Telegram
-when a filename or location is vague.
+Steward is a single-user, local-first companion to Codex. Codex works *on*
+files: it organises, renames, moves, and edits them. Steward gets files **in**
+and back **out**: it indexes the folders you already have, lets you find a file
+by what it says rather than what it's called, and delivers it to you through
+Telegram.
 
-The active loop is:
+## The problem
+
+> "I have information somewhere, but I don't remember its name, location,
+> format, or exact wording. Help me find and understand it, even when I'm away
+> from my computer."
+
+## The loop
 
 ```text
-authorize root → scan/extract → reconcile changes → search/retrieve → read or answer with provenance
+authorize a folder → scan and extract → search by words or meaning
+→ read, summarise, ask, or send the original → upload new material to the Inbox
+→ Codex organises it → Steward reconciles the move on the next scan
 ```
 
-Telegram also provides a local Inbox for deliberate captures and explicit Drive
-or Gmail imports. Uploads do not bypass review, and a source's privacy policy
-controls whether content may be sent to a configured model.
+## What Steward does
 
-Original source files are canonical. SQLite stores paths, hashes, extraction
-fragments, indexes, activity, and other operational or rebuildable data. A
-source can be related to many ideas without being copied or moved.
+- Registers explicitly authorized folders without copying or moving anything.
+- Extracts Markdown, text, code, notebooks, PDF (including OCR for scans), DOCX,
+  PPTX, XLSX, HTML, email, and images, keeping precise locations for citations.
+- Searches lexically, semantically, or both, scoped by file type and folder.
+- Answers questions and summarises files with citations to the exact sections
+  used.
+- Works from Telegram: search, open, read, summarise, send originals, upload to
+  the Inbox, change privacy, and import a chosen Drive file or Gmail message.
+- Tracks changes made by Codex and other tools, and preserves a file's identity
+  across a reviewed rename or move.
+- Prepares metadata-only handoff manifests so Codex knows which Inbox files to
+  organise and which folder guidance applies.
 
-`source_centric` is the default product mode. Workspace, Knowledge, Record,
-Task, Calendar, research, and broad action subsystems are retained as legacy
-implementation and are deliberately unwired from the default runtime. Their
-presence in the repository is not an active product promise.
+## What Steward deliberately does not do
+
+- Move, rename, create, or delete your files. That is Codex's job, with your
+  approval.
+- Run shell commands or give a model filesystem access.
+- Treat a folder's `AGENTS.md` or other guidance file as instructions for
+  itself.
+- Sync to the cloud or serve multiple users.
+- Manage tasks, calendars, travel records, or a knowledge graph. These were
+  explored and removed (see [ADR-007](adr/ADR-007-remove-legacy-domains.md)).

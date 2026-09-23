@@ -7,3 +7,5 @@ __pycache__/
 
 soclaas-setup-codex.py
 vault/
+# Personal notes kept outside version control
+docs/resume-interview-guide.md

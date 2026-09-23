@@ -8,5 +8,5 @@
 6. Deterministic code performs hashing, extraction, filesystem reads, database writes, imports, and recovery decisions.
 7. Inbox capture is safe under uncertainty: staging and explicit user review precede durable save or external import effects.
 8. Retrieval answers distinguish source-backed evidence from generated explanation and preserve citations where available.
-9. Source-centric mode does not initialize or advertise retained Workspace, Knowledge, Record, Task, Calendar, research, or broad-action flows.
+9. Steward never moves, renames, creates, or deletes user files; Codex performs file organisation with the owner's approval, and Steward reconciles the result.
 10. Scans are the reconciliation authority after external tools edit, move, or rename files; watchers are convenience notifications, not proof of consistency.

@@ -1,4 +1,4 @@
-"""Steward: a local-first personal memory, knowledge, and action assistant."""
+"""Steward: local-first source memory and retrieval, the companion to Codex."""
 
 __version__ = "0.1.0"
 

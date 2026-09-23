@@ -2,7 +2,6 @@
 
 from steward.telegram.adapter import (
     TelegramAdapter,
-    deliver_due_task_reminders,
     normalize_telegram_update,
     run_telegram_polling,
 )
@@ -18,7 +17,6 @@ from steward.events import IncomingEvent
 __all__ = [
     "IncomingEvent",
     "TelegramAdapter",
-    "deliver_due_task_reminders",
     "TelegramUpdateDeliveryRepository",
     "TelegramDelivery",
     "TelegramDeadLetter",

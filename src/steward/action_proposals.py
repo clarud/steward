@@ -1,4 +1,4 @@
-"""Durable, reviewable agent proposals for actions that would change state."""
+"""Durable, reviewable proposals for state changes such as a source privacy rule."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from steward.activity import ActivityService, ActivityType
-from steward.workspaces import Workspace, WorkspaceRepository, WorkspaceService
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,82 +107,3 @@ class ActionProposalRepository:
             reviewed_at=datetime.fromisoformat(str(row[5])) if row[5] else None,
         )
 
-
-class ActionProposalService:
-    """Create proposals freely, but execute a state change only after review."""
-
-    CREATE_WORKSPACE = "create_workspace"
-
-    def __init__(
-        self,
-        repository: ActionProposalRepository,
-        workspaces: WorkspaceRepository,
-        activity: ActivityService,
-    ) -> None:
-        self._repository = repository
-        self._workspaces = workspaces
-        self._activity = activity
-
-    def propose_workspace_creation(
-        self, name: str, *, chat_id: str | None = None
-    ) -> tuple[ActionProposal | None, Workspace | None]:
-        """Stage a workspace creation, optionally bound to its Telegram chat.
-
-        Command-line callers intentionally leave ``chat_id`` unset: they are
-        local operator workflows rather than Telegram reviews. A Telegram
-        caller supplies the chat so another authorized chat cannot discover or
-        decide its pending request.
-        """
-        normalized = " ".join(name.split())
-        if not normalized:
-            raise ValueError("A workspace name must not be empty.")
-        existing = self._workspace_named(normalized)
-        if existing is not None:
-            return None, existing
-        payload = {"name": normalized}
-        if chat_id:
-            payload["chat_id"] = chat_id
-        proposal = self._repository.find_pending(self.CREATE_WORKSPACE, payload)
-        if proposal is None:
-            proposal = self._repository.add(self.CREATE_WORKSPACE, payload)
-            self._activity.record(
-                ActivityType.ACTION_PROPOSED,
-                object_id=str(proposal.id),
-                details=f"Create workspace: {normalized}",
-            )
-        return proposal, None
-
-    def review(self, proposal_id: int, decision: str) -> tuple[ActionProposal, Workspace | None]:
-        if decision not in {"accepted", "rejected"}:
-            raise ValueError("Action proposal decision must be accepted or rejected.")
-        proposal = self._repository.get(proposal_id)
-        if proposal is None:
-            raise ValueError("Action proposal was not found.")
-        if proposal.status == decision:
-            return proposal, self._workspace_named(proposal.payload["name"])
-        if proposal.status != "pending":
-            raise ValueError(f"Action proposal {proposal_id} was already {proposal.status}.")
-        workspace = None
-        if decision == "accepted":
-            workspace = self._workspace_named(proposal.payload["name"])
-            if workspace is None:
-                workspace = WorkspaceService(self._workspaces, self._activity).create(
-                    proposal.payload["name"]
-                )
-        self._repository.set_status(proposal_id, decision)
-        self._activity.record(
-            ActivityType.ACTION_ACCEPTED if decision == "accepted" else ActivityType.ACTION_REJECTED,
-            object_id=str(proposal_id),
-            details=proposal.action_type,
-        )
-        reviewed = self._repository.get(proposal_id)
-        if reviewed is None:
-            raise RuntimeError("Reviewed action proposal disappeared.")
-        return reviewed, workspace
-
-    def _workspace_named(self, name: str) -> Workspace | None:
-        normalized = name.casefold()
-        return next(
-            (workspace for workspace in self._workspaces.list_all() if workspace.name.casefold() == normalized),
-            None,
-        )

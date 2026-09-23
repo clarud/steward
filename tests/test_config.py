@@ -31,7 +31,6 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         gemini_model=None,
         local_model=None,
         local_model_url="http://127.0.0.1:11434",
-        product_mode="source_centric",
         telegram_allowed_chat_ids=frozenset(),
     )
 
@@ -50,17 +49,15 @@ def test_settings_reject_invalid_model_provider(monkeypatch: pytest.MonkeyPatch)
         Settings.from_environment()
 
 
-def test_settings_reject_invalid_product_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("STEWARD_PRODUCT_MODE", "everything")
-
-    with pytest.raises(ValueError, match="STEWARD_PRODUCT_MODE"):
-        Settings.from_environment()
-
-
-def test_settings_accept_legacy_product_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_ignore_the_retired_product_mode_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
     monkeypatch.setenv("STEWARD_PRODUCT_MODE", "legacy")
 
-    assert Settings.from_environment().product_mode == "legacy"
+    settings = Settings.from_environment()
+
+    assert not hasattr(settings, "product_mode")
+    assert "STEWARD_PRODUCT_MODE is no longer used" in caplog.text
 
 
 def test_settings_accept_local_model_provider(monkeypatch: pytest.MonkeyPatch) -> None:

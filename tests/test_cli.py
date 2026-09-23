@@ -4,35 +4,19 @@ import sqlite3
 
 import pytest
 
-from steward.cli import (
-    _configure_console_encoding,
-    _is_calendar_question,
-    _is_calendar_write_request,
-    _tool_calling_model_from_settings,
-    build_parser,
-    main,
-)
+from steward.cli import build_parser, main
+from steward.cli.bootstrap import tool_calling_model_from_settings
+from steward.cli.commands import _configure_console_encoding
 from steward.config import Settings
 from steward.graphs import OllamaToolCallingModel, OpenAICompatibleToolCallingModel
 from steward.extraction import SourceFragmentRepository
 from steward.sources import Source, SourceRepository, SourceType
-from steward.records import RecordService, TravelRecord
-from steward.knowledge import KnowledgeService
-from steward.extraction import ExtractionResult, SourceFragment
 from steward.storage import initialize_database, snapshot_database
 from steward.activity import ActivityService, ActivityType
 from steward.roots import SourceRootRepository
 from steward.telegram import TelegramUpdateDeliveryRepository
 
 
-@pytest.fixture(autouse=True)
-def legacy_cli_surface(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep pre-pivot CLI behavior covered only through explicit legacy mode.
-
-    Source-centric command-surface tests override this setting deliberately.
-    """
-
-    monkeypatch.setenv("STEWARD_PRODUCT_MODE", "legacy")
 
 
 def test_cli_without_a_command_shows_help(capsys) -> None:
@@ -41,14 +25,14 @@ def test_cli_without_a_command_shows_help(capsys) -> None:
     assert "usage: steward" in capsys.readouterr().out
 
 
-def test_source_centric_parser_omits_legacy_action_commands() -> None:
-    parser = build_parser("source_centric")
+def test_parser_exposes_only_live_commands() -> None:
+    parser = build_parser()
     subparsers = next(action for action in parser._actions if getattr(action, "choices", None) is not None)
 
     assert {"scan-root", "sources", "search", "agent", "telegram", "drive-import", "gmail-import"} <= set(subparsers.choices)
     assert not {
         "create-workspace", "propose-organization", "calendar-search",
-        "research", "propose-travel-record", "connect-knowledge",
+        "research", "propose-travel-record", "connect-knowledge", "ui",
     } & set(subparsers.choices)
     assert not hasattr(parser.parse_args(["agent", "find TLBs"]), "include_calendar")
 
@@ -136,7 +120,7 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 
     main(["health"])
@@ -177,9 +161,9 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
 def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, capsys):
     import pytest
     from langgraph.checkpoint.sqlite import SqliteSaver
-    from steward.cli import _database_health
+    from steward.cli.bootstrap import database_health
 
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     with pytest.raises(SystemExit) as failure:
@@ -209,7 +193,7 @@ def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, c
     checkpoint = tmp_path / "checkpoints.db"
     original = checkpoint.read_bytes()
     checkpoint.write_bytes(b"not a SQLite database")
-    assert _database_health(checkpoint) == "unavailable"
+    assert database_health(checkpoint) == "unavailable"
     with pytest.raises(SystemExit):
         main(["health", "--strict"])
     assert checkpoint.read_bytes() == b"not a SQLite database"
@@ -233,7 +217,7 @@ def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_original
     def database_is_locked(_: Path) -> None:
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr("steward.cli.initialize_database", database_is_locked)
+    monkeypatch.setattr("steward.cli.commands.initialize_database", database_is_locked)
 
     main(["scan", str(vault)])
     scan_output = capsys.readouterr().out
@@ -255,7 +239,7 @@ def test_cli_relocate_root_requires_confirmation_and_preserves_source_identity(t
     data = tmp_path / "data"; old = tmp_path / "old"; old.mkdir()
     note = old / "note.md"; note.write_text("# Original", encoding="utf-8")
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data))
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     main(["add-root", "School", str(old)]); capsys.readouterr()
     main(["scan-root", "School"]); capsys.readouterr()
     sources = SourceRepository(data / "steward.db")
@@ -428,7 +412,7 @@ def test_cli_evaluates_retrieval_cases_against_an_indexed_vault(tmp_path: Path, 
 
 
 def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
@@ -452,8 +436,8 @@ def test_cli_ask_supplies_default_checkpointer_thread(monkeypatch, capsys) -> No
             return {"answer": "Grounded answer.", "citations": ()}
 
     graph = FakeGraph()
-    monkeypatch.setattr("steward.cli._model_gateway_from_settings", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr("steward.cli._build_question_graph", lambda *_args, **_kwargs: graph)
+    monkeypatch.setattr("steward.cli.commands.model_gateway_from_settings", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("steward.cli.commands.build_question_graph", lambda *_args, **_kwargs: graph)
 
     main(["ask", "What is MM1?"])
 
@@ -464,7 +448,7 @@ def test_cli_ask_supplies_default_checkpointer_thread(monkeypatch, capsys) -> No
 
 
 def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
     monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
@@ -477,7 +461,7 @@ def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -
 
 
 def test_cli_selects_the_local_ollama_tool_adapter() -> None:
-    adapter = _tool_calling_model_from_settings(
+    adapter = tool_calling_model_from_settings(
         Settings(
             data_dir=Path(".steward"),
             inbox_dir=Path("vault/inbox"),
@@ -497,7 +481,7 @@ def test_cli_selects_the_local_ollama_tool_adapter() -> None:
 
 def test_cli_selects_soclaas_tool_adapter(monkeypatch) -> None:
     monkeypatch.setenv("STEWARD_SOCLAAS_API_KEY", "test-key")
-    adapter = _tool_calling_model_from_settings(
+    adapter = tool_calling_model_from_settings(
         Settings(
             data_dir=Path(".steward"),
             inbox_dir=Path("vault/inbox"),
@@ -516,7 +500,7 @@ def test_cli_selects_soclaas_tool_adapter(monkeypatch) -> None:
 
 
 def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 
     main(["telegram"])
@@ -575,116 +559,14 @@ def test_cli_reopens_dead_letter_with_an_audit_event(tmp_path: Path, monkeypatch
     assert ActivityService(database_path).list_recent()[0].event_type == ActivityType.TELEGRAM_DELIVERY_RECOVERED
 
 
-def test_cli_calendar_search_explains_oauth_client_setup(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("steward.cli.load_environment_file", lambda: None)
-    monkeypatch.delenv("STEWARD_GOOGLE_CLIENT_SECRETS", raising=False)
-
-    main(["calendar-search", "Tokyo"])
-
-    assert capsys.readouterr().out == (
-        "Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Calendar.\n"
-    )
 
 
-def test_cli_creates_a_pending_calendar_proposal_without_contacting_google(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
-    now = datetime(2026, 9, 8, tzinfo=UTC)
-    source = SourceRepository(database).add(
-        Source(None, tmp_path / "flight.pdf", "a" * 64, SourceType.PDF, 0, now, now, now)
-    )
-    record = RecordService(database).create_travel_record(
-        TravelRecord(None, source.id or 0, "SQ638", "Singapore", "Tokyo", datetime(2026, 10, 1, 9, tzinfo=UTC), datetime(2026, 10, 1, 17, tzinfo=UTC), None)
-    )
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-
-    main(["calendar-propose-travel-event", str(record.id)])
-
-    assert capsys.readouterr().out == (
-        "Calendar proposal 1 pending for travel record 1. "
-        "Review with `steward calendar-review-travel-event 1 accepted`.\n"
-    )
 
 
-def test_cli_proposes_deterministic_knowledge_enrichment(tmp_path: Path, monkeypatch, capsys) -> None:
-    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
-    now = datetime(2026, 9, 8, tzinfo=UTC)
-    source = SourceRepository(database).add(
-        Source(None, tmp_path / "note.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
-    )
-    fragment = SourceFragmentRepository(database).replace_for_source(
-        ExtractionResult(source.id or 0, (SourceFragment(None, source.id or 0, None, 0, "TLBs may cache translations.", "lines 1-1"),))
-    )[0]
-    knowledge = KnowledgeService(database)
-    concept = knowledge.create_concept("TLB")
-    claim = knowledge.create_claim(concept.id or 0, "TLBs cache translations.", [fragment.id or 0])
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-
-    main(["propose-knowledge-enrichment", str(claim.id), str(fragment.id)])
-
-    assert capsys.readouterr().out.startswith("Knowledge enrichment proposal 1 pending: qualify\tclaim=1\tfragment=1\t")
-
-    main(["knowledge-enrichment-proposals"])
-
-    assert capsys.readouterr().out.startswith("1\tpending\tqualify\tclaim=1\tfragment=1\t")
-
-    main(["review-knowledge-enrichment", "1", "accepted"])
-
-    assert capsys.readouterr().out == "Knowledge enrichment proposal 1 accepted.\n"
 
 
-def test_cli_creates_workspace(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
-
-    main(["create-workspace", "Steward"])
-
-    assert capsys.readouterr().out == "Created workspace 1: Steward\n"
 
 
-def test_cli_reviews_inbox_workspace_candidates(tmp_path: Path, monkeypatch, capsys) -> None:
-    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
-    now = datetime(2026, 9, 8, tzinfo=UTC)
-    inbox = tmp_path / "vault" / "inbox"; inbox.mkdir(parents=True)
-    repository = SourceRepository(database)
-    for identifier, name in enumerate(("compiler-parsing.md", "compiler-notes.md"), start=1):
-        path = inbox / name; path.write_text("note")
-        repository.add(Source(None, path.resolve(), str(identifier) * 64, SourceType.MARKDOWN, 4, now, now, now))
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-
-    main(["review-inbox-workspaces"])
-
-    assert "Compiler\tconfidence=0.70\tsources=1,2" in capsys.readouterr().out
-
-
-def test_cli_reports_when_no_knowledge_connections_exist(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
-
-    main(["connect-knowledge"])
-
-    assert capsys.readouterr().out == "No evidence-backed knowledge connections found.\n"
-
-
-def test_cli_blocks_model_assisted_organization_for_private_cloud_source(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    data_dir = tmp_path / "data"; database = data_dir / "steward.db"; initialize_database(database)
-    now = datetime(2026, 9, 8, tzinfo=UTC)
-    source = SourceRepository(database).add(
-        Source(None, tmp_path / "private.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
-    )
-    from steward.privacy import PrivacyService, PrivacyRule
-    PrivacyService(database).set_rule(source.id or 0, PrivacyRule.LOCAL_MODEL_ONLY)
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("STEWARD_MODEL_PROVIDER", "gemini")
-    monkeypatch.setattr(
-        "steward.cli._model_gateway_from_settings",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not call model")),
-    )
-
-    main(["propose-organization", str(source.id), "--model-assisted"])
-
-    assert capsys.readouterr().out == "This source's privacy policy does not permit the configured model.\n"
 
 
 def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -703,15 +585,6 @@ def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) 
     assert capsys.readouterr().out == "no_model\n"
 
 
-def test_calendar_question_routing_only_matches_unambiguous_schedule_requests() -> None:
-    assert _is_calendar_question("What do I have coming up this week?") is True
-    assert _is_calendar_question("Do I have anything scheduled tomorrow?") is True
-    assert _is_calendar_question("Explain calendar queues in operating systems") is False
-    assert _is_calendar_question("What is a queueing model?") is False
-    assert _is_calendar_write_request("Put flight record 1 on my calendar") is True
-    assert _is_calendar_write_request("What is on my calendar?") is False
-
-
 def test_cli_configures_a_non_utf8_console_for_utf8(monkeypatch) -> None:
     class Console:
         def __init__(self) -> None:
@@ -721,8 +594,24 @@ def test_cli_configures_a_non_utf8_console_for_utf8(monkeypatch) -> None:
             self.encoding = encoding
 
     console = Console()
-    monkeypatch.setattr("steward.cli.sys.stdout", console)
+    monkeypatch.setattr("steward.cli.commands.sys.stdout", console)
 
     _configure_console_encoding()
 
     assert console.encoding == "utf-8"
+
+
+def test_cli_explains_a_missing_optional_extra(monkeypatch, capsys) -> None:
+    from steward.extras import MissingExtraError
+
+    def needs_google(*_args, **_kwargs):
+        raise MissingExtraError("google", "Google Drive import")
+
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.health_report", needs_google)
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["health"])
+
+    assert exit_info.value.code == 1
+    assert 'pip install "steward[google]"' in capsys.readouterr().out

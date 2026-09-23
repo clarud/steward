@@ -13,10 +13,9 @@ class ReviewContext:
     platform: str
     chat_id: str
     kind: str
-    # Most Steward-owned objects use integer IDs. External systems such as
-    # Google Calendar use opaque string IDs, so a durable conversational
-    # reference must support both without turning either into a filesystem
-    # capability.
+    # Most Steward-owned objects use integer IDs. External systems use opaque
+    # string IDs, so a durable conversational reference must support both
+    # without turning either into a filesystem capability.
     identifier: int | str
     updated_at: datetime
 
@@ -65,8 +64,6 @@ class ReviewContextRepository:
         raw_identifier = str(row[3])
         if raw_identifier.startswith("text:"):
             identifier: int | str = raw_identifier[len("text:"):]
-        elif str(row[2]) == "calendar":
-            identifier = raw_identifier
         else:
             identifier = int(raw_identifier) if raw_identifier.isdigit() else raw_identifier
         return ReviewContext(str(row[0]), str(row[1]), str(row[2]), identifier, datetime.fromisoformat(str(row[4])))
