@@ -13,9 +13,11 @@ the retained legacy sections below as relevant.
    interface describes source search, reading, Inbox capture, roots, privacy,
    and explicit imports—not workspaces, records, Calendar, research, tasks, or
    broad automation.
-2. Use `/roots`, then scan a harmless authorized root. Search for a phrase from
-   a known Markdown/PDF/DOCX file; select the result and use **Read content**.
-   Confirm the exact source and fragment are shown.
+2. Use `/roots`, then scan a harmless authorized root containing known
+   Markdown, PDF, DOCX, PPTX, XLSX, notebook, and source-code examples. Search
+   a phrase from each representative format; select the result and use **Read
+   content**. Confirm the exact source and fragment/page/slide/sheet-row/cell
+   location are shown.
 3. Ask a grounded question about that material. Verify answer citations point to
    the returned local source fragments. Ask a vague follow-up in reply to the
    answer and confirm the intended source remains the reference.

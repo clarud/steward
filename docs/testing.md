@@ -33,10 +33,10 @@ Automated baseline completed locally:
   PPTX, XLSX, notebook, and code-line extraction additions.
 
 Still required before declaring the pivot acceptance-complete: run the active
-source-centric Telegram checklist with a harmless multi-format root, demonstrate
-one external edit/rename followed by scan reconciliation, and run the full test
-suite after the watcher/reconciliation phase lands. Historical entries below
-remain evidence for retained subsystems; they are not default-product promises.
+source-centric Telegram checklist with a harmless multi-format root and
+demonstrate one external edit/rename followed by scan reconciliation. The full
+test suite has passed; historical entries below remain evidence for retained
+subsystems, not default-product promises.
 
 This document records live local acceptance results. It complements automated
 tests; it does not replace them. Do not record tokens, credentials, private
