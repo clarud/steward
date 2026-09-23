@@ -31,6 +31,7 @@ from steward.application import (
     StewardKnowledgeApplication,
     StewardRootsApplication,
     StewardMoveReconciliationApplication,
+    StewardCodexHandoffApplication,
     StewardPrivacyApplication,
     StewardOperationsApplication,
     StewardCalendarApplication,
@@ -1665,6 +1666,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
                 move_reconciliation_application=StewardMoveReconciliationApplication(
                     sources, SourceMoveProposalRepository(database_path)
+                ),
+                codex_handoff_application=StewardCodexHandoffApplication(
+                    CodexHandoffService(sources, SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir)
                 ),
             )
             try:

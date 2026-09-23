@@ -24,7 +24,7 @@ from steward.organization import (
     OrganizationProposalRepository,
     OrganizationService,
 )
-from steward.sources import Source, SourceMoveProposalRepository, SourceMoveReconciliationService
+from steward.sources import CodexHandoffService, Source, SourceMoveProposalRepository, SourceMoveReconciliationService
 from steward.sources.export import SourceExportService
 from steward.sources.service import SourceService
 from steward.workspaces import Workspace
@@ -1097,6 +1097,7 @@ class StewardReadApplication:
             "/hybrid_search QUESTION — combined local search\n"
             "/roots — authorized folders\n"
             "/moves — review unambiguous same-root rename/move matches\n"
+            "/codex_handoff SOURCE_ID ... — prepare a local metadata-only manifest\n"
             "/activity [term] — source lifecycle history\n"
             "/privacy SOURCE_ID — source model-access rule\n\n"
             "Send a file or substantial note to stage it locally, then choose Save to Inbox or Discard. "
@@ -4289,6 +4290,32 @@ class StewardMoveReconciliationApplication:
             title="Review source move", icon="↔️",
         )
 
+
+class StewardCodexHandoffApplication:
+    """Prepare a local metadata-only handoff from explicitly selected IDs."""
+
+    def __init__(self, handoffs: CodexHandoffService) -> None:
+        self._handoffs = handoffs
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, _, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command != "/codex_handoff":
+            return None
+        parts = argument.split()
+        if not parts or not all(item.isdigit() for item in parts):
+            return "Use /codex_handoff followed by one or more source IDs. Source content will not be sent."
+        try:
+            handoff = self._handoffs.prepare(tuple(int(item) for item in parts))
+        except ValueError as error:
+            return f"Codex handoff was not prepared: {error}"
+        return PresentedReply(
+            f"Prepared local handoff {handoff.identifier} for source IDs: {', '.join(map(str, handoff.source_ids))}.\n\n"
+            "It contains metadata and guidance paths only. No source content was sent, no Codex session was invoked, and no files changed. Open the manifest locally before explicitly sharing it with Codex.",
+            (ReplyAction("Browse sources", "/sources"), ReplyAction("Home", "/home")),
+            title="Codex handoff ready", icon="📋",
+        )
+
     @staticmethod
     def _root_detail(root: object) -> PresentedReply:
         """Render health-only root information shared by commands and follow-ups."""
@@ -7358,6 +7385,7 @@ class StewardEventApplication:
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
         move_reconciliation_application: StewardMoveReconciliationApplication | None = None,
+        codex_handoff_application: StewardCodexHandoffApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
         operations_application: StewardOperationsApplication | None = None,
         calendar_application: StewardCalendarApplication | None = None,
@@ -7382,6 +7410,7 @@ class StewardEventApplication:
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
         self._move_reconciliation_application = move_reconciliation_application
+        self._codex_handoff_application = codex_handoff_application
         self._privacy_application = privacy_application
         self._operations_application = operations_application
         self._calendar_application = calendar_application
@@ -7442,6 +7471,10 @@ class StewardEventApplication:
             move_response = self._move_reconciliation_application.handle_command(event)
             if move_response is not None:
                 return move_response
+        if self._codex_handoff_application is not None:
+            handoff_response = self._codex_handoff_application.handle_command(event)
+            if handoff_response is not None:
+                return handoff_response
         if self._knowledge_application is not None:
             knowledge_reference = self._knowledge_application.resolve_knowledge_reference(event)
             if knowledge_reference is not None:
