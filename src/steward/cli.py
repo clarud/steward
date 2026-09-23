@@ -30,6 +30,7 @@ from steward.application import (
     StewardRecordApplication,
     StewardKnowledgeApplication,
     StewardRootsApplication,
+    StewardMoveReconciliationApplication,
     StewardPrivacyApplication,
     StewardOperationsApplication,
     StewardCalendarApplication,
@@ -1645,6 +1646,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 tool_agent_application=tool_agent_application,
                 roots_application=StewardRootsApplication(
                     SourceRootRepository(database_path), contexts=review_contexts
+                ),
+                move_reconciliation_application=StewardMoveReconciliationApplication(
+                    sources, SourceMoveProposalRepository(database_path)
                 ),
             )
             try:

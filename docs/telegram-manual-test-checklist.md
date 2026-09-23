@@ -29,6 +29,9 @@ the retained legacy sections below as relevant.
    its source remains discoverable without duplicate identity. Treat a full scan
    as the reconciliation authority after Codex or another external tool changes
    files.
+   For a one-to-one same-root rename, open `/moves`, review the exact old/new
+   filenames, and choose **Preserve source ID**. Never accept a proposed move
+   merely because two unrelated files have matching contents.
 
 ## Retained legacy/historical acceptance checks
 

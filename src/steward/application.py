@@ -24,7 +24,7 @@ from steward.organization import (
     OrganizationProposalRepository,
     OrganizationService,
 )
-from steward.sources import Source
+from steward.sources import Source, SourceMoveProposalRepository, SourceMoveReconciliationService
 from steward.sources.export import SourceExportService
 from steward.sources.service import SourceService
 from steward.workspaces import Workspace
@@ -4211,6 +4211,83 @@ class StewardRootsApplication:
             icon="🗂️",
         )
 
+
+    @staticmethod
+    def _root_detail(root: object) -> PresentedReply:
+        health = str(getattr(root, "health"))
+        guidance = (
+            "Reconnect or restore this root locally, then scan it locally."
+            if health == "missing" else "Enable this root locally before scanning."
+            if health == "disabled" else "This root is available for local scans."
+        )
+        identifier = getattr(root, "id")
+        last_scanned_at = getattr(root, "last_scanned_at", None)
+        scan_status = last_scanned_at.isoformat() if last_scanned_at is not None else "never"
+        return PresentedReply(
+            f"Status: {health}\nLast successful scan: {scan_status}\nExcluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
+            f"{guidance}\nRoot paths and changes remain local-only.",
+            (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
+            title=str(getattr(root, "name")), icon="🗂️",
+            reference=("root", identifier) if isinstance(identifier, int) and identifier > 0 else None,
+        )
+
+
+class StewardMoveReconciliationApplication:
+    """Expose source-ID-preserving move matches as explicit Telegram reviews."""
+
+    def __init__(self, sources: SourceRepository, proposals: SourceMoveProposalRepository) -> None:
+        self._sources = sources
+        self._proposals = proposals
+        self._service = SourceMoveReconciliationService(sources, proposals)
+
+    def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
+        command, _, argument = (event.text or "").strip().partition(" ")
+        command = command.partition("@")[0]
+        if command == "/moves":
+            pending = self._proposals.list_pending()
+            if not pending:
+                return "No unambiguous source moves are waiting for review."
+            lines = ["Review each match before preserving its original source ID:"]
+            actions: list[ReplyAction] = []
+            for proposal in pending[:8]:
+                missing = self._sources.get_by_id(proposal.missing_source_id)
+                discovered = self._sources.get_by_id(proposal.discovered_source_id)
+                if missing is None or discovered is None:
+                    continue
+                lines.append(f"{proposal.id}. {missing.path.name} → {discovered.path.name}")
+                actions.append(ReplyAction(f"Review {proposal.id}", f"/review_move {proposal.id}"))
+            return PresentedReply("\n".join(lines), tuple(actions), title="Possible file moves", icon="↔️")
+        if command != "/review_move":
+            return None
+        parts = argument.split()
+        if not parts or not parts[0].isdigit():
+            return "Use /review_move followed by a numeric move proposal ID."
+        proposal = self._proposals.get(int(parts[0]))
+        if proposal is None:
+            return "That source move proposal was not found."
+        if len(parts) == 2 and parts[1] in {"accept", "reject"}:
+            try:
+                if parts[1] == "accept":
+                    source = self._service.accept(proposal.id or 0)
+                    return f"Preserved source ID {source.id} at {source.path.name}."
+                self._proposals.review(proposal.id or 0, "rejected")
+                return f"Kept both histories; move proposal {proposal.id} was rejected."
+            except ValueError as error:
+                return f"Source move was not changed: {error}"
+        missing = self._sources.get_by_id(proposal.missing_source_id)
+        discovered = self._sources.get_by_id(proposal.discovered_source_id)
+        if missing is None or discovered is None:
+            return "This move proposal is no longer valid; run a local root scan again."
+        return PresentedReply(
+            f"Move proposal {proposal.id}\n\nPrevious source ID {missing.id}: {missing.path.name}\n"
+            f"Discovered source ID {discovered.id}: {discovered.path.name}\n\n"
+            "Their content hashes match. Accept to preserve the previous source ID; no file will move.",
+            (ReplyAction("Preserve source ID", f"/review_move {proposal.id} accept"),
+             ReplyAction("Keep separate", f"/review_move {proposal.id} reject"),
+             ReplyAction("All moves", "/moves")),
+            title="Review source move", icon="↔️",
+        )
+
     @staticmethod
     def _root_detail(root: object) -> PresentedReply:
         """Render health-only root information shared by commands and follow-ups."""
@@ -7279,6 +7356,7 @@ class StewardEventApplication:
         integration_status_application: StewardIntegrationStatusApplication | None = None,
         knowledge_application: StewardKnowledgeApplication | None = None,
         roots_application: StewardRootsApplication | None = None,
+        move_reconciliation_application: StewardMoveReconciliationApplication | None = None,
         privacy_application: StewardPrivacyApplication | None = None,
         operations_application: StewardOperationsApplication | None = None,
         calendar_application: StewardCalendarApplication | None = None,
@@ -7302,6 +7380,7 @@ class StewardEventApplication:
         self._integration_status_application = integration_status_application
         self._knowledge_application = knowledge_application
         self._roots_application = roots_application
+        self._move_reconciliation_application = move_reconciliation_application
         self._privacy_application = privacy_application
         self._operations_application = operations_application
         self._calendar_application = calendar_application
@@ -7358,6 +7437,10 @@ class StewardEventApplication:
             roots_response = self._roots_application.handle_command(event)
             if roots_response is not None:
                 return roots_response
+        if self._move_reconciliation_application is not None:
+            move_response = self._move_reconciliation_application.handle_command(event)
+            if move_response is not None:
+                return move_response
         if self._knowledge_application is not None:
             knowledge_reference = self._knowledge_application.resolve_knowledge_reference(event)
             if knowledge_reference is not None:
