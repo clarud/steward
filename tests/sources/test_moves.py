@@ -33,6 +33,7 @@ def test_user_accepted_unambiguous_move_preserves_original_source_id(tmp_path: P
 
     assert preserved.id == first.id
     assert preserved.path == moved.resolve()
+    assert sources.location_history(first.id or 0) == (original.resolve(),)
     assert sources.get_by_id(discovered.id or 0) is None
     assert SourceFragmentRepository(database).list_for_source(first.id or 0)[0].heading == "Queueing"
 

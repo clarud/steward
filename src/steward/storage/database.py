@@ -66,6 +66,7 @@ HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION = 56
 HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
 SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION = 58
 SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION = 59
+SOURCE_LOCATION_HISTORY_SCHEMA_VERSION = 60
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -587,6 +588,16 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
             created_at TEXT NOT NULL,
             reviewed_at TEXT
+        )""",
+    ),
+    (
+        SOURCE_LOCATION_HISTORY_SCHEMA_VERSION,
+        """CREATE TABLE source_location_history (
+            id INTEGER PRIMARY KEY,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            path TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason TEXT NOT NULL
         )""",
     ),
 )

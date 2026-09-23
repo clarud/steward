@@ -163,6 +163,10 @@ class SourceRepository:
         )
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "INSERT INTO source_location_history (source_id, path, recorded_at, reason) VALUES (?, ?, ?, 'move_accepted')",
+                (missing_source_id, str(missing.path), datetime.now(missing.last_seen_at.tzinfo).isoformat()),
+            )
             connection.execute("DELETE FROM source_fragments_fts WHERE source_id = ?", (discovered_source_id,))
             connection.execute("DELETE FROM sources WHERE id = ?", (discovered_source_id,))
             cursor = connection.execute(
@@ -176,6 +180,13 @@ class SourceRepository:
         if cursor.rowcount != 1:
             raise SourceNotFoundError(f"Source id {missing_source_id} is not registered.")
         return preserved
+
+    def location_history(self, source_id: int) -> tuple[Path, ...]:
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT path FROM source_location_history WHERE source_id = ? ORDER BY id", (source_id,)
+            ).fetchall()
+        return tuple(Path(str(row[0])) for row in rows)
 
     def list_active(self) -> list[Source]:
         """Return every Source whose current path was last observed as present."""

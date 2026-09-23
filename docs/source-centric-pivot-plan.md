@@ -403,8 +403,9 @@ duplicate event, interrupted scan, locked SQLite database, and root outage.
 **Status (23 September 2026):** started. Root scans create reviewable pending
 proposals only for a one-to-one same-root content-hash match. Local CLI review
 can preserve the old source ID at the new path; duplicate-content ambiguity is
-left unresolved. Telegram now exposes the same explicit review card. Location
-history, cross-root refusal, and rollback/restart coverage remain outstanding.
+left unresolved. Telegram now exposes the same explicit review card. Accepted
+moves retain the prior path in append-only local location history. Cross-root
+refusal and rollback/restart coverage remain outstanding.
 
 - Migrate from current-path-only semantics to location history/version records.
 - Produce reviewable one-to-one hash-based move/rename candidates.
