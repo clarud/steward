@@ -75,6 +75,7 @@ LEGACY_TABLES_DROPPED_SCHEMA_VERSION = 65
 MINIMAL_SURFACE_SCHEMA_VERSION = 66
 INBOX_CAPTURE_KEYS_SCHEMA_VERSION = 67
 MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION = 68
+SOURCE_SUMMARIES_SCHEMA_VERSION = 69
 
 # Tables owned by the retired workspace, organization, knowledge, record, task,
 # Calendar, and research features (see ADR-007). Children precede parents so
@@ -704,6 +705,21 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION,
         "DROP TABLE IF EXISTS source_move_proposals",
+    ),
+    (
+        SOURCE_SUMMARIES_SCHEMA_VERSION,
+        """CREATE TABLE source_summaries (
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            content_hash TEXT NOT NULL,
+            model TEXT NOT NULL,
+            text TEXT NOT NULL,
+            cited_json TEXT NOT NULL,
+            covered INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            skipped_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (source_id, content_hash, model)
+        )""",
     ),
 )
 

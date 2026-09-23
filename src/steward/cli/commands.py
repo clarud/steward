@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from steward.config import Settings, load_environment_file
+from steward.graphs.ask import run_ask
 from steward.extras import MissingExtraError
 from steward.runtime import RuntimeAlreadyRunningError, telegram_runtime_lock
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
@@ -32,9 +33,13 @@ from steward.telegram import (
 )
 from steward.activity import ActivityService, ActivityType
 from steward.roots import SourceRootRepository
-from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
+from steward.evaluation import evaluate_files, load_file_cases
+from steward.graphs.find import run_find
+from steward.retrieval.files import group_by_file
+from steward.extraction import InvalidSearchQueryError
 from steward.cli.bootstrap import (
-    build_question_graph,
+    build_flows,
+    optional_embedding_provider,
     build_telegram_application,
     filed_notices,
     rescan_all,
@@ -70,6 +75,40 @@ def _print_search_hit(hit: object) -> None:
     snippet = " ".join((highlighted_text or fragment.text).split())
     print(f"{source.path}:{fragment.location} [{heading}]")
     print(f"  {snippet[:160]}")
+
+
+def _ranker(settings: Settings, mode: str):
+    """A function from query to files, best first, for one evaluation mode."""
+    database_path = settings.data_dir / "steward.db"
+    initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    lexical = LexicalSearchService(sources, SourceFragmentRepository(database_path))
+    if mode == "keyword":
+        return lambda query: [candidate.source.path for candidate in group_by_file(_safe_search(lexical, query), "keyword")]
+    embedding_provider = optional_embedding_provider()
+    if mode == "hybrid":
+        if embedding_provider is None:
+            print("Hybrid mode needs the local embedding model: steward download-embedding-model")
+            return None
+        hybrid = HybridRetriever(lexical, SemanticSearchService(sources, SQLiteSemanticIndex(database_path, embedding_provider)))
+        return lambda query: [candidate.source.path for candidate in group_by_file(_safe_search(hybrid, query), "hybrid")]
+    model_gateway = model_gateway_from_settings(settings, command="evaluate-retrieval --mode find")
+    if model_gateway is None:
+        return None
+    find = build_flows(settings, model_gateway, lambda source: str(source.path), embedding_provider=embedding_provider).find
+
+    def rank(query: str):
+        result = run_find(find, query)
+        return [candidate.source.path for candidate, _ in result.picks] + [candidate.source.path for candidate in result.options]
+
+    return rank
+
+
+def _safe_search(searcher, query: str):
+    try:
+        return searcher.search(query, limit=20)
+    except (InvalidSearchQueryError, ValueError):
+        return ()
 
 
 def _print_scan_database_error(operation: str, error: sqlite3.Error) -> None:
@@ -114,7 +153,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         if destination.exists():
             print(f"Backup destination already exists: {destination.resolve()}")
             return
-        database_paths = (settings.data_dir / "steward.db", settings.data_dir / "checkpoints.db")
+        database_paths = (settings.data_dir / "steward.db",)
         available = tuple(path for path in database_paths if path.is_file())
         if not available:
             print("No Steward databases exist yet; there is nothing to back up.")
@@ -135,8 +174,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                 print("Retry with a new destination after resolving the failure.")
             return
         print("Backed up local Steward databases:\n" + "\n".join(str(path) for path in snapshots))
-        if len(snapshots) > 1:
-            print("Databases were copied sequentially. For a coordinated recovery point, stop Steward and other writers before backing up.")
         return
 
     if arguments.command == "restore":
@@ -306,45 +343,27 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         return
 
     if arguments.command == "evaluate-retrieval":
-        if not arguments.root.is_dir():
-            print(f"Vault root does not exist or is not a directory: {arguments.root}")
-            return
         if not arguments.cases.is_file():
-            print(f"Retrieval case file does not exist: {arguments.cases}")
+            print(f"Case file does not exist: {arguments.cases}")
             return
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
         try:
-            sources = SourceRepository(database_path)
-            fragments = SourceFragmentRepository(database_path)
-            lexical = LexicalSearchService(sources, fragments)
-            service = (
-                HybridRetriever(
-                    lexical,
-                    SemanticSearchService(
-                        sources, SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider())
-                    ),
-                )
-                if arguments.mode == "hybrid"
-                else lexical
-            )
-            evaluation = evaluate_lexical_retrieval(
-                service,
-                load_retrieval_cases(arguments.cases),
-                arguments.root,
-            )
+            cases = load_file_cases(arguments.cases)
         except ValueError as error:
-            print(f"Invalid retrieval evaluation: {error}")
+            print(f"Invalid case file: {error}")
             return
+        rank = _ranker(settings, arguments.mode)
+        if rank is None:
+            return
+        evaluation = evaluate_files(rank, cases)
         print(
             f"Mode: {arguments.mode}\nCases: {evaluation.case_count}\n"
-            f"Recall@5: {evaluation.recall_at_5:.1%}\n"
+            f"Hit@1: {evaluation.hit_at_1:.0%}\nHit@3: {evaluation.hit_at_3:.0%}\n"
             f"MRR: {evaluation.mean_reciprocal_rank:.3f}"
         )
         if evaluation.misses:
-            print("Misses:")
-            for miss in evaluation.misses:
-                print(f"- {miss.query} -> {miss.expected_source} [{miss.expected_heading}]")
+            print("Not in the top 3:")
+            for query, expected in evaluation.misses:
+                print(f"- {query} -> {expected}")
         return
 
     if arguments.command == "roots":
@@ -417,22 +436,18 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         model_gateway = model_gateway_from_settings(settings, command="ask")
         if model_gateway is None:
             return
-        graph_result = build_question_graph(
-            settings, model_gateway, limit=arguments.limit
-        ).invoke(
-            {"question": arguments.question},
-            {"configurable": {"thread_id": arguments.thread_id}},
+        flows = build_flows(
+            settings, model_gateway, lambda source: str(source.path),
+            embedding_provider=optional_embedding_provider(),
         )
-        print(graph_result["answer"])
-        citations = graph_result.get("citations", ())
-        if citations:
+        result = run_ask(flows.ask, arguments.question)
+        print(result.text)
+        if result.removed:
+            print(f"({result.removed} statement(s) removed: not supported by your files.)")
+        if result.cited:
             print("\nSources:")
-            for citation in citations:
-                heading = citation.heading or "Preamble"
-                print(
-                    f"[{citation.key}] {citation.source_path}:"
-                    f"{citation.location} [{heading}]"
-                )
+            for item in result.cited:
+                print(f"[{item.key}] {item.source.path}:{item.fragment.location}")
         return
 
     if arguments.command == "telegram":
@@ -444,10 +459,8 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         if model_gateway is None:
             return
         database_path = settings.data_dir / "steward.db"
-        embedding_provider = SentenceTransformerEmbeddingProvider()
-        application = build_telegram_application(
-            settings, model_gateway, limit=arguments.limit, embedding_provider=embedding_provider,
-        )
+        embedding_provider = optional_embedding_provider()
+        application = build_telegram_application(settings, model_gateway, embedding_provider=embedding_provider)
         try:
             with telegram_runtime_lock(settings.data_dir):
                 run_telegram_polling(

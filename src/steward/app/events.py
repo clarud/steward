@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
+from steward.app.answers import StewardAnswersApplication
 from steward.app.files import HELP_TEXT, StewardFilesApplication
 from steward.app.intake import StewardIntakeApplication
-from steward.app.question import StewardQuestionApplication
-from steward.app.search import StewardSearchApplication
+from steward.app.search import parse_find
 from steward.events import IncomingEvent
 from steward.presentation import PresentedReply, ReplyAction
+from steward.roots import SourceRootRepository
 
 
 class StewardEventApplication:
@@ -19,14 +19,14 @@ class StewardEventApplication:
     def __init__(
         self,
         files: StewardFilesApplication,
-        search: StewardSearchApplication,
         intake: StewardIntakeApplication,
-        question: StewardQuestionApplication,
+        answers: StewardAnswersApplication | None,
+        roots: SourceRootRepository,
     ) -> None:
         self._files = files
-        self._search = search
         self._intake = intake
-        self._question = question
+        self._answers = answers
+        self._roots = roots
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
         text = (event.text or "").strip()
@@ -58,12 +58,19 @@ class StewardEventApplication:
         parts = (event.text or "").strip().split(maxsplit=1)
         command = parts[0].partition("@")[0].casefold()
         argument = parts[1].strip() if len(parts) > 1 else ""
+        if command in {"/find", "/ask"} and self._answers is None:
+            return "No model is configured on this computer; set one in .env and restart the bot."
         if command == "/find":
-            return self._search.find(argument) if argument else "Use /find followed by a few words."
+            if not argument:
+                return "Use /find followed by a few words."
+            parsed = parse_find(argument, self._roots)
+            if isinstance(parsed, str):
+                return parsed
+            return self._answers.find(event.chat_id, *parsed)  # type: ignore[union-attr]
         if command == "/ask":
             if not argument:
                 return "Use /ask followed by your question."
-            return self._question.handle(replace(event, text=argument))
+            return self._answers.ask(event.chat_id, argument)  # type: ignore[union-attr]
         if command == "/note":
             return self._intake.begin_note(event, argument) if argument else "Use /note followed by the note."
         return "I don't know that command. Try /help."

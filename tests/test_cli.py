@@ -32,37 +32,29 @@ def test_parser_exposes_only_live_commands() -> None:
 def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, monkeypatch, capsys) -> None:
     data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
     initialize_database(data_dir / "steward.db")
-    initialize_database(data_dir / "checkpoints.db")
     destination = tmp_path / "backup"
 
     main(["backup", "--destination", str(destination)])
 
-    output = capsys.readouterr().out
-    assert "Backed up local Steward databases:" in output
-    assert "copied sequentially" in output
+    assert "Backed up local Steward databases:" in capsys.readouterr().out
     assert (destination / "steward.db").is_file()
-    assert (destination / "checkpoints.db").is_file()
     main(["backup", "--destination", str(destination)])
     assert "already exists" in capsys.readouterr().out
 
 
-def test_cli_backup_reports_and_preserves_partial_set(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cli_backup_reports_a_failed_snapshot(tmp_path: Path, monkeypatch, capsys) -> None:
     data_dir = tmp_path / "data"
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    initialize_database(data_dir / "steward.db")
-    (data_dir / "checkpoints.db").write_bytes(b"corrupt checkpoint")
+    data_dir.mkdir()
+    (data_dir / "steward.db").write_bytes(b"not a database")
     destination = tmp_path / "partial"
+
     main(["backup", "--destination", str(destination)])
+
     output = capsys.readouterr().out
-    assert "Backup set is incomplete" in output
-    assert "Completed snapshots retained" in output
-    assert "Retry with a new destination" in output
+    assert "Backup failed" in output and "Backup set is incomplete" in output
     assert "Backed up local Steward databases:" not in output
-    assert (destination / "steward.db").is_file()
-    assert not (destination / "checkpoints.db").exists()
-    with sqlite3.connect(destination / "steward.db") as connection:
-        assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
-    assert (data_dir / "checkpoints.db").read_bytes() == b"corrupt checkpoint"
+    assert (data_dir / "steward.db").read_bytes() == b"not a database"
 
 
 def test_cli_restore_requires_confirmation_then_preserves_a_safety_backup(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -99,17 +91,13 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     assert capsys.readouterr().out == (
         "Steward health:\n"
         "Operational database: not initialized\n"
-        "Conversation checkpoints: not initialized\n"
         "Authorized roots: not initialized\n"
         "Telegram token: not configured\n"
     )
     assert not (data_dir / "steward.db").exists()
 
-    database = data_dir / "steward.db"; checkpoints = data_dir / "checkpoints.db"
+    database = data_dir / "steward.db"
     initialize_database(database)
-    from langgraph.checkpoint.sqlite import SqliteSaver
-    with SqliteSaver.from_conn_string(str(checkpoints)) as saver:
-        saver.setup()
     available = tmp_path / "available"; available.mkdir()
     missing = tmp_path / "missing"; missing.mkdir()
     roots = SourceRootRepository(database)
@@ -122,16 +110,13 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
     assert capsys.readouterr().out == (
         "Steward health:\n"
         "Operational database: available\n"
-        "Conversation checkpoints: available\n"
         "Authorized roots: 1 available, 1 missing\n"
         "Telegram token: configured\n"
     )
 
 
-def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, capsys):
+def test_strict_health_exit_contract(tmp_path, monkeypatch, capsys):
     import pytest
-    from langgraph.checkpoint.sqlite import SqliteSaver
-    from steward.cli.bootstrap import database_health
 
     monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path))
@@ -141,8 +126,6 @@ def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, c
     assert failure.value.code == 1
     assert not (tmp_path / "steward.db").exists()
     initialize_database(tmp_path / "steward.db")
-    with SqliteSaver.from_conn_string(str(tmp_path / "checkpoints.db")) as saver:
-        saver.setup()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "synthetic-token")
     # No registered roots is valid for an Inbox-only installation.
     main(["health", "--strict"])
@@ -159,19 +142,6 @@ def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, c
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "   ")
     with pytest.raises(SystemExit):
         main(["health", "--strict"])
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "synthetic-token")
-    checkpoint = tmp_path / "checkpoints.db"
-    original = checkpoint.read_bytes()
-    checkpoint.write_bytes(b"not a SQLite database")
-    assert database_health(checkpoint) == "unavailable"
-    with pytest.raises(SystemExit):
-        main(["health", "--strict"])
-    assert checkpoint.read_bytes() == b"not a SQLite database"
-    checkpoint.write_bytes((tmp_path / "steward.db").read_bytes())
-    with pytest.raises(SystemExit):
-        main(["health", "--strict"])
-    checkpoint.write_bytes(original)
-    main(["health", "--strict"])
 
 
 def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_originals(
@@ -340,16 +310,19 @@ def test_cli_evaluates_retrieval_cases_against_an_indexed_vault(tmp_path: Path, 
     (vault / "network.md").write_text("# Queueing\nPackets wait in queues.", encoding="utf-8")
     cases = tmp_path / "cases.yaml"
     cases.write_text(
-        "cases:\n  - query: queueing\n    expected:\n      source: network.md\n      heading: Queueing\n",
+        "cases:\n  - query: queueing\n    file: network.md\n  - query: zebra\n    file: network.md\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
     main(["onboard-root", "Vault", str(vault)])
     capsys.readouterr()
 
-    main(["evaluate-retrieval", str(vault), str(cases)])
+    main(["evaluate-retrieval", str(cases)])
 
-    assert capsys.readouterr().out == "Mode: lexical\nCases: 1\nRecall@5: 100.0%\nMRR: 1.000\n"
+    assert capsys.readouterr().out == (
+        "Mode: keyword\nCases: 2\nHit@1: 50%\nHit@3: 50%\nMRR: 0.500\n"
+        "Not in the top 3:\n- zebra -> network.md\n"
+    )
 
 
 def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
@@ -365,27 +338,25 @@ def test_cli_ask_explains_required_gemini_configuration(monkeypatch, capsys) -> 
     )
 
 
-def test_cli_ask_supplies_default_checkpointer_thread(monkeypatch, capsys) -> None:
-    class FakeGraph:
-        def __init__(self) -> None:
-            self.input = None
-            self.config = None
+def test_cli_ask_runs_the_ask_flow_and_prints_sources(tmp_path: Path, monkeypatch, capsys) -> None:
+    from steward.graphs.ask import AskResult
 
-        def invoke(self, input, config):
-            self.input = input
-            self.config = config
-            return {"answer": "Grounded answer.", "citations": ()}
+    seen = {}
 
-    graph = FakeGraph()
+    def fake_run_ask(graph, question, **_kwargs):
+        seen["question"] = question
+        return AskResult("answered", "Grounded answer.", (), removed=1)
+
+    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
     monkeypatch.setattr("steward.cli.commands.model_gateway_from_settings", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr("steward.cli.commands.build_question_graph", lambda *_args, **_kwargs: graph)
+    monkeypatch.setattr("steward.cli.commands.optional_embedding_provider", lambda: None)
+    monkeypatch.setattr("steward.cli.commands.run_ask", fake_run_ask)
 
     main(["ask", "What is MM1?"])
 
-    assert graph.input == {"question": "What is MM1?"}
-    assert graph.config == {"configurable": {"thread_id": "cli:ask"}}
-    assert capsys.readouterr().out == "Grounded answer.\n"
-    assert build_parser().parse_args(["ask", "Question", "--thread-id", "review"]).thread_id == "review"
+    assert seen == {"question": "What is MM1?"}
+    assert capsys.readouterr().out == "Grounded answer.\n(1 statement(s) removed: not supported by your files.)\n"
 
 
 

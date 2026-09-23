@@ -7,19 +7,13 @@ from pathlib import Path
 import pytest
 
 from steward.activity import ActivityService
-from steward.app import (
-    StewardEventApplication,
-    StewardFilesApplication,
-    StewardIntakeApplication,
-    StewardQuestionApplication,
-    StewardSearchApplication,
-)
+from steward.app import StewardEventApplication, StewardFilesApplication, StewardIntakeApplication
 from steward.capture import InboxCaptureService
 from steward.events import IncomingEvent
 from steward.extraction import ExtractionResult, SourceFragment, SourceFragmentRepository
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.presentation import PresentedReply
-from steward.retrieval import LexicalSearchService
+from steward.graphs.find import FindScope
 from steward.reviews import ReviewContextRepository
 from steward.roots import SourceRootRepository
 from steward.sources import InboxQueue, Source, SourceRepository, SourceType
@@ -31,23 +25,23 @@ from steward.storage import initialize_database
 NOW = datetime(2026, 9, 24, tzinfo=UTC)
 
 
-class FakeGraph:
+class FakeAnswers:
+    """Records what the router hands to the model flows; the flows have their own tests."""
+
     def __init__(self) -> None:
-        self.inputs: list[dict] = []
+        self.calls: list[tuple] = []
 
-    def invoke(self, input, config=None):
-        self.inputs.append(input)
-        return {"answer": "Grounded answer [F1]", "citations": ()}
+    def find(self, chat_id, request, scope):
+        self.calls.append(("find", chat_id, request, scope))
+        return PresentedReply("found", title="Found")
 
+    def ask(self, chat_id, question, *, source=None):
+        self.calls.append(("ask", chat_id, question, source.id if source else None))
+        return PresentedReply("answered", title="Answer")
 
-class FakeModel:
-    def __init__(self, answer: str = "It covers loops. [F1]") -> None:
-        self.answer = answer
-        self.inputs: list[str] = []
-
-    def generate(self, *, instructions: str, input_text: str) -> str:
-        self.inputs.append(input_text)
-        return self.answer
+    def summarize(self, source):
+        self.calls.append(("summarize", source.id))
+        return PresentedReply("summary", title=f"Summary: {source.path.name}")
 
 
 def event(text: str | None = None, *, message_id: str = "7", reply_to: str | None = None, chat: str = "100") -> IncomingEvent:
@@ -57,7 +51,7 @@ def event(text: str | None = None, *, message_id: str = "7", reply_to: str | Non
 class World:
     """A temporary Steward with one root (Y4S1/CS3210/...), an Inbox, and the app layer."""
 
-    def __init__(self, tmp_path: Path, *, model: FakeModel | None = None) -> None:
+    def __init__(self, tmp_path: Path) -> None:
         self.database = tmp_path / "steward.db"
         initialize_database(self.database)
         self.root_path = tmp_path / "Y4S1"
@@ -70,8 +64,7 @@ class World:
         self.root = self.roots.add("Y4S1", self.root_path)
         self.contexts = ReviewContextRepository(self.database)
         self.inbox_contexts = SourceInboxContextRepository(self.database)
-        self.graph = FakeGraph()
-        self.model = model or FakeModel()
+        self.answers = FakeAnswers()
         activity = ActivityService(self.database)
         queue = InboxQueue(self.sources, self.inbox, roots=self.roots, inbox_contexts=self.inbox_contexts)
         capture = InboxCaptureService(self.inbox, self.sources, self.fragments, activity, queue)
@@ -79,14 +72,10 @@ class World:
             self.sources, self.fragments, self.roots, self.inbox,
             contexts=self.contexts, inbox_contexts=self.inbox_contexts,
             source_export=SourceExportService(self.sources, self.roots, self.inbox),
-            source_model=self.model,
+            answers=self.answers,
         )
         self.app = StewardEventApplication(
             files=self.files,
-            search=StewardSearchApplication(
-                self.sources, LexicalSearchService(self.sources, self.fragments), self.roots,
-                location=self.files.location,
-            ),
             intake=StewardIntakeApplication(
                 ProvisionalIntakeService(
                     tmp_path / "cache", ProvisionalIntakeRepository(self.database), capture, activity,
@@ -94,7 +83,8 @@ class World:
                 ),
                 contexts=self.contexts, roots=self.roots,
             ),
-            question=StewardQuestionApplication(self.graph),
+            answers=self.answers,
+            roots=self.roots,
         )
 
     def add_file(self, relative: str, *texts: str, under: Path | None = None) -> Source:
@@ -126,14 +116,14 @@ def test_plain_text_offers_find_ask_or_save_without_guessing(tmp_path: Path) -> 
 
     assert isinstance(reply, PresentedReply)
     assert commands(reply) == ["/find tut 4 AVX question", "/ask tut 4 AVX question", "/note tut 4 AVX question"]
-    assert world.graph.inputs == []
+    assert world.answers.calls == []
 
 
-def test_ask_command_uses_the_grounded_answer_flow(tmp_path: Path) -> None:
+def test_ask_command_goes_to_the_ask_flow(tmp_path: Path) -> None:
     world = World(tmp_path)
 
-    assert world.app.handle(event("/ask what is a TLB?")) == "Grounded answer [F1]"
-    assert world.graph.inputs == [{"question": "what is a TLB?"}]
+    assert world.app.handle(event("/ask what is a TLB?")).text == "answered"
+    assert world.answers.calls == [("ask", "100", "what is a TLB?", None)]
     assert "Use /ask" in world.app.handle(event("/ask"))
 
 
@@ -224,45 +214,36 @@ def test_send_original_delivers_the_file(tmp_path: Path) -> None:
     assert sent.document is not None and sent.document.content == notes.path.read_bytes()
 
 
-def test_summarize_cites_only_sections_the_summary_used(tmp_path: Path) -> None:
+def test_summarize_button_goes_to_the_summarize_flow(tmp_path: Path) -> None:
     world = World(tmp_path)
-    notes = world.add_file("notes.md", "Parallel loops", "Static scheduling")
-    first_fragment = world.fragments.list_for_source(notes.id or 0)[0]
-    world.model.answer = f"It covers loops. [F{first_fragment.id}]"
+    notes = world.add_file("notes.md", "Parallel loops")
 
     summary = world.app.handle(event(f"/summarize_source {notes.id}"))
 
     assert summary.title == "Summary: notes.md"
-    assert summary.text.endswith(f"Sources: [F{first_fragment.id}] page 1")
-    world.model.answer = "No citation at all"
-    assert world.app.handle(event(f"/summarize_source {notes.id}")).title == "Summary needs verification"
+    assert world.answers.calls == [("summarize", notes.id)]
 
 
 def test_replying_to_a_file_card_asks_about_that_file(tmp_path: Path) -> None:
     world = World(tmp_path)
     notes = world.add_file("notes.md", "Parallel loops")
-    key = f"F{world.fragments.list_for_source(notes.id or 0)[0].id}"
-    world.model.answer = f"Loops run in parallel. [{key}]"
     world.app.handle(event(f"/source {notes.id}"))
 
-    answer = world.app.handle(event("what does it say?", message_id="8", reply_to="card-message"))
+    world.app.handle(event("what does it say?", message_id="8", reply_to="card-message"))
 
-    assert answer.title == "Answer: notes.md"
-    assert "Question: what does it say?" in world.model.inputs[-1]
+    assert world.answers.calls == [("ask", "100", "what does it say?", notes.id)]
     assert world.contexts.get("telegram", "100").kind == "source"
 
 
 def test_ask_button_takes_the_next_message_as_a_question(tmp_path: Path) -> None:
     world = World(tmp_path)
     notes = world.add_file("notes.md", "Parallel loops")
-    key = f"F{world.fragments.list_for_source(notes.id or 0)[0].id}"
-    world.model.answer = f"Loops. [{key}]"
 
     prompt = world.app.handle(event(f"/ask_source {notes.id}"))
-    answer = world.app.handle(event("what is covered?", message_id="9"))
+    world.app.handle(event("what is covered?", message_id="9"))
 
     assert prompt.title == "Ask about this file"
-    assert answer.title == "Answer: notes.md"
+    assert world.answers.calls == [("ask", "100", "what is covered?", notes.id)]
     # Without a card reply or Ask prompt, plain text is not silently tied to a file.
     assert commands(world.app.handle(event("what is covered?", message_id="10")))[0].startswith("/find")
 
@@ -320,21 +301,15 @@ def test_inbox_lists_only_files_still_waiting(tmp_path: Path) -> None:
 
 # -- /find -----------------------------------------------------------------------
 
-def test_find_shows_relative_locations_filters_and_filename_fallback(tmp_path: Path) -> None:
+def test_find_parses_filters_and_hands_them_to_the_find_flow(tmp_path: Path) -> None:
     world = World(tmp_path)
-    world.add_file("CS3210/Tutorials/tut04.md", "AVX2 vector registers")
-    world.add_file("CS4226/queueing.md", "Little's law")
 
-    results = world.app.handle(event("/find vector registers"))
-    assert "Y4S1 / CS3210 / Tutorials / tut04.md" in results.text
-    assert str(tmp_path) not in results.text
+    world.app.handle(event('/find tut 4 AVX --type pdf --root "y4s1"'))
 
-    by_name = world.app.handle(event("/find tut04"))
-    assert by_name.title in {"Search results", "Filename matches"}
-
+    assert world.answers.calls == [("find", "100", "tut 4 AVX", FindScope((SourceType.PDF,), "Y4S1"))]
     assert "No folder is named" in world.app.handle(event('/find law --root "Nope"'))
-    assert "Nothing matched" in world.app.handle(event("/find zebra"))
     assert "Unknown type" in world.app.handle(event("/find law --type spreadsheet"))
+    assert "unmatched quote" in world.app.handle(event('/find "law'))
 
 
 @pytest.mark.parametrize("command", ["/find", "/note"])

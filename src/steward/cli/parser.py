@@ -42,8 +42,6 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--path-prefix", type=Path, help="Only files under this folder")
     ask = commands.add_parser("ask", help="Answer a question from your files, with sources")
     ask.add_argument("question")
-    ask.add_argument("--limit", type=int, default=5, help="Sections of evidence to use")
-    ask.add_argument("--thread-id", default="cli:ask", help="Conversation thread for follow-ups")
     commands.add_parser("inbox", help="Refresh INBOX.md and list what's waiting to be filed")
 
     # Upkeep
@@ -54,15 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     unregister.add_argument("--confirm", action="store_true")
     commands.add_parser("download-embedding-model", help="Download the local model for meaning-based search")
     commands.add_parser("rebuild-semantic-index", help="Rebuild meaning-search vectors for every file")
-    evaluate = commands.add_parser("evaluate-retrieval", help="Score search against expected results")
-    evaluate.add_argument("root", type=Path, help="The indexed folder the cases refer to")
-    evaluate.add_argument("cases", type=Path, help="YAML file of queries and expected files")
-    evaluate.add_argument("--mode", choices=("lexical", "hybrid"), default="lexical")
+    evaluate = commands.add_parser("evaluate-retrieval", help="Score finding files: hit@1, hit@3, MRR")
+    evaluate.add_argument("cases", type=Path, help="YAML: cases: [{query: ..., file: CS3210/tut04.pdf}]")
+    evaluate.add_argument("--mode", choices=("keyword", "hybrid", "find"), default="keyword",
+                          help="find runs the multi-agent Find flow and uses the configured model")
     commands.add_parser("activity", help="Show recent activity")
 
     # Running
-    telegram = commands.add_parser("telegram", help="Run the Telegram bot on this computer")
-    telegram.add_argument("--limit", type=int, default=5, help="Sections of evidence per answer")
+    commands.add_parser("telegram", help="Run the Telegram bot on this computer")
     health = commands.add_parser("health", help="Check local readiness without showing paths or secrets")
     health.add_argument("--strict", action="store_true", help="Exit 1 if the bot isn't ready to run")
     backup = commands.add_parser("backup", help="Snapshot Steward's databases")

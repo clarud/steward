@@ -5,31 +5,26 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-
 from steward.activity import ActivityService
-from steward.answer import (
-    AnswerService,
-    ContextBuilder,
-    GeminiModelGateway,
-    ModelGateway,
-    OllamaModelGateway,
-    OpenAIModelGateway,
-)
+from steward.answer import GeminiModelGateway, ModelGateway, OllamaModelGateway, OpenAIModelGateway
 from steward.app import (
+    StewardAnswersApplication,
     StewardEventApplication,
     StewardFilesApplication,
     StewardIntakeApplication,
-    StewardQuestionApplication,
-    StewardSearchApplication,
 )
 from steward.capture import InboxCaptureService
 from steward.config import Settings
+from steward.extras import MissingExtraError
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
-from steward.graphs import build_retrieval_answer_graph
+from steward.graphs.ask import AskTools, build_ask_graph
+from steward.graphs.find import FindTools, build_find_graph
+from steward.graphs.summarize import SummarizeTools, build_summarize_graph
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.retrieval import (
     HybridRetriever,
@@ -40,12 +35,15 @@ from steward.retrieval import (
 )
 from steward.reviews import ReviewContextRepository
 from steward.roots import SourceRoot, SourceRootRepository
-from steward.sources import InboxQueue, MoveReconciler, ReconciledMove, SourceRepository
-from steward.sources.scanning import ScanResult
-from steward.sources.service import SourceService
+from steward.sources import InboxQueue, MoveReconciler, ReconciledMove, Source, SourceRepository
 from steward.sources.export import SourceExportService
 from steward.sources.inbox_context import SourceInboxContextRepository
+from steward.sources.scanning import ScanResult
+from steward.sources.service import SourceService
+from steward.sources.summaries import SummaryRepository
 from steward.storage import initialize_database
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def model_gateway_from_settings(
@@ -96,29 +94,58 @@ def model_gateway_from_settings(
     return OpenAIModelGateway(api_key=api_key, model=settings.openai_model)
 
 
-def build_question_graph(
-    settings: Settings,
-    model_gateway: ModelGateway,
-    *,
-    limit: int,
-    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
-):
-    """Compose the grounded retrieval-and-answer workflow."""
+def model_label(settings: Settings) -> str:
+    """Identifies the model in cached summaries, so switching models recomputes them."""
+    name = {
+        "local": settings.local_model, "gemini": settings.gemini_model,
+        "soclaas": settings.soclaas_model, "openai": settings.openai_model,
+    }.get(settings.model_provider)
+    return f"{settings.model_provider}:{name or 'default'}"
 
+
+@dataclass
+class Flows:
+    find: object
+    ask: object
+    summarize: object
+
+
+def build_flows(
+    settings: Settings,
+    model_gateway: ModelGateway | None,
+    location: Callable[[Source], str],
+    *,
+    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+) -> Flows:
+    """Compile Find, Ask, and Summarize over the local database."""
     database_path = settings.data_dir / "steward.db"
     initialize_database(database_path)
     sources = SourceRepository(database_path)
     fragments = SourceFragmentRepository(database_path)
-    retriever = HybridRetriever(
-        LexicalSearchService(sources, fragments),
-        SemanticSearchService(
-            sources, SQLiteSemanticIndex(database_path, embedding_provider or SentenceTransformerEmbeddingProvider()),
-        ),
+    roots = SourceRootRepository(database_path)
+    lexical = LexicalSearchService(sources, fragments)
+    semantic = (
+        SemanticSearchService(sources, SQLiteSemanticIndex(database_path, embedding_provider))
+        if embedding_provider is not None else None
     )
-    answer_service = AnswerService(retriever=retriever, context_builder=ContextBuilder(), model_gateway=model_gateway)
-    checkpointer = SqliteSaver(sqlite3.connect(settings.data_dir / "checkpoints.db", check_same_thread=False))
-    checkpointer.setup()
-    return build_retrieval_answer_graph(retriever, answer_service, retrieval_limit=limit, checkpointer=checkpointer)
+    return Flows(
+        find=build_find_graph(FindTools(sources, roots, lexical, semantic, model_gateway, location)),
+        ask=build_ask_graph(AskTools(
+            sources, fragments, roots, HybridRetriever(lexical, semantic) if semantic else lexical, model_gateway,
+        )),
+        summarize=build_summarize_graph(SummarizeTools(
+            sources, fragments, SummaryRepository(database_path), model_gateway, model_label(settings),
+        )),
+    )
+
+
+def optional_embedding_provider() -> SentenceTransformerEmbeddingProvider | None:
+    """The local meaning-search model, or None if it isn't installed or downloaded."""
+    try:
+        return SentenceTransformerEmbeddingProvider()
+    except (MissingExtraError, OSError, RuntimeError, ValueError):
+        _LOGGER.warning("Meaning search is off: the local embedding model isn't available.")
+        return None
 
 
 def database_health(database_path: Path, *, required_tables: tuple[str, ...] = ()) -> str:
@@ -139,9 +166,7 @@ def database_health(database_path: Path, *, required_tables: tuple[str, ...] = (
 def health_report(settings: Settings) -> tuple[str, bool]:
     """Return safe status text and local readiness; never test remote credentials."""
     database_path = settings.data_dir / "steward.db"
-    checkpoint_path = settings.data_dir / "checkpoints.db"
     database_status = database_health(database_path, required_tables=("sources", "schema_migrations"))
-    checkpoint_health = database_health(checkpoint_path, required_tables=("checkpoints", "writes"))
     root_summary = "not initialized"
     roots_ready = False
     if database_status == "available":
@@ -159,15 +184,13 @@ def health_report(settings: Settings) -> tuple[str, bool]:
     report = (
         "Steward health:\n"
         f"Operational database: {database_status}\n"
-        f"Conversation checkpoints: {checkpoint_health}\n"
         f"Authorized roots: {root_summary}\n"
         f"Telegram token: {telegram}"
     )
-    ready = database_status == checkpoint_health == "available" and roots_ready and telegram == "configured"
+    ready = database_status == "available" and roots_ready and telegram == "configured"
     return report, ready
 
 
-_LOGGER = logging.getLogger(__name__)
 
 
 def scan_root(
@@ -257,36 +280,37 @@ def inbox_queue(settings: Settings) -> InboxQueue:
 
 def build_telegram_application(
     settings: Settings,
-    model_gateway: ModelGateway,
+    model_gateway: ModelGateway | None,
     *,
-    limit: int,
     embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
 ) -> StewardEventApplication:
     """Compose every Telegram use case over one local database."""
 
     database_path = settings.data_dir / "steward.db"
-    embedding_provider = embedding_provider or SentenceTransformerEmbeddingProvider()
     sources = SourceRepository(database_path)
     activity = ActivityService(database_path)
     fragments = SourceFragmentRepository(database_path)
     roots = SourceRootRepository(database_path)
     inbox_contexts = SourceInboxContextRepository(database_path)
     contexts = ReviewContextRepository(database_path)
-    lexical = LexicalSearchService(sources, fragments)
-    semantic = SemanticSearchService(sources, SQLiteSemanticIndex(database_path, embedding_provider))
     capture = InboxCaptureService(settings.inbox_dir, sources, fragments, activity, inbox_queue(settings))
+    flows = build_flows(settings, model_gateway, lambda source: files.location(source), embedding_provider=embedding_provider)
+    answers = (
+        StewardAnswersApplication(
+            find_graph=flows.find, ask_graph=flows.ask, summarize_graph=flows.summarize,
+            location=lambda source: files.location(source),
+        )
+        if model_gateway is not None else None
+    )
     files = StewardFilesApplication(
         sources, fragments, roots, settings.inbox_dir,
         contexts=contexts,
         inbox_contexts=inbox_contexts,
         source_export=SourceExportService(sources, roots, settings.inbox_dir),
-        source_model=model_gateway,
+        answers=answers,
     )
     return StewardEventApplication(
         files=files,
-        search=StewardSearchApplication(
-            sources, lexical, roots, hybrid=HybridRetriever(lexical, semantic), location=files.location,
-        ),
         intake=StewardIntakeApplication(
             ProvisionalIntakeService(
                 settings.data_dir / "cache" / "intake",
@@ -299,7 +323,6 @@ def build_telegram_application(
             contexts=contexts,
             roots=roots,
         ),
-        question=StewardQuestionApplication(
-            build_question_graph(settings, model_gateway, limit=limit, embedding_provider=embedding_provider)
-        ),
+        answers=answers,
+        roots=roots,
     )
