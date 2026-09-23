@@ -59,7 +59,7 @@ from steward.graphs import (
     build_tool_agent_graph,
 )
 from steward.logging import configure_logging
-from steward.sources import SourceRepository, SourceType
+from steward.sources import SourceMoveProposalRepository, SourceMoveReconciliationService, SourceRepository, SourceType
 from steward.sources.service import SourceService
 from steward.sources.export import SourceExportService
 from steward.storage import initialize_database, restore_database, snapshot_database
@@ -302,6 +302,17 @@ def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParse
     health_parser.add_argument("--strict", action="store_true", help="Exit 1 when local Telegram prerequisites are unavailable (does not test network services)")
     scan_root_parser = subcommands.add_parser("scan-root", help="Scan one locally authorized source root")
     scan_root_parser.add_argument("name", help="Authorized source-root name")
+    reconcile_moves_parser = subcommands.add_parser(
+        "reconcile-moves", help="List reviewable same-root source move matches"
+    )
+    reconcile_moves_parser.add_argument("name", help="Authorized source-root name")
+    review_move_parser = subcommands.add_parser(
+        "review-move", help="Accept or reject one reviewed source move match"
+    )
+    review_move_parser.add_argument("proposal_id", type=int)
+    review_move_group = review_move_parser.add_mutually_exclusive_group(required=True)
+    review_move_group.add_argument("--accept", action="store_true")
+    review_move_group.add_argument("--reject", action="store_true")
     for command, help_text in (("enable-root", "Enable a locally authorized source root"), ("disable-root", "Disable a locally authorized source root")):
         root_toggle = subcommands.add_parser(command, help=help_text)
         root_toggle.add_argument("name", help="Authorized source-root name")
@@ -941,6 +952,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 markdown_extractor=MarkdownExtractor(),
             ).scan_source_root(root.path, exclusions=root.exclusions)
             SourceRootRepository(database_path).record_successful_scan(root, result)
+            SourceMoveReconciliationService(
+                SourceRepository(database_path), SourceMoveProposalRepository(database_path)
+            ).propose_for_root(root.path)
         except sqlite3.Error as error:
             _print_scan_database_error("Root scan", error)
             return
@@ -982,6 +996,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 markdown_extractor=MarkdownExtractor(),
             ).scan_source_root(root.path, exclusions=root.exclusions)
             SourceRootRepository(database_path).record_successful_scan(root, result)
+            SourceMoveReconciliationService(
+                SourceRepository(database_path), SourceMoveProposalRepository(database_path)
+            ).propose_for_root(root.path)
         except (sqlite3.Error, ValueError) as error:
             if isinstance(error, sqlite3.Error):
                 _print_scan_database_error("Onboarding scan", error)
@@ -993,6 +1010,42 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"new={result.new} updated={result.updated} unchanged={result.unchanged} missing={result.missing}\n"
             "Original files were not moved, copied, or rewritten."
         )
+        return
+
+    if arguments.command == "reconcile-moves":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        root = SourceRootRepository(database_path).get_by_name(arguments.name)
+        if root is None:
+            print(f"No locally authorized source root named {arguments.name!r}.")
+            return
+        proposals = SourceMoveReconciliationService(
+            SourceRepository(database_path), SourceMoveProposalRepository(database_path)
+        ).propose_for_root(root.path)
+        pending = SourceMoveProposalRepository(database_path).list_pending()
+        if not pending:
+            print("No unambiguous source moves are waiting for review.")
+            return
+        sources = SourceRepository(database_path)
+        for proposal in pending:
+            missing = sources.get_by_id(proposal.missing_source_id)
+            discovered = sources.get_by_id(proposal.discovered_source_id)
+            if missing is not None and discovered is not None:
+                print(f"{proposal.id}\tmissing={proposal.missing_source_id}:{missing.path.name}\tfound={proposal.discovered_source_id}:{discovered.path.name}")
+        return
+
+    if arguments.command == "review-move":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        proposals = SourceMoveProposalRepository(database_path)
+        service = SourceMoveReconciliationService(SourceRepository(database_path), proposals)
+        try:
+            if arguments.accept:
+                source = service.accept(arguments.proposal_id)
+                print(f"Preserved source ID {source.id} at {source.path}. The temporary discovered row was removed.")
+            else:
+                proposal = proposals.review(arguments.proposal_id, "rejected")
+                print(f"Rejected move proposal {proposal.id}; both source histories remain unchanged.")
+        except ValueError as error:
+            print(f"Source move was not changed: {error}")
         return
 
     if arguments.command == "relocate-root":

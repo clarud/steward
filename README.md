@@ -66,6 +66,8 @@ rule permits the chosen model.
 steward roots
 steward scan-root "Y4S1"
 steward watch-root "Y4S1"
+steward reconcile-moves "Y4S1"
+steward review-move 1 --accept
 steward health --strict
 steward relocate-root "Y4S1" "D:\Archive\Y4S1" --confirm
 ```
@@ -73,7 +75,8 @@ steward relocate-root "Y4S1" "D:\Archive\Y4S1" --confirm
 Run a scan after external edits, renames, or moves made by Codex or another
 tool. The watcher incrementally refreshes supported files; full scans remain the
 authoritative reconciliation mechanism for missed events, moves, and large
-batches.
+batches. A same-root rename or move with one unambiguous content-hash match is
+shown as a reviewable move proposal; accepting it preserves the old source ID.
 
 ## Documentation
 

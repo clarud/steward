@@ -9,11 +9,15 @@ from steward.sources.repository import (
     SourceRepository,
 )
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
+from steward.sources.moves import SourceMoveProposal, SourceMoveProposalRepository, SourceMoveReconciliationService
 
 __all__ = [
     "Source",
     "SourceAlreadyExistsError",
     "SourceNotFoundError",
+    "SourceMoveProposal",
+    "SourceMoveProposalRepository",
+    "SourceMoveReconciliationService",
     "SourceRepository",
     "SourceStatus",
     "SourceType",

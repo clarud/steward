@@ -17,6 +17,8 @@ Automated baseline completed locally:
 - The supported-file watcher refresh and root-scan telemetry tests pass in
   `tests/test_file_watching.py`, `tests/sources/test_service.py`,
   `tests/test_roots.py`, and `tests/test_cli.py`.
+- `tests/sources/test_moves.py` proves an accepted one-to-one rename preserves
+  the original source ID and that duplicate content creates no move proposal.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate

@@ -400,6 +400,12 @@ duplicate event, interrupted scan, locked SQLite database, and root outage.
 
 **Outcome:** A Codex-organized rename/move does not silently lose history.
 
+**Status (23 September 2026):** started. Root scans create reviewable pending
+proposals only for a one-to-one same-root content-hash match. Local CLI review
+can preserve the old source ID at the new path; duplicate-content ambiguity is
+left unresolved. Telegram review cards, location history, cross-root refusal,
+and rollback/restart coverage remain outstanding.
+
 - Migrate from current-path-only semantics to location history/version records.
 - Produce reviewable one-to-one hash-based move/rename candidates.
 - Preserve source ID, citations, privacy rules, and historical Activity only

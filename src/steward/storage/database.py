@@ -65,6 +65,7 @@ KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION = 55
 HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION = 56
 HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
 SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION = 58
+SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION = 59
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -572,6 +573,20 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             updated_count INTEGER NOT NULL,
             unchanged_count INTEGER NOT NULL,
             missing_count INTEGER NOT NULL
+        )""",
+    ),
+    (
+        SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION,
+        """CREATE TABLE source_move_proposals (
+            id INTEGER PRIMARY KEY,
+            -- IDs are historical reconciliation evidence. The temporary
+            -- discovered row is intentionally removed when a move is accepted.
+            missing_source_id INTEGER NOT NULL UNIQUE,
+            discovered_source_id INTEGER NOT NULL UNIQUE,
+            content_hash TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT
         )""",
     ),
 )

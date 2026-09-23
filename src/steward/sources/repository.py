@@ -140,6 +140,43 @@ class SourceRepository:
             raise SourceNotFoundError(f"Source id {source_id} is not registered.")
         return source
 
+    def replace_discovered_move(self, missing_source_id: int, discovered_source_id: int) -> Source:
+        """Preserve a missing source ID by replacing its temporary moved-path row.
+
+        Callers must have already established an unambiguous, user-approved
+        content-hash match. The original filesystem is never touched.
+        """
+
+        missing = self.get_by_id(missing_source_id)
+        discovered = self.get_by_id(discovered_source_id)
+        if missing is None or discovered is None:
+            raise SourceNotFoundError("Both proposed sources must still be registered.")
+        if missing.status is not SourceStatus.MISSING or discovered.status is not SourceStatus.ACTIVE:
+            raise ValueError("The move proposal is no longer valid for the current source states.")
+        if missing.content_hash != discovered.content_hash:
+            raise ValueError("The proposed sources no longer have matching content hashes.")
+        preserved = replace(
+            missing, path=discovered.path, content_hash=discovered.content_hash,
+            source_type=discovered.source_type, size_bytes=discovered.size_bytes,
+            modified_at=discovered.modified_at, last_seen_at=discovered.last_seen_at,
+            status=SourceStatus.ACTIVE,
+        )
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("DELETE FROM source_fragments_fts WHERE source_id = ?", (discovered_source_id,))
+            connection.execute("DELETE FROM sources WHERE id = ?", (discovered_source_id,))
+            cursor = connection.execute(
+                """UPDATE sources SET path = ?, content_hash = ?, source_type = ?, size_bytes = ?,
+                       modified_at = ?, first_seen_at = ?, last_seen_at = ?, status = ? WHERE id = ?""",
+                (str(preserved.path), preserved.content_hash, preserved.source_type.value,
+                 preserved.size_bytes, preserved.modified_at.isoformat(),
+                 preserved.first_seen_at.isoformat(), preserved.last_seen_at.isoformat(),
+                 preserved.status.value, preserved.id),
+            )
+        if cursor.rowcount != 1:
+            raise SourceNotFoundError(f"Source id {missing_source_id} is not registered.")
+        return preserved
+
     def list_active(self) -> list[Source]:
         """Return every Source whose current path was last observed as present."""
         with sqlite3.connect(self._database_path) as connection:
