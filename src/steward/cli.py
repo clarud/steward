@@ -337,13 +337,13 @@ def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParse
     _add_source_type_filter(search_parser)
     search_parser.add_argument("--path-prefix", type=Path, help="Restrict matches to a source-path subtree")
     semantic_parser = subcommands.add_parser(
-        "semantic-search", help="Search Markdown fragments by meaning"
+        "semantic-search", help="Search extracted source fragments by meaning"
     )
     semantic_parser.add_argument("query", help="A natural-language question or phrase")
     semantic_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
     _add_source_type_filter(semantic_parser)
     hybrid_parser = subcommands.add_parser(
-        "hybrid-search", help="Combine lexical and semantic Markdown search"
+        "hybrid-search", help="Combine lexical and semantic source search"
     )
     hybrid_parser.add_argument("query", help="Terms or a natural-language question")
     hybrid_parser.add_argument("--limit", type=int, default=5, help="Maximum matches")
