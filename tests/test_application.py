@@ -6091,6 +6091,7 @@ def test_source_centric_reader_omits_workspace_actions_and_exposes_source_home(t
         None,
         ActivityService(database),
         tmp_path / "inbox",
+        source_centric=True,
     )
 
     home = reader.handle_command(make_event(text="/home"))
@@ -6099,4 +6100,5 @@ def test_source_centric_reader_omits_workspace_actions_and_exposes_source_home(t
     assert isinstance(home, PresentedReply) and home.title == "Steward"
     assert isinstance(card, PresentedReply)
     assert "Workspaces" not in [action.label for action in card.actions]
+    assert any(action.command == f"/privacy_options {source.id}" for action in card.actions)
     assert "not active in source-centric mode" in reader.handle_command(make_event(text="/workspaces"))

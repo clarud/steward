@@ -106,6 +106,46 @@ safe test.
   does that relate to page tables?`. Each successful answer must include
   evidence locations, or else show the explicit verification-warning card.
 
+### Live Telegram acceptance: grounded source reply and follow-up — 23 September 2026
+
+- After restart, a direct reply to the `virtual-memory.md` card produced an
+  `Answer: virtual-memory.md` card with verified `[F350]` support and both
+  extracted line-range locations.
+- A follow-up replied to that answer remained bound to the same source. It
+  explicitly said that the selected evidence did not explain page tables,
+  rather than importing unsupported background knowledge. It retained the
+  available `[F349]` and `[F350]` evidence locations.
+- Result: passed. Source-bound questions, citation rendering, and conservative
+  evidence-limited follow-up behavior are verified end to end.
+
+### Live Telegram acceptance: Inbox staging, explicit save, and discard — 23 September 2026
+
+- A harmless `note:` message opened a staged `Review message.md` card. The card
+  stated that the message text was handled locally, that no parser or model had
+  run, and that the item was not yet saved.
+- Explicit Save created one Inbox source (`telegram-1579667758-422.md`).
+- A second harmless note followed the same staging path and was explicitly
+  discarded. Telegram confirmed that its staged local copy was removed and no
+  Inbox source was saved.
+- Result: passed. Text capture is review-gated, local-first, and discard does
+  not create a source.
+
+### Live Telegram acceptance finding: source-centric privacy control unwired — 23 September 2026
+
+- `/privacy_options 2` returned the generic unknown-action response despite
+  source-centric Help advertising privacy controls. This was a composition
+  defect: the active Telegram application had created `PrivacyService` for
+  model access checks but had not attached `StewardPrivacyApplication` to the
+  event router.
+- Corrected locally: the source-centric Telegram composition now attaches the
+  same review-backed privacy handler used by the retained mode. Source cards
+  and model-access-denial cards now also expose compact Privacy actions, so the
+  enabled feature is discoverable without memorizing a command.
+- Focused application and CLI tests passed. Required retest: after restart,
+  `/privacy_options 2` must show a picker; a `no_model` change must remain a
+  review until approved, block model answering while leaving Read content
+  usable, and permit a reviewed restoration to `external_allowed`.
+
 ## Session: 2026-09-16
 
 ### Automated verification

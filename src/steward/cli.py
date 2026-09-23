@@ -1670,6 +1670,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 codex_handoff_application=StewardCodexHandoffApplication(
                     CodexHandoffService(sources, SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir)
                 ),
+                privacy_application=StewardPrivacyApplication(
+                    privacy,
+                    sources,
+                    activity,
+                    ActionProposalRepository(database_path),
+                    contexts=review_contexts,
+                ),
                 prefer_grounded_answers=True,
             )
             try:

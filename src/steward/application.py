@@ -1180,7 +1180,7 @@ class StewardReadApplication:
                 ReplyAction("Summarize", f"/summarize_source {source_id}"),
                 ReplyAction("Ask about it", f"/ask_source {source_id}"),
             )
-            + ((ReplyAction("Privacy", f"/privacy_options {source_id}"),) if not self._source_centric else ())
+            + (ReplyAction("Privacy", f"/privacy_options {source_id}"),)
             + ((ReplyAction("Send original", f"/send_source {source_id}"),) if self._source_export is not None else ())
             + ((ReplyAction("Workspaces", f"/source_memberships {source_id}"),
                 ReplyAction("Link workspace", f"/source_workspaces {source_id}"))
@@ -1232,7 +1232,8 @@ class StewardReadApplication:
                 "You can still read its extracted content, or propose a reviewed privacy change.",
                 (
                     ReplyAction("Read content", f"/source_content {source_id}"),
-                ) + (() if self._source_centric else (ReplyAction("Change privacy", f"/privacy_options {source_id}"),)),
+                    ReplyAction("Change privacy", f"/privacy_options {source_id}"),
+                ),
                 title="Model access blocked",
                 icon="🔒",
                 reference=("source", source_id),
