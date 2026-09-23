@@ -421,6 +421,10 @@ while pending, cross-root refusal, and rollback after a failed update.
 
 **Outcome:** Existing personal folders are useful without format workarounds.
 
+**Status (23 September 2026):** started. Common source-code extensions are now
+registered as `code` and extracted deterministically with file-level
+provenance. PPTX, XLSX, notebooks, and finer code chunking remain outstanding.
+
 - Add PPTX extraction with slide-number provenance.
 - Add source-code extraction with language/path provenance and conservative
   chunking; do not treat generated dependencies as user knowledge by default.

@@ -23,6 +23,19 @@ SUPPORTED_SOURCE_TYPES = {
     ".tiff": SourceType.IMAGE,
     ".bmp": SourceType.IMAGE,
     ".webp": SourceType.IMAGE,
+    ".py": SourceType.CODE,
+    ".js": SourceType.CODE,
+    ".ts": SourceType.CODE,
+    ".java": SourceType.CODE,
+    ".c": SourceType.CODE,
+    ".h": SourceType.CODE,
+    ".cpp": SourceType.CODE,
+    ".hpp": SourceType.CODE,
+    ".go": SourceType.CODE,
+    ".rs": SourceType.CODE,
+    ".sql": SourceType.CODE,
+    ".sh": SourceType.CODE,
+    ".ps1": SourceType.CODE,
 }
 
 

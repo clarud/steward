@@ -12,7 +12,7 @@ and read the material later—even when you do not remember its filename.
 ## Active product surface
 
 - Register one or more explicitly authorized local roots.
-- Scan and reconcile Markdown, text, PDF, DOCX, HTML, image/OCR, and supported
+- Scan and reconcile Markdown, text, source code, PDF, DOCX, HTML, image/OCR, and supported
   imported files without copying existing roots.
 - Preserve source identity, hashes, paths, extraction fragments, and provenance
   in SQLite while originals stay in their human-readable locations.

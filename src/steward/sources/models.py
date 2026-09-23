@@ -17,6 +17,7 @@ class SourceType(StrEnum):
     DOCX = "docx"
     HTML = "html"
     IMAGE = "image"
+    CODE = "code"
     BINARY = "binary"
 
 

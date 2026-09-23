@@ -49,6 +49,23 @@ def test_source_service_scans_and_extracts_plain_text_files(tmp_path: Path) -> N
     assert [fragment.text for fragment in fragments.list_for_source(source.id or 0)] == ["Study address translation"]
 
 
+def test_source_service_scans_and_extracts_source_code_with_path_provenance(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "project"; vault.mkdir()
+    source_path = vault / "scheduler.py"
+    source_path.write_text("def schedule():\n    return 'ready'\n", encoding="utf-8")
+    sources = SourceRepository(database_path)
+    fragments = SourceFragmentRepository(database_path)
+
+    SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    source = sources.get_by_path(source_path.resolve())
+    assert source is not None and source.source_type is SourceType.CODE
+    extracted = fragments.list_for_source(source.id or 0)
+    assert extracted[0].location == "entire file"
+    assert "def schedule" in extracted[0].text
+
+
 def test_source_service_scans_and_extracts_docx_files(tmp_path: Path) -> None:
     from docx import Document
 

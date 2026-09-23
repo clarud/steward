@@ -318,6 +318,7 @@ class ExtractionService:
             SourceType.DOCX: DocxExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
+            SourceType.CODE: PlainTextExtractor(),
         }
 
     def extract_and_store(self, source: Source) -> ExtractionResult | None:
