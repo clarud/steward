@@ -12,7 +12,7 @@ from steward.sources.models import Source
 from steward.sources.repository import SourceRepository
 
 if TYPE_CHECKING:
-    from steward.roots import SourceRoot, SourceRootProfileRepository, SourceRootRepository
+    from steward.roots import SourceRoot, SourceRootRepository
 
 QUEUE_FILENAME = "INBOX.md"
 # Guidance files Codex should read before filing into a root, when present.
@@ -44,13 +44,11 @@ class InboxQueue:
         *,
         roots: "SourceRootRepository | None" = None,
         inbox_contexts: SourceInboxContextRepository | None = None,
-        profiles: "SourceRootProfileRepository | None" = None,
     ) -> None:
         self._sources = sources
         self._inbox = inbox_dir.resolve()
         self._roots = roots
         self._inbox_contexts = inbox_contexts
-        self._profiles = profiles
 
     @property
     def path(self) -> Path:
@@ -131,17 +129,11 @@ class InboxQueue:
                 lines.append(f"- Guidance: `{guidance}`")
         return "\n".join(lines) + "\n"
 
-    def _guidance(self, root: "SourceRoot") -> tuple[Path, ...]:
-        found: list[Path] = []
-        profile = (
-            self._profiles.get(root.id) if self._profiles is not None and root.id is not None else None
+    @staticmethod
+    def _guidance(root: "SourceRoot") -> tuple[Path, ...]:
+        return tuple(
+            root.path / name for name in ROOT_GUIDANCE_FILENAMES if (root.path / name).is_file()
         )
-        relative_paths = (*(profile.guidance_paths if profile is not None else ()), *ROOT_GUIDANCE_FILENAMES)
-        for relative in relative_paths:
-            candidate = root.path / relative
-            if candidate.is_file() and candidate not in found:
-                found.append(candidate)
-        return tuple(found)
 
 
 def _timestamp(value: datetime) -> str:

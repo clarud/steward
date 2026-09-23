@@ -72,6 +72,7 @@ SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
 SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
 SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION = 64
 LEGACY_TABLES_DROPPED_SCHEMA_VERSION = 65
+MINIMAL_SURFACE_SCHEMA_VERSION = 66
 
 # Tables owned by the retired workspace, organization, knowledge, record, task,
 # Calendar, and research features (see ADR-007). Children precede parents so
@@ -104,9 +105,19 @@ LEGACY_TABLES = (
     "workspaces",
     "ephemeral_research_cards",
 )
+# Tables for per-file privacy, reviewed action proposals, Telegram delivery
+# history and recovery, and root profiles, removed with the minimal surface.
+MINIMAL_SURFACE_DROPPED_TABLES = (
+    "source_privacy_policies",
+    "action_proposals",
+    "telegram_delivery_history",
+    "telegram_delivery_dead_letters",
+    "telegram_delivery_recoveries",
+    "source_root_profiles",
+)
 # Migrations that delete user data. An existing database is snapshotted before
 # any of them runs, and the migration is not applied if the snapshot fails.
-DESTRUCTIVE_MIGRATIONS = frozenset({LEGACY_TABLES_DROPPED_SCHEMA_VERSION})
+DESTRUCTIVE_MIGRATIONS = frozenset({LEGACY_TABLES_DROPPED_SCHEMA_VERSION, MINIMAL_SURFACE_SCHEMA_VERSION})
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -673,6 +684,10 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
         LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
         tuple(f"DROP TABLE IF EXISTS {table}" for table in LEGACY_TABLES)
         + ("DELETE FROM action_proposals WHERE action_type != 'set_source_privacy'",),
+    ),
+    (
+        MINIMAL_SURFACE_SCHEMA_VERSION,
+        tuple(f"DROP TABLE IF EXISTS {table}" for table in MINIMAL_SURFACE_DROPPED_TABLES),
     ),
 )
 

@@ -11,14 +11,8 @@ class ActivityType(StrEnum):
     SOURCE_UNREGISTERED = "source_unregistered"
     INTAKE_PROPOSED = "intake_proposed"
     INTAKE_REVISED = "intake_revised"
-    INTAKE_ANALYSIS_SELECTED = "intake_analysis_selected"
     INTAKE_ACCEPTED = "intake_accepted"
     INTAKE_DISCARDED = "intake_discarded"
-    ACTION_PROPOSED = "action_proposed"
-    ACTION_ACCEPTED = "action_accepted"
-    ACTION_REJECTED = "action_rejected"
-    TELEGRAM_DELIVERY_RECOVERED = "telegram_delivery_recovered"
-    SOURCE_PRIVACY_CHANGED = "source_privacy_changed"
 
     @classmethod
     def _missing_(cls, value: object) -> "ActivityType | None":

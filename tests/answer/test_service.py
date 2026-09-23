@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from steward.answer import (
-    AnswerService,
-    ContextBuilder,
-    GeminiModelGateway,
-    ModelRouter,
-    OpenAIModelGateway,
-)
+from steward.answer import AnswerService, ContextBuilder, GeminiModelGateway, OpenAIModelGateway
 from steward.answer.service import GROUNDING_INSTRUCTIONS, MODEL_UNAVAILABLE_ANSWER, NO_EVIDENCE_ANSWER
 from steward.answer.gateway import ModelGatewayError
 from steward.extraction import SourceFragment
-from steward.privacy import PrivacyRule, PrivacyService
 from steward.retrieval import HybridSearchHit
-from steward.sources import Source, SourceRepository, SourceType
-from steward.storage import initialize_database
+from steward.sources import Source, SourceType
 
 
 @dataclass
@@ -116,44 +108,8 @@ def test_answer_service_returns_retrieval_context_when_the_model_is_unavailable(
     assert result.citations[0].fragment_id == 4
 
 
-def test_answer_service_does_not_send_private_source_content_to_cloud_model(
-    tmp_path: Path,
-) -> None:
-    database = tmp_path / "steward.db"
-    initialize_database(database)
-    hit = _hit()
-    SourceRepository(database).add(replace(hit.source, id=None))
-    privacy = PrivacyService(database)
-    privacy.set_rule(1, PrivacyRule.LOCAL_MODEL_ONLY)
-    gateway = FakeModelGateway()
-
-    result = AnswerService(
-        FakeRetriever((hit,)), ContextBuilder(), gateway, privacy
-    ).ask("What does a TLB do?")
-
-    assert result.text == NO_EVIDENCE_ANSWER
-    assert result.citations == ()
-    assert gateway.input_text is None
 
 
-def test_answer_service_routes_private_evidence_to_local_model(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"
-    initialize_database(database)
-    hit = _hit()
-    SourceRepository(database).add(replace(hit.source, id=None))
-    privacy = PrivacyService(database)
-    privacy.set_rule(1, PrivacyRule.LOCAL_MODEL_ONLY)
-    cloud = FakeModelGateway(response="cloud")
-    local = FakeModelGateway(response="local [F1]")
-
-    result = AnswerService(
-        FakeRetriever((hit,)), ContextBuilder(), cloud, privacy,
-        ModelRouter(privacy, cloud, local),
-    ).ask("What does a TLB do?")
-
-    assert result.text == "local [F1]"
-    assert cloud.input_text is None
-    assert local.input_text is not None
 
 
 def test_answer_service_reports_uncited_model_text_as_unverified() -> None:
@@ -197,22 +153,6 @@ def test_answer_service_exposes_only_the_context_citations_used_by_the_model() -
     assert result.citation_verification.is_verified is True
 
 
-def test_answer_service_explains_when_local_model_is_required_but_unavailable(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"
-    initialize_database(database)
-    hit = _hit()
-    SourceRepository(database).add(replace(hit.source, id=None))
-    privacy = PrivacyService(database)
-    privacy.set_rule(1, PrivacyRule.EXTERNAL_REDACTED)
-    cloud = FakeModelGateway()
-
-    result = AnswerService(
-        FakeRetriever((hit,)), ContextBuilder(), cloud, privacy,
-        ModelRouter(privacy, cloud),
-    ).ask("What does a TLB do?")
-
-    assert "does not permit an available model" in result.text
-    assert cloud.input_text is None
 
 
 def test_context_builder_deterministically_marks_truncated_evidence() -> None:

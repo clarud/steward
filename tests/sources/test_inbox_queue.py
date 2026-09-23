@@ -5,8 +5,7 @@ from steward.activity import ActivityService
 from steward.events import IncomingEvent
 from steward.capture import InboxCaptureService
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
-from steward.privacy import PrivacyService
-from steward.roots import SourceRootProfileRepository, SourceRootRepository
+from steward.roots import SourceRootRepository
 from steward.sources import InboxQueue, SourceInboxContext, SourceInboxContextRepository, SourceRepository
 from steward.storage import initialize_database
 
@@ -27,7 +26,6 @@ def _setup(tmp_path: Path):
         sources, inbox,
         roots=SourceRootRepository(database),
         inbox_contexts=SourceInboxContextRepository(database),
-        profiles=SourceRootProfileRepository(database),
     )
     capture = InboxCaptureService(inbox, sources, activity_service=ActivityService(database), inbox_queue=queue)
     return database, inbox, sources, queue, capture
@@ -50,9 +48,7 @@ def test_intended_root_note_and_guidance_reach_the_queue(tmp_path: Path) -> None
     database, _, _, queue, capture = _setup(tmp_path)
     course = tmp_path / "Y4S1"; course.mkdir()
     (course / "AGENTS.md").write_text("File tutorials under Tutorials/.", encoding="utf-8")
-    (course / "GUIDE.md").write_text("Naming rules.", encoding="utf-8")
     root = SourceRootRepository(database).add("Y4S1", course)
-    SourceRootProfileRepository(database).set(root, purpose="Coursework", guidance_paths=(Path("GUIDE.md"),))
     result = capture.capture_text(_event("8", "tutorial 5 answers"))
     SourceInboxContextRepository(database).set(SourceInboxContext(
         result.source.id or 0, root.id, root.name, "CS3210 week 5", "telegram", datetime.now(UTC),
@@ -63,7 +59,6 @@ def test_intended_root_note_and_guidance_reach_the_queue(tmp_path: Path) -> None
     listing = queue.path.read_text(encoding="utf-8")
     assert f"- Intended root: Y4S1 (`{course.resolve()}`)" in listing
     assert "- Note: CS3210 week 5" in listing
-    assert f"- Guidance: `{course.resolve() / 'GUIDE.md'}`" in listing
     assert f"- Guidance: `{course.resolve() / 'AGENTS.md'}`" in listing
     assert "tutorial 5 answers" not in listing
 
@@ -100,7 +95,7 @@ def test_accepting_a_staged_upload_records_its_intended_root_in_the_queue(tmp_pa
     intakes = ProvisionalIntakeRepository(database)
     intake = ProvisionalIntakeService(
         tmp_path / "cache", intakes, capture,
-        ActivityService(database), PrivacyService(database),
+        ActivityService(database),
         roots=SourceRootRepository(database), inbox_contexts=SourceInboxContextRepository(database),
     )
     staged = intake.stage_text(_event("11", "note: tutorial 5 answers for CS3210"))

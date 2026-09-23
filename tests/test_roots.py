@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from steward.roots import SourceRootProfileRepository, SourceRootRepository
+from steward.roots import SourceRootRepository
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceStatus, SourceType
 from steward.sources.hashing import hash_file
@@ -42,17 +42,6 @@ def test_source_root_persists_only_exclusions_beneath_its_authorized_path(tmp_pa
         SourceRootRepository(database_path).add("Bad", root_path, exclusions=(tmp_path,))
 
 
-def test_source_root_can_be_disabled_without_removing_its_authorization(tmp_path: Path) -> None:
-    database_path = tmp_path / "steward.db"; initialize_database(database_path)
-    root_path = tmp_path / "notes"; root_path.mkdir()
-    repository = SourceRootRepository(database_path)
-    repository.add("School", root_path)
-
-    disabled = repository.set_enabled("School", False)
-
-    assert disabled.enabled is False
-    assert disabled.health == "disabled"
-    assert repository.get_by_name("School") == disabled
 
 
 def test_source_root_reports_missing_when_an_enabled_path_disappears(tmp_path: Path) -> None:
@@ -79,19 +68,6 @@ def test_source_root_records_the_latest_successful_scan(tmp_path: Path) -> None:
     assert restored.last_scan_counts == (1, 0, 2, 0)
 
 
-def test_root_profile_is_local_descriptive_metadata_with_safe_guidance_paths(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    root_path = tmp_path / "Y4S1"; root_path.mkdir()
-    guidance = root_path / "AGENTS.md"; guidance.write_text("guidance", encoding="utf-8")
-    root = SourceRootRepository(database).add("Y4S1", root_path)
-
-    profile = SourceRootProfileRepository(database).set(
-        root, purpose="Semester course materials", guidance_paths=(Path("AGENTS.md"),),
-        authority_tiers=("official", "personal notes"),
-    )
-
-    assert profile.guidance_paths == (Path("AGENTS.md"),)
-    assert SourceRootProfileRepository(database).get(root.id or 0) == profile
 
 
 def test_missing_root_relocation_atomically_rebinds_matching_sources(tmp_path: Path) -> None:
@@ -165,3 +141,26 @@ def test_root_relocation_refuses_registered_destination_path_without_partial_upd
     assert roots.get_by_name("School") == prior_root
     assert sources.get_by_id(old_source.id).path == original.resolve()
     assert sources.get_by_id(other_source.id).path == candidate.resolve()
+
+
+def test_removing_a_root_forgets_its_files_but_leaves_them_on_disk(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    notes = tmp_path / "notes"; notes.mkdir()
+    other = tmp_path / "other"; other.mkdir()
+    (notes / "a.md").write_text("inside", encoding="utf-8")
+    (other / "b.md").write_text("outside", encoding="utf-8")
+    roots = SourceRootRepository(database)
+    roots.add("Notes", notes)
+    sources = SourceRepository(database)
+    inside = sources.add(registered_source(notes / "a.md"))
+    outside = sources.add(registered_source(other / "b.md"))
+
+    removed, count = roots.remove("Notes")
+
+    assert removed.name == "Notes" and count == 1
+    assert roots.get_by_name("Notes") is None
+    assert sources.get_by_id(inside.id or 0) is None
+    assert sources.get_by_id(outside.id or 0) is not None
+    assert (notes / "a.md").read_text(encoding="utf-8") == "inside"
+    with pytest.raises(ValueError, match="No folder"):
+        roots.remove("Notes")

@@ -27,32 +27,14 @@ def test_original_export_enforces_roots_exclusions_size_and_freshness(tmp_path):
     roots.add("Notes", root)
     exported = service.export(source.id)
     assert exported.filename == "notes.pdf" and exported.content == content
-    from steward.app import StewardReadApplication
+    from steward.app import StewardFilesApplication
     from steward.extraction import SourceFragmentRepository
-    from steward.retrieval import LexicalSearchService
-    from steward.activity import ActivityService
     from steward.events import IncomingEvent
-    from steward.reviews import ReviewContextRepository
-    from dataclasses import replace
-    fragments = SourceFragmentRepository(database)
-    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), ActivityService(database), tmp_path / "inbox", source_export=service)
-    assert any(action.command == f"/send_source {source.id}" for action in reader.source(source.id).actions)
-    contexts = ReviewContextRepository(database)
-    contexts.set("telegram", "100", "source_question", source.id)
-    # Recreate the reader to prove the reference comes from persisted context.
-    reader = StewardReadApplication(sources, fragments, LexicalSearchService(sources, fragments), ActivityService(database), tmp_path / "inbox", source_export=service, contexts=ReviewContextRepository(database))
-    event = IncomingEvent("request-1", "telegram", "100", "1", None, now, "send me that PDF")
-    preview = reader.resolve_source_reference(event)
-    assert preview.document is None
-    assert "notes.pdf" in preview.text and "through Telegram" in preview.text
-    assert "Open a source" in reader.resolve_source_reference(replace(event, chat_id="other"))
-    delivered = reader.handle_command(replace(event, text=preview.actions[0].command))
+    files = StewardFilesApplication(sources, SourceFragmentRepository(database), roots, tmp_path / "inbox", source_export=service)
+    card = files.file_card(source.id)
+    send = next(action.command for action in card.actions if action.label == "Send original")
+    delivered = files.handle_command(IncomingEvent("request-1", "telegram", "100", "1", None, now, send))
     assert delivered.document.content == content
-    assert contexts.get("telegram", "100").kind == "source"
-    roots.set_enabled("Notes", False)
-    with pytest.raises(ValueError, match="outside"):
-        service.export(source.id)
-    roots.set_enabled("Notes", True)
     path.write_bytes(b"changed")
     with pytest.raises(ValueError, match="changed"):
         service.export(source.id)

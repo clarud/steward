@@ -35,24 +35,19 @@ class IncomingFileEventHandler(IncomingEventHandler, Protocol):
 MAX_CLOUD_DOWNLOAD_BYTES = 20 * 1024 * 1024
 _LOGGER = logging.getLogger(__name__)
 _PRIMARY_COMMANDS = (
+    ("find", "find a file"),
+    ("ask", "answer from your files"),
+    ("sources", "browse your folders"),
+    ("inbox", "uploads waiting to be filed"),
     ("home", "start page"),
-    ("search", "find a file by words or meaning"),
-    ("inbox", "show saved Inbox items"),
-    ("sources", "browse registered files"),
-    ("roots", "show authorized folders"),
-    ("help", "show more options"),
+    ("help", "how to use Steward"),
 )
-# Every command the live applications handle. Unknown commands still reach the
-# application through the catch-all handler and receive safe guidance.
+# Every command the application handles. Unknown commands still reach the
+# application through the catch-all handler and get a short hint.
 _COMMANDS = (
-    "activity", "activity_event", "agent", "approve_action", "ask_source",
-    "drive_import", "drive_page", "drive_search",
-    "gmail_import", "gmail_page", "gmail_search", "help", "home",
-    "hybrid_search", "inbox", "intake_accept", "intake_analysis",
-    "intake_context", "intake_discard", "intake_root", "metrics", "moves",
-    "privacy", "privacy_options", "reject_action",
-    "review_move", "root", "roots", "search", "semantic_search", "send_source",
-    "set_privacy", "source", "source_content", "sources", "status",
+    "ask", "ask_source", "browse", "find", "help", "home", "inbox",
+    "intake_accept", "intake_context", "intake_discard", "intake_root",
+    "note", "send_source", "source", "source_content", "sources", "start",
     "summarize_source",
 )
 
@@ -180,9 +175,8 @@ class TelegramAdapter:
         file_size = getattr(attachment, "file_size", None)
         if file_size and file_size > MAX_CLOUD_DOWNLOAD_BYTES:
             await message.reply_text(
-                "I cannot download files over 20 MB through the current Telegram connection. "
-                "Place the original in vault/inbox, or upload it to Google Drive and send "
-                "/drive_import DRIVE_FILE_ID."
+                "I can't download files over 20 MB through Telegram. "
+                "Copy the original into the Inbox folder on your computer instead."
             )
             return
         if not hasattr(self._event_handler, "handle_file"):
@@ -322,8 +316,6 @@ class TelegramAdapter:
         """
 
         review_commands = {
-            "/approve_action": "action",
-            "/reject_action": "action",
             "/intake_accept": "intake",
             "/intake_discard": "intake",
         }
@@ -363,8 +355,7 @@ def _attachment_names(message: object) -> tuple[str, ...]:
 
 def run_telegram_polling(
     token: str,
-    event_handler: IncomingEventHandler,
-    capture_handler: IncomingEventHandler,
+    event_handler: IncomingFileEventHandler,
     *,
     allowed_chat_ids: frozenset[str] = frozenset(),
     delivery_repository: TelegramUpdateDeliveryRepository | None = None,
@@ -403,21 +394,11 @@ def run_telegram_polling(
     )
     for command in _COMMANDS:
         application.add_handler(CommandHandler(command, adapter.handle_update))
-    capture_adapter = TelegramAdapter(
-        capture_handler,
-        allowed_chat_ids=allowed_chat_ids,
-        delivery_repository=delivery_repository,
-        callback_repository=callback_repository,
-        review_contexts=review_contexts,
-        message_references=message_references,
-    )
-    application.add_handler(CommandHandler("save", capture_adapter.handle_update))
-    # Keep this after every known command (especially /save). Unknown slash
-    # commands should receive Steward's safe help/clarification rather than
-    # being silently discarded by Telegram's command filter.
+    # Keep this after every known command: unknown slash commands get a hint
+    # rather than being silently dropped by Telegram's command filter.
     application.add_handler(MessageHandler(filters.COMMAND, adapter.handle_update))
-    application.add_handler(MessageHandler(filters.Document.ALL, capture_adapter.handle_document))
-    application.add_handler(MessageHandler(filters.PHOTO, capture_adapter.handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, adapter.handle_document))
+    application.add_handler(MessageHandler(filters.PHOTO, adapter.handle_photo))
     application.add_handler(CallbackQueryHandler(adapter.handle_callback))
     application.run_polling()
 

@@ -8,12 +8,10 @@ import sys
 import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
-from pathlib import Path
 
 from steward.config import Settings, load_environment_file
 from steward.extras import MissingExtraError
 from steward.runtime import RuntimeAlreadyRunningError, telegram_runtime_lock
-from steward.capture import InboxCaptureService
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.extraction import DocumentExtractionError, MarkdownExtractor, SourceFragmentRepository
 from steward.logging import configure_logging
@@ -38,21 +36,14 @@ from steward.telegram import (
     run_telegram_polling,
 )
 from steward.activity import ActivityService, ActivityType
-from steward.roots import SourceRootProfileRepository, SourceRootRepository
-from steward.drive import DriveInboxImportService, GoogleDriveService, authorize_google_drive
-from steward.gmail import GmailInboxImportService, GmailService, authorize_gmail
+from steward.roots import SourceRootRepository
 from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
-from steward.file_watching import run_file_watcher
-from steward.privacy import PrivacyRule, PrivacyService
-from langchain_core.messages import HumanMessage, SystemMessage
 from steward.cli.bootstrap import (
     build_question_graph,
-    build_source_agent_graph,
     build_telegram_application,
     health_report,
     inbox_queue,
     model_gateway_from_settings,
-    tool_calling_model_from_settings,
 )
 from steward.cli.parser import build_parser
 
@@ -162,25 +153,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             print(f"Restore failed: {error}")
             return
         print(f"Restored {arguments.destination.resolve()} from snapshot. Safety backup: {safety_backup}")
-        return
-
-    if arguments.command == "scan":
-        database_path = settings.data_dir / "steward.db"
-        try:
-            initialize_database(database_path)
-            result = SourceService(
-                source_repository=SourceRepository(database_path),
-                fragment_repository=SourceFragmentRepository(database_path),
-                markdown_extractor=MarkdownExtractor(),
-            ).scan_source_root(arguments.root)
-        except sqlite3.Error as error:
-            _print_scan_database_error("Scan", error)
-            return
-        print(
-            "Scan complete: "
-            f"new={result.new} updated={result.updated} "
-            f"unchanged={result.unchanged} missing={result.missing}"
-        )
         return
 
     if arguments.command == "scan-root":
@@ -325,59 +297,20 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         print(f"Relocated source root {relocation.root.name!r}; verified and updated {relocation.updated_sources} tracked source paths.")
         return
 
-    if arguments.command in {"enable-root", "disable-root"}:
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        enabled = arguments.command == "enable-root"
-        try:
-            root = SourceRootRepository(database_path).set_enabled(arguments.name, enabled)
-        except ValueError as error:
-            print(str(error))
-            return
-        print(f"Source root {root.name!r} is now {'enabled' if root.enabled else 'disabled'}.")
-        return
-
-    if arguments.command == "watch":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
-        print("Watching supported source changes. Press Ctrl+C to stop.")
-        run_file_watcher(arguments.root, service)
-        return
-
-    if arguments.command == "watch-root":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        root = SourceRootRepository(database_path).get_by_name(arguments.name)
+    if arguments.command == "remove-root":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        roots = SourceRootRepository(database_path)
+        root = roots.get_by_name(arguments.name)
         if root is None:
-            print(f"No locally authorized source root named {arguments.name!r}.")
+            print(f"No folder named {arguments.name!r} is authorized.")
             return
-        if not root.enabled:
-            print(f"Source root {root.name!r} is disabled.")
+        if not arguments.confirm:
+            print(f"This stops tracking {root.name} ({root.path}) and forgets its files in Steward. "
+                  "The files themselves are not touched. Re-run with --confirm.")
             return
-        if not root.path.is_dir():
-            print(f"Source root {root.name!r} is unavailable: {root.path}")
-            return
-        service = SourceService(SourceRepository(database_path), SourceFragmentRepository(database_path), MarkdownExtractor())
-        print(f"Watching source root {root.name}. Press Ctrl+C to stop.")
-        run_file_watcher(root.path, service, exclusions=root.exclusions)
-        return
-
-    if arguments.command == "index":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        provider = SentenceTransformerEmbeddingProvider()
-        result = SourceService(
-            source_repository=SourceRepository(database_path),
-            fragment_repository=SourceFragmentRepository(database_path),
-            markdown_extractor=MarkdownExtractor(),
-            semantic_index=SQLiteSemanticIndex(database_path, provider),
-        ).scan_source_root(arguments.root)
-        print(
-            "Index complete: "
-            f"new={result.new} updated={result.updated} "
-            f"unchanged={result.unchanged} missing={result.missing}"
-        )
+        removed, count = roots.remove(arguments.name)
+        inbox_queue(settings).refresh()
+        print(f"Stopped tracking {removed.name}; forgot {count} file(s). Nothing on disk was changed.")
         return
 
     if arguments.command == "reextract":
@@ -467,47 +400,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                 print(f"- {miss.query} -> {miss.expected_source} [{miss.expected_heading}]")
         return
 
-    if arguments.command == "sources":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        sources = SourceRepository(database_path).list_all()
-        if not sources:
-            print("No sources registered.")
-            return
-
-        for source in sources:
-            print(f"{source.id}\t{source.status.value}\t{source.path}")
-        return
-
-    if arguments.command == "add-root":
-        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        try:
-            root = SourceRootRepository(database_path).add(
-                arguments.name, arguments.path, exclusions=tuple(arguments.exclude)
-            )
-        except ValueError as error:
-            print(str(error)); return
-        print(f"Authorized source root {root.id}: {root.name}\t{root.path}")
-        return
-
-    if arguments.command == "set-root-profile":
-        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        roots = SourceRootRepository(database_path)
-        root = roots.get_by_name(arguments.name)
-        if root is None:
-            print(f"No locally authorized source root named {arguments.name!r}.")
-            return
-        try:
-            profile = SourceRootProfileRepository(database_path).set(
-                root, purpose=arguments.purpose, guidance_paths=tuple(arguments.guidance),
-                authority_tiers=tuple(arguments.tier),
-            )
-        except ValueError as error:
-            print(f"Root profile was not saved: {error}")
-            return
-        print(f"Saved local root profile for {root.name}: {profile.purpose}")
-        return
-
     if arguments.command == "roots":
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
         roots = SourceRootRepository(database_path).list_all()
@@ -552,50 +444,24 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
     if arguments.command == "search":
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
-        hits = LexicalSearchService(
-            source_repository=SourceRepository(database_path),
-            fragment_repository=SourceFragmentRepository(database_path),
-        ).search(
-            arguments.query,
-            limit=arguments.limit,
-            source_types=_requested_source_types(arguments),
-            path_prefix=arguments.path_prefix,
-        )
-        if not hits:
-            print("No matching fragments.")
-            return
-
-        for hit in hits:
-            _print_search_hit(hit)
-        return
-
-    if arguments.command in {"semantic-search", "hybrid-search"}:
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        source_repository = SourceRepository(database_path)
-        fragment_repository = SourceFragmentRepository(database_path)
-        semantic_search = SemanticSearchService(
-            source_repository,
-            SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
-        )
-        if arguments.command == "semantic-search":
-            hits = semantic_search.search(
-                arguments.query,
-                limit=arguments.limit,
-                source_types=_requested_source_types(arguments),
-            )
+        sources = SourceRepository(database_path)
+        lexical = LexicalSearchService(sources, SourceFragmentRepository(database_path))
+        options = {
+            "limit": arguments.limit,
+            "source_types": _requested_source_types(arguments),
+            "path_prefix": arguments.path_prefix,
+        }
+        if arguments.mode == "keyword":
+            hits = lexical.search(arguments.query, **options)
         else:
-            hits = HybridRetriever(
-                LexicalSearchService(source_repository, fragment_repository), semantic_search
-            ).search(
-                arguments.query,
-                limit=arguments.limit,
-                source_types=_requested_source_types(arguments),
+            semantic = SemanticSearchService(
+                sources, SQLiteSemanticIndex(database_path, SentenceTransformerEmbeddingProvider()),
             )
+            searcher = semantic if arguments.mode == "meaning" else HybridRetriever(lexical, semantic)
+            hits = searcher.search(arguments.query, **options)
         if not hits:
-            print("No matching fragments. Run `steward index <vault>` first.")
+            print("No matches. If meaning search finds nothing, run `steward rebuild-semantic-index`.")
             return
-
         for hit in hits:
             _print_search_hit(hit)
         return
@@ -622,29 +488,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                 )
         return
 
-    if arguments.command == "agent":
-        tool_calling_model = tool_calling_model_from_settings(settings)
-        if tool_calling_model is None:
-            return
-        graph = build_source_agent_graph(settings, tool_calling_model)
-        result = graph.invoke(
-            {
-                "messages": [
-                    SystemMessage(
-                        "You are Steward, a local source-memory assistant. Use only the supplied "
-                        "source and activity read tools when needed. Answer from tool results, do not "
-                        "claim evidence you did not retrieve, and never propose or perform filesystem "
-                        "changes; Codex handles file organisation."
-                    ),
-                    HumanMessage(arguments.question),
-                ]
-            },
-            {"configurable": {"thread_id": arguments.thread_id}, "recursion_limit": 12},
-        )
-        print(str(result["messages"][-1].content))
-        return
-
-
     if arguments.command == "telegram":
         token = os.environ.get("TELEGRAM_BOT_TOKEN")
         if not token:
@@ -660,7 +503,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                 run_telegram_polling(
                     token,
                     application,
-                    application,
                     allowed_chat_ids=settings.telegram_allowed_chat_ids,
                     delivery_repository=TelegramUpdateDeliveryRepository(database_path),
                     callback_repository=TelegramCallbackRepository(database_path),
@@ -671,178 +513,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             print(str(error))
         return
 
-
-    if arguments.command == "telegram-deliveries":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        try:
-            deliveries = TelegramUpdateDeliveryRepository(database_path).list_recent(
-                limit=arguments.limit
-            )
-        except ValueError as error:
-            print(str(error))
-            return
-        if not deliveries:
-            print("No local Telegram delivery records.")
-            return
-        for delivery in deliveries:
-            print(
-                f"{delivery.update_id}\t{delivery.status}\t{delivery.claimed_at.isoformat()}\t"
-                f"{delivery.delivered_at.isoformat() if delivery.delivered_at else ''}"
-            )
-        return
-
-    if arguments.command == "telegram-delivery-history":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        try:
-            history = TelegramUpdateDeliveryRepository(database_path).list_history(
-                limit=arguments.limit
-            )
-        except ValueError as error:
-            print(str(error))
-            return
-        if not history:
-            print("No local Telegram delivery history.")
-            return
-        for event in history:
-            print(f"{event.update_id}\t{event.event_type}\t{event.occurred_at.isoformat()}")
-        return
-
-    if arguments.command == "telegram-dead-letters":
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        try:
-            dead_letters = TelegramUpdateDeliveryRepository(database_path).list_dead_letters(
-                limit=arguments.limit
-            )
-        except ValueError as error:
-            print(str(error))
-            return
-        if not dead_letters:
-            print("No terminal Telegram delivery failures.")
-            return
-        for dead_letter in dead_letters:
-            print(f"{dead_letter.update_id}\t{dead_letter.attempts}\t{dead_letter.failed_at.isoformat()}")
-        return
-
-    if arguments.command == "telegram-recover-dead-letter":
-        if not arguments.confirm:
-            print(
-                "Refusing to reopen a Telegram dead letter without --confirm. "
-                "This only permits a future genuine Telegram redelivery; it cannot replay the original message."
-            )
-            return
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        try:
-            TelegramUpdateDeliveryRepository(database_path).reopen_dead_letter(arguments.update_id)
-        except ValueError as error:
-            print(str(error))
-            return
-        ActivityService(database_path).record(
-            ActivityType.TELEGRAM_DELIVERY_RECOVERED,
-            object_id=arguments.update_id,
-            details="Retry budget reopened for a future genuine Telegram redelivery; no message was replayed.",
-        )
-        print(
-            f"Reopened {arguments.update_id} for a future genuine Telegram redelivery. "
-            "No original Telegram message was replayed."
-        )
-        return
-
-    if arguments.command == "drive-authorize":
-        token_path = arguments.token_file or settings.data_dir / "config" / "google-drive-token.json"
-        authorize_google_drive(arguments.client_secrets, token_path)
-        print(f"Google Drive read access authorized. Token stored at {token_path}.")
-        return
-
-    if arguments.command == "drive-search":
-        client_secrets = arguments.client_secrets
-        if client_secrets is None:
-            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
-            if not configured:
-                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Drive.")
-                return
-            client_secrets = Path(configured)
-        drive = GoogleDriveService(
-            authorize_google_drive(client_secrets, settings.data_dir / "config" / "google-drive-token.json")
-        )
-        for item in drive.search(arguments.query, limit=arguments.limit):
-            print(f"{item.id}\t{item.mime_type}\t{item.name}\t{item.web_view_link or ''}")
-        return
-
-    if arguments.command == "drive-import":
-        client_secrets = arguments.client_secrets
-        if client_secrets is None:
-            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
-            if not configured:
-                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before importing from Drive.")
-                return
-            client_secrets = Path(configured)
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        result = DriveInboxImportService(
-            GoogleDriveService(
-                authorize_google_drive(client_secrets, settings.data_dir / "config" / "google-drive-token.json")
-            ),
-            InboxCaptureService(
-                settings.inbox_dir,
-                SourceRepository(database_path),
-                SourceFragmentRepository(database_path),
-                ActivityService(database_path),
-                inbox_queue(settings),
-            ),
-        ).import_file(arguments.file_id)
-        status = "Already imported" if result.duplicate else "Imported"
-        print(f"{status} Drive file to Inbox: {result.source.path}")
-        return
-
-    if arguments.command == "gmail-authorize":
-        token_path = arguments.token_file or settings.data_dir / "config" / "gmail-token.json"
-        authorize_gmail(arguments.client_secrets, token_path)
-        print(f"Gmail read access authorized. Token stored at {token_path}.")
-        return
-
-    if arguments.command == "gmail-search":
-        client_secrets = arguments.client_secrets
-        if client_secrets is None:
-            configured = os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS")
-            if not configured:
-                print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before reading Gmail.")
-                return
-            client_secrets = Path(configured)
-        gmail = GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json"))
-        for item in gmail.search(arguments.query, limit=arguments.limit):
-            print(f"{item.id}\t{item.received_at or ''}\t{item.sender or ''}\t{item.subject}\t{item.snippet}")
-        return
-
-    if arguments.command == "gmail-import":
-        client_secrets = arguments.client_secrets or (
-            Path(os.environ["STEWARD_GOOGLE_CLIENT_SECRETS"])
-            if os.environ.get("STEWARD_GOOGLE_CLIENT_SECRETS") else None
-        )
-        if client_secrets is None:
-            print("Set STEWARD_GOOGLE_CLIENT_SECRETS or pass --client-secrets before importing from Gmail.")
-            return
-        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        result = GmailInboxImportService(
-            GmailService(authorize_gmail(client_secrets, settings.data_dir / "config" / "gmail-token.json")),
-            InboxCaptureService(settings.inbox_dir, SourceRepository(database_path), SourceFragmentRepository(database_path), ActivityService(database_path), inbox_queue(settings)),
-        ).import_message(arguments.message_id)
-        print(("Already imported" if result.duplicate else "Imported") + f" Gmail message to Inbox: {result.source.path}")
-        return
-
-    if arguments.command in {"set-source-privacy", "source-privacy"}:
-        database_path = settings.data_dir / "steward.db"
-        initialize_database(database_path)
-        privacy = PrivacyService(database_path)
-        if arguments.command == "set-source-privacy":
-            privacy.set_rule(arguments.source_id, PrivacyRule(arguments.rule))
-            print(f"Source {arguments.source_id} privacy set to {arguments.rule}.")
-        else:
-            print(privacy.rule_for(arguments.source_id).value)
-        return
 
     if arguments.command == "activity":
         database_path = settings.data_dir / "steward.db"

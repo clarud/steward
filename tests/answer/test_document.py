@@ -80,14 +80,3 @@ def test_combination_cannot_cite_a_key_not_retained_in_batch_notes():
         synthesize_long_document(Model(), [SourceFragment(1, 1, None, 0, "text", "page 1")], [AnswerCitation("F1", 1, Path("a.pdf"), None, "page 1"), AnswerCitation("F2", 2, Path("a.pdf"), None, "page 2")])
 
 
-@pytest.mark.parametrize("text,first_response", [("x" * 40000, "Valid [F1]"), ("short", "invalid"), ("short", "Valid [F1]")], ids=["next-batch", "repair", "combination"])
-def test_revocation_stops_next_batch_repair_or_combination(text, first_response):
-    class Model:
-        calls = 0
-        def generate(self, **kwargs):
-            self.calls += 1
-            return first_response
-    model = Model()
-    with pytest.raises(DocumentSynthesisError, match="Source access changed"):
-        synthesize_long_document(model, [SourceFragment(1, 1, None, 0, text, "page 1")], [AnswerCitation("F1", 1, Path("a.pdf"), None, "page 1")], permits_model=lambda: model.calls == 0)
-    assert model.calls == 1

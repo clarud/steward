@@ -317,7 +317,6 @@ def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:
 @pytest.mark.parametrize(
     ("command", "kind"),
     [
-        ("/approve_action 9", "action"),
         ("/intake_accept 9", "intake"),
     ],
 )
@@ -356,8 +355,8 @@ def test_reply_to_older_review_card_restores_that_exact_proposal_after_restart(t
                 proposal_id = 1 if event.text.endswith("one") else 2
                 return PresentedReply(
                     f"Review {proposal_id}",
-                    (ReplyAction("Accept", f"/approve_action {proposal_id}"),
-                     ReplyAction("Reject", f"/reject_action {proposal_id}")),
+                    (ReplyAction("Save", f"/intake_accept {proposal_id}"),
+                     ReplyAction("Discard", f"/intake_discard {proposal_id}")),
                     reference=("source", 99),
                 )
             selected = contexts.get("telegram", "100")
@@ -389,7 +388,7 @@ def test_reply_to_older_review_card_restores_that_exact_proposal_after_restart(t
     )
     asyncio.run(restarted.handle_update(reply_update, None))
 
-    assert reply.replies == ["selected=action:1"]
+    assert reply.replies == ["selected=intake:1"]
 
 
 def test_review_list_does_not_select_its_first_item_or_create_a_message_reference(tmp_path) -> None:
@@ -488,21 +487,6 @@ def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
     assert duplicate_message.replies == []
 
 
-def test_adapter_defers_an_immediate_retry_after_a_failure(tmp_path) -> None:
-    database_path = tmp_path / "steward.db"
-    initialize_database(database_path)
-    handler = FailingThenWorkingHandler()
-    adapter = TelegramAdapter(
-        handler, delivery_repository=TelegramUpdateDeliveryRepository(database_path)
-    )
-
-    with pytest.raises(RuntimeError, match="temporary application failure"):
-        asyncio.run(adapter.handle_update(FakeUpdate(FakeMessage()), None))  # type: ignore[arg-type]
-    retried_message = FakeMessage()
-    asyncio.run(adapter.handle_update(FakeUpdate(retried_message), None))  # type: ignore[arg-type]
-
-    assert handler.events == []
-    assert retried_message.replies == []
 
 
 def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
@@ -521,7 +505,7 @@ def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
 
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
-        run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())
+        run_telegram_polling("   ", FakeEventHandler())
 
 
 def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
@@ -547,9 +531,8 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
     monkeypatch.setattr(telegram_adapter, "MessageHandler", lambda selected_filter, _callback: ("message", str(selected_filter)))
     monkeypatch.setattr(telegram_adapter, "CallbackQueryHandler", lambda _callback: ("callback",))
 
-    run_telegram_polling("token", FakeEventHandler(), FakeEventHandler())
+    run_telegram_polling("token", FakeEventHandler())
 
-    command_positions = [index for index, handler in enumerate(application.handlers) if handler == ("command", "save")]
     intake_positions = [
         index for index, handler in enumerate(application.handlers)
         if handler == ("command", "intake_accept")
@@ -558,12 +541,11 @@ def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
         index for index, handler in enumerate(application.handlers)
         if handler == ("message", str(telegram_adapter.filters.COMMAND))
     ]
-    assert command_positions and intake_positions and fallback_positions
-    assert command_positions[0] < fallback_positions[0]
+    assert intake_positions and fallback_positions
     assert intake_positions[0] < fallback_positions[0]
-    for command in ("home", "search", "hybrid_search", "send_source", "inbox", "moves"):
+    for command in ("home", "find", "ask", "note", "browse", "sources", "send_source", "inbox"):
         assert ("command", command) in application.handlers
-    for removed in ("pending", "calendar", "tasks", "workspaces", "research", "codex_handoff"):
+    for removed in ("save", "search", "hybrid_search", "moves", "privacy", "agent", "codex_handoff", "drive_search"):
         assert ("command", removed) not in application.handlers
 
 
@@ -575,7 +557,7 @@ def test_document_over_cloud_limit_is_not_downloaded() -> None:
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_document(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]
-    assert "/drive_import DRIVE_FILE_ID" in message.replies[0]
+    assert "Inbox folder on your computer" in message.replies[0]
 
 
 def test_adapter_ignores_a_delivered_duplicate_document_update(tmp_path) -> None:

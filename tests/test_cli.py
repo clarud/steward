@@ -1,20 +1,13 @@
 from pathlib import Path
-from datetime import UTC, datetime, timedelta
 import sqlite3
 
 import pytest
 
 from steward.cli import build_parser, main
-from steward.cli.bootstrap import tool_calling_model_from_settings
 from steward.cli.commands import _configure_console_encoding
-from steward.config import Settings
-from steward.graphs import OllamaToolCallingModel, OpenAICompatibleToolCallingModel
-from steward.extraction import SourceFragmentRepository
-from steward.sources import Source, SourceRepository, SourceType
+from steward.sources import SourceRepository
 from steward.storage import initialize_database, snapshot_database
-from steward.activity import ActivityService, ActivityType
 from steward.roots import SourceRootRepository
-from steward.telegram import TelegramUpdateDeliveryRepository
 
 
 
@@ -29,12 +22,11 @@ def test_parser_exposes_only_live_commands() -> None:
     parser = build_parser()
     subparsers = next(action for action in parser._actions if getattr(action, "choices", None) is not None)
 
-    assert {"scan-root", "sources", "search", "agent", "telegram", "drive-import", "gmail-import"} <= set(subparsers.choices)
-    assert not {
-        "create-workspace", "propose-organization", "calendar-search",
-        "research", "propose-travel-record", "connect-knowledge", "ui",
-    } & set(subparsers.choices)
-    assert not hasattr(parser.parse_args(["agent", "find TLBs"]), "include_calendar")
+    assert set(subparsers.choices) == {
+        "onboard-root", "scan-root", "roots", "relocate-root", "remove-root", "search", "ask", "inbox",
+        "reconcile-moves", "review-move", "reextract", "unregister-source", "download-embedding-model",
+        "rebuild-semantic-index", "evaluate-retrieval", "activity", "telegram", "health", "backup", "restore",
+    }
 
 
 def test_cli_backup_creates_local_snapshots_without_overwriting(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -93,27 +85,6 @@ def test_cli_restore_requires_confirmation_then_preserves_a_safety_backup(tmp_pa
     assert safety.is_file()
 
 
-def test_cli_scan_registers_markdown_sources(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    note_path = vault / "note.md"
-    note_path.write_text("# Note")
-    data_dir = tmp_path / "data"
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-
-    main(["scan", str(vault)])
-
-    assert capsys.readouterr().out == (
-        "Scan complete: new=1 updated=0 unchanged=0 missing=0\n"
-    )
-    source = SourceRepository(data_dir / "steward.db").get_by_path(note_path.resolve())
-    assert source is not None
-    fragments = SourceFragmentRepository(data_dir / "steward.db").list_for_source(
-        source.id or 0
-    )
-    assert [fragment.heading for fragment in fragments] == ["Note"]
 
 
 def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
@@ -141,10 +112,9 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
         saver.setup()
     available = tmp_path / "available"; available.mkdir()
     missing = tmp_path / "missing"; missing.mkdir()
-    disabled = tmp_path / "disabled"; disabled.mkdir()
     roots = SourceRootRepository(database)
-    roots.add("Available", available); roots.add("Missing", missing); roots.add("Disabled", disabled)
-    missing.rmdir(); roots.set_enabled("Disabled", False)
+    roots.add("Available", available); roots.add("Missing", missing)
+    missing.rmdir()
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "private-token")
 
     main(["health"])
@@ -153,7 +123,7 @@ def test_cli_health_is_read_only_and_reports_database_root_and_telegram_state(
         "Steward health:\n"
         "Operational database: available\n"
         "Conversation checkpoints: available\n"
-        "Authorized roots: 1 available, 1 missing, 1 disabled\n"
+        "Authorized roots: 1 available, 1 missing\n"
         "Telegram token: configured\n"
     )
 
@@ -184,7 +154,7 @@ def test_strict_health_exit_contract_and_database_roles(tmp_path, monkeypatch, c
     root.rmdir()
     with pytest.raises(SystemExit):
         main(["health", "--strict"])
-    roots.set_enabled("Notes", False)
+    roots.remove("Notes")
     main(["health", "--strict"])
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "   ")
     with pytest.raises(SystemExit):
@@ -211,7 +181,7 @@ def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_original
     note = vault / "note.md"; note.write_text("# Note", encoding="utf-8")
     data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
 
-    main(["add-root", "School", str(vault)])
+    main(["onboard-root", "School", str(vault)])
     capsys.readouterr()
 
     def database_is_locked(_: Path) -> None:
@@ -219,15 +189,9 @@ def test_cli_scan_and_root_scan_report_a_busy_database_without_touching_original
 
     monkeypatch.setattr("steward.cli.commands.initialize_database", database_is_locked)
 
-    main(["scan", str(vault)])
-    scan_output = capsys.readouterr().out
     main(["scan-root", "School"])
     root_output = capsys.readouterr().out
 
-    assert scan_output == (
-        "Scan stopped: the local Steward database is busy. Wait for the other local Steward operation to finish, "
-        "then retry. Original files were not changed.\n"
-    )
     assert root_output == (
         "Root scan stopped: the local Steward database is busy. Wait for the other local Steward operation to finish, "
         "then retry. Original files were not changed.\n"
@@ -240,8 +204,7 @@ def test_cli_relocate_root_requires_confirmation_and_preserves_source_identity(t
     note = old / "note.md"; note.write_text("# Original", encoding="utf-8")
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data))
     monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
-    main(["add-root", "School", str(old)]); capsys.readouterr()
-    main(["scan-root", "School"]); capsys.readouterr()
+    main(["onboard-root", "School", str(old)]); capsys.readouterr()
     sources = SourceRepository(data / "steward.db")
     source = sources.get_by_path(note.resolve())
     new = tmp_path / "new"; old.rename(new)
@@ -269,11 +232,11 @@ def test_cli_scan_root_uses_the_locally_authorized_exclusions(tmp_path: Path, mo
     data_dir = tmp_path / "data"
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
 
-    main(["add-root", "School", str(vault), "--exclude", "generated"])
+    main(["onboard-root", "School", str(vault), "--exclude", "generated"])
     capsys.readouterr()
     main(["scan-root", "School"])
 
-    assert capsys.readouterr().out == "Scan complete for School: new=1 updated=0 unchanged=0 missing=0\n"
+    assert capsys.readouterr().out == "Scan complete for School: new=0 updated=0 unchanged=1 missing=0\n"
     sources = SourceRepository(data_dir / "steward.db")
     assert sources.get_by_path((vault / "note.md").resolve()) is not None
     assert sources.get_by_path((generated / "output.md").resolve()) is None
@@ -302,15 +265,6 @@ def test_cli_onboard_root_authorizes_and_scans_an_existing_directory_in_place(tm
     assert "Existing authorization reused" in capsys.readouterr().out
 
 
-def test_cli_can_disable_a_root_before_scan(tmp_path: Path, monkeypatch, capsys) -> None:
-    vault = tmp_path / "vault"; vault.mkdir()
-    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    main(["add-root", "School", str(vault)]); capsys.readouterr()
-
-    main(["disable-root", "School"])
-    assert capsys.readouterr().out == "Source root 'School' is now disabled.\n"
-    main(["scan-root", "School"])
-    assert capsys.readouterr().out == "Source root 'School' is disabled.\n"
 
 
 def test_cli_reextract_reports_a_missing_source_without_loading_a_model(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -321,19 +275,6 @@ def test_cli_reextract_reports_a_missing_source_without_loading_a_model(tmp_path
     assert capsys.readouterr().out == "Source 99 was not found.\n"
 
 
-def test_cli_sources_lists_registered_sources(tmp_path: Path, monkeypatch, capsys) -> None:
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    note_path = vault / "note.md"
-    note_path.write_text("# Note")
-    data_dir = tmp_path / "data"
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    main(["scan", str(vault)])
-    capsys.readouterr()
-
-    main(["sources"])
-
-    assert capsys.readouterr().out == f"1\tactive\t{note_path.resolve()}\n"
 
 
 def test_cli_unregister_source_requires_confirmation_and_retains_original(
@@ -345,7 +286,7 @@ def test_cli_unregister_source_requires_confirmation_and_retains_original(
     note_path.write_text("# Note", encoding="utf-8")
     data_dir = tmp_path / "data"
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    main(["scan", str(vault)])
+    main(["onboard-root", "Vault", str(vault)])
     capsys.readouterr()
 
     main(["unregister-source", "1"])
@@ -367,10 +308,10 @@ def test_cli_search_returns_matching_fragment(tmp_path: Path, monkeypatch, capsy
     note_path.write_text("# TLB\nA TLB caches address translations.")
     data_dir = tmp_path / "data"
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    main(["scan", str(vault)])
+    main(["onboard-root", "Vault", str(vault)])
     capsys.readouterr()
 
-    main(["search", "translations"])
+    main(["search", "translations", "--mode", "keyword"])
 
     output = capsys.readouterr().out
     assert f"{note_path.resolve()}:lines 1-2 [TLB]" in output
@@ -384,10 +325,10 @@ def test_cli_search_filters_results_by_source_type(tmp_path: Path, monkeypatch, 
     plain_text = vault / "note.txt"; plain_text.write_text("Address translations", encoding="utf-8")
     data_dir = tmp_path / "data"
     monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-    main(["scan", str(vault)])
+    main(["onboard-root", "Vault", str(vault)])
     capsys.readouterr()
 
-    main(["search", "translations", "--source-type", "plain_text"])
+    main(["search", "translations", "--mode", "keyword", "--type", "plain_text"])
 
     output = capsys.readouterr().out
     assert str(plain_text.resolve()) in output
@@ -403,7 +344,7 @@ def test_cli_evaluates_retrieval_cases_against_an_indexed_vault(tmp_path: Path, 
         encoding="utf-8",
     )
     monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
-    main(["scan", str(vault)])
+    main(["onboard-root", "Vault", str(vault)])
     capsys.readouterr()
 
     main(["evaluate-retrieval", str(vault), str(cases)])
@@ -447,56 +388,10 @@ def test_cli_ask_supplies_default_checkpointer_thread(monkeypatch, capsys) -> No
     assert build_parser().parse_args(["ask", "Question", "--thread-id", "review"]).thread_id == "review"
 
 
-def test_cli_agent_explains_required_gemini_configuration(monkeypatch, capsys) -> None:
-    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("STEWARD_GEMINI_MODEL", raising=False)
-    monkeypatch.delenv("STEWARD_MODEL_PROVIDER", raising=False)
-
-    main(["agent", "What do I know about TLBs?"])
-
-    assert capsys.readouterr().out == (
-        "Set GEMINI_API_KEY and STEWARD_GEMINI_MODEL before using `steward agent`.\n"
-    )
 
 
-def test_cli_selects_the_local_ollama_tool_adapter() -> None:
-    adapter = tool_calling_model_from_settings(
-        Settings(
-            data_dir=Path(".steward"),
-            inbox_dir=Path("vault/inbox"),
-            log_level="INFO",
-            model_provider="local",
-            openai_model=None,
-            soclaas_model=None,
-            soclaas_base_url=None,
-            gemini_model=None,
-            local_model="qwen3",
-            local_model_url="http://127.0.0.1:11434",
-        )
-    )
-
-    assert isinstance(adapter, OllamaToolCallingModel)
 
 
-def test_cli_selects_soclaas_tool_adapter(monkeypatch) -> None:
-    monkeypatch.setenv("STEWARD_SOCLAAS_API_KEY", "test-key")
-    adapter = tool_calling_model_from_settings(
-        Settings(
-            data_dir=Path(".steward"),
-            inbox_dir=Path("vault/inbox"),
-            log_level="INFO",
-            model_provider="soclaas",
-            openai_model=None,
-            soclaas_model="llama3.1:8b",
-            soclaas_base_url="https://gateway.example/v1",
-            gemini_model=None,
-            local_model=None,
-            local_model_url="http://127.0.0.1:11434",
-        )
-    )
-
-    assert isinstance(adapter, OpenAICompatibleToolCallingModel)
 
 
 def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
@@ -510,53 +405,6 @@ def test_cli_telegram_explains_required_bot_token(monkeypatch, capsys) -> None:
     )
 
 
-def test_cli_lists_empty_telegram_delivery_state(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
-
-    main(["telegram-deliveries"])
-
-    assert capsys.readouterr().out == "No local Telegram delivery records.\n"
-
-
-def test_cli_lists_empty_telegram_delivery_history(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / "data"))
-
-    main(["telegram-delivery-history"])
-
-    assert capsys.readouterr().out == "No local Telegram delivery history.\n"
-
-
-def test_cli_lists_empty_telegram_dead_letters(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / ".steward"))
-    main(["telegram-dead-letters"])
-    assert capsys.readouterr().out == "No terminal Telegram delivery failures.\n"
-
-
-def test_cli_requires_confirmation_before_reopening_telegram_dead_letter(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(tmp_path / ".steward"))
-
-    main(["telegram-recover-dead-letter", "telegram:99"])
-
-    assert capsys.readouterr().out.startswith("Refusing to reopen a Telegram dead letter without --confirm.")
-
-
-def test_cli_reopens_dead_letter_with_an_audit_event(tmp_path: Path, monkeypatch, capsys) -> None:
-    data_dir = tmp_path / ".steward"
-    database_path = data_dir / "steward.db"
-    initialize_database(database_path)
-    deliveries = TelegramUpdateDeliveryRepository(database_path, max_attempts=1)
-    now = datetime(2026, 9, 9, tzinfo=UTC)
-    assert deliveries.claim("telegram:99", now=now)
-    deliveries.release("telegram:99", now=now)
-    assert deliveries.claim("telegram:99", now=now + timedelta(seconds=15)) is False
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
-
-    main(["telegram-recover-dead-letter", "telegram:99", "--confirm"])
-
-    assert capsys.readouterr().out == (
-        "Reopened telegram:99 for a future genuine Telegram redelivery. No original Telegram message was replayed.\n"
-    )
-    assert ActivityService(database_path).list_recent()[0].event_type == ActivityType.TELEGRAM_DELIVERY_RECOVERED
 
 
 
@@ -569,20 +417,14 @@ def test_cli_reopens_dead_letter_with_an_audit_event(tmp_path: Path, monkeypatch
 
 
 
-def test_cli_sets_and_reads_source_privacy(tmp_path: Path, monkeypatch, capsys) -> None:
-    data_dir = tmp_path / "data"
-    database = data_dir / "steward.db"
-    initialize_database(database)
-    now = datetime(2026, 9, 8, tzinfo=UTC)
-    source = SourceRepository(database).add(
-        Source(None, tmp_path / "private.md", "a" * 64, SourceType.MARKDOWN, 0, now, now, now)
-    )
-    monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
 
-    main(["set-source-privacy", str(source.id), "no_model"])
-    assert capsys.readouterr().out == "Source 1 privacy set to no_model.\n"
-    main(["source-privacy", str(source.id)])
-    assert capsys.readouterr().out == "no_model\n"
+
+
+
+
+
+
+
 
 
 def test_cli_configures_a_non_utf8_console_for_utf8(monkeypatch) -> None:
@@ -615,3 +457,19 @@ def test_cli_explains_a_missing_optional_extra(monkeypatch, capsys) -> None:
 
     assert exit_info.value.code == 1
     assert 'pip install "steward[google]"' in capsys.readouterr().out
+
+
+def test_cli_remove_root_requires_confirmation_and_leaves_files(tmp_path: Path, monkeypatch, capsys) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    note = vault / "note.md"; note.write_text("# Note", encoding="utf-8")
+    data_dir = tmp_path / "data"; monkeypatch.setenv("STEWARD_DATA_DIR", str(data_dir))
+    monkeypatch.setattr("steward.cli.commands.load_environment_file", lambda: None)
+    main(["onboard-root", "School", str(vault)]); capsys.readouterr()
+
+    main(["remove-root", "School"])
+    assert "Re-run with --confirm" in capsys.readouterr().out
+    main(["remove-root", "School", "--confirm"])
+
+    assert "forgot 1 file(s)" in capsys.readouterr().out
+    assert SourceRepository(data_dir / "steward.db").list_all() == []
+    assert note.read_text(encoding="utf-8") == "# Note"

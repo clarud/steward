@@ -62,6 +62,8 @@ from steward.storage.database import (
     SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
     LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
     LEGACY_TABLES,
+    MINIMAL_SURFACE_SCHEMA_VERSION,
+    MINIMAL_SURFACE_DROPPED_TABLES,
     RECEIPT_RECORDS_SCHEMA_VERSION,
     RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION,
     WARRANTY_RECORDS_SCHEMA_VERSION,
@@ -154,6 +156,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
             SOURCE_ROOT_PROFILE_SCHEMA_VERSION,
             SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
             LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
+            MINIMAL_SURFACE_SCHEMA_VERSION,
     ]
     assert all(migration[1] for migration in migrations)
     assert [column[1] for column in source_columns] == [
@@ -171,7 +174,7 @@ def test_initialize_database_creates_database_and_migration_ledger(tmp_path: Pat
         "platform", "chat_id", "message_id", "reference_kind", "reference_id", "created_at",
     ]
     assert [column[1] for column in intake_columns][-2:] == ["diagnostic", "intended_root_id"]
-    assert not set(LEGACY_TABLES) & tables
+    assert not (set(LEGACY_TABLES) | set(MINIMAL_SURFACE_DROPPED_TABLES)) & tables
 
 
 def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
@@ -185,7 +188,7 @@ def test_initialize_database_is_idempotent(tmp_path: Path) -> None:
             "SELECT COUNT(*) FROM schema_migrations"
         ).fetchone()[0]
 
-    assert migration_count == LEGACY_TABLES_DROPPED_SCHEMA_VERSION
+    assert migration_count == MINIMAL_SURFACE_SCHEMA_VERSION
 
 
 def test_snapshot_database_copies_consistent_data_without_overwriting(tmp_path: Path) -> None:
@@ -289,7 +292,7 @@ def _database_before_legacy_drop(tmp_path: Path, monkeypatch) -> Path:
     current = database_module.MIGRATIONS
     monkeypatch.setattr(
         database_module, "MIGRATIONS",
-        tuple(item for item in current if item[0] != LEGACY_TABLES_DROPPED_SCHEMA_VERSION),
+        tuple(item for item in current if item[0] < LEGACY_TABLES_DROPPED_SCHEMA_VERSION),
     )
     initialize_database(database)
     monkeypatch.setattr(database_module, "MIGRATIONS", current)
@@ -322,10 +325,10 @@ def test_legacy_tables_are_dropped_only_after_a_snapshot(tmp_path: Path, monkeyp
         assert connection.execute("SELECT name FROM workspaces").fetchall() == [("School",)]
     remaining = _tables(database)
     assert not set(LEGACY_TABLES) & remaining
-    assert {"sources", "action_proposals", "telegram_update_deliveries", "source_roots"} <= remaining
+    assert not set(MINIMAL_SURFACE_DROPPED_TABLES) & remaining
+    assert {"sources", "telegram_update_deliveries", "source_roots"} <= remaining
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM sources").fetchone() == (1,)
-        assert connection.execute("SELECT action_type FROM action_proposals").fetchall() == [("set_source_privacy",)]
 
     initialize_database(database)
 
