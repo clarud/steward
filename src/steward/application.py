@@ -799,6 +799,7 @@ class StewardReadApplication:
                     ReplyAction("Sources", "/sources"),
                     ReplyAction("Inbox", "/inbox"),
                     ReplyAction("Roots", "/roots"),
+                    ReplyAction("Moves", "/moves"),
                 ),
                 title="Steward", icon="🏠",
             )
