@@ -104,6 +104,27 @@ class PlainTextExtractor:
         return ExtractionResult(source.id, fragments)
 
 
+class CodeExtractor:
+    """Chunk source code by bounded line ranges while preserving exact locations."""
+
+    MAX_LINES = 120
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.CODE:
+            raise ValueError("CodeExtractor requires a code Source.")
+        lines = source.path.read_text(encoding="utf-8").splitlines()
+        fragments = []
+        for start in range(0, len(lines), self.MAX_LINES):
+            chunk = "\n".join(lines[start:start + self.MAX_LINES]).strip()
+            if not chunk:
+                continue
+            end = min(start + self.MAX_LINES, len(lines))
+            fragments.append(SourceFragment(None, source.id, None, len(fragments), chunk, f"lines {start + 1}-{end}"))
+        return ExtractionResult(source.id, tuple(fragments))
+
+
 class EmailExtractor:
     """Extract readable non-attachment message parts from a raw RFC 822 original."""
 
@@ -318,7 +339,7 @@ class ExtractionService:
             SourceType.DOCX: DocxExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
-            SourceType.CODE: PlainTextExtractor(),
+            SourceType.CODE: CodeExtractor(),
         }
 
     def extract_and_store(self, source: Source) -> ExtractionResult | None:

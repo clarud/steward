@@ -62,8 +62,21 @@ def test_source_service_scans_and_extracts_source_code_with_path_provenance(tmp_
     source = sources.get_by_path(source_path.resolve())
     assert source is not None and source.source_type is SourceType.CODE
     extracted = fragments.list_for_source(source.id or 0)
-    assert extracted[0].location == "entire file"
+    assert extracted[0].location == "lines 1-2"
     assert "def schedule" in extracted[0].text
+
+
+def test_source_code_extraction_uses_stable_bounded_line_ranges(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "project"; vault.mkdir()
+    code = vault / "large.py"; code.write_text("\n".join(f"line_{index} = {index}" for index in range(241)), encoding="utf-8")
+    sources = SourceRepository(database_path); fragments = SourceFragmentRepository(database_path)
+
+    SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    source = sources.get_by_path(code.resolve())
+    extracted = fragments.list_for_source(source.id or 0)
+    assert [item.location for item in extracted] == ["lines 1-120", "lines 121-240", "lines 241-241"]
 
 
 def test_source_service_scans_and_extracts_docx_files(tmp_path: Path) -> None:

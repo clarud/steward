@@ -423,7 +423,8 @@ while pending, cross-root refusal, and rollback after a failed update.
 
 **Status (23 September 2026):** started. Common source-code extensions are now
 registered as `code` and extracted deterministically with file-level
-provenance. PPTX, XLSX, notebooks, and finer code chunking remain outstanding.
+provenance. Code now uses bounded line-range fragments for retrieval. PPTX,
+XLSX, and notebooks remain outstanding.
 
 - Add PPTX extraction with slide-number provenance.
 - Add source-code extraction with language/path provenance and conservative
