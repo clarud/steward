@@ -123,6 +123,70 @@ Steward already has a strong base for this pivot:
 | External rename/move identity preservation | Not implemented | Highest source-lifecycle priority |
 | PPTX, code, spreadsheet extraction | Not implemented | Add progressively |
 
+## Lean runtime unwiring policy
+
+“Disabled” in this pivot means more than hiding a Telegram button. An inactive
+domain must not be composed into the normal user-facing application, offered to
+a model, initialized on startup, or documented as an available capability.
+The implementation and data remain in the repository so that no user history is
+destroyed and a later deliberate reintroduction remains possible.
+
+### Active composition in source-centric mode
+
+The normal composition root should instantiate only:
+
+```text
+configuration and logging
+authorized roots and source lifecycle services
+supported extractors and retrieval indexes
+source privacy and model gateways
+retrieval-answer graph and source-only read tools
+Inbox capture/import services
+source activity, root health, and local handoff services
+Telegram adapter/cards for the active source surface
+```
+
+### Unwired composition in source-centric mode
+
+The following implementations remain testable in isolation but are not passed
+into `StewardApplication`, Telegram handlers, the agent tool registry, or
+normal CLI parser/help construction:
+
+```text
+organization/workspace mutation services and approval graphs
+knowledge enrichment services and review cards
+record, task, reminder, and Calendar services/adapters
+research execution/retention services
+Drive/Gmail capabilities other than explicit selected-file source import
+write-capable action proposal routes
+```
+
+Feature-gate checks are defense in depth, not the primary architecture. The
+absence of a disabled service from composition means a malformed Telegram
+command, stale callback, model tool call, or accidental startup path has no
+live dependency with which to perform that action.
+
+### Feature-mode rules
+
+- Introduce one explicit product-mode setting, with `source_centric` as the
+  normal mode after the migration. Avoid a collection of undocumented booleans
+  whose combinations are hard to reason about.
+- Normal CLI help, Telegram `/help`, Home cards, natural-language routing, and
+  model tool schemas list only active source-centric capabilities.
+- Legacy write commands are not registered in the normal parser. If temporary
+  engineering access is necessary, expose it only through a clearly named,
+  local developer-only legacy mode; it is off by default and never enabled by
+  a Telegram request.
+- Disabled external adapters do not make OAuth/API requests, load credentials
+  into operational flows, or expose integration controls. Existing credentials
+  and configuration files are left untouched.
+- Existing pending proposals cannot be accepted in either mode without a fresh
+  review. Source-centric mode renders an explanatory historical card rather
+  than an executable action.
+- Remove inactive dependencies only after the active composition, regression
+  suite, documentation, and migration path no longer require them. “Unused” is
+  established by runtime and test evidence, not assumed from a hidden button.
+
 ## Target architecture
 
 ```text
@@ -430,6 +494,40 @@ user approval; no automated move or tracker edit runs against it.
   tools.
 - Each phase is a separate cohesive commit with focused tests, full regression
   testing, documentation updates, and a manual Telegram acceptance record.
+
+## Documentation migration
+
+Documentation is part of the product surface. A source-centric runtime paired
+with a README that advertises Calendar writes or automatic knowledge workflows
+would be misleading and could cause users to expect unavailable behavior.
+Documentation updates are therefore a required part of Phase P0, not cleanup
+for later.
+
+| Document | Required pivot change | Historical material to retain |
+| --- | --- | --- |
+| `README.md` | Rewrite the opening, feature list, quick start, Telegram examples, CLI examples, privacy explanation, and architecture summary around roots, scans, Inbox, retrieval, and Codex handoff. Remove active how-to sections for Calendar, records, workspace organization, knowledge enrichment, and research. | Keep a short “retained legacy capabilities” note; do not present them as enabled. |
+| `docs/product.md` | Replace the broad knowledge-and-action mission with the source-memory mission, core loop, user stories, non-goals, and Codex boundary. | Preserve the original principles of local ownership, provenance, and human control. |
+| `docs/architecture.md` | Redraw the active architecture around source lifecycle, extraction, retrieval, Telegram, Inbox, and local handoff. Mark action-domain modules as retained but unwired. | Preserve the decision that LangGraph orchestrates bounded stateful flows rather than domain logic. |
+| `docs/invariants.md` | Add source-location history, deterministic reconciliation, no autonomous filesystem action, model-boundary, and Inbox invariants. Remove assumptions that active knowledge/record actions are required. | Keep canonical-original, SQLite metadata, provenance, and restricted-filesystem invariants. |
+| `docs/developer-guide.md` | Split into **active product** and **retained legacy modules**. Document composition, source reconciliation, extractor contracts, retrieval, privacy, Telegram references, and handoff. Clearly label historical graphs/workflows. | Retain implementation explanations as a learning/reference appendix rather than deleting them. |
+| `docs/telegram-primary-interface-plan.md` | Keep it as an historical Telegram roadmap, but point all new work to this pivot and mark inactive action goals as deferred. | Existing acceptance and design rationale remain useful history. |
+| `docs/telegram-manual-test-checklist.md` | Replace active acceptance sections with root onboarding, all-format sync, move reconciliation, Inbox, retrieval/citations, privacy, and handoff tests. Move Calendar/record/workspace tests to a legacy appendix. | Retain completed live-test evidence; do not rewrite history. |
+| `docs/testing.md` | Keep chronological results intact. Add a dated pivot baseline, active acceptance status, and separate legacy coverage label so old successful tests are not mistaken for current enabled behavior. | All past test results and known defects. |
+| `docs/windows-operations.md` | Focus health, scheduled scanning/watching, Telegram startup, root recovery, backups, and safe reconciliation. Remove active operational instructions for disabled integrations. | Existing recovery rehearsal evidence. |
+| `.env.example` | Make root, Inbox, Telegram, selected model provider, and privacy settings primary. Move Calendar/research/legacy integration variables to a clearly marked disabled legacy section or remove them only after code removal. | Secret-handling comments and local data-directory guidance. |
+| `docs/adr/` | Do not rewrite existing ADRs: they record historical decisions. Add a new ADR documenting the source-centric active surface and retained-but-unwired domain policy. | ADR-001 through ADR-005 unchanged. |
+| `docs/resume-interview-guide.md` | Update only with the user's separate approval because it is an intentionally uncommitted personal artifact. Reframe claims toward source-memory/retrieval and explain retained legacy work accurately. | Detailed historical implementation notes remain interview value. |
+
+Documentation acceptance criteria:
+
+1. A new user reading README, product, architecture, and `.env.example` sees
+   the same enabled product surface that Telegram and CLI present.
+2. No enabled-path documentation instructs a user to create a Calendar event,
+   accept a record/workspace/knowledge proposal, or invoke a broad action agent.
+3. Historical tests, ADRs, and developer learning material are retained with
+   an explicit historical/legacy label rather than silently deleted.
+4. Every active command and Telegram interaction in documentation is exercised
+   in a source-centric acceptance run before release.
 
 ## Definition of success
 
