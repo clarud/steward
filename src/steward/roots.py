@@ -39,6 +39,21 @@ class RootRelocation:
     updated_sources: int
 
 
+@dataclass(frozen=True, slots=True)
+class SourceRootProfile:
+    """Owner-reviewed descriptive metadata for one authorized root.
+
+    These fields are not executable instructions. They guide display and a
+    metadata-only Codex handoff; they never grant a model filesystem access.
+    """
+
+    root_id: int
+    purpose: str
+    guidance_paths: tuple[Path, ...]
+    authority_tiers: tuple[str, ...]
+    updated_at: datetime
+
+
 class SourceRootRepository:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -178,6 +193,89 @@ class SourceRootRepository:
             root.last_scanned_at, root.last_scan_counts,
         )
         return RootRelocation(relocated, len(replacements))
+
+    @staticmethod
+    def _normalize_exclusions(root: Path, exclusions: tuple[Path, ...]) -> tuple[Path, ...]:
+        normalized: list[Path] = []
+        for exclusion in exclusions:
+            candidate = (exclusion if exclusion.is_absolute() else root / exclusion).resolve()
+            if candidate == root or not candidate.is_relative_to(root):
+                raise ValueError("A source-root exclusion must be a directory beneath its root.")
+            relative = candidate.relative_to(root)
+            if relative not in normalized:
+                normalized.append(relative)
+        return tuple(sorted(normalized, key=lambda item: item.as_posix().casefold()))
+
+    @staticmethod
+    def _from_row(row: tuple[object, ...]) -> SourceRoot:
+        root = Path(str(row[2]))
+        exclusions = tuple(Path(item) for item in json.loads(str(row[5])))
+        return SourceRoot(
+            int(row[0]), str(row[1]), root, bool(row[3]), datetime.fromisoformat(str(row[4])), exclusions,
+            datetime.fromisoformat(str(row[6])) if len(row) > 6 and row[6] is not None else None,
+            (int(row[7]), int(row[8]), int(row[9]), int(row[10]))
+            if len(row) > 10 and row[7] is not None else None,
+        )
+
+
+class SourceRootProfileRepository:
+    """Persist explicitly configured, local-only source-root profiles."""
+
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+
+    def get(self, root_id: int) -> SourceRootProfile | None:
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """SELECT root_id, purpose, guidance_paths, authority_tiers, updated_at
+                   FROM source_root_profiles WHERE root_id = ?""",
+                (root_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return SourceRootProfile(
+            int(row[0]), str(row[1]), tuple(Path(value) for value in json.loads(str(row[2]))),
+            tuple(str(value) for value in json.loads(str(row[3]))), datetime.fromisoformat(str(row[4])),
+        )
+
+    def set(
+        self,
+        root: SourceRoot,
+        *,
+        purpose: str,
+        guidance_paths: tuple[Path, ...] = (),
+        authority_tiers: tuple[str, ...] = (),
+    ) -> SourceRootProfile:
+        if root.id is None:
+            raise ValueError("A persisted source root is required.")
+        if not purpose.strip():
+            raise ValueError("A root profile requires a purpose.")
+        normalized_guidance = self._guidance_paths(root, guidance_paths)
+        normalized_tiers = tuple(item.strip() for item in authority_tiers if item.strip())
+        updated_at = datetime.now(UTC)
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                """INSERT INTO source_root_profiles (root_id, purpose, guidance_paths, authority_tiers, updated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(root_id) DO UPDATE SET purpose = excluded.purpose,
+                       guidance_paths = excluded.guidance_paths, authority_tiers = excluded.authority_tiers,
+                       updated_at = excluded.updated_at""",
+                (root.id, purpose.strip(), json.dumps([str(item) for item in normalized_guidance]),
+                 json.dumps(normalized_tiers), updated_at.isoformat()),
+            )
+        return SourceRootProfile(root.id, purpose.strip(), normalized_guidance, normalized_tiers, updated_at)
+
+    @staticmethod
+    def _guidance_paths(root: SourceRoot, paths: tuple[Path, ...]) -> tuple[Path, ...]:
+        normalized: list[Path] = []
+        for path in paths:
+            candidate = (path if path.is_absolute() else root.path / path).resolve()
+            if not candidate.is_relative_to(root.path.resolve()) or not candidate.is_file():
+                raise ValueError("A root-profile guidance path must be an existing file inside that root.")
+            relative = candidate.relative_to(root.path.resolve())
+            if relative not in normalized:
+                normalized.append(relative)
+        return tuple(normalized)
 
     @staticmethod
     def _normalize_exclusions(root: Path, exclusions: tuple[Path, ...]) -> tuple[Path, ...]:

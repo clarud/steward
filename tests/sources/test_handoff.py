@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from steward.roots import SourceRootRepository
+from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.sources import CodexHandoffService, Source, SourceRepository, SourceType
 from steward.sources.hashing import hash_file
 from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
@@ -48,4 +48,23 @@ def test_handoff_retains_inbox_intent_without_moving_or_reading_the_source(tmp_p
     context = payload["sources"][0]["inbox_capture_context"]
     assert context == {"intended_root": "Y4S1", "user_context": "CS3210 lecture", "capture_origin": "telegram"}
     assert str(root / "AGENTS.md") in payload["guidance_document_paths"]
+    assert "private source text" not in handoff.path.read_text(encoding="utf-8")
+
+
+def test_handoff_includes_explicit_root_profile_metadata_and_guidance_paths(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root = tmp_path / "course"; root.mkdir()
+    guide = root / "LOCAL_GUIDE.md"; guide.write_text("private guidance", encoding="utf-8")
+    source_path = root / "lecture.md"; source_path.write_text("private source text", encoding="utf-8")
+    now = datetime.now(UTC)
+    source = SourceRepository(database).add(Source(None, source_path, hash_file(source_path), SourceType.MARKDOWN, source_path.stat().st_size, now, now, now))
+    roots = SourceRootRepository(database); course = roots.add("Course", root)
+    profiles = SourceRootProfileRepository(database)
+    profiles.set(course, purpose="Course material", guidance_paths=(Path("LOCAL_GUIDE.md"),), authority_tiers=("official", "notes"))
+
+    handoff = CodexHandoffService(SourceRepository(database), roots, tmp_path / ".steward", tmp_path / "inbox", profiles=profiles).prepare((source.id or 0,))
+    payload = json.loads(handoff.path.read_text(encoding="utf-8"))
+
+    assert payload["sources"][0]["root_profile"] == {"purpose": "Course material", "authority_tiers": ["official", "notes"]}
+    assert str(guide) in payload["guidance_document_paths"]
     assert "private source text" not in handoff.path.read_text(encoding="utf-8")

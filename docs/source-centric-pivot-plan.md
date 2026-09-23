@@ -499,6 +499,12 @@ attachment, reconciliation after an external move, and Telegram restart.
 **Outcome:** Steward supports the real course-folder workflow without taking
 over its file-management policy.
 
+**Status (23 September 2026):** started. `set-root-profile` stores explicit
+local purpose, existing root-contained guidance paths, and ordered authority
+labels. Profiles are descriptive metadata only; they are added to local Codex
+handoff manifests and never executed by Steward or a model. Live Y4S1
+configuration and acceptance remain manual.
+
 - Add a user-reviewed `Y4S1` root profile with guidance paths and authority
   tiers.
 - Scan the folder in place; ensure supported files are searchable and PPTX/code

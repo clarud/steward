@@ -100,6 +100,11 @@ batches. A same-root rename or move with one unambiguous content-hash match is
 shown as a reviewable move proposal; accepting it preserves the old source ID.
 Root status shows the timestamp and concise new/updated/unchanged/missing counts
 from the latest successful full scan.
+
+Optional root profiles are local descriptive metadata: use `set-root-profile`
+to record a purpose, existing root-contained guidance files, and ordered
+authority labels. They are included only in a metadata-only Codex handoff; they
+are never executable instructions.
 `codex-handoff` creates a local JSON manifest containing selected source
 metadata and applicable root guidance paths. It never sends content to Codex or
 executes a Codex session.

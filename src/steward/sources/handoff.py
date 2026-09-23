@@ -13,7 +13,7 @@ from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.sources.repository import SourceRepository
 
 if TYPE_CHECKING:
-    from steward.roots import SourceRootRepository
+    from steward.roots import SourceRootProfileRepository, SourceRootRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,12 +33,14 @@ class CodexHandoffService:
         data_dir: Path,
         inbox: Path,
         inbox_contexts: SourceInboxContextRepository | None = None,
+        profiles: "SourceRootProfileRepository | None" = None,
     ) -> None:
         self._sources = sources
         self._roots = roots
         self._handoffs = data_dir.resolve() / "handoffs"
         self._inbox = inbox.resolve()
         self._inbox_contexts = inbox_contexts
+        self._profiles = profiles
 
     def prepare(self, source_ids: tuple[int, ...], *, note: str = "") -> CodexHandoff:
         if not source_ids or len(set(source_ids)) != len(source_ids):
@@ -78,6 +80,16 @@ class CodexHandoffService:
                                 if candidate.is_file():
                                     guidance.add(str(candidate))
             if root is not None:
+                profile = self._profiles.get(root.id) if self._profiles is not None and root.id is not None else None
+                if profile is not None:
+                    selected[-1]["root_profile"] = {
+                        "purpose": profile.purpose,
+                        "authority_tiers": list(profile.authority_tiers),
+                    }
+                    for relative in profile.guidance_paths:
+                        candidate = root.path / relative
+                        if candidate.is_file():
+                            guidance.add(str(candidate))
                 for name in ("AGENTS.md", "COURSE_WORKFLOWS.md"):
                     candidate = root.path / name
                     if candidate.is_file():

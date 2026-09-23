@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from steward.roots import SourceRootRepository
+from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.storage import initialize_database
 from steward.sources import Source, SourceRepository, SourceStatus, SourceType
 from steward.sources.hashing import hash_file
@@ -77,6 +77,21 @@ def test_source_root_records_the_latest_successful_scan(tmp_path: Path) -> None:
     restored = SourceRootRepository(database).get_by_name("School")
     assert restored is not None and restored.last_scanned_at == recorded.last_scanned_at
     assert restored.last_scan_counts == (1, 0, 2, 0)
+
+
+def test_root_profile_is_local_descriptive_metadata_with_safe_guidance_paths(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root_path = tmp_path / "Y4S1"; root_path.mkdir()
+    guidance = root_path / "AGENTS.md"; guidance.write_text("guidance", encoding="utf-8")
+    root = SourceRootRepository(database).add("Y4S1", root_path)
+
+    profile = SourceRootProfileRepository(database).set(
+        root, purpose="Semester course materials", guidance_paths=(Path("AGENTS.md"),),
+        authority_tiers=("official", "personal notes"),
+    )
+
+    assert profile.guidance_paths == (Path("AGENTS.md"),)
+    assert SourceRootProfileRepository(database).get(root.id or 0) == profile
 
 
 def test_missing_root_relocation_atomically_rebinds_matching_sources(tmp_path: Path) -> None:

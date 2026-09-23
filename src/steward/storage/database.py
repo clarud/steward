@@ -69,6 +69,7 @@ SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION = 59
 SOURCE_LOCATION_HISTORY_SCHEMA_VERSION = 60
 PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION = 61
 SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
+SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -615,6 +616,16 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             user_context TEXT,
             capture_origin TEXT NOT NULL,
             created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        SOURCE_ROOT_PROFILE_SCHEMA_VERSION,
+        """CREATE TABLE source_root_profiles (
+            root_id INTEGER PRIMARY KEY REFERENCES source_roots(id) ON DELETE CASCADE,
+            purpose TEXT NOT NULL,
+            guidance_paths TEXT NOT NULL,
+            authority_tiers TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         )""",
     ),
 )

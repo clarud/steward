@@ -90,7 +90,7 @@ from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.sources.inbox_context import SourceInboxContextRepository
-from steward.roots import SourceRootRepository
+from steward.roots import SourceRootProfileRepository, SourceRootRepository
 from steward.records import RecordService
 from steward.tasks import TaskReminderService, TaskService
 from steward.calendar import (
@@ -298,6 +298,11 @@ def build_parser(product_mode: str = "source_centric") -> argparse.ArgumentParse
     root_relocate.add_argument("name", help="Existing authorized source-root name")
     root_relocate.add_argument("path", type=Path, help="Existing replacement directory")
     root_relocate.add_argument("--confirm", action="store_true", help="Confirm the authorization and registered-path change")
+    root_profile = subcommands.add_parser("set-root-profile", help="Store owner-reviewed descriptive metadata for an authorized root")
+    root_profile.add_argument("name", help="Authorized source-root name")
+    root_profile.add_argument("--purpose", required=True, help="Short owner-reviewed description")
+    root_profile.add_argument("--guidance", action="append", type=Path, default=[], help="Existing root-relative guidance file (repeatable)")
+    root_profile.add_argument("--tier", action="append", default=[], help="Authority-tier label, highest first (repeatable)")
     subcommands.add_parser("roots", help="List locally authorized source roots")
     health_parser = subcommands.add_parser(
         "health", help="Report safe local runtime health without exposing paths or secrets"
@@ -1063,6 +1068,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 settings.data_dir,
                 settings.inbox_dir,
                 SourceInboxContextRepository(database_path),
+                SourceRootProfileRepository(database_path),
             ).prepare(tuple(arguments.source_ids), note=arguments.note)
         except ValueError as error:
             print(f"Codex handoff was not prepared: {error}")
@@ -1248,6 +1254,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         except ValueError as error:
             print(str(error)); return
         print(f"Authorized source root {root.id}: {root.name}\t{root.path}")
+        return
+
+    if arguments.command == "set-root-profile":
+        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
+        roots = SourceRootRepository(database_path)
+        root = roots.get_by_name(arguments.name)
+        if root is None:
+            print(f"No locally authorized source root named {arguments.name!r}.")
+            return
+        try:
+            profile = SourceRootProfileRepository(database_path).set(
+                root, purpose=arguments.purpose, guidance_paths=tuple(arguments.guidance),
+                authority_tiers=tuple(arguments.tier),
+            )
+        except ValueError as error:
+            print(f"Root profile was not saved: {error}")
+            return
+        print(f"Saved local root profile for {root.name}: {profile.purpose}")
         return
 
     if arguments.command == "roots":
@@ -1689,6 +1713,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                         settings.data_dir,
                         settings.inbox_dir,
                         SourceInboxContextRepository(database_path),
+                        SourceRootProfileRepository(database_path),
                     ),
                     sources,
                     settings.inbox_dir,

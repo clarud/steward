@@ -219,6 +219,14 @@ safe test.
   at 100%. A live filename-fallback check was added to the source-centric
   Telegram checklist.
 
+### Automated delivery: local source-root profiles — 23 September 2026
+
+- Root profiles persist owner-reviewed purpose, root-contained guidance paths,
+  and authority labels. They enrich only local metadata-only handoffs and are
+  never executed as instructions.
+- Focused root/profile, CLI, handoff, migration, and full regression tests
+  passed locally at 100%. A real Y4S1 profile remains an explicit manual setup.
+
 ## Session: 2026-09-16
 
 ### Automated verification
