@@ -25,7 +25,8 @@ Automated baseline completed locally:
 - `tests/sources/test_handoff.py` proves a Codex handoff contains selected
   metadata and root guidance paths but omits original source text.
 - `tests/sources/test_service.py` covers deterministic source-code extraction
-  and stable line-range provenance for Python source files.
+  and stable line-range provenance for Python source files, plus PPTX
+  slide-number provenance.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate

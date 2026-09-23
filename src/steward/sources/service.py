@@ -86,6 +86,7 @@ class SourceService:
                     SourceType.PLAIN_TEXT,
                     SourceType.PDF,
                     SourceType.DOCX,
+                    SourceType.PPTX,
                     SourceType.HTML,
                     SourceType.IMAGE,
                     SourceType.CODE,

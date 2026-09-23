@@ -14,6 +14,7 @@ SUPPORTED_SOURCE_TYPES = {
     ".eml": SourceType.PLAIN_TEXT,
     ".pdf": SourceType.PDF,
     ".docx": SourceType.DOCX,
+    ".pptx": SourceType.PPTX,
     ".html": SourceType.HTML,
     ".htm": SourceType.HTML,
     ".png": SourceType.IMAGE,

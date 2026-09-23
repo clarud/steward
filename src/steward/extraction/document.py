@@ -10,6 +10,8 @@ from subprocess import CalledProcessError, TimeoutExpired, run
 from tempfile import TemporaryDirectory
 from typing import Protocol
 from zipfile import BadZipFile
+from zipfile import ZipFile
+from xml.etree import ElementTree
 
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
@@ -275,6 +277,33 @@ class DocxExtractor:
         return ExtractionResult(source.id, tuple(fragments))
 
 
+class PptxExtractor:
+    """Extract visible slide text from an OOXML presentation without a model."""
+
+    _TEXT = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.PPTX:
+            raise ValueError("PptxExtractor requires a PPTX Source.")
+        try:
+            with ZipFile(source.path) as archive:
+                slides = sorted(
+                    (name for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")),
+                    key=lambda name: int(name.rsplit("slide", 1)[1].removesuffix(".xml")),
+                )
+                fragments = []
+                for index, name in enumerate(slides, start=1):
+                    root = ElementTree.fromstring(archive.read(name))
+                    text = " ".join(part.text or "" for part in root.iter(self._TEXT)).strip()
+                    if text:
+                        fragments.append(SourceFragment(None, source.id, None, len(fragments), text, f"slide {index}"))
+        except (BadZipFile, OSError, ElementTree.ParseError, KeyError, ValueError) as error:
+            raise DocumentExtractionError(f"Could not read PPTX {source.path}.") from error
+        return ExtractionResult(source.id, tuple(fragments))
+
+
 class HtmlExtractor:
     """Extract visible HTML text into heading-delimited fragments."""
 
@@ -337,6 +366,7 @@ class ExtractionService:
             SourceType.PLAIN_TEXT: PlainTextExtractor(),
             SourceType.PDF: PdfExtractor(),
             SourceType.DOCX: DocxExtractor(),
+            SourceType.PPTX: PptxExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
             SourceType.CODE: CodeExtractor(),

@@ -1,4 +1,5 @@
 from pathlib import Path
+from zipfile import ZipFile
 
 from steward.extraction import ExtractionResult, MarkdownExtractor, SourceFragment, SourceFragmentRepository
 from steward.sources import SourceType
@@ -64,6 +65,24 @@ def test_source_service_scans_and_extracts_source_code_with_path_provenance(tmp_
     extracted = fragments.list_for_source(source.id or 0)
     assert extracted[0].location == "lines 1-2"
     assert "def schedule" in extracted[0].text
+
+
+def test_source_service_extracts_pptx_slide_text_with_slide_provenance(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    vault = tmp_path / "slides"; vault.mkdir()
+    source_path = vault / "lecture.pptx"
+    with ZipFile(source_path, "w") as archive:
+        archive.writestr(
+            "ppt/slides/slide1.xml",
+            '<p:sld xmlns:p="p" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Parallel speedup</a:t></p:sld>',
+        )
+    sources = SourceRepository(database_path); fragments = SourceFragmentRepository(database_path)
+
+    SourceService(sources, fragments, MarkdownExtractor()).scan_source_root(vault)
+
+    source = sources.get_by_path(source_path.resolve())
+    assert source is not None and source.source_type is SourceType.PPTX
+    assert [(item.text, item.location) for item in fragments.list_for_source(source.id or 0)] == [("Parallel speedup", "slide 1")]
 
 
 def test_source_code_extraction_uses_stable_bounded_line_ranges(tmp_path: Path) -> None:
