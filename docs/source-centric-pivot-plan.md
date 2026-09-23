@@ -382,8 +382,9 @@ model tool schemas omit disabled tools.
 **Status (23 September 2026):** in progress. The watcher now debounces and
 refreshes every currently supported source type using content hashes; root scans
 remain the authoritative fallback. Successful root scans record a local last
-scan timestamp for CLI/Telegram visibility. Extraction-failure reporting and
-move reconciliation are still outstanding.
+scan timestamp and concise new/updated/unchanged/missing outcome for
+CLI/Telegram visibility. Extraction-failure reporting remains outstanding;
+reviewable move reconciliation is delivered separately in P2.
 
 - Replace Markdown-only watch handling with a generic supported-source event
   queue and debounced refresh path.

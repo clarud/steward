@@ -23,6 +23,7 @@ class SourceRoot:
     created_at: datetime
     exclusions: tuple[Path, ...] = ()
     last_scanned_at: datetime | None = None
+    last_scan_counts: tuple[int, int, int, int] | None = None
 
     @property
     def health(self) -> str:
@@ -64,12 +65,13 @@ class SourceRootRepository:
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 """SELECT roots.id, roots.name, roots.path, roots.enabled, roots.created_at, roots.exclusions,
-                          scans.last_scanned_at
+                          scans.scanned_at, scans.new_count, scans.updated_count,
+                          scans.unchanged_count, scans.missing_count
                    FROM source_roots AS roots
-                   LEFT JOIN (
-                       SELECT root_id, MAX(scanned_at) AS last_scanned_at
-                       FROM source_root_scans GROUP BY root_id
-                   ) AS scans ON scans.root_id = roots.id
+                   LEFT JOIN source_root_scans AS scans ON scans.id = (
+                       SELECT id FROM source_root_scans
+                       WHERE root_id = roots.id ORDER BY scanned_at DESC, id DESC LIMIT 1
+                   )
                    ORDER BY roots.name"""
             ).fetchall()
         return tuple(self._from_row(row) for row in rows)
@@ -78,12 +80,13 @@ class SourceRootRepository:
         with sqlite3.connect(self._database_path) as connection:
             row = connection.execute(
                 """SELECT roots.id, roots.name, roots.path, roots.enabled, roots.created_at, roots.exclusions,
-                          scans.last_scanned_at
+                          scans.scanned_at, scans.new_count, scans.updated_count,
+                          scans.unchanged_count, scans.missing_count
                    FROM source_roots AS roots
-                   LEFT JOIN (
-                       SELECT root_id, MAX(scanned_at) AS last_scanned_at
-                       FROM source_root_scans GROUP BY root_id
-                   ) AS scans ON scans.root_id = roots.id
+                   LEFT JOIN source_root_scans AS scans ON scans.id = (
+                       SELECT id FROM source_root_scans
+                       WHERE root_id = roots.id ORDER BY scanned_at DESC, id DESC LIMIT 1
+                   )
                    WHERE roots.name = ?""",
                 (name.strip(),),
             ).fetchone()
@@ -104,7 +107,7 @@ class SourceRootRepository:
             )
         return SourceRoot(
             root.id, root.name, root.path, root.enabled, root.created_at,
-            root.exclusions, scanned_at,
+            root.exclusions, scanned_at, (result.new, result.updated, result.unchanged, result.missing),
         )
 
     def set_enabled(self, name: str, enabled: bool) -> SourceRoot:
@@ -115,7 +118,10 @@ class SourceRootRepository:
             return root
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("UPDATE source_roots SET enabled = ? WHERE id = ?", (int(enabled), root.id))
-        return SourceRoot(root.id, root.name, root.path, enabled, root.created_at, root.exclusions, root.last_scanned_at)
+        return SourceRoot(
+            root.id, root.name, root.path, enabled, root.created_at, root.exclusions,
+            root.last_scanned_at, root.last_scan_counts,
+        )
 
     def relocate_missing(self, name: str, new_path: Path) -> RootRelocation:
         """Rebind a missing root only when all tracked originals match by hash."""
@@ -167,7 +173,10 @@ class SourceRootRepository:
                     (candidate, size_bytes, modified_at, last_seen_at, source_id),
                 )
             connection.execute("UPDATE source_roots SET path = ? WHERE id = ?", (str(destination), root.id))
-        relocated = SourceRoot(root.id, root.name, destination, root.enabled, root.created_at, root.exclusions, root.last_scanned_at)
+        relocated = SourceRoot(
+            root.id, root.name, destination, root.enabled, root.created_at, root.exclusions,
+            root.last_scanned_at, root.last_scan_counts,
+        )
         return RootRelocation(relocated, len(replacements))
 
     @staticmethod
@@ -189,4 +198,6 @@ class SourceRootRepository:
         return SourceRoot(
             int(row[0]), str(row[1]), root, bool(row[3]), datetime.fromisoformat(str(row[4])), exclusions,
             datetime.fromisoformat(str(row[6])) if len(row) > 6 and row[6] is not None else None,
+            (int(row[7]), int(row[8]), int(row[9]), int(row[10]))
+            if len(row) > 10 and row[7] is not None else None,
         )

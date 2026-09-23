@@ -1936,7 +1936,9 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     database_path = tmp_path / "steward.db"; initialize_database(database_path)
     root_path = tmp_path / "notes"; root_path.mkdir()
     roots = SourceRootRepository(database_path)
-    roots.add("School", root_path)
+    root = roots.add("School", root_path)
+    from steward.sources import ScanResult
+    roots.record_successful_scan(root, ScanResult(new=1, updated=2, unchanged=3, missing=4))
     application = StewardEventApplication(
         StewardQuestionApplication(FakeGraph()), StewardCaptureApplication(type("Capture", (), {})()),
         roots_application=StewardRootsApplication(roots, contexts=ReviewContextRepository(database_path)),
@@ -1951,6 +1953,7 @@ def test_roots_command_reports_only_locally_authorized_root_health(tmp_path: Pat
     detail = application.handle(make_event(text="/root 1"))
     assert isinstance(detail, PresentedReply)
     assert detail.title == "School"
+    assert "Last scan outcome: new=1 updated=2 unchanged=3 missing=4" in detail.text
     assert "Root paths and changes remain local-only." in detail.text
     assert detail.reference == ("root", 1)
     reopened = application.handle(make_event(text="show that root"))

@@ -94,6 +94,8 @@ tool. The watcher incrementally refreshes supported files; full scans remain the
 authoritative reconciliation mechanism for missed events, moves, and large
 batches. A same-root rename or move with one unambiguous content-hash match is
 shown as a reviewable move proposal; accepting it preserves the old source ID.
+Root status shows the timestamp and concise new/updated/unchanged/missing counts
+from the latest successful full scan.
 `codex-handoff` creates a local JSON manifest containing selected source
 metadata and applicable root guidance paths. It never sends content to Codex or
 executes a Codex session.

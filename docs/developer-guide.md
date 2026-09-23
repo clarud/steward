@@ -50,6 +50,12 @@ accepts a user-supplied filesystem path. The same type/path scope reaches
 lexical FTS5, semantic vector retrieval, and hybrid reciprocal-rank fusion, so
 the three modes do not disagree about which originals are eligible.
 
+Each completed full root scan appends a concise local telemetry row. Root cards
+and the local `steward roots` command expose only its timestamp and
+`new`/`updated`/`unchanged`/`missing` counts. This is scan evidence, not a claim
+that the watcher observed every filesystem event; a full scan remains the
+reconciliation authority.
+
 ## Design principles
 
 Steward's current implementation follows five important rules.

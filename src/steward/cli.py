@@ -1258,7 +1258,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         for root in roots:
             excluded = ", ".join(str(item) for item in root.exclusions) or "none"
             last_scan = root.last_scanned_at.isoformat() if root.last_scanned_at is not None else "never"
-            print(f"{root.id}\t{root.name}\t{root.health}\tlast_scan={last_scan}\t{root.path}\texcluded={excluded}")
+            counts = (
+                f"new={root.last_scan_counts[0]},updated={root.last_scan_counts[1]},"
+                f"unchanged={root.last_scan_counts[2]},missing={root.last_scan_counts[3]}"
+                if root.last_scan_counts is not None else "never"
+            )
+            print(f"{root.id}\t{root.name}\t{root.health}\tlast_scan={last_scan}\tlast_outcome={counts}\t{root.path}\texcluded={excluded}")
         return
 
     if arguments.command == "unregister-source":

@@ -4351,8 +4351,13 @@ class StewardRootsApplication:
         identifier = getattr(root, "id")
         last_scanned_at = getattr(root, "last_scanned_at", None)
         scan_status = last_scanned_at.isoformat() if last_scanned_at is not None else "never"
+        counts = getattr(root, "last_scan_counts", None)
+        outcome = (
+            f"Last scan outcome: new={counts[0]} updated={counts[1]} unchanged={counts[2]} missing={counts[3]}\n"
+            if counts is not None else ""
+        )
         return PresentedReply(
-            f"Status: {health}\nLast successful scan: {scan_status}\nExcluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
+            f"Status: {health}\nLast successful scan: {scan_status}\n{outcome}Excluded subdirectories: {len(getattr(root, 'exclusions'))}\n\n"
             f"{guidance}\nRoot paths and changes remain local-only.",
             (ReplyAction("Roots", "/roots"), ReplyAction("Home", "/home")),
             title=str(getattr(root, "name")), icon="🗂️",

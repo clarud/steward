@@ -200,6 +200,15 @@ safe test.
   automated regression suite also passed locally at 100%. A live scoped-search
   check remains in the active Telegram checklist.
 
+### Automated delivery: latest root-scan outcome — 23 September 2026
+
+- A successful full scan now persists and presents its concise
+  `new`/`updated`/`unchanged`/`missing` result as well as its timestamp. Root
+  detail cards and `steward roots` expose this operational summary without a
+  local path.
+- Repository and Telegram-root tests cover persistence and rendering. Live
+  confirmation can be combined with the existing scan/root-status checklist.
+
 ## Session: 2026-09-16
 
 ### Automated verification

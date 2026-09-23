@@ -74,7 +74,9 @@ def test_source_root_records_the_latest_successful_scan(tmp_path: Path) -> None:
     recorded = repository.record_successful_scan(root, ScanResult(new=1, updated=0, unchanged=2, missing=0))
 
     assert recorded.last_scanned_at is not None
-    assert SourceRootRepository(database).get_by_name("School").last_scanned_at == recorded.last_scanned_at
+    restored = SourceRootRepository(database).get_by_name("School")
+    assert restored is not None and restored.last_scanned_at == recorded.last_scanned_at
+    assert restored.last_scan_counts == (1, 0, 2, 0)
 
 
 def test_missing_root_relocation_atomically_rebinds_matching_sources(tmp_path: Path) -> None:
