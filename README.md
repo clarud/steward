@@ -56,6 +56,10 @@ Inbox, review what would be saved, then explicitly accept it. The active bot
 also exposes source browsing, root status, search, source privacy changes, and
 explicit Drive/Gmail imports.
 
+Before saving a staged capture, **Intended root** can retain optional routing
+context such as a course folder. It does not move the file: the original remains
+in Inbox until a separate reviewed workflow handles it.
+
 Telegram is an interface, not the storage location: uploads are downloaded to
 the configured Inbox, and no remote model analyzes a source unless its privacy
 rule permits the chosen model.

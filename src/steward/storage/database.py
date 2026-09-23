@@ -67,6 +67,8 @@ HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
 SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION = 58
 SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION = 59
 SOURCE_LOCATION_HISTORY_SCHEMA_VERSION = 60
+PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION = 61
+SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -598,6 +600,21 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             path TEXT NOT NULL,
             recorded_at TEXT NOT NULL,
             reason TEXT NOT NULL
+        )""",
+    ),
+    (
+        PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION,
+        "ALTER TABLE provisional_intakes ADD COLUMN intended_root_id INTEGER REFERENCES source_roots(id)",
+    ),
+    (
+        SOURCE_INBOX_CONTEXT_SCHEMA_VERSION,
+        """CREATE TABLE source_inbox_contexts (
+            source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE,
+            intended_root_id INTEGER REFERENCES source_roots(id) ON DELETE SET NULL,
+            intended_root_name TEXT,
+            user_context TEXT,
+            capture_origin TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )""",
     ),
 )

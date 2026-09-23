@@ -8,12 +8,17 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from shutil import copy2
+from typing import TYPE_CHECKING
 
 from steward.activity import ActivityService, ActivityType
 from steward.capture import CaptureResult, InboxCaptureService
 from steward.events import IncomingEvent
 from steward.sources import source_type_for_path
 from steward.privacy import PrivacyRule, PrivacyService
+from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
+
+if TYPE_CHECKING:
+    from steward.roots import SourceRootRepository
 
 
 class IntakeAnalysisMode(StrEnum):
@@ -51,6 +56,7 @@ class ProvisionalIntake:
     created_at: datetime
     decided_at: datetime | None = None
     diagnostic: str = ""
+    intended_root_id: int | None = None
 
 
 class ProvisionalIntakeRepository:
@@ -67,15 +73,15 @@ class ProvisionalIntakeRepository:
                 """
                 INSERT INTO provisional_intakes (
                     event_id, platform, chat_id, message_id, kind, staged_path,
-                    original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic, intended_root_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     intake.event_id, intake.platform, intake.chat_id, intake.message_id,
                     intake.kind, str(intake.staged_path), intake.original_name, intake.category,
                     intake.summary, intake.analysis_mode.value, intake.status, intake.created_at.isoformat(),
                     intake.decided_at.isoformat() if intake.decided_at else None,
-                    intake.diagnostic,
+                    intake.diagnostic, intake.intended_root_id,
                 ),
             )
         return replace(intake, id=int(cursor.lastrowid))
@@ -85,7 +91,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic, intended_root_id
                 FROM provisional_intakes WHERE id = ?
                 """,
                 (intake_id,),
@@ -97,7 +103,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic, intended_root_id
                 FROM provisional_intakes WHERE event_id = ?
                 """,
                 (event_id,),
@@ -118,7 +124,7 @@ class ProvisionalIntakeRepository:
             row = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic, intended_root_id
                 FROM provisional_intakes
                 WHERE platform = ? AND chat_id = ? AND message_id = ? AND status = 'pending'
                 """,
@@ -132,7 +138,7 @@ class ProvisionalIntakeRepository:
             rows = connection.execute(
                 """
                 SELECT id, event_id, platform, chat_id, message_id, kind, staged_path,
-                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic
+                       original_name, category, summary, analysis_mode, status, created_at, decided_at, diagnostic, intended_root_id
                 FROM provisional_intakes ORDER BY id
                 """
             ).fetchall()
@@ -204,6 +210,18 @@ class ProvisionalIntakeRepository:
             )
         return replace(intake, analysis_mode=mode)
 
+    def set_intended_root(self, intake_id: int, root_id: int | None) -> ProvisionalIntake:
+        intake = self.get(intake_id)
+        if intake is None:
+            raise ValueError(f"Provisional intake {intake_id} was not found.")
+        if intake.status != "pending":
+            raise ValueError(f"Provisional intake {intake_id} was already {intake.status}.")
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                "UPDATE provisional_intakes SET intended_root_id = ? WHERE id = ?", (root_id, intake_id)
+            )
+        return replace(intake, intended_root_id=root_id)
+
     @staticmethod
     def _from_row(row: tuple[object, ...]) -> ProvisionalIntake:
         return ProvisionalIntake(
@@ -213,7 +231,7 @@ class ProvisionalIntakeRepository:
             analysis_mode=IntakeAnalysisMode(str(row[10])), status=str(row[11]),
             created_at=datetime.fromisoformat(str(row[12])),
             decided_at=datetime.fromisoformat(str(row[13])) if row[13] else None,
-            diagnostic=str(row[14]),
+            diagnostic=str(row[14]), intended_root_id=int(row[15]) if row[15] is not None else None,
         )
 
 
@@ -227,12 +245,16 @@ class ProvisionalIntakeService:
         capture_service: InboxCaptureService,
         activity_service: ActivityService,
         privacy_service: PrivacyService,
+        roots: "SourceRootRepository | None" = None,
+        inbox_contexts: SourceInboxContextRepository | None = None,
     ) -> None:
         self._staging_dir = staging_dir
         self._repository = repository
         self._capture = capture_service
         self._activity = activity_service
         self._privacy = privacy_service
+        self._roots = roots
+        self._inbox_contexts = inbox_contexts
 
     def stage_file(self, event: IncomingEvent, original_path: Path) -> ProvisionalIntake:
         existing = self._repository.get_by_event_id(event.id)
@@ -297,6 +319,18 @@ class ProvisionalIntakeService:
         if result.source.id is None:
             raise RuntimeError("Captured sources must have an ID before applying intake privacy.")
         self._privacy.set_rule(result.source.id, intake.analysis_mode.privacy_rule)
+        if self._inbox_contexts is not None:
+            root = next(
+                (item for item in self._roots.list_all() if item.id == intake.intended_root_id), None
+            ) if self._roots is not None and intake.intended_root_id is not None else None
+            self._inbox_contexts.set(SourceInboxContext(
+                result.source.id,
+                root.id if root is not None else None,
+                root.name if root is not None else None,
+                self._repository.latest_guidance(intake_id),
+                intake.platform,
+                datetime.now(UTC),
+            ))
         decided = self._repository.decide(intake_id, "accepted")
         decided.staged_path.unlink(missing_ok=True)
         self._activity.record(
@@ -359,6 +393,22 @@ class ProvisionalIntakeService:
             object_id=str(intake_id),
             details=f"analysis={mode.value}",
         )
+        return intake
+
+    def set_intended_root(self, intake_id: int, chat_id: str, root_id: int | None) -> ProvisionalIntake:
+        """Attach an optional authorized-root intent without moving the staged file."""
+        self._pending_for_chat(intake_id, chat_id)
+        root_name = None
+        if root_id is not None:
+            if self._roots is None:
+                raise ValueError("Authorized roots are unavailable on this Steward process.")
+            root = next((item for item in self._roots.list_all() if item.id == root_id and item.enabled), None)
+            if root is None:
+                raise ValueError("Choose an enabled authorized root from the picker.")
+            root_name = root.name
+        intake = self._repository.set_intended_root(intake_id, root_id)
+        details = f"intended_root={root_name}" if root_name is not None else "intended_root=none"
+        self._activity.record(ActivityType.INTAKE_REVISED, object_id=str(intake_id), details=details)
         return intake
 
     def _pending_for_chat(self, intake_id: int, chat_id: str) -> ProvisionalIntake:

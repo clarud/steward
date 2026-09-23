@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.sources.repository import SourceRepository
 
 if TYPE_CHECKING:
@@ -25,11 +26,19 @@ class CodexHandoff:
 class CodexHandoffService:
     """Write metadata-only local handoff manifests; never invoke Codex."""
 
-    def __init__(self, sources: SourceRepository, roots: "SourceRootRepository", data_dir: Path, inbox: Path) -> None:
+    def __init__(
+        self,
+        sources: SourceRepository,
+        roots: "SourceRootRepository",
+        data_dir: Path,
+        inbox: Path,
+        inbox_contexts: SourceInboxContextRepository | None = None,
+    ) -> None:
         self._sources = sources
         self._roots = roots
         self._handoffs = data_dir.resolve() / "handoffs"
         self._inbox = inbox.resolve()
+        self._inbox_contexts = inbox_contexts
 
     def prepare(self, source_ids: tuple[int, ...], *, note: str = "") -> CodexHandoff:
         if not source_ids or len(set(source_ids)) != len(source_ids):
@@ -53,6 +62,21 @@ class CodexHandoffService:
                 "source_type": source.source_type.value, "content_hash": source.content_hash,
                 "modified_at": source.modified_at.isoformat(),
             })
+            if self._inbox_contexts is not None and source.id is not None:
+                context = self._inbox_contexts.get(source.id)
+                if context is not None:
+                    selected[-1]["inbox_capture_context"] = {
+                        "intended_root": context.intended_root_name,
+                        "user_context": context.user_context,
+                        "capture_origin": context.capture_origin,
+                    }
+                    if context.intended_root_id is not None:
+                        intended_root = next((item for item in roots if item.id == context.intended_root_id), None)
+                        if intended_root is not None:
+                            for name in ("AGENTS.md", "COURSE_WORKFLOWS.md"):
+                                candidate = intended_root.path / name
+                                if candidate.is_file():
+                                    guidance.add(str(candidate))
             if root is not None:
                 for name in ("AGENTS.md", "COURSE_WORKFLOWS.md"):
                     candidate = root.path / name

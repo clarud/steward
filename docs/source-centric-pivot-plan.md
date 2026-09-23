@@ -469,8 +469,13 @@ guess a destination.
 local metadata-only manifest for selected active sources, including hashes,
 root-relative paths, user guidance, and discovered `AGENTS.md` or
 `COURSE_WORKFLOWS.md` paths. It never reads source text into the manifest,
-invokes Codex, or changes files. Inbox intended-root context and Telegram
-handoff selection remain outstanding.
+invokes Codex, or changes files. A staged Telegram capture now offers an
+optional enabled-root picker. On explicit save, the selected root, user context,
+and capture origin are retained as local Inbox metadata; the original remains in
+Inbox and no model, Codex process, or filesystem move is triggered. Source cards
+and CLI/Telegram handoff manifests show that context, and an intended root adds
+its local guidance-document paths to the metadata-only manifest. Telegram
+handoff selection remains outstanding.
 
 - Associate each Inbox capture with an optional intended root, not a required
   Workspace.

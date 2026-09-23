@@ -9,7 +9,9 @@ from steward.events import IncomingEvent
 from steward.extraction import SourceFragmentRepository
 from steward.intake import IntakeAnalysisMode, ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.privacy import PrivacyRule, PrivacyService
+from steward.roots import SourceRootRepository
 from steward.sources import SourceRepository
+from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.storage import initialize_database
 
 
@@ -73,6 +75,37 @@ def test_file_is_staged_without_registering_a_source_until_accepted(tmp_path: Pa
     assert sources.list_all() == [saved.source]
     assert PrivacyService(tmp_path / "steward.db").rule_for(saved.source.id or 0) is PrivacyRule.NO_MODEL
     assert activity.list_recent()[0].event_type is ActivityType.INTAKE_ACCEPTED
+
+
+def test_intended_root_is_saved_as_inbox_metadata_without_moving_the_source(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    root_path = tmp_path / "Y4S1"; root_path.mkdir()
+    roots = SourceRootRepository(database)
+    root = roots.add("Y4S1", root_path)
+    sources = SourceRepository(database)
+    activity = ActivityService(database)
+    capture = InboxCaptureService(tmp_path / "vault" / "inbox", sources, activity_service=activity)
+    contexts = SourceInboxContextRepository(database)
+    service = ProvisionalIntakeService(
+        tmp_path / ".steward" / "cache" / "intake",
+        ProvisionalIntakeRepository(database),
+        capture,
+        activity,
+        PrivacyService(database),
+        roots=roots,
+        inbox_contexts=contexts,
+    )
+    original = tmp_path / "lecture.pdf"; original.write_bytes(b"course material")
+    intake = service.stage_file(make_event(attachment=original.name), original)
+
+    selected = service.set_intended_root(intake.id or 0, "100", root.id)
+    saved = service.accept(intake.id or 0, make_event(attachment=original.name))
+    context = contexts.get(saved.source.id or 0)
+
+    assert selected.intended_root_id == root.id
+    assert context is not None and context.intended_root_name == "Y4S1"
+    assert saved.source.path.is_relative_to(tmp_path / "vault" / "inbox")
+    assert not saved.source.path.is_relative_to(root_path)
 
 
 def test_discard_removes_staged_original_without_creating_a_source(tmp_path: Path) -> None:

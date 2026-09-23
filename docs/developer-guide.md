@@ -24,6 +24,14 @@ is an explicit local-development escape hatch, not a feature advertised to
 ordinary users. See [the source-centric pivot plan](source-centric-pivot-plan.md)
 and [ADR-006](adr/ADR-006-source-centric-active-surface.md).
 
+Telegram capture is deliberately provisional. A file or note is staged locally
+first; **Intended root** records an optional routing hint only. On explicit
+save, its selected root, any user context, and capture origin are persisted as
+Inbox metadata. The original stays in the configured Inbox until a separate,
+reviewed external workflow moves it. Source cards and local metadata-only Codex
+handoff manifests can expose this context, but neither sends the original body
+to a model nor grants filesystem authority.
+
 ## Design principles
 
 Steward's current implementation follows five important rules.

@@ -89,6 +89,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.actions import FileMutationService
 from steward.action_proposals import ActionProposalRepository, ActionProposalService
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.roots import SourceRootRepository
 from steward.records import RecordService
 from steward.tasks import TaskReminderService, TaskService
@@ -1057,7 +1058,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
         try:
             handoff = CodexHandoffService(
-                SourceRepository(database_path), SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir
+                SourceRepository(database_path),
+                SourceRootRepository(database_path),
+                settings.data_dir,
+                settings.inbox_dir,
+                SourceInboxContextRepository(database_path),
             ).prepare(tuple(arguments.source_ids), note=arguments.note)
         except ValueError as error:
             print(f"Codex handoff was not prepared: {error}")
@@ -1649,6 +1654,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                         else privacy.permits_external_model
                     ),
                     source_centric=True,
+                    inbox_contexts=SourceInboxContextRepository(database_path),
                 ),
                 provisional_intake_application=StewardProvisionalIntakeApplication(
                     ProvisionalIntakeService(
@@ -1657,8 +1663,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                         capture_service,
                         activity,
                         privacy,
+                        roots=SourceRootRepository(database_path),
+                        inbox_contexts=SourceInboxContextRepository(database_path),
                     ),
                     contexts=review_contexts,
+                    roots=SourceRootRepository(database_path),
                 ),
                 tool_agent_application=tool_agent_application,
                 roots_application=StewardRootsApplication(
@@ -1668,7 +1677,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                     sources, SourceMoveProposalRepository(database_path)
                 ),
                 codex_handoff_application=StewardCodexHandoffApplication(
-                    CodexHandoffService(sources, SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir)
+                    CodexHandoffService(
+                        sources,
+                        SourceRootRepository(database_path),
+                        settings.data_dir,
+                        settings.inbox_dir,
+                        SourceInboxContextRepository(database_path),
+                    )
                 ),
                 privacy_application=StewardPrivacyApplication(
                     privacy,
@@ -1858,8 +1873,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                     capture_service,
                     activity,
                     privacy,
+                    roots=SourceRootRepository(database_path),
+                    inbox_contexts=SourceInboxContextRepository(database_path),
                 ),
                 contexts=review_contexts,
+                roots=SourceRootRepository(database_path),
             ),
             tool_agent_application=tool_agent_application,
             review_inbox_application=StewardReviewInboxApplication(

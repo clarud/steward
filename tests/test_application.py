@@ -46,6 +46,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.extraction import ExtractionResult, MarkdownExtractor, SourceFragment, SourceFragmentRepository
 from steward.graphs import build_organization_approval_graph
 from steward.sources import Source, SourceRepository, SourceType
+from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 from steward.workspaces import WorkspaceRepository, WorkspaceService
@@ -6102,3 +6103,31 @@ def test_source_centric_reader_omits_workspace_actions_and_exposes_source_home(t
     assert "Workspaces" not in [action.label for action in card.actions]
     assert any(action.command == f"/privacy_options {source.id}" for action in card.actions)
     assert "not active in source-centric mode" in reader.handle_command(make_event(text="/workspaces"))
+
+
+def test_source_card_shows_saved_inbox_capture_context(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    now = datetime.now(UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, tmp_path / "vault" / "inbox" / "lecture.md", "b" * 64,
+        SourceType.MARKDOWN, 1, now, now, now,
+    ))
+    contexts = SourceInboxContextRepository(database)
+    contexts.set(SourceInboxContext(
+        source.id or 0, 7, "Y4S1", "CS3210 lecture notes", "telegram", now,
+    ))
+    fragments = SourceFragmentRepository(database)
+    reader = StewardReadApplication(
+        sources, fragments, LexicalSearchService(sources, fragments), None,
+        ActivityService(database), tmp_path / "vault" / "inbox",
+        source_centric=True, inbox_contexts=contexts,
+    )
+
+    card = reader.source(str(source.id))
+
+    assert isinstance(card, PresentedReply)
+    assert "Intended root: Y4S1" in card.text
+    assert "Capture context: CS3210 lecture notes" in card.text
+    assert "Capture origin: telegram" in card.text

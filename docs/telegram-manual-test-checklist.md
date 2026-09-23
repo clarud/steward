@@ -23,7 +23,12 @@ the retained legacy sections below as relevant.
    answer and confirm the intended source remains the reference.
 4. Send a harmless document and a short note. Confirm each is staged in the
    local Inbox, explainable before saving, and only becomes a source after an
-   explicit decision. Reject one item and confirm no source is created.
+   explicit decision. On one staged item, choose **Intended root**, select an
+   enabled root, and confirm the review card names it while clearly stating that
+   the original remains in Inbox. Save it, open its source card to confirm the
+   stored capture context, then prepare a metadata-only Codex handoff and check
+   that its local manifest includes the intended root/context but no source body.
+   Reject the other item and confirm no source is created.
 5. Change a source privacy rule, then try a model-backed summary or answer.
    Confirm a remote-model restriction is explained clearly and that Read
    content remains available.

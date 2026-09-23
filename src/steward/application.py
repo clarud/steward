@@ -51,6 +51,8 @@ from steward.intake import (
     ProvisionalIntakeRepository,
     ProvisionalIntakeService,
 )
+from steward.roots import SourceRootRepository
+from steward.sources.inbox_context import SourceInboxContextRepository
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
 from steward.answer.gateway import ModelGateway, ModelGatewayError
@@ -767,6 +769,7 @@ class StewardReadApplication:
         source_model_allowed: Callable[[int], bool] | None = None,
         source_export: SourceExportService | None = None,
         source_centric: bool = False,
+        inbox_contexts: SourceInboxContextRepository | None = None,
     ) -> None:
         self._source_export = source_export
         self._source_centric = source_centric
@@ -784,6 +787,7 @@ class StewardReadApplication:
         self._hybrid_retriever = hybrid_retriever
         self._runtime_status = runtime_status
         self._contexts = contexts
+        self._inbox_contexts = inbox_contexts
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -1172,9 +1176,19 @@ class StewardReadApplication:
         if source is None:
             return f"Source {source_id} was not found."
         fragments = self._fragments.list_for_source(source_id)
+        inbox_context = self._inbox_contexts.get(source_id) if self._inbox_contexts is not None else None
+        inbox_details: tuple[str, ...] = ()
+        if inbox_context is not None:
+            inbox_details = tuple(
+                item for item in (
+                    f"Intended root: {inbox_context.intended_root_name}" if inbox_context.intended_root_name else None,
+                    f"Capture context: {inbox_context.user_context}" if inbox_context.user_context else None,
+                    f"Capture origin: {inbox_context.capture_origin}",
+                ) if item is not None
+            )
         return PresentedReply(
             f"Source ID: {source_id}\nType: {source.source_type.value}\nStatus: {source.status.value}\n"
-            f"Extracted sections: {len(fragments)}",
+            f"Extracted sections: {len(fragments)}" + ("\n" + "\n".join(inbox_details) if inbox_details else ""),
             actions=(
                 ReplyAction("Read content", f"/source_content {source_id}"),
                 ReplyAction("Summarize", f"/summarize_source {source_id}"),
@@ -5186,9 +5200,11 @@ class StewardProvisionalIntakeApplication:
         service: ProvisionalIntakeService,
         *,
         contexts: ReviewContextRepository | None = None,
+        roots: SourceRootRepository | None = None,
     ) -> None:
         self._service = service
         self._contexts = contexts
+        self._roots = roots
 
     def begin_file(self, event: IncomingEvent, original_path: Path) -> PresentedReply:
         intake = self._service.stage_file(event, original_path)
@@ -5232,7 +5248,7 @@ class StewardProvisionalIntakeApplication:
     def handle_command(self, event: IncomingEvent) -> CaptureResult | str | PresentedReply | None:
         command, separator, argument = (event.text or "").strip().partition(" ")
         command = command.partition("@")[0]
-        if command not in {"/intake_accept", "/intake_discard", "/intake_context", "/intake_analysis"}:
+        if command not in {"/intake_accept", "/intake_discard", "/intake_context", "/intake_analysis", "/intake_root"}:
             return None
         intake_identifier, context_separator, context = argument.strip().partition(" ")
         if not separator or not intake_identifier.isdigit():
@@ -5268,6 +5284,16 @@ class StewardProvisionalIntakeApplication:
                     IntakeAnalysisMode.NONE: "No model may analyze this item after you save it.",
                 }[mode]
                 return self._review_card(intake, analysis_description=description)
+            if command == "/intake_root":
+                if not context_separator:
+                    return self._root_picker(intake_id, event.chat_id)
+                if context.casefold() in {"none", "clear"}:
+                    intake = self._service.set_intended_root(intake_id, event.chat_id, None)
+                elif context.isdigit():
+                    intake = self._service.set_intended_root(intake_id, event.chat_id, int(context))
+                else:
+                    return "Choose an intended root from the picker, or use `none` to clear it."
+                return self._review_card(intake)
             intake = self._service.discard(intake_id, event.chat_id)
         except OSError:
             return "Could not update this provisional intake because local staging is temporarily unavailable. Try again later."
@@ -5352,14 +5378,36 @@ class StewardProvisionalIntakeApplication:
             IntakeAnalysisMode.LOCAL: "Only a configured local model may analyze extracted content after you save it.",
             IntakeAnalysisMode.NONE: "No model will analyze this item after you save it.",
         }[intake.analysis_mode]
+        intended_root = None
+        if intake.intended_root_id is not None and self._roots is not None:
+            intended_root = next((root.name for root in self._roots.list_all() if root.id == intake.intended_root_id), None)
+        intent_line = f"\nIntended root: {intended_root}" if intended_root else ""
         return PresentedReply(
             f"Type: {intake.category}\nSummary: {intake.summary}\n\n"
             f"Assessment: {intake.diagnostic}\n\n"
-            f"{description}\n\nIt is staged locally and has not been saved.",
+            f"{description}{intent_line}\n\nIt is staged locally and has not been saved.",
             self._actions(intake),
             title=f"Review {intake.original_name}",
             icon="📄",
             reference=("intake", intake.id or 0),
+        )
+
+    def _root_picker(self, intake_id: int, chat_id: str) -> PresentedReply | str:
+        if self._roots is None:
+            return "Authorized roots are unavailable on this Steward process."
+        intake = self._service.get(intake_id)
+        if intake is None or intake.status != "pending" or intake.chat_id != chat_id:
+            return "That staged item is no longer available in this chat."
+        roots = [root for root in self._roots.list_all() if root.enabled]
+        if not roots:
+            return "No enabled authorized roots are available. Add a root locally first, or keep this item unassigned in Inbox."
+        return PresentedReply(
+            "Choose an optional intended root. This only records your routing context; the file stays in Inbox.",
+            tuple(ReplyAction(root.name[:48], f"/intake_root {intake_id} {root.id}") for root in roots)
+            + (ReplyAction("No intended root", f"/intake_root {intake_id} none"),),
+            title="Intended root",
+            icon="📁",
+            reference=("intake", intake_id),
         )
 
     @staticmethod
@@ -5375,6 +5423,7 @@ class StewardProvisionalIntakeApplication:
             ReplyAction("Use local model", f"/intake_analysis {intake.id} local"),
             ReplyAction("Allow external model", f"/intake_analysis {intake.id} external"),
             ReplyAction("Add context", f"/intake_context {intake.id}"),
+            ReplyAction("Intended root", f"/intake_root {intake.id}"),
             ReplyAction("Do not keep", f"/intake_discard {intake.id}"),
         )
 

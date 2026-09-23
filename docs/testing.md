@@ -154,6 +154,22 @@ safe test.
   Telegram privacy retest and the remaining manual source-centric acceptance
   checks are still required.
 
+### Automated delivery: Inbox intended-root context — 23 September 2026
+
+- A staged capture can now retain an optional enabled authorized root before
+  save. The selection is local routing metadata, not a command to move the
+  original; accepted sources remain in Inbox.
+- `source_inbox_contexts` stores the intended root name/ID, explicit user
+  context, and capture origin. Source cards reveal this metadata for the owner.
+  The normal CLI and Telegram `codex-handoff` paths include it in a local
+  metadata-only manifest and can add applicable root guidance-document paths;
+  they still omit the source body and do not invoke Codex.
+- Focused intake, handoff, application, CLI, and database migration tests pass
+  locally, followed by the full automated suite at 100%. Live Telegram
+  verification is intentionally pending: select an
+  intended root for one harmless staged item, save it, inspect its source card
+  and handoff manifest, and verify that the file remains in Inbox.
+
 ## Session: 2026-09-16
 
 ### Automated verification
