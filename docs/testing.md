@@ -19,6 +19,9 @@ Automated baseline completed locally:
   `tests/test_roots.py`, and `tests/test_cli.py`.
 - `tests/sources/test_moves.py` proves an accepted one-to-one rename preserves
   the original source ID and that duplicate content creates no move proposal.
+- Full automated regression suite: passed locally on 23 September 2026 after
+  the source-centric runtime, all-format watcher, root telemetry, and reviewed
+  move-reconciliation changes.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root, demonstrate
