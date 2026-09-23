@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -362,13 +364,21 @@ def run_telegram_polling(
     callback_repository: TelegramCallbackRepository | None = None,
     review_contexts: ReviewContextRepository | None = None,
     message_references: MessageReferenceRepository | None = None,
+    periodic: Callable[[], Sequence[tuple[str, str]]] | None = None,
+    period_seconds: float = 15 * 60,
 ) -> None:
-    """Start the local Telegram process until the user stops it."""
+    """Start the local Telegram process until the user stops it.
+
+    ``periodic`` runs in a worker thread at start-up and then every
+    ``period_seconds`` (the background rescan); it returns ``(chat_id, text)``
+    notices to send.
+    """
 
     if not token.strip():
         raise ValueError("Telegram bot token must not be empty.")
 
     builder = ApplicationBuilder().token(token)
+    background: list[asyncio.Task] = []
 
     async def start_services(application: object) -> None:
         """Set a small discovery menu without making Telegram startup depend on it."""
@@ -378,8 +388,19 @@ def run_telegram_polling(
             )
         except Exception:
             _LOGGER.warning("Could not update Steward's Telegram command menu.")
+        if periodic is not None:
+            background.append(asyncio.create_task(
+                run_periodically(application.bot, periodic, period_seconds, allowed_chat_ids)  # type: ignore[attr-defined]
+            ))
 
-    builder = builder.post_init(start_services)
+    async def stop_services(application: object) -> None:
+        del application
+        for task in background:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    builder = builder.post_init(start_services).post_stop(stop_services)
     application = builder.build()
     adapter = TelegramAdapter(
         event_handler,
@@ -402,3 +423,21 @@ def run_telegram_polling(
     application.add_handler(CallbackQueryHandler(adapter.handle_callback))
     application.run_polling()
 
+
+async def run_periodically(
+    bot: object,
+    job: Callable[[], Sequence[tuple[str, str]]],
+    period_seconds: float,
+    allowed_chat_ids: frozenset[str] = frozenset(),
+) -> None:
+    """Run ``job`` now and then every period; send its notices. Failures retry next period."""
+    while True:
+        try:
+            notices = await asyncio.to_thread(job)
+            for chat_id, text in notices:
+                if allowed_chat_ids and chat_id not in allowed_chat_ids:
+                    continue
+                await bot.send_message(chat_id=chat_id, text=text)  # type: ignore[attr-defined]
+        except Exception as error:
+            _LOGGER.warning("Background rescan failed (%s); retrying next period.", type(error).__name__)
+        await asyncio.sleep(period_seconds)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 QUEUE_FILENAME = "INBOX.md"
 # Guidance files Codex should read before filing into a root, when present.
 ROOT_GUIDANCE_FILENAMES = ("AGENTS.md", "COURSE_WORKFLOWS.md")
-_ORIGINS = {"telegram": "Telegram", "gmail": "Gmail", "drive": "Google Drive"}
+_ORIGINS = {"telegram": "Telegram", "local": "the Inbox folder"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +73,7 @@ class InboxQueue:
             root = next(
                 (item for item in roots if context is not None and item.id == context.intended_root_id), None
             )
-            origin = context.capture_origin if context is not None else source.path.name.split("-", 1)[0]
+            origin = context.capture_origin if context is not None else self._origin(source)
             entries.append(InboxQueueEntry(
                 source,
                 _ORIGINS.get(origin, origin.title() or "Unknown"),
@@ -128,6 +129,14 @@ class InboxQueue:
             for guidance in entry.guidance:
                 lines.append(f"- Guidance: `{guidance}`")
         return "\n".join(lines) + "\n"
+
+    def _origin(self, source: Source) -> str:
+        """The platform recorded at capture, e.g. `telegram` from `telegram:chat:message`."""
+        with sqlite3.connect(self._sources.database_path) as connection:
+            row = connection.execute(
+                "SELECT capture_key FROM inbox_captures WHERE source_id = ?", (source.id,)
+            ).fetchone()
+        return str(row[0]).split(":", 1)[0] if row is not None else "local"
 
     @staticmethod
     def _guidance(root: "SourceRoot") -> tuple[Path, ...]:

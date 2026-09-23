@@ -15,12 +15,7 @@ from steward.runtime import RuntimeAlreadyRunningError, telegram_runtime_lock
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.extraction import DocumentExtractionError, MarkdownExtractor, SourceFragmentRepository
 from steward.logging import configure_logging
-from steward.sources import (
-    SourceMoveProposalRepository,
-    SourceMoveReconciliationService,
-    SourceRepository,
-    SourceType,
-)
+from steward.sources import SourceRepository, SourceType
 from steward.sources.service import SourceService
 from steward.storage import initialize_database, restore_database, snapshot_database
 from steward.retrieval import (
@@ -41,6 +36,9 @@ from steward.evaluation import evaluate_lexical_retrieval, load_retrieval_cases
 from steward.cli.bootstrap import (
     build_question_graph,
     build_telegram_application,
+    filed_notices,
+    rescan_all,
+    scan_root,
     health_report,
     inbox_queue,
     model_gateway_from_settings,
@@ -169,16 +167,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             if not root.path.is_dir():
                 print(f"Source root {root.name!r} is unavailable: {root.path}")
                 return
-            result = SourceService(
-                source_repository=SourceRepository(database_path),
-                fragment_repository=SourceFragmentRepository(database_path),
-                markdown_extractor=MarkdownExtractor(),
-            ).scan_source_root(root.path, exclusions=root.exclusions)
-            SourceRootRepository(database_path).record_successful_scan(root, result)
-            SourceMoveReconciliationService(
-                SourceRepository(database_path), SourceMoveProposalRepository(database_path)
-            ).propose_for_root(root.path)
-            inbox_queue(settings).refresh()
+            result, moves = scan_root(settings, root)
         except sqlite3.Error as error:
             _print_scan_database_error("Root scan", error)
             return
@@ -187,6 +176,8 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             f"new={result.new} updated={result.updated} "
             f"unchanged={result.unchanged} missing={result.missing}"
         )
+        for move in moves:
+            print(f"Moved: {move.previous_path.name} -> {move.source.path}")
         return
 
     if arguments.command == "onboard-root":
@@ -214,15 +205,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             if not root.path.is_dir():
                 print(f"Source root {root.name!r} is unavailable: {root.path}")
                 return
-            result = SourceService(
-                source_repository=SourceRepository(database_path),
-                fragment_repository=SourceFragmentRepository(database_path),
-                markdown_extractor=MarkdownExtractor(),
-            ).scan_source_root(root.path, exclusions=root.exclusions)
-            SourceRootRepository(database_path).record_successful_scan(root, result)
-            SourceMoveReconciliationService(
-                SourceRepository(database_path), SourceMoveProposalRepository(database_path)
-            ).propose_for_root(root.path)
+            result, _ = scan_root(settings, root)
         except (sqlite3.Error, ValueError) as error:
             if isinstance(error, sqlite3.Error):
                 _print_scan_database_error("Onboarding scan", error)
@@ -234,42 +217,6 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             f"new={result.new} updated={result.updated} unchanged={result.unchanged} missing={result.missing}\n"
             "Original files were not moved, copied, or rewritten."
         )
-        return
-
-    if arguments.command == "reconcile-moves":
-        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        root = SourceRootRepository(database_path).get_by_name(arguments.name)
-        if root is None:
-            print(f"No locally authorized source root named {arguments.name!r}.")
-            return
-        proposals = SourceMoveReconciliationService(
-            SourceRepository(database_path), SourceMoveProposalRepository(database_path)
-        ).propose_for_root(root.path)
-        pending = SourceMoveProposalRepository(database_path).list_pending()
-        if not pending:
-            print("No unambiguous source moves are waiting for review.")
-            return
-        sources = SourceRepository(database_path)
-        for proposal in pending:
-            missing = sources.get_by_id(proposal.missing_source_id)
-            discovered = sources.get_by_id(proposal.discovered_source_id)
-            if missing is not None and discovered is not None:
-                print(f"{proposal.id}\tmissing={proposal.missing_source_id}:{missing.path.name}\tfound={proposal.discovered_source_id}:{discovered.path.name}")
-        return
-
-    if arguments.command == "review-move":
-        database_path = settings.data_dir / "steward.db"; initialize_database(database_path)
-        proposals = SourceMoveProposalRepository(database_path)
-        service = SourceMoveReconciliationService(SourceRepository(database_path), proposals)
-        try:
-            if arguments.accept:
-                source = service.accept(arguments.proposal_id)
-                print(f"Preserved source ID {source.id} at {source.path}. The temporary discovered row was removed.")
-            else:
-                proposal = proposals.review(arguments.proposal_id, "rejected")
-                print(f"Rejected move proposal {proposal.id}; both source histories remain unchanged.")
-        except ValueError as error:
-            print(f"Source move was not changed: {error}")
         return
 
     if arguments.command == "inbox":
@@ -497,7 +444,10 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         if model_gateway is None:
             return
         database_path = settings.data_dir / "steward.db"
-        application = build_telegram_application(settings, model_gateway, limit=arguments.limit)
+        embedding_provider = SentenceTransformerEmbeddingProvider()
+        application = build_telegram_application(
+            settings, model_gateway, limit=arguments.limit, embedding_provider=embedding_provider,
+        )
         try:
             with telegram_runtime_lock(settings.data_dir):
                 run_telegram_polling(
@@ -508,6 +458,9 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                     callback_repository=TelegramCallbackRepository(database_path),
                     review_contexts=ReviewContextRepository(database_path),
                     message_references=MessageReferenceRepository(database_path),
+                    periodic=lambda: filed_notices(
+                        settings, rescan_all(settings, embedding_provider=embedding_provider)
+                    ),
                 )
         except RuntimeAlreadyRunningError as error:
             print(str(error))

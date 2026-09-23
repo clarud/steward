@@ -1,86 +1,74 @@
-from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
-from steward.sources import (
-    SourceMoveProposalRepository,
-    SourceMoveReconciliationService,
-    SourceRepository,
-)
+from steward.sources import MoveReconciler, SourceInboxContext, SourceInboxContextRepository, SourceRepository
 from steward.sources.service import SourceService
 from steward.storage import initialize_database
 
 
-def test_user_accepted_unambiguous_move_preserves_original_source_id(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    root = tmp_path / "notes"; root.mkdir()
-    original = root / "first.md"; original.write_text("# Queueing\nLittle's law", encoding="utf-8")
-    sources = SourceRepository(database)
-    service = SourceService(sources, SourceFragmentRepository(database), MarkdownExtractor())
-    service.scan_source_root(root)
-    first = sources.get_by_path(original.resolve())
-    assert first is not None
-
-    moved = root / "lectures" / "queueing.md"; moved.parent.mkdir(); original.rename(moved)
-    service.scan_source_root(root)
-    discovered = sources.get_by_path(moved.resolve())
-    assert discovered is not None and discovered.id != first.id
-
-    moves = SourceMoveReconciliationService(sources, SourceMoveProposalRepository(database))
-    proposals = moves.propose_for_root(root)
-    assert len(proposals) == 1
-
-    preserved = moves.accept(proposals[0].id or 0)
-
-    assert preserved.id == first.id
-    assert preserved.path == moved.resolve()
-    assert sources.location_history(first.id or 0) == (original.resolve(),)
-    assert sources.get_by_id(discovered.id or 0) is None
-    assert SourceFragmentRepository(database).list_for_source(first.id or 0)[0].heading == "Queueing"
-
-
-def test_duplicate_content_never_produces_an_automatic_move_match(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    root = tmp_path / "notes"; root.mkdir()
-    original = root / "first.md"; original.write_text("same bytes", encoding="utf-8")
-    sources = SourceRepository(database)
-    service = SourceService(sources, SourceFragmentRepository(database), MarkdownExtractor())
-    service.scan_source_root(root)
-
-    original.unlink()
-    (root / "copy-a.md").write_text("same bytes", encoding="utf-8")
-    (root / "copy-b.md").write_text("same bytes", encoding="utf-8")
-    service.scan_source_root(root)
-
-    proposals = SourceMoveReconciliationService(
-        sources, SourceMoveProposalRepository(database)
-    ).propose_for_root(root)
-
-    assert proposals == ()
-
-
-def test_move_acceptance_refuses_a_path_that_left_the_reviewed_root(tmp_path: Path) -> None:
-    database = tmp_path / "steward.db"; initialize_database(database)
-    first_root = tmp_path / "first"; first_root.mkdir()
-    second_root = tmp_path / "second"; second_root.mkdir()
-    original = first_root / "first.md"; original.write_text("same bytes", encoding="utf-8")
+def _setup(tmp_path: Path):
+    database = tmp_path / "steward.db"
+    initialize_database(database)
     sources = SourceRepository(database)
     scanner = SourceService(sources, SourceFragmentRepository(database), MarkdownExtractor())
-    scanner.scan_source_root(first_root)
-    original.rename(first_root / "renamed.md")
-    scanner.scan_source_root(first_root)
-    moves = SourceMoveReconciliationService(sources, SourceMoveProposalRepository(database))
-    proposal = moves.propose_for_root(first_root)[0]
+    return database, sources, scanner
 
-    moved = first_root / "renamed.md"
-    moved.rename(second_root / moved.name)
-    discovered = sources.get_by_id(proposal.discovered_source_id)
-    assert discovered is not None
-    sources.update(replace(discovered, path=second_root / moved.name))
 
-    try:
-        moves.accept(proposal.id or 0)
-    except ValueError as error:
-        assert "reviewed root" in str(error)
-    else:
-        raise AssertionError("A cross-root source must not preserve a same-root move identity.")
+def test_a_rename_keeps_the_file_identity_and_records_where_it_was(tmp_path: Path) -> None:
+    _, sources, scanner = _setup(tmp_path)
+    root = tmp_path / "notes"; root.mkdir()
+    original = root / "draft.md"; original.write_text("# OpenMP\nloops", encoding="utf-8")
+    scanner.scan_source_root(root)
+    before = sources.get_by_path(original.resolve())
+    renamed = root / "Week 5" / "openmp.md"; renamed.parent.mkdir()
+    original.rename(renamed)
+    scanner.scan_source_root(root)
+
+    [move] = MoveReconciler(sources).reconcile()
+
+    assert move.source.id == before.id
+    assert move.source.path == renamed.resolve()
+    assert move.previous_path == original.resolve()
+    assert sources.location_history(before.id or 0) == (original.resolve(),)
+    assert [item.path for item in sources.list_all()] == [renamed.resolve()]
+
+
+def test_filing_an_inbox_upload_keeps_its_note(tmp_path: Path) -> None:
+    database, sources, scanner = _setup(tmp_path)
+    inbox = tmp_path / "inbox"; inbox.mkdir()
+    root = tmp_path / "Y4S1"; root.mkdir()
+    upload = inbox / "tut05.pdf"; upload.write_bytes(b"tutorial five")
+    scanner.scan_source_root(inbox)
+    saved = sources.get_by_path(upload.resolve())
+    SourceInboxContextRepository(database).set(SourceInboxContext(
+        saved.id or 0, None, None, "CS3210 week 5", "telegram", datetime.now(UTC),
+    ))
+    filed = root / "CS3210" / "tut05.pdf"; filed.parent.mkdir()
+    upload.rename(filed)  # what Codex does from INBOX.md
+    scanner.scan_source_root(root)
+
+    [move] = MoveReconciler(sources, inbox).reconcile()
+
+    assert move.source.id == saved.id and move.source.path == filed.resolve()
+    assert SourceInboxContextRepository(database).get(saved.id or 0).user_context == "CS3210 week 5"
+
+
+def test_copies_and_ambiguous_duplicates_are_left_as_separate_files(tmp_path: Path) -> None:
+    _, sources, scanner = _setup(tmp_path)
+    root = tmp_path / "notes"; root.mkdir()
+    (root / "a.md").write_text("same bytes", encoding="utf-8")
+    (root / "b.md").write_text("same bytes", encoding="utf-8")
+    scanner.scan_source_root(root)
+    (root / "a.md").rename(root / "c.md")
+    (root / "b.md").rename(root / "d.md")
+    scanner.scan_source_root(root)
+
+    assert MoveReconciler(sources).reconcile() == ()
+    assert len(sources.list_all()) == 4
+
+    kept = root / "kept.md"; kept.write_text("unique", encoding="utf-8")
+    scanner.scan_source_root(root)
+    (root / "copy.md").write_text("unique", encoding="utf-8")
+    scanner.scan_source_root(root)
+    assert MoveReconciler(sources).reconcile() == ()

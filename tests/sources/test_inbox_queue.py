@@ -49,7 +49,7 @@ def test_intended_root_note_and_guidance_reach_the_queue(tmp_path: Path) -> None
     course = tmp_path / "Y4S1"; course.mkdir()
     (course / "AGENTS.md").write_text("File tutorials under Tutorials/.", encoding="utf-8")
     root = SourceRootRepository(database).add("Y4S1", course)
-    result = capture.capture_text(_event("8", "tutorial 5 answers"))
+    result = capture.capture_text(_event("8", "tutorial 5 answers with the private worked solution kept inside"))
     SourceInboxContextRepository(database).set(SourceInboxContext(
         result.source.id or 0, root.id, root.name, "CS3210 week 5", "telegram", datetime.now(UTC),
     ))
@@ -60,7 +60,7 @@ def test_intended_root_note_and_guidance_reach_the_queue(tmp_path: Path) -> None
     assert f"- Intended root: Y4S1 (`{course.resolve()}`)" in listing
     assert "- Note: CS3210 week 5" in listing
     assert f"- Guidance: `{course.resolve() / 'AGENTS.md'}`" in listing
-    assert "tutorial 5 answers" not in listing
+    assert "kept inside" not in listing  # file contents never appear, only the file name
 
 
 def test_filed_files_drop_off_and_unchanged_lists_are_not_rewritten(tmp_path: Path) -> None:

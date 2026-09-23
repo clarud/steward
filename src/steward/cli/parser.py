@@ -47,13 +47,6 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("inbox", help="Refresh INBOX.md and list what's waiting to be filed")
 
     # Upkeep
-    reconcile = commands.add_parser("reconcile-moves", help="List renames/moves matched by content")
-    reconcile.add_argument("name")
-    review = commands.add_parser("review-move", help="Accept or reject one matched move")
-    review.add_argument("proposal_id", type=int)
-    decision = review.add_mutually_exclusive_group(required=True)
-    decision.add_argument("--accept", action="store_true")
-    decision.add_argument("--reject", action="store_true")
     reextract = commands.add_parser("reextract", help="Extract one file's text again")
     reextract.add_argument("source_id", type=int)
     unregister = commands.add_parser("unregister-source", help="Forget one file; the original is not touched")

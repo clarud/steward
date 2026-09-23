@@ -24,7 +24,7 @@ def test_parser_exposes_only_live_commands() -> None:
 
     assert set(subparsers.choices) == {
         "onboard-root", "scan-root", "roots", "relocate-root", "remove-root", "search", "ask", "inbox",
-        "reconcile-moves", "review-move", "reextract", "unregister-source", "download-embedding-model",
+        "reextract", "unregister-source", "download-embedding-model",
         "rebuild-semantic-index", "evaluate-retrieval", "activity", "telegram", "health", "backup", "restore",
     }
 

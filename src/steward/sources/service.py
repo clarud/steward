@@ -220,6 +220,19 @@ class SourceService:
             self._semantic_index.replace_for_source(fragments)
         return fragments
 
+    def index_missing_vectors(self) -> int:
+        """Embed only sources that have text but no vectors yet; returns sections embedded."""
+
+        if self._semantic_index is None or not hasattr(self._semantic_index, "sources_missing_vectors"):
+            return 0
+        indexed = 0
+        for source_id in self._semantic_index.sources_missing_vectors():
+            fragments = self._fragment_repository.list_for_source(source_id)
+            if fragments:
+                self._semantic_index.replace_for_source(fragments)
+                indexed += len(fragments)
+        return indexed
+
     def rebuild_semantic_index(self) -> int:
         """Regenerate vectors from current fragments without reparsing originals."""
 

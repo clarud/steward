@@ -73,6 +73,8 @@ SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
 SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION = 64
 LEGACY_TABLES_DROPPED_SCHEMA_VERSION = 65
 MINIMAL_SURFACE_SCHEMA_VERSION = 66
+INBOX_CAPTURE_KEYS_SCHEMA_VERSION = 67
+MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION = 68
 
 # Tables owned by the retired workspace, organization, knowledge, record, task,
 # Calendar, and research features (see ADR-007). Children precede parents so
@@ -117,7 +119,9 @@ MINIMAL_SURFACE_DROPPED_TABLES = (
 )
 # Migrations that delete user data. An existing database is snapshotted before
 # any of them runs, and the migration is not applied if the snapshot fails.
-DESTRUCTIVE_MIGRATIONS = frozenset({LEGACY_TABLES_DROPPED_SCHEMA_VERSION, MINIMAL_SURFACE_SCHEMA_VERSION})
+DESTRUCTIVE_MIGRATIONS = frozenset({
+    LEGACY_TABLES_DROPPED_SCHEMA_VERSION, MINIMAL_SURFACE_SCHEMA_VERSION, MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION,
+})
 
 MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
@@ -688,6 +692,18 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         MINIMAL_SURFACE_SCHEMA_VERSION,
         tuple(f"DROP TABLE IF EXISTS {table}" for table in MINIMAL_SURFACE_DROPPED_TABLES),
+    ),
+    (
+        INBOX_CAPTURE_KEYS_SCHEMA_VERSION,
+        """CREATE TABLE inbox_captures (
+            capture_key TEXT PRIMARY KEY,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION,
+        "DROP TABLE IF EXISTS source_move_proposals",
     ),
 )
 

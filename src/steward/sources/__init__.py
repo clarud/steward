@@ -9,7 +9,7 @@ from steward.sources.repository import (
     SourceRepository,
 )
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
-from steward.sources.moves import SourceMoveProposal, SourceMoveProposalRepository, SourceMoveReconciliationService
+from steward.sources.moves import MoveReconciler, ReconciledMove
 from steward.sources.inbox_queue import InboxQueue, InboxQueueEntry
 from steward.sources.inbox_context import SourceInboxContext, SourceInboxContextRepository
 
@@ -17,9 +17,8 @@ __all__ = [
     "Source",
     "SourceAlreadyExistsError",
     "SourceNotFoundError",
-    "SourceMoveProposal",
-    "SourceMoveProposalRepository",
-    "SourceMoveReconciliationService",
+    "MoveReconciler",
+    "ReconciledMove",
     "InboxQueue",
     "InboxQueueEntry",
     "SourceInboxContext",

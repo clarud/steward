@@ -225,6 +225,20 @@ class SQLiteSemanticIndex:
         ]
         return tuple(sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit])
 
+    def sources_missing_vectors(self) -> tuple[int, ...]:
+        """Sources that have extracted text but no vectors from this model yet."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT fragments.source_id FROM source_fragments AS fragments
+                LEFT JOIN source_fragment_embeddings AS vectors
+                  ON vectors.fragment_id = fragments.id AND vectors.model_name = ?
+                WHERE vectors.fragment_id IS NULL ORDER BY fragments.source_id
+                """,
+                (self._embedding_provider.model_name,),
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
+
     def clear(self) -> int:
         """Remove this provider's derived vectors without touching source fragments."""
 

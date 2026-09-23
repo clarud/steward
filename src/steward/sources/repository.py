@@ -25,6 +25,10 @@ class SourceRepository:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
 
+    @property
+    def database_path(self) -> Path:
+        return self._database_path
+
     def add(self, source: Source) -> Source:
         """Persist an unregistered Source and return it with its SQLite ID."""
         if source.id is not None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from contextlib import closing
@@ -27,7 +28,7 @@ from steward.app import (
 )
 from steward.capture import InboxCaptureService
 from steward.config import Settings
-from steward.extraction import SourceFragmentRepository
+from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.graphs import build_retrieval_answer_graph
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
 from steward.retrieval import (
@@ -38,8 +39,10 @@ from steward.retrieval import (
     SQLiteSemanticIndex,
 )
 from steward.reviews import ReviewContextRepository
-from steward.roots import SourceRootRepository
-from steward.sources import InboxQueue, SourceRepository
+from steward.roots import SourceRoot, SourceRootRepository
+from steward.sources import InboxQueue, MoveReconciler, ReconciledMove, SourceRepository
+from steward.sources.scanning import ScanResult
+from steward.sources.service import SourceService
 from steward.sources.export import SourceExportService
 from steward.sources.inbox_context import SourceInboxContextRepository
 from steward.storage import initialize_database
@@ -164,6 +167,83 @@ def health_report(settings: Settings) -> tuple[str, bool]:
     return report, ready
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def scan_root(
+    settings: Settings, root: SourceRoot, *, embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+) -> tuple[ScanResult, tuple[ReconciledMove, ...]]:
+    """Scan one folder, recognise moved files, and refresh INBOX.md."""
+    database_path = settings.data_dir / "steward.db"
+    sources = SourceRepository(database_path)
+    service = SourceService(
+        source_repository=sources,
+        fragment_repository=SourceFragmentRepository(database_path),
+        markdown_extractor=MarkdownExtractor(),
+        semantic_index=SQLiteSemanticIndex(database_path, embedding_provider) if embedding_provider else None,
+    )
+    result = service.scan_source_root(root.path, exclusions=root.exclusions)
+    SourceRootRepository(database_path).record_successful_scan(root, result)
+    moves = MoveReconciler(sources, settings.inbox_dir).reconcile()
+    inbox_queue(settings).refresh()
+    return result, moves
+
+
+def rescan_all(
+    settings: Settings, *, embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+) -> tuple[ReconciledMove, ...]:
+    """The bot's periodic pass: every available folder, then vectors for anything new."""
+    database_path = settings.data_dir / "steward.db"
+    moves: list[ReconciledMove] = []
+    for root in SourceRootRepository(database_path).list_all():
+        if root.health != "available":
+            continue
+        try:
+            moves.extend(scan_root(settings, root, embedding_provider=embedding_provider)[1])
+        except (sqlite3.Error, OSError) as error:
+            _LOGGER.warning("Background scan of %s failed (%s); will retry.", root.name, type(error).__name__)
+    moves.extend(MoveReconciler(SourceRepository(database_path), settings.inbox_dir).reconcile())
+    inbox_queue(settings).refresh()
+    if embedding_provider is not None:
+        SourceService(
+            source_repository=SourceRepository(database_path),
+            fragment_repository=SourceFragmentRepository(database_path),
+            markdown_extractor=MarkdownExtractor(),
+            semantic_index=SQLiteSemanticIndex(database_path, embedding_provider),
+        ).index_missing_vectors()
+    return tuple(moves)
+
+
+def filed_notices(settings: Settings, moves: tuple[ReconciledMove, ...]) -> list[tuple[str, str]]:
+    """Tell the chat that uploaded a file where it was filed, e.g. by Codex."""
+    database_path = settings.data_dir / "steward.db"
+    inbox = settings.inbox_dir.resolve()
+    roots = SourceRootRepository(database_path).list_all()
+    notices = []
+    for move in moves:
+        if move.previous_path.resolve().parent != inbox:
+            continue
+        with sqlite3.connect(database_path) as connection:
+            row = connection.execute(
+                "SELECT capture_key FROM inbox_captures WHERE source_id = ?", (move.source.id,)
+            ).fetchone()
+        platform, _, rest = (str(row[0]) if row else "").partition(":")
+        if platform != "telegram":
+            continue
+        chat_id = rest.partition(":")[0]
+        path = move.source.path.resolve()
+        root = max(
+            (item for item in roots if path.is_relative_to(item.path.resolve())),
+            key=lambda item: len(item.path.parts), default=None,
+        )
+        where = (
+            " / ".join((root.name, *path.relative_to(root.path.resolve()).parent.parts))
+            if root is not None else str(path.parent.name)
+        )
+        notices.append((chat_id, f"📁 {path.name} is now filed in {where}."))
+    return notices
+
+
 def inbox_queue(settings: Settings) -> InboxQueue:
     """The INBOX.md list of Inbox files waiting to be filed on this computer."""
     database_path = settings.data_dir / "steward.db"
@@ -176,12 +256,16 @@ def inbox_queue(settings: Settings) -> InboxQueue:
 
 
 def build_telegram_application(
-    settings: Settings, model_gateway: ModelGateway, *, limit: int
+    settings: Settings,
+    model_gateway: ModelGateway,
+    *,
+    limit: int,
+    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
 ) -> StewardEventApplication:
     """Compose every Telegram use case over one local database."""
 
     database_path = settings.data_dir / "steward.db"
-    embedding_provider = SentenceTransformerEmbeddingProvider()
+    embedding_provider = embedding_provider or SentenceTransformerEmbeddingProvider()
     sources = SourceRepository(database_path)
     activity = ActivityService(database_path)
     fragments = SourceFragmentRepository(database_path)
