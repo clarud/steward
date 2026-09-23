@@ -64,6 +64,10 @@ Use `/codex_handoff` in Telegram to pick a saved Inbox source, or supply source
 IDs for a deliberate batch. Steward writes a local metadata-only manifest; it
 does not contact Codex or change files.
 
+Source cards show a safe root-relative or Inbox-relative location and whether
+derived text is ready to read. They never reveal an absolute local path in
+Telegram.
+
 Telegram is an interface, not the storage location: uploads are downloaded to
 the configured Inbox, and no remote model analyzes a source unless its privacy
 rule permits the chosen model.

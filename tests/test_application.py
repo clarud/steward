@@ -6132,6 +6132,34 @@ def test_source_card_shows_saved_inbox_capture_context(tmp_path: Path) -> None:
     assert "Intended root: Y4S1" in card.text
     assert "Capture context: CS3210 lecture notes" in card.text
     assert "Capture origin: telegram" in card.text
+    assert "Location: Inbox / lecture.md" in card.text
+    assert "Extraction: no extracted text available" in card.text
+
+
+def test_source_card_uses_a_safe_root_relative_location(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    root_path = tmp_path / "Course"; root_path.mkdir()
+    roots = SourceRootRepository(database)
+    roots.add("CS3210", root_path)
+    source_path = root_path / "lectures" / "tlb.md"; source_path.parent.mkdir()
+    source_path.write_text("TLB", encoding="utf-8")
+    now = datetime.now(UTC)
+    sources = SourceRepository(database)
+    source = sources.add(Source(
+        None, source_path, "d" * 64, SourceType.MARKDOWN, 3, now, now, now,
+    ))
+    reader = StewardReadApplication(
+        sources, SourceFragmentRepository(database),
+        LexicalSearchService(sources, SourceFragmentRepository(database)), None,
+        ActivityService(database), tmp_path / "inbox", source_centric=True, roots=roots,
+    )
+
+    card = reader.source(str(source.id))
+
+    assert isinstance(card, PresentedReply)
+    assert "Location: CS3210 / lectures\\tlb.md" in card.text
+    assert str(root_path) not in card.text
 
 
 def test_codex_handoff_without_ids_offers_an_inbox_picker(tmp_path: Path) -> None:

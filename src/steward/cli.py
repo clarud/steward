@@ -1655,6 +1655,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     ),
                     source_centric=True,
                     inbox_contexts=SourceInboxContextRepository(database_path),
+                    roots=SourceRootRepository(database_path),
                 ),
                 provisional_intake_application=StewardProvisionalIntakeApplication(
                     ProvisionalIntakeService(

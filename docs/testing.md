@@ -181,6 +181,15 @@ safe test.
   verification remains pending: open the picker, choose a harmless Inbox item,
   inspect the generated manifest locally, and confirm no file changed.
 
+### Automated delivery: safe source-card location and extraction state — 23 September 2026
+
+- Active source cards now show a root-relative or Inbox-relative location plus
+  a deterministic extraction state. They do not expose a machine-specific
+  absolute path through Telegram.
+- Focused application tests cover both an Inbox capture and a source below an
+  authorized root. Live Telegram verification can be combined with normal
+  `/source ID` testing later.
+
 ## Session: 2026-09-16
 
 ### Automated verification

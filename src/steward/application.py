@@ -770,6 +770,7 @@ class StewardReadApplication:
         source_export: SourceExportService | None = None,
         source_centric: bool = False,
         inbox_contexts: SourceInboxContextRepository | None = None,
+        roots: SourceRootRepository | None = None,
     ) -> None:
         self._source_export = source_export
         self._source_centric = source_centric
@@ -788,6 +789,7 @@ class StewardReadApplication:
         self._runtime_status = runtime_status
         self._contexts = contexts
         self._inbox_contexts = inbox_contexts
+        self._roots = roots
 
     def handle_command(self, event: IncomingEvent) -> str | PresentedReply | None:
         """Handle a bounded Telegram read command, or return ``None``."""
@@ -1177,6 +1179,18 @@ class StewardReadApplication:
             return f"Source {source_id} was not found."
         fragments = self._fragments.list_for_source(source_id)
         inbox_context = self._inbox_contexts.get(source_id) if self._inbox_contexts is not None else None
+        root = next(
+            (item for item in self._roots.list_all() if source.path.resolve().is_relative_to(item.path.resolve())),
+            None,
+        ) if self._roots is not None else None
+        location = (
+            f"{root.name} / {source.path.resolve().relative_to(root.path.resolve())}"
+            if root is not None
+            else f"Inbox / {source.path.name}"
+            if source.path.resolve().is_relative_to(self._inbox_dir)
+            else "Outside an authorized root"
+        )
+        extraction = f"ready ({len(fragments)} sections)" if fragments else "no extracted text available"
         inbox_details: tuple[str, ...] = ()
         if inbox_context is not None:
             inbox_details = tuple(
@@ -1188,7 +1202,8 @@ class StewardReadApplication:
             )
         return PresentedReply(
             f"Source ID: {source_id}\nType: {source.source_type.value}\nStatus: {source.status.value}\n"
-            f"Extracted sections: {len(fragments)}" + ("\n" + "\n".join(inbox_details) if inbox_details else ""),
+            f"Location: {location}\nExtraction: {extraction}"
+            + ("\n" + "\n".join(inbox_details) if inbox_details else ""),
             actions=(
                 ReplyAction("Read content", f"/source_content {source_id}"),
                 ReplyAction("Summarize", f"/summarize_source {source_id}"),

@@ -37,6 +37,12 @@ and prepares a one-source local manifest only after the owner chooses one.
 `/codex_handoff ID ...` remains the explicit batch form. Both paths call the
 same local handoff service and neither starts a Codex session.
 
+Source cards derive a display location from an authorized root when one contains
+the original, otherwise from the configured Inbox. They show that relative
+location and the current extraction state (`ready` with a section count, or `no
+extracted text available`) but never send an absolute local path through
+Telegram.
+
 ## Design principles
 
 Steward's current implementation follows five important rules.
