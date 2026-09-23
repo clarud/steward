@@ -68,6 +68,10 @@ Source cards show a safe root-relative or Inbox-relative location and whether
 derived text is ready to read. They never reveal an absolute local path in
 Telegram.
 
+Search can be scoped locally, for example `/hybrid_search TLB --type pdf --root
+"CS3210"`. Supported types include `markdown`, `pdf`, `docx`, `pptx`, `xlsx`,
+`notebook`, `html`, `image`, and `code`.
+
 Telegram is an interface, not the storage location: uploads are downloaded to
 the configured Inbox, and no remote model analyzes a source unless its privacy
 rule permits the chosen model.

@@ -45,10 +45,12 @@ def _build_indexed_vault(tmp_path: Path) -> tuple[
     initialize_database(database_path)
     vault = tmp_path / "vault"
     vault.mkdir()
-    (vault / "virtual-memory.md").write_text(
+    course = vault / "course"; course.mkdir()
+    other = vault / "other"; other.mkdir()
+    (course / "virtual-memory.md").write_text(
         "# TLB\nA TLB caches recently used address translations.", encoding="utf-8"
     )
-    (vault / "scheduler.md").write_text(
+    (other / "scheduler.md").write_text(
         "# Scheduling\nA scheduler runs queued jobs.", encoding="utf-8"
     )
     source_repository = SourceRepository(database_path)
@@ -194,3 +196,16 @@ def test_semantic_search_can_filter_by_source_type(tmp_path: Path) -> None:
     )
 
     assert all(hit.source.id != virtual_memory.id for hit in hits)
+
+
+def test_semantic_and_hybrid_search_can_filter_to_an_authorized_path_prefix(tmp_path: Path) -> None:
+    _, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+    semantic = SemanticSearchService(source_repository, semantic_index)
+    hybrid = HybridRetriever(LexicalSearchService(source_repository, fragment_repository), semantic)
+
+    course = tmp_path / "vault" / "course"
+    semantic_hits = semantic.search("translation cache", path_prefix=course)
+    hybrid_hits = hybrid.search("translation cache", path_prefix=course)
+
+    assert {hit.source.path.parent.name for hit in semantic_hits} == {"course"}
+    assert {hit.source.path.parent.name for hit in hybrid_hits} == {"course"}

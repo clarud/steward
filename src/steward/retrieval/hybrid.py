@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from pathlib import Path
 
 from steward.extraction import InvalidSearchQueryError, SourceFragment
 from steward.retrieval.lexical import LexicalSearchService
@@ -42,6 +43,7 @@ class HybridRetriever:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[HybridSearchHit, ...]:
         """Fuse lexical and semantic rankings using reciprocal-rank fusion."""
         if limit <= 0:
@@ -49,14 +51,14 @@ class HybridRetriever:
         candidate_limit = limit * 3
         try:
             lexical_hits = self._lexical_search.search(
-                query, limit=candidate_limit, source_types=source_types
+                query, limit=candidate_limit, source_types=source_types, path_prefix=path_prefix
             )
         except InvalidSearchQueryError:
             # Natural-language punctuation may be invalid FTS5 syntax. Semantic
             # search can still retrieve useful evidence for the same question.
             lexical_hits = ()
         semantic_hits = self._semantic_search.search(
-            query, limit=candidate_limit, source_types=source_types
+            query, limit=candidate_limit, source_types=source_types, path_prefix=path_prefix
         )
 
         combined: dict[int, HybridSearchHit] = {}

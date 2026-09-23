@@ -83,6 +83,7 @@ class SemanticIndex(Protocol):
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticFragmentHit, ...]:
         """Return the fragments most semantically similar to a query."""
 
@@ -163,6 +164,7 @@ class SQLiteSemanticIndex:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticFragmentHit, ...]:
         """Score every vector for this model with cosine similarity."""
         if not query.strip():
@@ -179,6 +181,8 @@ class SQLiteSemanticIndex:
             if selected_source_types
             else ""
         )
+        normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
+        path_filter = " AND s.path LIKE ?" if normalized_prefix is not None else ""
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 f"""
@@ -190,12 +194,14 @@ class SQLiteSemanticIndex:
                 WHERE sfe.model_name = ? AND sfe.dimension = ?
                   AND s.status = ?
                   {source_type_filter}
+                  {path_filter}
                 """,
                 (
                     self._embedding_provider.model_name,
                     len(query_vector),
                     SourceStatus.ACTIVE.value,
                     *selected_source_types,
+                    *((normalized_prefix + "%",) if normalized_prefix is not None else ()),
                 ),
             ).fetchall()
 
@@ -248,10 +254,11 @@ class SemanticSearchService:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticSearchHit, ...]:
         hits: list[SemanticSearchHit] = []
         for result in self._semantic_index.search(
-            query, limit=limit, source_types=source_types
+            query, limit=limit, source_types=source_types, path_prefix=path_prefix
         ):
             source = self._source_repository.get_by_id(result.fragment.source_id)
             if source is None:

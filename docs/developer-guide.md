@@ -43,6 +43,13 @@ location and the current extraction state (`ready` with a section count, or `no
 extracted text available`) but never send an absolute local path through
 Telegram.
 
+All three active retrieval commands accept deterministic local scope filters:
+`--type TYPE` (repeatable) and `--root "authorized root name"`. The parser
+resolves roots only against Steward's local authorization registry; it never
+accepts a user-supplied filesystem path. The same type/path scope reaches
+lexical FTS5, semantic vector retrieval, and hybrid reciprocal-rank fusion, so
+the three modes do not disagree about which originals are eligible.
+
 ## Design principles
 
 Steward's current implementation follows five important rules.

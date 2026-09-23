@@ -6,6 +6,7 @@ import os
 import json
 import secrets
 import logging
+import shlex
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Callable, NotRequired, Protocol, TypedDict
@@ -24,7 +25,7 @@ from steward.organization import (
     OrganizationProposalRepository,
     OrganizationService,
 )
-from steward.sources import CodexHandoffService, Source, SourceMoveProposalRepository, SourceMoveReconciliationService
+from steward.sources import CodexHandoffService, Source, SourceMoveProposalRepository, SourceMoveReconciliationService, SourceType
 from steward.sources.export import SourceExportService
 from steward.sources.service import SourceService
 from steward.workspaces import Workspace
@@ -1122,9 +1123,9 @@ class StewardReadApplication:
             "/sources [page] — registered sources\n"
             "/inbox [page] — saved incoming files and notes\n"
             "/source ID — details, extracted content, and source-specific questions\n"
-            "/search TERMS — local lexical search\n"
-            "/semantic_search QUESTION — local meaning-based search\n"
-            "/hybrid_search QUESTION — combined local search\n"
+            "/search TERMS [--type TYPE] [--root \"ROOT\"] — local lexical search\n"
+            "/semantic_search QUESTION [--type TYPE] [--root \"ROOT\"] — local meaning-based search\n"
+            "/hybrid_search QUESTION [--type TYPE] [--root \"ROOT\"] — combined local search\n"
             "/roots — authorized folders\n"
             "/moves — review unambiguous same-root rename/move matches\n"
             "/codex_handoff [SOURCE_ID ...] — pick Inbox material or prepare a local metadata-only manifest\n"
@@ -1484,43 +1485,114 @@ class StewardReadApplication:
         return f"local file: {filename or '(name withheld)'}"
 
     def search(self, query: str) -> str | PresentedReply:
-        if not query:
-            return "Use /search followed by one or more terms."
+        parsed = self._parse_search_scope(query)
+        if isinstance(parsed, str):
+            return parsed
+        query, source_types, path_prefix, label = parsed
         try:
-            hits = self._lexical.search(query, limit=5)
+            hits = self._lexical.search(query, **self._search_kwargs(5, source_types, path_prefix))
         except InvalidSearchQueryError:
             return "Those search terms are not valid. Try plain words without search operators."
         if not hits:
             return f"No local source fragments matched: {query!r}."
-        return self._search_card("Search results", query, hits)
+        return self._search_card("Search results", label, hits)
 
     def semantic_search(self, query: str) -> str | PresentedReply:
         """Search already-derived local vectors without involving an LLM."""
-        if not query:
-            return "Use /semantic_search followed by a natural-language phrase."
+        parsed = self._parse_search_scope(query, command="/semantic_search")
+        if isinstance(parsed, str):
+            return parsed
+        query, source_types, path_prefix, label = parsed
         if self._semantic_search is None:
             return "Semantic search is not configured locally. Install the local embedding model first."
         try:
-            hits = self._semantic_search.search(query, limit=5)
+            hits = self._semantic_search.search(query, **self._search_kwargs(5, source_types, path_prefix))
         except (OSError, RuntimeError, ValueError):
             return "Semantic search is temporarily unavailable. Verify the local embedding model and derived index."
         if not hits:
             return f"No local semantic matches: {query!r}."
-        return self._search_card("Semantic search results", query, hits, score_label="Similarity")
+        return self._search_card("Semantic search results", label, hits, score_label="Similarity")
 
     def hybrid_search(self, query: str) -> str | PresentedReply:
         """Fuse local lexical and semantic rankings without a provider call."""
-        if not query:
-            return "Use /hybrid_search followed by a question or phrase."
+        parsed = self._parse_search_scope(query, command="/hybrid_search")
+        if isinstance(parsed, str):
+            return parsed
+        query, source_types, path_prefix, label = parsed
         if self._hybrid_retriever is None:
             return "Hybrid search is not configured locally. Install the local embedding model first."
         try:
-            hits = self._hybrid_retriever.search(query, limit=5)
+            hits = self._hybrid_retriever.search(query, **self._search_kwargs(5, source_types, path_prefix))
         except (OSError, RuntimeError, ValueError):
             return "Hybrid search is temporarily unavailable. Verify the local embedding model and derived index."
         if not hits:
             return f"No local hybrid matches: {query!r}."
-        return self._search_card("Hybrid search results", query, hits, score_label="Match")
+        return self._search_card("Hybrid search results", label, hits, score_label="Match")
+
+    def _parse_search_scope(
+        self, raw: str, *, command: str = "/search"
+    ) -> tuple[str, tuple[SourceType, ...], Path | None, str] | str:
+        """Parse local-only root/type constraints without accepting filesystem paths."""
+        try:
+            tokens = shlex.split(raw)
+        except ValueError:
+            return "Your search has an unmatched quote. Close it and try again."
+        if not tokens:
+            return f"Use {command} followed by a query. Optional filters: --type pdf --root \"Root name\"."
+        terms: list[str] = []
+        type_values: list[SourceType] = []
+        root_name: str | None = None
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--type":
+                index += 1
+                if index == len(tokens):
+                    return "Use --type followed by a supported source type, such as pdf, markdown, docx, or code."
+                try:
+                    type_values.append(SourceType(tokens[index].casefold()))
+                except ValueError:
+                    return "That source type is not supported. Try markdown, plain_text, pdf, docx, pptx, xlsx, notebook, html, image, or code."
+            elif token == "--root":
+                index += 1
+                if index == len(tokens):
+                    return "Use --root followed by an authorized root name, for example --root \"CS3210\"."
+                if root_name is not None:
+                    return "Use at most one --root filter per search."
+                root_name = tokens[index]
+            else:
+                terms.append(token)
+            index += 1
+        if not terms:
+            return f"Add a query before or after the filters, for example {command} TLB --type pdf."
+        path_prefix = None
+        labels: list[str] = []
+        if root_name is not None:
+            if self._roots is None:
+                return "Root filtering is unavailable on this Steward process. You can still search all authorized sources."
+            root = next((item for item in self._roots.list_all() if item.name.casefold() == root_name.casefold()), None)
+            if root is None:
+                return f"No authorized root is named {root_name!r}. Open /roots to see available roots."
+            path_prefix = root.path
+            labels.append(f'root: {root.name}')
+        source_types = tuple(dict.fromkeys(type_values))
+        if source_types:
+            labels.append("type: " + ", ".join(item.value for item in source_types))
+        query = " ".join(terms)
+        label = query + ("\nFilters: " + " · ".join(labels) if labels else "")
+        return query, source_types, path_prefix, label
+
+    @staticmethod
+    def _search_kwargs(
+        limit: int, source_types: tuple[SourceType, ...], path_prefix: Path | None
+    ) -> dict[str, object]:
+        """Avoid broadening calls to older test/local search implementations."""
+        kwargs: dict[str, object] = {"limit": limit}
+        if source_types:
+            kwargs["source_types"] = source_types
+        if path_prefix is not None:
+            kwargs["path_prefix"] = path_prefix
+        return kwargs
 
     @staticmethod
     def _search_card(

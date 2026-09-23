@@ -6186,3 +6186,27 @@ def test_codex_handoff_without_ids_offers_an_inbox_picker(tmp_path: Path) -> Non
     assert any(action.command == f"/codex_handoff {source.id}" for action in picker.actions)
     assert isinstance(prepared, PresentedReply)
     assert "metadata and guidance paths only" in prepared.text
+
+
+def test_source_search_parses_authorized_root_and_type_filters(tmp_path: Path) -> None:
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    root_path = tmp_path / "CS3210"; root_path.mkdir()
+    roots = SourceRootRepository(database)
+    roots.add("CS3210", root_path)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class Lexical:
+        def search(self, query: str, **kwargs: object) -> tuple[object, ...]:
+            calls.append((query, kwargs))
+            return ()
+
+    reader = StewardReadApplication(
+        SourceRepository(database), SourceFragmentRepository(database), Lexical(), None,  # type: ignore[arg-type]
+        ActivityService(database), tmp_path / "inbox", source_centric=True, roots=roots,
+    )
+
+    response = reader.handle_command(make_event(text='/search TLB --type pdf --root "CS3210"'))
+
+    assert response == "No local source fragments matched: 'TLB'."
+    assert calls == [("TLB", {"limit": 5, "source_types": (SourceType.PDF,), "path_prefix": root_path})]

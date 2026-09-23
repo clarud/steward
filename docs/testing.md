@@ -190,6 +190,16 @@ safe test.
   authorized root. Live Telegram verification can be combined with normal
   `/source ID` testing later.
 
+### Automated delivery: authorized retrieval scopes — 23 September 2026
+
+- `/search`, `/semantic_search`, and `/hybrid_search` now accept local
+  `--type TYPE` and `--root "authorized root name"` filters. The root name is
+  resolved only from local source-root metadata; raw filesystem paths are not
+  accepted from Telegram.
+- Focused lexical, semantic, hybrid, and Telegram parser tests pass. The full
+  automated regression suite also passed locally at 100%. A live scoped-search
+  check remains in the active Telegram checklist.
+
 ## Session: 2026-09-16
 
 ### Automated verification

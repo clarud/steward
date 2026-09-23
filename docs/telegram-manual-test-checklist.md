@@ -21,6 +21,10 @@ the retained legacy sections below as relevant.
 3. Ask a grounded question about that material. Verify answer citations point to
    the returned local source fragments. Ask a vague follow-up in reply to the
    answer and confirm the intended source remains the reference.
+   Run one scoped search such as `/hybrid_search translation cache --type pdf
+   --root "Telegram Test"`; confirm only sources from that root and type are
+   eligible, and an unknown root gives a safe local clarification rather than a
+   path prompt.
 4. Send a harmless document and a short note. Confirm each is staged in the
    local Inbox, explainable before saving, and only becomes a source after an
    explicit decision. On one staged item, choose **Intended root**, select an
