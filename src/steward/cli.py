@@ -1670,6 +1670,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 codex_handoff_application=StewardCodexHandoffApplication(
                     CodexHandoffService(sources, SourceRootRepository(database_path), settings.data_dir, settings.inbox_dir)
                 ),
+                prefer_grounded_answers=True,
             )
             try:
                 with telegram_runtime_lock(settings.data_dir):

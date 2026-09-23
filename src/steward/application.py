@@ -933,9 +933,32 @@ class StewardReadApplication:
                 (ReplyAction("Send original", f"/send_source {source.id}"), ReplyAction("Cancel", f"/source {source.id}")),
                 title="Send selected original", icon="📎",
             )
-        if context is not None and context.kind == "source_question" and normalized and not normalized.startswith("/"):
+        raw_question = (event.text or "").strip()
+        is_question = raw_question.endswith("?") or raw_question.casefold().startswith((
+            "what ", "how ", "why ", "when ", "where ", "which ", "who ",
+            "can ", "does ", "do ", "is ", "are ", "explain ", "tell me ",
+        ))
+        # The Telegram adapter restores the exact card reference when a user
+        # replies. That is stronger than the chat's newest selection, so a
+        # question replied to a source card may safely use that source's
+        # citation-verifying answer path without requiring an extra button.
+        # An unreplied free-form question remains a whole-source retrieval
+        # query instead of being silently narrowed to one file.
+        source_bound_reply = (
+            context is not None
+            and context.kind == "source"
+            and event.reply_to_id is not None
+            and bool(event.reply_text)
+            and is_question
+        )
+        if (
+            context is not None
+            and context.kind == "source_question"
+            and normalized
+            and not normalized.startswith("/")
+        ) or source_bound_reply:
             self._contexts.set(event.platform, event.chat_id, "source", int(context.identifier))
-            return self.summarize_source(int(context.identifier), question=(event.text or "").strip())
+            return self.summarize_source(int(context.identifier), question=raw_question)
         if normalized in {"summarize it", "summarise it", "summarize that pdf", "summarize this document"}:
             context = self._contexts.get(event.platform, event.chat_id)
             if context is None or context.kind != "source":
@@ -7390,6 +7413,7 @@ class StewardEventApplication:
         privacy_application: StewardPrivacyApplication | None = None,
         operations_application: StewardOperationsApplication | None = None,
         calendar_application: StewardCalendarApplication | None = None,
+        prefer_grounded_answers: bool = False,
     ) -> None:
         self._question_application = question_application
         self._capture_application = capture_application
@@ -7415,6 +7439,7 @@ class StewardEventApplication:
         self._privacy_application = privacy_application
         self._operations_application = operations_application
         self._calendar_application = calendar_application
+        self._prefer_grounded_answers = prefer_grounded_answers
 
     def handle(self, event: IncomingEvent) -> str | PresentedReply:
         if self._review_inbox_application is not None:
@@ -7634,6 +7659,13 @@ class StewardEventApplication:
                 self._workspace_name(event.text or ""), chat_id=event.chat_id
             )
         if decision.primary_intent is Intent.ASK:
+            # Source-centric Steward promises local, evidence-backed answers.
+            # A tool-choosing model may decide that no lookup is necessary,
+            # which is useful for the retained general assistant but wrong as
+            # the default for source memory. `/agent ...` remains available as
+            # the explicit experimental tool-loop entry point.
+            if self._prefer_grounded_answers:
+                return self._question_application.handle(event)
             if self._tool_agent_application is not None:
                 tool_response = self._tool_agent_application.handle_request(event)
                 if tool_response is not None:

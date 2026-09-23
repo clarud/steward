@@ -516,6 +516,35 @@ def test_normal_question_prefers_the_configured_read_only_tool_agent() -> None:
     assert graph.calls == 1
 
 
+def test_source_centric_events_prefer_the_grounded_question_graph_over_tool_choice() -> None:
+    class GroundedGraph:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, input, _config):
+            self.calls += 1
+            assert input == {"question": "What do I know about OpenMP?"}
+            return {"answer": "Grounded local answer."}
+
+    class ToolAgentMustNotRun:
+        def handle_command(self, _event):
+            return None
+
+        def handle_request(self, _event):
+            raise AssertionError("source-centric questions must not depend on model tool choice")
+
+    graph = GroundedGraph()
+    application = StewardEventApplication(
+        StewardQuestionApplication(graph),
+        StewardCaptureApplication(type("Capture", (), {})()),
+        tool_agent_application=ToolAgentMustNotRun(),
+        prefer_grounded_answers=True,
+    )
+
+    assert application.handle(make_event(text="What do I know about OpenMP?")) == "Grounded local answer."
+    assert graph.calls == 1
+
+
 def test_tool_agent_uses_an_explicit_telegram_reply_as_bounded_context() -> None:
     class ToolGraph:
         def invoke(self, input, _config):
@@ -855,6 +884,14 @@ def test_telegram_source_reference_reopens_the_last_explicitly_opened_source_aft
     assert "Generated summary of 2 extracted sections" in summary.text
     assert "Parallel loops" in model.inputs[0] and "Static scheduling" in model.inputs[0]
     assert str(tmp_path) not in model.inputs[0]
+    direct_reply = reader.resolve_source_reference(replace(
+        make_event(text="What scheduling is mentioned?", reply_text="Source card for parallel-computing.md"),
+        reply_to_id="source-card",
+    ))
+    assert isinstance(direct_reply, PresentedReply)
+    assert direct_reply.title == "Answer: parallel-computing.md"
+    assert "Evidence locations:" in direct_reply.text
+    assert "Question: What scheduling is mentioned?" in model.inputs[-1]
     prompt = reader.handle_command(make_event(text=f"/ask_source {source.id}"))
     assert prompt.title == "Ask about this source"
     restarted_reader = StewardReadApplication(

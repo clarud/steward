@@ -46,6 +46,66 @@ tests; it does not replace them. Do not record tokens, credentials, private
 source content, or local absolute paths beyond what is necessary to reproduce a
 safe test.
 
+### Live Telegram acceptance: source-centric entry and root telemetry — 23 September 2026
+
+- `/home` displayed the source-memory entry point and did not expose unwired
+  Workspace, Calendar, record, knowledge, or research actions.
+- `/help` listed only the active source, Inbox, search, root, move, privacy,
+  activity, and metadata-only Codex-handoff capabilities.
+- `/roots` opened the authorized `Telegram Test` root and correctly reported
+  its local-only status. Its initial `Last successful scan: never` value was
+  expected because the root had been scanned before scan-history telemetry was
+  introduced. After `steward scan-root "Telegram Test"`, Telegram displayed a
+  successful-scan timestamp.
+- Result: passed. This verifies root status and new scan telemetry end to end;
+  it does not yet cover multi-format extraction, retrieval, Inbox, privacy,
+  move reconciliation, handoff, or restart persistence.
+
+### Live Telegram acceptance: source reading and retrieval — 23 September 2026
+
+- `/sources` rendered stable source IDs alongside source names, types, and
+  status. Opening `virtual-memory.md` showed its source card and extracted
+  Markdown fragment with line-range provenance.
+- `/search virtual memory` returned `virtual-memory.md` as the first lexical
+  result with the matching heading and line location. It also returned related
+  source fragments, as expected for a ranked search rather than an exact-file
+  lookup.
+- `/semantic_search virtual address page table` returned the `TLB` fragment
+  from `virtual-memory.md` first, despite the query not using the term `TLB`.
+  That is the intended semantic-retrieval behavior. Lower-ranked unrelated
+  course fragments were visible and should remain a retrieval-quality example,
+  not a false claim that every semantic hit is equally relevant.
+- One no-match response mentioning `virtual memory page table` appeared in the
+  transcript without a matching displayed command. The subsequent explicit
+  lexical and semantic searches succeeded; reproduce it with a single clean
+  query before treating it as a product defect.
+- Result: passed for Markdown reading, lexical retrieval, and semantic
+  retrieval. Grounded-answer citations and vague reply follow-up remain open.
+
+### Live Telegram acceptance finding: source-card questions were ungrounded — 23 September 2026
+
+- A free-form question and its conversational follow-up were answered by the
+  general tool agent without calling a local source tool. The card honestly
+  stated that it had not searched saved material, but that is not the intended
+  default for a question about saved files.
+- More importantly, replying directly to the exact `virtual-memory.md` source
+  card also bypassed the source-specific answer path. It produced an apparently
+  source-aware response without verified `[F…]` citations and was labelled as
+  ungrounded.
+- Corrected locally: a question that is directly replied to a persisted source
+  card is now routed through `summarize_source(source_id, question=...)`.
+  That path supplies only the selected source's fragments, enforces the source
+  privacy rule, verifies evidence labels, and refuses an uncited model answer
+  rather than presenting it as grounded. In source-centric Telegram mode,
+  ordinary `ASK` messages now also use the deterministic retrieval-and-citation
+  graph before the optional tool-choosing agent; `/agent ...` remains the
+  explicit tool-loop entry point. Focused application and CLI test suites
+  passed after the regression tests were added.
+- Required retest: restart Telegram; reply to the source card with `What does
+  a TLB do, and why is it useful?` and then reply to that answer with `How
+  does that relate to page tables?`. Each successful answer must include
+  evidence locations, or else show the explicit verification-warning card.
+
 ## Session: 2026-09-16
 
 ### Automated verification
