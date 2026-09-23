@@ -32,6 +32,8 @@ Automated baseline completed locally:
   provenance in `tests/sources/test_service.py`.
 - Full regression suite passed again locally on 23 September 2026 after the
   PPTX, XLSX, notebook, and code-line extraction additions.
+- Full regression suite passed again locally after append-only source location
+  history was added to accepted move reconciliation.
 
 Still required before declaring the pivot acceptance-complete: run the active
 source-centric Telegram checklist with a harmless multi-format root and
