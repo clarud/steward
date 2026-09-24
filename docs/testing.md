@@ -79,6 +79,29 @@ credentials, private file content, or absolute paths.
 
 ## Results
 
+### 2026-09-24: Find evaluation, 25 cases
+
+25 requests over the Y4S1 coursework folder (106 files: lecture PDFs and
+transcripts, tutorials, pptx, docx, html, C++ code, and personal notes). Run on a
+copy of the real database with the SoCLaaS model. Identical copies (a PDF and its
+transcripts) all count as correct. Claude wrote the cases from short excerpts,
+phrased as a student would ask from memory.
+
+| Mode | Hit@1 | Hit@3 | MRR |
+|---|---|---|---|
+| keyword | 4% | 4% | 0.040 |
+| hybrid | 44% | 64% | 0.575 |
+| find | **76%** | **84%** | **0.800** |
+
+Find's four misses:
+- "perf stat numbers comparing bubble sort and cocktail sort"
+- "poisson arrivals and exponential interarrival times"
+- "lecture on dividing link capacity fairly between users"
+- "what do I need to do in the next two weeks"
+
+Hybrid also missed all four. Tuning Find against these cases would overfit them,
+so any change should be checked on a new, separate set of cases.
+
 ### 2026-09-24: multi-agent flows and minimal surface (ADR-009)
 
 - Full suite: 255 passed; pyflakes clean.
