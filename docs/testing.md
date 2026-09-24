@@ -38,7 +38,9 @@ cases:
   - {query: "the cache CPUs use for address translation", file: virtual-memory.md}
 ```
 
-`file` matches the end of the result's path. Then compare the modes on a copy
+`file` matches the end of the result's path. When the same content exists in
+several places (a copy, or a PDF and its transcript), list them all with
+`files: [a, b]`; any one counts. Then compare the modes on a copy
 of your data:
 
 ```powershell

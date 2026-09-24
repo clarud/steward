@@ -12,10 +12,14 @@ import yaml
 
 @dataclass(frozen=True, slots=True)
 class FileCase:
-    """A request and the file a person expects; `expected` matches the end of the file's path."""
+    """A request and the file a person expects.
+
+    ``expected`` holds one or more acceptable path endings, for files that
+    exist as identical copies or as a PDF and its transcript.
+    """
 
     query: str
-    expected: str
+    expected: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,20 +32,25 @@ class FileEvaluation:
 
 
 def load_file_cases(path: Path) -> tuple[FileCase, ...]:
-    """Read `cases: [{query: ..., file: ...}]` (or the older `expected: {source: ...}` form)."""
+    """Read `cases: [{query: ..., file: ...}]`; `files: [...]` lists several acceptable answers."""
     document: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
     cases = document.get("cases") if isinstance(document, dict) else None
     if not isinstance(cases, list) or not cases:
         raise ValueError("The case file needs a non-empty 'cases' list.")
     parsed = []
     for item in cases:
-        expected = item.get("file") if isinstance(item, dict) else None
-        if expected is None and isinstance(item, dict) and isinstance(item.get("expected"), dict):
-            expected = item["expected"].get("source")
-        query = item.get("query") if isinstance(item, dict) else None
-        if not all(isinstance(value, str) and value.strip() for value in (query, expected)):
+        if not isinstance(item, dict):
             raise ValueError("Every case needs a query and the expected file.")
-        parsed.append(FileCase(query.strip(), expected.strip().replace("\\", "/")))
+        expected = item.get("files", item.get("file"))
+        if expected is None and isinstance(item.get("expected"), dict):
+            expected = item["expected"].get("source")
+        options = expected if isinstance(expected, list) else [expected]
+        query = item.get("query")
+        if not isinstance(query, str) or not query.strip() or not options or not all(
+            isinstance(value, str) and value.strip() for value in options
+        ):
+            raise ValueError("Every case needs a query and the expected file.")
+        parsed.append(FileCase(query.strip(), tuple(value.strip().replace("\\", "/") for value in options)))
     return tuple(parsed)
 
 
@@ -53,15 +62,16 @@ def evaluate_files(rank: Callable[[str], Sequence[Path]], cases: tuple[FileCase,
     hits_1 = hits_3 = 0
     misses = []
     for case in cases:
+        endings = tuple(value.casefold() for value in case.expected)
         position = next(
             (index for index, path in enumerate(rank(case.query), start=1)
-             if path.as_posix().casefold().endswith(case.expected.casefold())),
+             if path.as_posix().casefold().endswith(endings)),
             None,
         )
         reciprocal.append(1 / position if position else 0.0)
         hits_1 += position == 1
         hits_3 += position is not None and position <= 3
         if position is None or position > 3:
-            misses.append((case.query, case.expected))
+            misses.append((case.query, " or ".join(case.expected)))
     count = len(cases)
     return FileEvaluation(count, hits_1 / count, hits_3 / count, sum(reciprocal) / count, tuple(misses))

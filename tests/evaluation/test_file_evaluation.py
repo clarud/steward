@@ -47,3 +47,17 @@ def test_scores_count_rank_and_list_misses(tmp_path: Path) -> None:
     assert (result.hit_at_1, result.hit_at_3) == (1 / 3, 2 / 3)
     assert round(result.mean_reciprocal_rank, 3) == 0.5
     assert result.misses == (("c", "gone.md"),)
+
+
+def test_a_case_can_accept_any_of_several_copies(tmp_path: Path) -> None:
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "cases:\n  - {query: q, files: [CS3210/Lectures/L03.pdf, Transcripts/Cleaned/L03.md]}\n",
+        encoding="utf-8",
+    )
+
+    result = evaluate_files(
+        lambda query: [Path("x.md"), Path("C:/Y4S1/CS3210/Transcripts/Cleaned/L03.md")], load_file_cases(cases),
+    )
+
+    assert (result.hit_at_1, result.hit_at_3) == (0.0, 1.0)
