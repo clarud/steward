@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from steward.answer.gateway import ModelGateway
@@ -107,12 +108,27 @@ def _validate_draft(data: object, keys: set[str], allow_more: bool) -> Draft:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("answer text must not be empty")
     cited = set(KEY.findall(text))
+    if not cited:
+        # An answer with no citations can't be checked, so it may not be shown as
+        # grounded. Saying the evidence doesn't answer is fine; anything else is repaired.
+        if _DECLINE.search(text):
+            return Draft("not_found")
+        raise ValueError("cite the key of the excerpt after each factual sentence, "
+                         "or say plainly that the evidence doesn't answer the question")
     unknown = cited - keys
     # One stray key is left for the checker, which removes that sentence; many mean
     # the answer isn't built from this evidence.
     if len(unknown) > max(1, len(cited) // 5):
         raise ValueError(f"cites keys that were not supplied: {', '.join(sorted(unknown))}")
     return Draft("answer", text=text.strip())
+
+
+_DECLINE = re.compile(
+    r"\b(?:does(?: not|n['’]t) (?:contain|mention|include|say|answer|cover|provide)|"
+    r"(?:no|not any) (?:information|mention|details)|isn['’]t (?:covered|mentioned)|"
+    r"can(?:not|['’]t) (?:find|answer))\b",
+    re.IGNORECASE,
+)
 
 
 def _example(keys: set[str]) -> str:

@@ -467,3 +467,81 @@ def test_no_second_look_when_the_first_saw_the_whole_section() -> None:
     result = check_answer(model, CallBudget(4), "Valgrind cannot detect races [F1].", {"F1": "Valgrind detects race conditions."})
 
     assert result.removed == 1 and model.calls == ["checker"]
+
+
+def test_a_citation_to_a_heading_is_repointed_to_the_section_that_says_it() -> None:
+    from steward.roles.checker import realign_citations
+
+    evidence = {
+        "F1": "## Data and task parallelism",
+        "F2": "Data parallelism partitions the dataset across processing units; task parallelism partitions the computation.",
+    }
+    text = "Data parallelism partitions the dataset across processing units [F1]."
+
+    assert realign_citations(text, evidence) == "Data parallelism partitions the dataset across processing units [F2]."
+    result = check_answer(None, CallBudget(0), text, evidence)
+    assert result.removed == 0 and result.cited_keys == {"F2"}
+
+
+def test_an_invented_statement_keeps_its_citation_and_is_still_removed() -> None:
+    from steward.roles.checker import realign_citations
+
+    evidence = {"F1": "The assignment is due on Friday 18 September.", "F2": "Tutorials run on Mondays."}
+    text = "Quantum annealing outperforms classical hardware [F1]."
+
+    assert realign_citations(text, evidence) == text
+    assert check_answer(None, CallBudget(0), text, evidence).removed == 1
+
+
+def test_a_correct_citation_is_left_alone() -> None:
+    from steward.roles.checker import realign_citations
+
+    evidence = {"F1": "Warps have 32 threads on NVIDIA GPUs.", "F2": "Warps have 32 threads; blocks run on one SM."}
+    text = "Warps have 32 threads on NVIDIA GPUs [F1]."
+
+    assert realign_citations(text, evidence) == text
+
+
+def test_an_uncited_answer_is_repaired_and_an_uncited_decline_means_not_found(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    _, notes = library.add("padding.md", "Padding arrays keeps each thread's data on its own cache line, avoiding false sharing.")
+    replies = iter([
+        {"status": "answer", "text": "Padding avoids false sharing."},  # no citation: repaired
+        {"status": "answer", "text": f"Padding avoids false sharing [F{notes[0].id}]."},
+    ])
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "padding false sharing"}]},
+        answerer=lambda _: next(replies), checker=lambda _: {"unsupported": []},
+    )
+
+    assert run_ask(library.ask(model), "why pad arrays").status == "answered"
+
+    declining = RoleModel(
+        planner=lambda _: {"searches": [{"query": "padding false sharing"}]},
+        answerer=lambda _: {"status": "answer", "text": "The provided evidence does not mention Kubernetes."},
+    )
+    assert run_ask(library.ask(declining), "what does kubernetes do with padding").status == "not_found"
+
+
+def test_the_extra_search_looks_deeper_inside_files_already_found(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    sections = [f"GPU slide {index} about streaming multiprocessors and warps." for index in range(12)]
+    sections.append("The H100 has 144 SMs sharing an L2 cache.")
+    _, slides = library.add("gpu.md", *sections)
+    seen: list[str] = []
+
+    def answer(evidence: str):
+        seen.append(evidence)
+        if len(seen) == 1:
+            return {"status": "need_more", "query": "H100 SMs"}
+        return {"status": "answer", "text": f"The H100 has 144 SMs [F{slides[-1].id}]."}
+
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "streaming multiprocessors"}]},
+        answerer=answer, checker=lambda _: {"unsupported": []},
+    )
+
+    result = run_ask(library.ask(model), "how many SMs does the H100 have")
+
+    assert result.status == "answered"
+    assert seen[1].split("Evidence:\n")[1].startswith(f"[F{slides[-1].id}]")  # the requested section comes first

@@ -25,6 +25,11 @@ PER_SEARCH = 6
 # A matched section shorter than this (a title slide, a heading) brings the sections after it.
 SHORT_SECTION = 300
 NEIGHBOURS = 2
+# A section this short (a bare heading, a file's header line) is replaced by the
+# sections after it, so the writer can't cite a heading for a fact.
+TINY_SECTION = 200
+# An extra search also looks inside the files the first search found, up to this many.
+DEEPER_FILES = 2
 
 
 class Retriever(Protocol):
@@ -90,9 +95,15 @@ def build_ask_graph(tools: AskTools):
     def gather(state: AskState) -> dict:
         evidence = list(state.get("evidence", []))
         specs = (SearchSpec(state["extra_query"]),) if state.get("extra_query") else state["searches"]
-        for fragment, source in _retrieve(tools, specs, state.get("source_id")):
-            if all(item.fragment.id != fragment.id for item in evidence):
-                evidence.append(Evidence(f"F{fragment.id}", source, fragment))
+        # The extra search also looks deeper inside the files already found: the
+        # right file is usually there, just not the right section.
+        within = tuple(dict.fromkeys(item.source.path for item in evidence))[:DEEPER_FILES] if state.get("extra_query") else ()
+        found: list[Evidence] = []
+        for fragment, source in _retrieve(tools, specs, state.get("source_id"), within):
+            if all(item.fragment.id != fragment.id for item in evidence + found):
+                found.append(Evidence(f"F{fragment.id}", source, fragment))
+        # What the writer asked for goes first, so the evidence cap never cuts it off.
+        evidence = found + evidence if state.get("extra_query") else evidence + found
         trace("ask.gather", sections=len(evidence))
         return {"evidence": _fit(evidence)}
 
@@ -166,7 +177,7 @@ def run_ask(graph, question: str, *, source_id: int | None = None, previous: str
 
 
 def _retrieve(
-    tools: AskTools, specs: tuple[SearchSpec, ...], source_id: int | None,
+    tools: AskTools, specs: tuple[SearchSpec, ...], source_id: int | None, within: tuple[Path, ...] = (),
 ) -> list[tuple[SourceFragment, Source]]:
     if source_id is not None:
         source = tools.sources.get_by_id(source_id)
@@ -185,23 +196,35 @@ def _retrieve(
         except (OSError, RuntimeError, ValueError):
             hits = ()
         found.extend((hit.fragment, hit.source) for hit in hits)  # type: ignore[attr-defined]
+        for path in within:
+            try:
+                deeper = tools.retriever.search(spec.query, limit=PER_SEARCH, path_prefix=path)
+            except (OSError, RuntimeError, ValueError):
+                deeper = ()
+            found.extend((hit.fragment, hit.source) for hit in deeper)  # type: ignore[attr-defined]
     return _with_neighbours(tools, found)
 
 
 def _with_neighbours(
     tools: AskTools, found: list[tuple[SourceFragment, Source]],
 ) -> list[tuple[SourceFragment, Source]]:
-    """Follow a very short match (a title slide) with the sections after it, where the content is."""
+    """Follow a very short match (a title slide) with the sections after it, where the content is.
+
+    A bare heading with sections after it is replaced by them, so a fact can't be
+    cited to the heading.
+    """
     expanded: list[tuple[SourceFragment, Source]] = []
     sections: dict[int, list[SourceFragment]] = {}
     for fragment, source in found:
-        expanded.append((fragment, source))
-        if len(fragment.text) >= SHORT_SECTION or source.id is None:
-            continue
-        ordered = sections.setdefault(source.id, list(tools.fragments.list_for_source(source.id)))
-        position = next((index for index, item in enumerate(ordered) if item.id == fragment.id), None)
-        if position is not None:
-            expanded.extend((item, source) for item in ordered[position + 1:position + 1 + NEIGHBOURS])
+        following: list[SourceFragment] = []
+        if len(fragment.text) < SHORT_SECTION and source.id is not None:
+            ordered = sections.setdefault(source.id, list(tools.fragments.list_for_source(source.id)))
+            position = next((index for index, item in enumerate(ordered) if item.id == fragment.id), None)
+            if position is not None:
+                following = ordered[position + 1:position + 1 + NEIGHBOURS]
+        if len(fragment.text) >= TINY_SECTION or not following:
+            expanded.append((fragment, source))
+        expanded.extend((item, source) for item in following)
     return expanded
 
 

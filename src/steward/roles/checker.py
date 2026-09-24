@@ -23,6 +23,11 @@ CHECK_GROUP = 15
 # A flagged sentence is judged a second time against the full cited sections
 # (up to this much each) and removed only if both judgements agree.
 CONFIRM_EVIDENCE = 3000
+# Re-pointing a citation: the cited sections share under this share of the
+# sentence's content words, and another supplied section shares at least
+# REALIGN_BEST and clearly more.
+REALIGN_WEAK = 0.34
+REALIGN_BEST = 0.5
 _STOPWORDS = frozenset(
     "about above after again against also because been before being below between both could does doing "
     "during each from further have having here into itself just more most other over same should some "
@@ -57,7 +62,7 @@ def check_answer(
     checked. The model call is skipped when there is no model or no budget,
     leaving only the code checks.
     """
-    text = normalize(text)
+    text = realign_citations(normalize(text), evidence)
     spans = _sentences(text)
     doomed: set[int] = set()
     to_model: list[tuple[int, str, str]] = []
@@ -125,6 +130,36 @@ def _judge(model: ModelGateway, budget: CallBudget, group: list[tuple[int, str, 
         )
     except StructuredOutputError:
         return None
+
+
+def realign_citations(text: str, evidence: Mapping[str, str]) -> str:
+    """Point a sentence's citation at the section it plainly came from.
+
+    Writers often cite a neighbour of the right section: a heading-only section,
+    a file's header, the slide before. When the cited sections barely share the
+    sentence's words and another supplied section clearly does, the citation is
+    replaced with that section. The checker then judges the sentence against the
+    right text. An invented statement matches no section well, so it keeps its
+    citation and is still removed. This is code only; no model call.
+    """
+    vocabulary = {key: _content_words(section) for key, section in evidence.items()}
+    pieces, last = [], 0
+    for start, end in _sentences(text):
+        sentence = text[start:end]
+        keys = list(dict.fromkeys(KEY.findall(sentence)))
+        words = _content_words(KEY.sub("", sentence))
+        if keys and len(words) >= 3:
+            share = {key: len(words & found) / len(words) for key, found in vocabulary.items()}
+            cited = max((share.get(key, 0.0) for key in keys), default=0.0)
+            best = max(share, key=share.get, default=None)
+            if (best is not None and best not in keys and cited < REALIGN_WEAK
+                    and share[best] >= max(REALIGN_BEST, cited + REALIGN_WEAK)):
+                first = KEY.search(sentence)
+                sentence = KEY.sub("", sentence[:first.start()]) + f"[{best}]" + KEY.sub("", sentence[first.end():])
+        pieces.append(text[last:start] + sentence)
+        last = end
+    pieces.append(text[last:])
+    return "".join(pieces)
 
 
 def _sentences(text: str) -> list[tuple[int, int]]:
