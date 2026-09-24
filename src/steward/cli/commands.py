@@ -145,9 +145,11 @@ def _evaluate_ask(settings: Settings, arguments: argparse.Namespace) -> None:
         result = run_ask(flows.ask, case.question)
         seconds = time.perf_counter() - started
         cited = list(dict.fromkeys(item.source.path for item in result.cited))
-        good = cites_expected(cited, case.expected) if case.expected else declines(result.status, result.text, cited)
+        good = (result.status == "answered" and cites_expected(cited, case.expected)) if case.expected else (
+            declines(result.status, result.text))
         rows.append((case, result.status, good, result.removed, result.calls, seconds))
-        verdict = ("cites an expected file" if good else "does not cite an expected file") if case.expected else (
+        verdict = ("answered, citing an expected file" if good else f"{result.status}, no expected file cited"
+                   if result.status == "answered" else f"not answered ({result.status})") if case.expected else (
             "declined, as it should" if good else "answered, but the files don't cover this")
         print(f"{number:>2}. {'ok  ' if good else 'MISS'} {case.question} ({verdict}; {result.calls} calls, {seconds:.1f}s)")
         report += [
@@ -420,22 +422,32 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         database_path = settings.data_dir / "steward.db"
         initialize_database(database_path)
         source_repository = SourceRepository(database_path)
-        if source_repository.get_by_id(arguments.source_id) is None:
+        if arguments.all == (arguments.source_id is not None):
+            print("Give one source ID, or --all.")
+            return
+        if not arguments.all and source_repository.get_by_id(arguments.source_id) is None:
             print(f"Source {arguments.source_id} was not found.")
             return
-        try:
-            fragments = SourceService(
-                source_repository=source_repository,
-                fragment_repository=SourceFragmentRepository(database_path),
-                markdown_extractor=MarkdownExtractor(),
-                semantic_index=SQLiteSemanticIndex(
-                    database_path, SentenceTransformerEmbeddingProvider()
-                ),
-            ).reextract_source(arguments.source_id)
-        except (OSError, UnicodeDecodeError, DocumentExtractionError, ValueError) as error:
-            print(str(error))
-            return
-        print(f"Re-extracted source {arguments.source_id}: {len(fragments)} fragment(s).")
+        embedding_provider = optional_embedding_provider()
+        service = SourceService(
+            source_repository=source_repository,
+            fragment_repository=SourceFragmentRepository(database_path),
+            markdown_extractor=MarkdownExtractor(),
+            semantic_index=SQLiteSemanticIndex(database_path, embedding_provider) if embedding_provider else None,
+        )
+        targets = [source.id for source in source_repository.list_active()] if arguments.all else [arguments.source_id]
+        failed = 0
+        for source_id in targets:
+            try:
+                fragments = service.reextract_source(source_id)
+            except (OSError, UnicodeDecodeError, DocumentExtractionError, ValueError) as error:
+                failed += 1
+                print(f"Source {source_id}: {error}")
+                continue
+            if not arguments.all:
+                print(f"Re-extracted source {source_id}: {len(fragments)} fragment(s).")
+        if arguments.all:
+            print(f"Re-extracted {len(targets) - failed} of {len(targets)} files.")
         return
 
     if arguments.command == "rebuild-semantic-index":

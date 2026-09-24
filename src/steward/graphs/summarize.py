@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import operator
-import re
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict
 
@@ -14,6 +13,7 @@ from steward.answer.gateway import ModelGateway
 from steward.extraction import SourceFragment, SourceFragmentRepository
 from steward.observability import trace
 from steward.roles.checker import check_answer
+from steward.roles.citations import KEY
 from steward.roles.structured import CallBudget, StructuredOutputError
 from steward.roles.summarize import combine_notes, write_notes
 from steward.sources import Source, SourceRepository
@@ -90,8 +90,10 @@ def build_summarize_graph(tools: SummarizeTools):
         batches = _split(fragments)
         if len(batches) > MAX_BATCHES:
             return {"result": SummaryResult("too_long", total=len(fragments))}
-        # Each batch may retry once; combining may retry once for coverage; one check.
-        budget = CallBudget(2 * len(batches) + 3 if len(batches) > 1 else 3)
+        # Each batch's notes may repair once; the combiner may repair once, plus one
+        # coverage retry; up to three checker calls (15 sentences each). A one-batch
+        # file skips the notes.
+        budget = CallBudget(2 * len(batches) + 7 if len(batches) > 1 else 7)
         trace("summarize.split", batches=len(batches), sections=len(fragments))
         notes = {0: batches[0].text} if len(batches) == 1 else {}
         return {"source": source, "fragments": fragments, "batches": batches, "budget": budget, "notes": notes}
@@ -121,21 +123,24 @@ def build_summarize_graph(tools: SummarizeTools):
         joined = "\n\n".join(kept[index] for index in sorted(kept))
         try:
             summary = combine_notes(tools.model, budget, notes=joined, keys=allowed)  # type: ignore[arg-type]
-            gap = _largest_gap(state["fragments"], summary)
-            if gap and budget.remaining >= 2:
-                trace("summarize.coverage_retry", uncovered=len(gap))
-                retry = combine_notes(
-                    tools.model, budget, notes=joined, keys=allowed,  # type: ignore[arg-type]
-                    cover="the sections at " + ", ".join(gap[:6]),
-                )
-                if _covered(state["fragments"], retry) > _covered(state["fragments"], summary):
-                    summary = retry
         except StructuredOutputError:
             trace("summarize.combine_failed")
             if len(batches) == 1:
                 return {"result": SummaryResult("unavailable", calls=budget.used)}
             # Each batch's notes were already verified; show them rather than nothing.
             return {"summary": joined, "notes_only": True}
+        gap = _largest_gap(state["fragments"], summary)
+        if gap and budget.remaining >= 2:
+            trace("summarize.coverage_retry", uncovered=len(gap))
+            try:
+                retry = combine_notes(
+                    tools.model, budget, notes=joined, keys=allowed,  # type: ignore[arg-type]
+                    cover="the sections at " + ", ".join(gap[:6]),
+                )
+                if _covered(state["fragments"], retry) > _covered(state["fragments"], summary):
+                    summary = retry
+            except StructuredOutputError:
+                trace("summarize.coverage_retry_failed")  # keep the first summary
         return {"summary": summary, "notes_only": False}
 
     def check(state: SummarizeState) -> dict:
@@ -206,7 +211,7 @@ def _split(fragments: list[SourceFragment]) -> list[Batch]:
 
 
 def _keys(text: str) -> list[str]:
-    return re.findall(r"\[(F\d+)\]", text)
+    return KEY.findall(text)
 
 
 def _covered(fragments: list[SourceFragment], text: str) -> int:

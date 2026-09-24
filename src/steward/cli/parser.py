@@ -45,8 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("inbox", help="Refresh INBOX.md and list what's waiting to be filed")
 
     # Upkeep
-    reextract = commands.add_parser("reextract", help="Extract one file's text again")
-    reextract.add_argument("source_id", type=int)
+    reextract = commands.add_parser("reextract", help="Extract one file's text again (or --all, after an update)")
+    reextract.add_argument("source_id", type=int, nargs="?")
+    reextract.add_argument("--all", action="store_true", help="Every active file, e.g. after an extractor improvement")
     unregister = commands.add_parser("unregister-source", help="Forget one file; the original is not touched")
     unregister.add_argument("source_id", type=int)
     unregister.add_argument("--confirm", action="store_true")

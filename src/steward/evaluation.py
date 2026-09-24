@@ -217,8 +217,12 @@ _DECLINE = re.compile(
 )
 
 
-def declines(status: str, text: str, cited: Sequence[Path]) -> bool:
-    """Did Ask decline? Only a cited answer counts as answering; an uncited reply must also say it can't answer."""
-    if status != "answered":
+def declines(status: str, text: str) -> bool:
+    """Did Ask correctly say the files don't answer it?
+
+    A model failure ("unavailable") is not a decline. An answer counts only if it
+    says the files don't cover it, rather than answering from general knowledge.
+    """
+    if status in {"no_evidence", "not_found", "unreliable"}:
         return True
-    return not cited and bool(_DECLINE.search(text))
+    return status == "answered" and bool(_DECLINE.search(text))

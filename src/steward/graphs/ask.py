@@ -20,6 +20,9 @@ from steward.sources import Source, SourceRepository, SourceType
 ASK_BUDGET = 5
 EVIDENCE_CHARACTERS = 12_000
 PER_SEARCH = 6
+# A matched section shorter than this (a title slide, a heading) brings the sections after it.
+SHORT_SECTION = 300
+NEIGHBOURS = 2
 UNRELIABLE_SHARE = 0.5
 
 
@@ -39,7 +42,7 @@ class Evidence:
 
 @dataclass(frozen=True, slots=True)
 class AskResult:
-    status: str  # answered | no_evidence | unavailable | unreliable
+    status: str  # answered | no_evidence | not_found | unavailable | unreliable
     text: str
     cited: tuple[Evidence, ...] = ()
     removed: int = 0
@@ -110,6 +113,11 @@ def build_ask_graph(tools: AskTools):
 
     def check(state: AskState) -> dict:
         draft, evidence, budget = state["draft"], state["evidence"], state["budget"]
+        if draft.status == "not_found":
+            return {"result": AskResult(
+                "not_found", "Your files don't seem to answer that. These are the closest matches:",
+                tuple(evidence[:5]), calls=budget.used,
+            )}
         if not draft.text:
             return {"result": AskResult(
                 "unavailable", "The model couldn't answer right now. These files look relevant:",
@@ -166,18 +174,31 @@ def _retrieve(
     found: list[tuple[SourceFragment, Source]] = []
     for spec in specs:
         options: dict[str, object] = {"limit": PER_SEARCH}
-        if spec.types:
-            options["source_types"] = spec.types
         if source_id is not None:
             options["path_prefix"] = tools.sources.get_by_id(source_id).path  # type: ignore[union-attr]
-        elif spec.root is not None and (root := tools.roots.get_by_name(spec.root)) is not None:
-            options["path_prefix"] = root.path
         try:
             hits = tools.retriever.search(spec.query, **options)
         except (OSError, RuntimeError, ValueError):
             hits = ()
         found.extend((hit.fragment, hit.source) for hit in hits)  # type: ignore[attr-defined]
-    return found
+    return _with_neighbours(tools, found)
+
+
+def _with_neighbours(
+    tools: AskTools, found: list[tuple[SourceFragment, Source]],
+) -> list[tuple[SourceFragment, Source]]:
+    """Follow a very short match (a title slide) with the sections after it, where the content is."""
+    expanded: list[tuple[SourceFragment, Source]] = []
+    sections: dict[int, list[SourceFragment]] = {}
+    for fragment, source in found:
+        expanded.append((fragment, source))
+        if len(fragment.text) >= SHORT_SECTION or source.id is None:
+            continue
+        ordered = sections.setdefault(source.id, list(tools.fragments.list_for_source(source.id)))
+        position = next((index for index, item in enumerate(ordered) if item.id == fragment.id), None)
+        if position is not None:
+            expanded.extend((item, source) for item in ordered[position + 1:position + 1 + NEIGHBOURS])
+    return expanded
 
 
 def _fit(evidence: list[Evidence]) -> list[Evidence]:

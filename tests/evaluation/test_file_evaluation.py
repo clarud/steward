@@ -113,8 +113,9 @@ def test_ask_cases_and_cited_file_matching(tmp_path: Path) -> None:
 
 
 
-def test_an_uncited_answer_only_counts_as_declining_if_it_says_so() -> None:
-    assert declines("no_evidence", "I couldn't find anything.", [])
-    assert declines("answered", "Your files don't mention MESI.", [])
-    assert not declines("answered", "MESI has four states: modified, exclusive, shared, invalid.", [])
-    assert not declines("answered", "It isn't covered [F1].", [Path("x.md")])
+def test_an_answer_only_counts_as_declining_if_it_says_the_files_dont_cover_it() -> None:
+    assert declines("no_evidence", "I couldn't find anything.")
+    assert declines("not_found", "Your files don't seem to answer that.")
+    assert not declines("unavailable", "The model couldn't answer right now.")
+    assert declines("answered", "The evidence does not contain the wifi password [F1].")
+    assert not declines("answered", "MESI has four states: modified, exclusive, shared, invalid.")

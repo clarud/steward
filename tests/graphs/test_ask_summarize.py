@@ -250,3 +250,131 @@ def test_short_file_needs_one_summary_call_and_no_workers(tmp_path: Path) -> Non
     result = run_summarize(library.summarize(model), source.id)
 
     assert result.status == "done" and model.calls == ["combiner", "checker"]
+
+
+# -- Fixes found by the real-data evaluation (24 Sep 2026) ------------------------
+
+def test_citation_lists_and_labels_are_normalised_before_checking() -> None:
+    from steward.roles.citations import normalize
+
+    assert normalize("A [F1, F2] and B [Fn: F9] and [a link](x) [F3; F4]") == "A [F1][F2] and B [F9] and [a link](x) [F3][F4]"
+    result = check_answer(None, CallBudget(0), "Warps have 32 threads [F1, F2].", {"F1": "warps have 32 threads", "F2": "x"})
+    assert result.cited_keys == {"F1", "F2"} and result.checked == 1
+
+
+def test_checker_does_not_split_decimals_or_abbreviations() -> None:
+    evidence = {"F1": "The serial run took 0.25 s, e.g. on the i7 machine, with r.v. inputs."}
+    text = "The serial run took 0.25 s, e.g. on the i7 machine [F1]. Nothing else."
+
+    result = check_answer(None, CallBudget(0), text, evidence)
+
+    assert result.text == text and result.checked == 1 and result.removed == 0
+
+
+def test_ask_planner_guesses_never_filter_the_search(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    _, notes = library.add("heritage.md", "The state's approach to heritage conservation changed in the 1980s.")
+    model = RoleModel(
+        # A planner that guesses a folder and type that would hide the file.
+        planner=lambda _: {"searches": [{"query": "heritage conservation", "root": "Elsewhere", "types": ["pdf"]}]},
+        answerer=lambda _: {"status": "answer", "text": f"It changed in the 1980s [F{notes[0].id}]."},
+        checker=lambda _: {"unsupported": []},
+    )
+
+    result = run_ask(library.ask(model), "what is the state's approach to heritage conservation")
+
+    assert result.status == "answered" and result.cited[0].fragment.id == notes[0].id
+
+
+def test_ask_says_the_files_dont_answer_when_evidence_is_still_missing(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    library.add("coherence.md", "Cache coherence keeps copies of shared data consistent.")
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "cache coherence"}]},
+        answerer=lambda _: {"status": "need_more", "query": "MESI write miss transitions"},
+    )
+
+    result = run_ask(library.ask(model), "what are the MESI transitions on a write miss in coherence")
+
+    assert result.status == "not_found"
+    assert "don't seem to answer" in result.text
+    assert model.calls == ["planner", "answerer", "answerer"]  # one extra search, then an honest reply
+
+
+def test_overlong_notes_with_label_citations_are_trimmed_not_rejected() -> None:
+    from steward.roles.summarize import NOTE_LIMIT, write_notes
+
+    long_notes = "\n".join(f"- Point {index} about loops [Fn: F7]" for index in range(400))
+    model = RoleModel(notes=lambda _: long_notes)
+
+    notes = write_notes(model, CallBudget(2), batch="[F7] slide 1\nloops", keys={"F7"})
+
+    assert len(notes) <= NOTE_LIMIT and notes.endswith("[F7]")
+    assert model.calls == ["notes"]
+
+
+def test_ask_follows_a_title_slide_with_the_slides_after_it(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    _, slides = library.add(
+        "heritage.pptx.md", "THE STATE'S APPROACH TO HERITAGE CONSERVATION",
+        "1960s to mid-1980s: urban renewal pragmatism came first.", "Mid-1980s onward: heritage awareness grew.",
+        "Unrelated closing slide.",
+    )
+    seen: list[str] = []
+
+    def answer(evidence: str):
+        seen.append(evidence)
+        return {"status": "answer", "text": f"Urban renewal came first [F{slides[1].id}]."}
+
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "state approach heritage conservation"}]},
+        answerer=answer, checker=lambda _: {"unsupported": []},
+    )
+
+    result = run_ask(library.ask(model), "what is the state's approach to heritage conservation")
+
+    assert result.status == "answered"
+    assert f"[F{slides[1].id}]" in seen[0] and f"[F{slides[2].id}]" in seen[0]
+    assert f"[F{slides[3].id}]" not in seen[0]
+
+
+def test_a_line_of_bare_citations_stays_with_the_text_before_it() -> None:
+    evidence = {"F1": "Poisson arrivals have exponential inter-arrival times.", "F2": "The M/M/1 queue is stable if rho < 1."}
+    text = "Poisson arrivals have exponential inter-arrival times, and M/M/1 is stable if rho < 1.\n[F1][F2]"
+
+    result = check_answer(None, CallBudget(0), text, evidence)
+
+    assert result.text == text and result.cited_keys == {"F1", "F2"} and result.removed == 0
+
+
+def test_combiner_repairs_a_thinly_cited_summary_once() -> None:
+    from steward.roles.summarize import combine_notes
+
+    uncited = "\n\n".join(["### Topic\nThis paragraph explains an important idea at considerable length but gives no key at all."] * 3)
+    cited = "### Topic\nThis paragraph explains an important idea at some length, with its key [F1]."
+    replies = iter([uncited + "\n\nOne cited paragraph that is long enough to count here [F1].", cited])
+    model = RoleModel(combiner=lambda _: next(replies))
+
+    assert combine_notes(model, CallBudget(3), notes="[F1] notes", keys={"F1"}) == cited
+    assert model.calls == ["combiner", "combiner"]
+
+
+def test_checker_judges_long_texts_in_groups_within_the_budget() -> None:
+    evidence = {f"F{index}": f"Fact number {index} concerns loops" for index in range(40)}
+    text = "\n".join(f"Fact number {index} concerns loops [F{index}]." for index in range(40))
+    groups: list[str] = []
+
+    def judge(listing: str):
+        groups.append(listing)
+        return {"unsupported": []}
+
+    result = check_answer(RoleModel(checker=judge), CallBudget(2), text, evidence)
+
+    assert len(groups) == 2 and groups[0].count("\n#") == 14 and result.removed == 0
+
+
+def test_one_invented_key_is_left_for_the_checker_but_many_are_rejected() -> None:
+    from steward.roles.summarize import _problem
+
+    assert _problem("A [F1]. B [F2]. C [F3]. D [F4]. E [F5]. F [F99].", {"F1", "F2", "F3", "F4", "F5"}) == ""
+    assert _problem("A [F1]. B [F97]. C [F98]. D [F99].", {"F1"}).startswith("cites keys from outside")
