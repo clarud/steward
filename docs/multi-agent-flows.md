@@ -33,6 +33,9 @@ Send original, and uploads still work.
   prompt-and-parse, so Gemini, OpenAI, SoCLaaS, and Ollama all work.
 - `CallBudget` is thread-safe (Summarize's workers share it). A call beyond the
   budget raises `BudgetExhausted`, which is also a `StructuredOutputError`.
+- `roles/citations.py` normalises every model reply's citations: models write
+  `[F1, F2]` or `[Fn: F12]` as often as `[F12]`, so all become `[F1][F2]` before
+  validation. Otherwise the checker and coverage silently miss them.
 - File text is always framed as data, not instructions.
 - `observability.trace` logs each node's decision and calls used, never file
   text, prompts, or model output.
@@ -66,6 +69,10 @@ hid the right file entirely, and Find scored 1 of 3. As soft boosts, it scores 3
 
 Budget: usually 2 calls; at most 4.
 
+On 50 test queries over real coursework: hit@3 **90–92%** against 70% for
+plain hybrid search, and hit@1 72–86% against 56–60% (two runs; the model's
+picks vary). See [testing.md](testing.md).
+
 ## Ask: answers from your files
 
 ```text
@@ -76,19 +83,28 @@ question → PLAN → GATHER → ANSWER → CHECK → reply
 
 | Node | Kind | Behaviour | Fallback |
 |---|---|---|---|
-| Plan | model | 1–3 `{query, root?, types?}` searches, using the chat's previous turn for follow-ups. Skipped for a single file | One search with the question |
-| Gather | code | Runs the searches (hybrid, 6 sections each), dedupes, and labels sections `[F<id>]`, up to 12,000 characters. A single file ≤12,000 characters is used whole | — |
-| Answer | model | `{status: "answer", text}` citing only the given keys, or `{status: "need_more", query}` once | "The model couldn't answer; these files look relevant" |
+| Plan | model | 1–3 `{query}` searches, using the chat's previous turn for follow-ups. Folder names are shown to help word queries but never filter. Skipped for a single file | One search with the question |
+| Gather | code | Runs the searches (hybrid, 6 sections each), dedupes, and labels sections `[F<id>]`, up to 12,000 characters. A match shorter than 300 characters (a title slide) brings the 2 sections after it. A single file ≤12,000 characters is used whole | — |
+| Answer | model | `{status: "answer", text}` citing only the given keys, or `{status: "need_more", query}` once. Asking for more when no searches are left means the files don't answer it | "Your files don't seem to answer that", with the closest files |
 | Check | code + model | See below | Keep the code-checked text |
 
 **Checker** (`roles/checker.py`), shared with Summarize:
 
-1. Code: each sentence's `[F…]` keys must exist in the evidence, and the
+1. Split into sentences. Full stops inside numbers (0.25) and after short
+   abbreviations (e.g., r.v.) don't end a sentence, and citations after a full
+   stop or on their own line stay with the text before them.
+2. Code: each sentence's `[F…]` keys must exist in the evidence, and the
    sentence must share at least one content word with the cited sections.
    Failures are removed.
-2. Model: `{"unsupported": [indices]}` for the remaining cited sentences.
-   Those are removed.
-3. Uncited sentences (connectives, "I couldn't find…") are kept.
+3. Model, 15 sentences per call: each sentence with the best-matching 800
+   characters of each cited section. It returns `{"unsupported": [indices]}`,
+   listing only sentences that contradict the evidence or add a fact it doesn't
+   give (a number, date, name, or cause). Paraphrase is fine. Those are removed.
+4. Uncited sentences (connectives, "I couldn't find…") are kept.
+
+On 60 planted statements from real passages, code checks alone remove 3 of 30
+false ones. With the model, the checker removes 29–30 of 30 and keeps 26–28 of 30
+true ones (three runs).
 
 If more than half the cited sentences are removed, the reply says it couldn't
 answer reliably and lists the relevant files instead. Otherwise the card shows
@@ -108,16 +124,17 @@ file → LOAD (cache?) → SPLIT → [NOTES × N, 4 at a time] → COMBINE (+ co
 |---|---|---|
 | Load | code | Returns the cached summary if the file's hash and the model are unchanged |
 | Split | code | ~24,000-character batches on section boundaries; >32 batches → "too long, Ask about a part" |
-| Notes × N | model | LangGraph `Send` workers: ≤1,600 characters, citing only their batch's keys. A failed batch is skipped and named on the card |
-| Combine | model | One summary citing only keys from the notes. If a run of consecutive uncited sections is large (at least 3 sections and at least 20% of the file), retry once asking to cover it, and keep the better one |
+| Notes × N | model | LangGraph `Send` workers, citing only their batch's keys (shown a real key as the example). Notes over 3,000 characters are cut at a line break, not rejected. A failed batch is skipped and named on the card |
+| Combine | model | One summary citing only keys from the notes. One repair if it cites nothing, cites many unknown keys, or leaves over 25% of paragraphs uncited (a second thin reply is accepted). If a run of consecutive uncited sections is large (at least 3 sections and at least 20% of the file), retry once asking to cover it, and keep the better one |
 | Check | code + model | Same checker as Ask |
 | Save | code | Cache only complete summaries |
 
 If combining fails, the verified notes are shown instead ("notes for each
 part"). The card always shows "Covered X of Y sections".
 
-Budget: 2N+3 calls for N batches (each note may repair once, plus combine, a
-retry, and the check). A single-batch file uses at most 3.
+Budget: 2N+7 calls for N batches: each note may repair once, the combiner may
+repair once, one coverage retry, and up to three checker calls. A single-batch
+file uses at most 7. Typical use is 3–8.
 
 ## What model roles can't do
 
@@ -128,15 +145,25 @@ fallback.
 
 ## Evaluation
 
-`steward evaluate-retrieval CASES.yaml --mode keyword|hybrid|find` reports
-hit@1, hit@3, MRR, and misses for `cases: [{query: ..., file: path/suffix}]`.
-Find ships as the default only while it matches or beats hybrid on the owner's
-real cases. Results are recorded in [testing.md](testing.md).
+| Command | Measures |
+|---|---|
+| `evaluate-retrieval CASES --mode keyword\|hybrid\|find` | hit@1, hit@3, MRR for `{query, file}` cases |
+| `evaluate-checker CASES` | planted false statements removed, true ones kept; code-only and with the model |
+| `evaluate-ask CASES --report R.md` | answers citing an expected file; unanswerable questions declined; calls, time |
+| `evaluate-summaries CASES --report R.md` | completion, cited-section coverage, calls, time |
+
+The reports hold every answer and summary for grading by hand. Find ships as
+the default only while it beats hybrid on the owner's cases. Results are in
+[testing.md](testing.md).
 
 ## Known limits
 
 - Files whose text can't be extracted can't be found or summarised.
 - The checker uses the same model as the writer. The code pre-checks narrow the
-  gap, but an independent model would be stronger.
+  gap, but an independent model would be stronger. It still occasionally removes
+  a true sentence, and an answer that loses more than half its cited sentences is
+  withheld ("couldn't answer reliably").
+- "Covered X of Y sections" counts cited sections, so it measures how traceable
+  a summary is more than how complete it is, and it varies from run to run.
 - Find's planner, judge, and checker send snippets to the configured provider.
   With a cloud provider, those snippets leave the machine.

@@ -79,6 +79,65 @@ credentials, private file content, or absolute paths.
 
 ## Results
 
+### 2026-09-24: full evaluation of Find, the checker, Ask, and Summarize
+
+Run on a copy of the real database (136 files) with the SoCLaaS model. Claude
+wrote the case files from indexed excerpts (`steward-eval/`, kept outside the
+repo). Answers and summaries were graded by hand from the `--report` files.
+
+**Find, 50 queries** (set 1: 25 whole-file descriptions; set 2: 25 harder ones:
+topics deep in lectures, typos, code files, Inbox uploads, both folders):
+
+| Mode | Hit@1 | Hit@3 | MRR |
+|---|---|---|---|
+| keyword | 8–10% | 10–12% | 0.09–0.11 |
+| hybrid | 56–60% | 70% | 0.66–0.68 |
+| find | **72–86%** | **90–92%** | **0.80–0.88** |
+
+Two runs each; the second was after re-extraction (below). On set 2 alone, run
+before any changes: find 92% hit@3 against hybrid 76%. Find's remaining misses
+include a results table with little prose, `NEXT_14_DAYS.md` for "what do I need
+to do in the next two weeks", and the CS3210 notes for "false sharing".
+
+**The first Ask and Summarize runs found real bugs**, all fixed in `ea06bfa`:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| 2 of 7 summaries failed; others lost citations | Notes were capped at 1,600 characters (the model writes 2,500–4,700) and cited `[Fn: F891]`, copying the prompt's placeholder | Real key in the prompt; notes trimmed at 3,000, not rejected; citation normalisation |
+| Summaries cut mid-sentence ("Version 13.") | Sentence splitter broke on decimals and abbreviations | Splitter that ignores those |
+| Citation lists `[F1, F2]` ignored | Checker only read `[F1]` | `roles/citations.normalize` |
+| Heritage question searched the wrong folder | Ask's planner guessed folder/type and they filtered the search | Planner guesses no longer filter (the Find lesson again) |
+| "What optimisations did I try" never found the log | A 91k-character Markdown log was 2 sections | Sections over 3,000 characters split at line breaks; `reextract --all` |
+| Unanswerable questions ended in "the model couldn't answer" | The drafter kept asking for more evidence | That now means "your files don't seem to answer that" |
+| Correct answers withheld as unreliable | Checker prompt said "be strict", so it rejected paraphrase | It flags only contradictions or added facts |
+| Title slides matched but held no content | PPTX slide per section | A match under 300 characters brings the next 2 sections |
+| A whole summary rejected for one invented key | Validation all-or-nothing | One stray key tolerated; the checker removes that sentence |
+| Checker removed a whole 51-sentence summary once | One 47k-character judgement | 15 sentences per checker call |
+
+**Citation checker**, 15 real passages, 30 true and 30 planted false statements:
+
+| | False removed | True kept |
+|---|---|---|
+| code checks only | 3/30 | 30/30 |
+| code + model, before calibration | 29/30 | 28/30 |
+| code + model, final (two runs) | 30/30 | 26–28/30 |
+
+**Ask**, 20 questions, after fixes (graded by hand):
+
+- 16 answerable: 12 correct, 2 partly correct (a sentence removed by the checker), 2 withheld as unreliable (checker removed true sentences), **0 wrong**. 14/16 cited an expected file.
+- 4 unanswerable (MESI, a wifi password, the World Cup, Kubernetes): all declined with "your files don't seem to answer that".
+- Mean 3.4 model calls, 4.4 s.
+- Before fixes: 11 correct, 1 partly, 4 failed, and only 1 of 4 unanswerable questions declined properly.
+
+**Summarize**, 7 files, after fixes (graded by hand, two runs):
+
+- 7/7 completed in both runs (before: 5/7, with 2 broken).
+- Fully accurate and complete: Performance lecture, Queueing lecture, Heritage slides. Accurate with gaps: GPU lecture (memory model thin), assignment brief (omits the deadline), CS3210 notes (later topics missing), optimisation log (one sentence lost its antecedent). No factual errors found.
+- Cited-section coverage 43–59% (mean) and variable: it measures traceability more than completeness.
+- Mean 6 model calls, 20–29 s.
+
+Full suite: 271 passed.
+
 ### 2026-09-24: Find evaluation, 25 cases
 
 25 requests over the Y4S1 coursework folder (106 files: lecture PDFs and

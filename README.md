@@ -88,10 +88,21 @@ model calls, and a plain fallback when a role fails. Details are in
 - **Ask** (≤5 calls): a planner chooses up to three searches. A drafter answers
   from numbered sections and may request one more search. A checker removes
   sentences their citations don't support.
-- **Summarize** (≤2N+3 calls): parallel note-takers cover the whole file, a
+- **Summarize** (≤2N+7 calls): parallel note-takers cover the whole file, a
   combiner writes one cited summary, and a coverage check retries if a large
   part was missed. The card shows how many sections were covered. The summary is
   cached until the file changes.
+
+Measured on a copy of real coursework (136 files; details in
+[docs/testing.md](docs/testing.md)):
+
+| Evaluation | Result |
+|---|---|
+| Find, 50 test queries | right file in the top 3: **90–92%** (plain hybrid search: 70%) |
+| Citation checker, 30 planted false statements | 29–30 removed, 26–28 of 30 true ones kept |
+| Ask, 16 answerable questions | 12 correct, 2 partly correct, 2 withheld, **0 wrong** |
+| Ask, 4 questions the files can't answer | 4 declined |
+| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed, no factual errors found by hand |
 
 ## Command line
 

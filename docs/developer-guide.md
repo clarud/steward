@@ -94,6 +94,12 @@ tells the uploading Telegram chat where an Inbox file was filed.
 | HTML, email | readable sections; email reads non-attachment bodies |
 | Image | Tesseract OCR |
 
+Markdown sections longer than 3,000 characters are split at line breaks (a
+single longer line is sliced), so a log or heading-less note becomes many
+precisely located sections rather than one huge one that search ranks poorly.
+After an extractor change, `steward reextract --all` re-extracts every active
+file; a file that fails keeps its previous text.
+
 `SourceFragmentRepository.replace_for_source()` deletes and rewrites a source's
 fragments and FTS5 rows in one transaction. It never appends. A parser failure
 leaves the source registered with no fragments until a later successful
@@ -149,6 +155,8 @@ Find, Ask, and Summarize are described node by node in
 
 - `roles/structured.py`: `CallBudget`, `generate_json` (validate, one repair,
   then raise), and `generate_text`.
+- `roles/citations.py`: one canonical `[F12]` form; `normalize()` rewrites
+  `[F1, F2]` and `[Fn: F12]` before any validation.
 - `roles/find.py`, `roles/ask.py`, `roles/summarize.py`, `roles/checker.py`: one
   prompt, contract, and validator per role. Validators reject IDs or keys that
   were not supplied.
