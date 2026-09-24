@@ -58,7 +58,7 @@ class StewardEventApplication:
         parts = (event.text or "").strip().split(maxsplit=1)
         command = parts[0].partition("@")[0].casefold()
         argument = parts[1].strip() if len(parts) > 1 else ""
-        if command in {"/find", "/ask"} and self._answers is None:
+        if command in {"/find", "/ask", "/ask_removed"} and self._answers is None:
             return "No model is configured on this computer; set one in .env and restart the bot."
         if command == "/find":
             if not argument:
@@ -71,6 +71,8 @@ class StewardEventApplication:
             if not argument:
                 return "Use /ask followed by your question."
             return self._answers.ask(event.chat_id, argument)  # type: ignore[union-attr]
+        if command == "/ask_removed":
+            return self._answers.removed(event.chat_id)  # type: ignore[union-attr]
         if command == "/note":
             return self._intake.begin_note(event, argument) if argument else "Use /note followed by the note."
         return "I don't know that command. Try /help."

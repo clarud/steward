@@ -117,7 +117,7 @@ def _evaluate_checker(settings: Settings, arguments: argparse.Namespace) -> None
     modes = [("code checks only", None)] + ([("code + model", model_gateway)] if model_gateway is not None else [])
     for label, model in modes:
         evaluation = evaluate_checker(
-            lambda text, evidence: check_answer(model, CallBudget(2 if model else 0), text, evidence).text, cases,
+            lambda text, evidence: check_answer(model, CallBudget(4 if model else 0), text, evidence).text, cases,
         )
         print(
             f"\n{label}: {len(cases)} cases\n"
@@ -157,6 +157,8 @@ def _evaluate_ask(settings: Settings, arguments: argparse.Namespace) -> None:
             f"Status: {result.status} · removed {result.removed} · {result.calls} calls · {seconds:.1f}s · {verdict}\n",
             result.text + "\n",
             "Sources: " + ("; ".join(path.name for path in cited) or "none") + "\n",
+            *(["Removed by the checker:\n" + "\n".join(f"- {line}" for line in result.removed_text) + "\n"]
+              if result.removed_text else []),
             "Correct? [ ] yes  [ ] partly  [ ] no\n",
         ]
     answerable = [row for row in rows if row[0].expected]

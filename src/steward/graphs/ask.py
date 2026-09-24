@@ -17,13 +17,14 @@ from steward.roles.structured import CallBudget, StructuredOutputError
 from steward.roots import SourceRootRepository
 from steward.sources import Source, SourceRepository, SourceType
 
-ASK_BUDGET = 5
+# plan, answer, one more answer after an extra search (or one retry instead of
+# giving up), check, and the check's second opinion
+ASK_BUDGET = 6
 EVIDENCE_CHARACTERS = 12_000
 PER_SEARCH = 6
 # A matched section shorter than this (a title slide, a heading) brings the sections after it.
 SHORT_SECTION = 300
 NEIGHBOURS = 2
-UNRELIABLE_SHARE = 0.5
 
 
 class Retriever(Protocol):
@@ -47,6 +48,7 @@ class AskResult:
     cited: tuple[Evidence, ...] = ()
     removed: int = 0
     calls: int = 0
+    removed_text: tuple[str, ...] = ()
 
 
 @dataclass
@@ -125,13 +127,15 @@ def build_ask_graph(tools: AskTools):
             )}
         checked = check_answer(tools.model, budget, draft.text, {item.key: item.fragment.text for item in evidence})
         cited = tuple(item for item in evidence if item.key in checked.cited_keys)
-        if checked.checked and checked.removed / checked.checked > UNRELIABLE_SHARE:
+        # Show whatever survived the check, with a count of what was removed. Withhold
+        # only when no cited statement survived: then nothing left is grounded.
+        if checked.checked and not checked.cited_keys:
             status, text = "unreliable", "I couldn't answer that reliably from your files. These look relevant:"
             cited = tuple(evidence[:5])
         else:
             status, text = "answered", checked.text
         trace("ask.check", removed=checked.removed, checked=checked.checked, calls=budget.used)
-        return {"result": AskResult(status, text, cited, checked.removed, budget.used)}
+        return {"result": AskResult(status, text, cited, checked.removed, budget.used, checked.removed_sentences)}
 
     def no_evidence(state: AskState) -> dict:
         return {"result": AskResult(

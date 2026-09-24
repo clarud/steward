@@ -173,18 +173,32 @@ def test_ask_without_evidence_makes_no_model_call(tmp_path: Path) -> None:
     assert result.status == "no_evidence" and model.calls == ["planner"]
 
 
-def test_ask_answer_citing_unsupplied_keys_is_repaired_then_reported(tmp_path: Path) -> None:
+def test_ask_answer_citing_many_unsupplied_keys_is_repaired_then_reported(tmp_path: Path) -> None:
     library = Library(tmp_path)
     library.add("openmp.md", "Static scheduling divides loop iterations evenly.")
     model = RoleModel(
-        planner=lambda _: {"searches": [{"query": "static", "root": None, "types": []}]},
-        answerer=lambda _: {"status": "answer", "text": "Made up [F999]."},
+        planner=lambda _: {"searches": [{"query": "static"}]},
+        answerer=lambda _: {"status": "answer", "text": "Made up [F997]. Also [F998]. And [F999]."},
     )
 
     result = run_ask(library.ask(model), "static?")
 
     assert result.status == "unavailable" and result.cited
     assert model.calls == ["planner", "answerer", "answerer"]
+
+
+def test_one_invented_key_is_left_for_the_checker_to_remove(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    library.add("openmp.md", "Static scheduling divides loop iterations evenly.")
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "static"}]},
+        answerer=lambda _: {"status": "answer", "text": "Made up [F999]."},
+    )
+
+    result = run_ask(library.ask(model), "static?")
+
+    assert result.status == "unreliable"  # the checker removed the only cited sentence
+    assert model.calls == ["planner", "answerer"]
 
 
 # -- Summarize -------------------------------------------------------------------
@@ -298,7 +312,26 @@ def test_ask_says_the_files_dont_answer_when_evidence_is_still_missing(tmp_path:
 
     assert result.status == "not_found"
     assert "don't seem to answer" in result.text
-    assert model.calls == ["planner", "answerer", "answerer"]  # one extra search, then an honest reply
+    # one extra search, one retry asking for an answer from what's there, then an honest reply
+    assert model.calls == ["planner", "answerer", "answerer", "answerer"]
+
+
+def test_a_retry_answers_from_the_evidence_instead_of_giving_up(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    _, notes = library.add("coherence.md", "Cache coherence keeps copies of shared data consistent.")
+    replies = iter([
+        {"status": "need_more", "query": "more coherence"},
+        {"status": "need_more", "query": "even more"},
+        {"status": "answer", "text": f"Coherence keeps shared copies consistent [F{notes[0].id}]."},
+    ])
+    model = RoleModel(
+        planner=lambda _: {"searches": [{"query": "cache coherence"}]},
+        answerer=lambda _: next(replies), checker=lambda _: {"unsupported": []},
+    )
+
+    result = run_ask(library.ask(model), "what does cache coherence do")
+
+    assert result.status == "answered" and "consistent" in result.text
 
 
 def test_overlong_notes_with_label_citations_are_trimmed_not_rejected() -> None:
@@ -378,3 +411,59 @@ def test_one_invented_key_is_left_for_the_checker_but_many_are_rejected() -> Non
 
     assert _problem("A [F1]. B [F2]. C [F3]. D [F4]. E [F5]. F [F99].", {"F1", "F2", "F3", "F4", "F5"}) == ""
     assert _problem("A [F1]. B [F97]. C [F98]. D [F99].", {"F1"}).startswith("cites keys from outside")
+
+
+def test_second_opinion_keeps_a_sentence_the_full_section_supports() -> None:
+    long_section = ("Filler about scheduling policies. " * 40) + "A warp has 32 threads."
+    verdicts = iter([{"unsupported": [0, 1]}, {"unsupported": [1]}])
+    seen: list[str] = []
+
+    def judge(listing: str):
+        seen.append(listing)
+        return next(verdicts)
+
+    text = "A warp has 32 threads [F1].\nA warp has 64 threads [F1]."
+    result = check_answer(RoleModel(checker=judge), CallBudget(4), text, {"F1": long_section})
+
+    assert result.text == "A warp has 32 threads [F1]."
+    assert result.removed_sentences == ("A warp has 64 threads [F1].",)
+    assert "A warp has 32 threads." in seen[1]  # the second opinion saw the whole section
+
+
+def test_without_a_second_verdict_the_first_one_stands() -> None:
+    result = check_answer(
+        RoleModel(checker=lambda _: {"unsupported": [0]}), CallBudget(1),
+        "Threads share memory [F1].", {"F1": "threads share memory"},
+    )
+
+    assert result.removed == 1 and result.text == ""
+
+
+def test_ask_shows_what_survives_and_withholds_only_when_nothing_cited_does(tmp_path: Path) -> None:
+    library = Library(tmp_path)
+    _, notes = library.add("amdahl.md", "Amdahl: speedup is bounded by 1/f for serial fraction f.")
+    key = f"F{notes[0].id}"
+    answer = {"status": "answer", "text": f"Speedup is bounded by 1/f [{key}].\nSpeedup is unlimited [{key}].\nIt is bounded [{key}]."}
+    two_of_three = RoleModel(
+        planner=lambda _: {"searches": [{"query": "Amdahl speedup"}]}, answerer=lambda _: answer,
+        checker=lambda _: {"unsupported": [1, 2]},
+    )
+
+    partial = run_ask(library.ask(two_of_three), "what does Amdahl say about speedup")
+
+    assert partial.status == "answered" and partial.removed == 2
+    assert partial.text == f"Speedup is bounded by 1/f [{key}]."
+
+    everything = RoleModel(
+        planner=lambda _: {"searches": [{"query": "Amdahl speedup"}]}, answerer=lambda _: answer,
+        checker=lambda _: {"unsupported": [0, 1, 2]},
+    )
+    assert run_ask(library.ask(everything), "what does Amdahl say about speedup").status == "unreliable"
+
+
+def test_no_second_look_when_the_first_saw_the_whole_section() -> None:
+    model = RoleModel(checker=lambda _: {"unsupported": [0]})
+
+    result = check_answer(model, CallBudget(4), "Valgrind cannot detect races [F1].", {"F1": "Valgrind detects race conditions."})
+
+    assert result.removed == 1 and model.calls == ["checker"]

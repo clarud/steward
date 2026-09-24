@@ -63,6 +63,22 @@ def test_ask_card_shows_answer_removed_count_and_sources(monkeypatch) -> None:
     assert [action.command for action in card.actions] == ["/source 7"]
 
 
+def test_removed_statements_can_be_shown_from_the_answer_card(monkeypatch) -> None:
+    notes = source(7, "openmp.pdf")
+    fragment = SourceFragment(70, 7, None, 0, "Static splits evenly.", "page 3")
+    result = AskResult(
+        "answered", "Static splits evenly. [F70]", (Evidence("F70", notes, fragment),), removed=1,
+        removed_text=("Static is always fastest. [F70]",),
+    )
+    answers = app(monkeypatch, ask=result)
+
+    card = answers.ask("100", "static?")
+
+    assert card.actions[-1].label == "Show removed (1)" and card.actions[-1].command == "/ask_removed"
+    assert "Static is always fastest" in answers.removed("100").text
+    assert answers.removed("200") == "Nothing was removed from your latest answer."
+
+
 def test_summary_card_reports_coverage_and_skipped_parts(monkeypatch) -> None:
     lecture = source(9, "lecture.pptx")
     result = SummaryResult("partial", "Covers loops [F1].", (("F1", "slide 1"),), 30, 40, ("slide 12 – slide 13",))

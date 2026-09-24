@@ -30,6 +30,7 @@ class StewardAnswersApplication:
         self._location = location
         self._last_find: dict[str, str] = {}
         self._last_ask: dict[str, str] = {}
+        self._last_removed: dict[str, tuple[str, ...]] = {}
 
     def find(self, chat_id: str, request: str, scope: FindScope) -> PresentedReply:
         result = run_find(self._find_graph, request, previous=self._last_find.get(chat_id), scope=scope)
@@ -45,7 +46,19 @@ class StewardAnswersApplication:
         )
         if source is None:
             self._last_ask[chat_id] = f"Q: {question}\nA: {result.text[:300]}"
+        self._last_removed[chat_id] = result.removed_text
         return self._ask_card(question, result, source)
+
+    def removed(self, chat_id: str) -> PresentedReply | str:
+        """What the checker removed from this chat's latest answer, so the owner can judge it."""
+        removed = self._last_removed.get(chat_id)
+        if not removed:
+            return "Nothing was removed from your latest answer."
+        return PresentedReply(
+            "Removed because the cited sections didn't support them. If one looks right, open the source to check:\n\n"
+            + "\n".join(f"• {line}" for line in removed),
+            title="Removed statements", icon="🔍",
+        )
 
     def summarize(self, source: Source) -> PresentedReply:
         return self._summary_card(source, run_summarize(self._summarize_graph, source.id or 0))
@@ -98,6 +111,8 @@ class StewardAnswersApplication:
         elif shown:
             lines.append("\n".join(f"• {self._location(item)}" for item in shown))
         actions = tuple(ReplyAction(f"Open {index}", f"/source {item.id}") for index, item in enumerate(shown, start=1))
+        if result.removed_text:
+            actions += (ReplyAction(f"Show removed ({len(result.removed_text)})", "/ask_removed"),)
         title = f"Answer: {source.path.name}" if source is not None else "Answer"
         return PresentedReply(
             "\n\n".join(lines), actions, title=title, icon="💬",

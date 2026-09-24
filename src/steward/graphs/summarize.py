@@ -91,9 +91,9 @@ def build_summarize_graph(tools: SummarizeTools):
         if len(batches) > MAX_BATCHES:
             return {"result": SummaryResult("too_long", total=len(fragments))}
         # Each batch's notes may repair once; the combiner may repair once, plus one
-        # coverage retry; up to three checker calls (15 sentences each). A one-batch
-        # file skips the notes.
-        budget = CallBudget(2 * len(batches) + 7 if len(batches) > 1 else 7)
+        # coverage retry; up to three checker calls (15 sentences each) and one second
+        # opinion on flagged sentences. A one-batch file skips the notes.
+        budget = CallBudget(2 * len(batches) + 8 if len(batches) > 1 else 8)
         trace("summarize.split", batches=len(batches), sections=len(fragments))
         notes = {0: batches[0].text} if len(batches) == 1 else {}
         return {"source": source, "fragments": fragments, "batches": batches, "budget": budget, "notes": notes}

@@ -47,7 +47,7 @@ _PRIMARY_COMMANDS = (
 # Every command the application handles. Unknown commands still reach the
 # application through the catch-all handler and get a short hint.
 _COMMANDS = (
-    "ask", "ask_source", "browse", "find", "help", "home", "inbox",
+    "ask", "ask_removed", "ask_source", "browse", "find", "help", "home", "inbox",
     "intake_accept", "intake_context", "intake_discard", "intake_root",
     "note", "send_source", "source", "source_content", "sources", "start",
     "summarize_source",
