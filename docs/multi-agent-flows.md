@@ -132,8 +132,8 @@ file → LOAD (cache?) → SPLIT → [NOTES × N, 4 at a time] → COMBINE (+ co
 |---|---|---|
 | Load | code | Returns the cached summary if the file's hash and the model are unchanged |
 | Split | code | ~24,000-character batches on section boundaries; >32 batches → "too long, Ask about a part" |
-| Notes × N | model | LangGraph `Send` workers, citing only their batch's keys (shown a real key as the example). Notes over 3,000 characters are cut at a line break, not rejected. A failed batch is skipped and named on the card |
-| Combine | model | One summary citing only keys from the notes. One repair if it cites nothing, cites many unknown keys, or leaves over 25% of paragraphs uncited (a second thin reply is accepted). If a run of consecutive uncited sections is large (at least 3 sections and at least 20% of the file), retry once asking to cover it, and keep the better one |
+| Notes × N | model | LangGraph `Send` workers write bullet notes citing only their batch's keys (shown a real key as the example), keeping dates, deadlines, requirements, numbers, and named concepts. The parts share a 36,000-character target (2,000–6,000 each). Long notes are kept, not cut: cutting dropped their last points, once a deadline. Only runaway output over 12,000 characters is cut. A failed batch is skipped and named on the card |
+| Combine | model | One summary of short bullet points under topic headings, about 700 words, keeping every date, deadline, requirement, number, and named concept, citing only keys from the notes. One repair if it cites nothing, cites many unknown keys, or leaves over 25% of paragraphs uncited (a second thin reply is accepted). If a run of consecutive uncited sections is large (at least 3 sections and at least 20% of the file), retry once asking to cover it, and keep the better one |
 | Check | code + model | Same checker as Ask |
 | Save | code | Cache only complete summaries |
 
@@ -173,6 +173,9 @@ the default only while it beats hybrid on the owner's cases. Results are in
   was cut. Most of its correct removals are miscitations by the answer writer,
   so better citing is the next lever.
 - "Covered X of Y sections" counts cited sections, so it measures how traceable
-  a summary is more than how complete it is, and it varies from run to run.
+  a summary is more than how complete it is, and it varies from run to run. The
+  evaluation also checks named key facts per file.
+- The model follows word targets but not character targets or "shorten this"
+  requests, so length is steered by the prompt, not enforced.
 - Find's planner, judge, and checker send snippets to the configured provider.
   With a cloud provider, those snippets leave the machine.

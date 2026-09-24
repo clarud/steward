@@ -15,7 +15,7 @@ from steward.observability import trace
 from steward.roles.checker import check_answer
 from steward.roles.citations import KEY
 from steward.roles.structured import CallBudget, StructuredOutputError
-from steward.roles.summarize import combine_notes, write_notes
+from steward.roles.summarize import combine_notes, note_limit, write_notes
 from steward.sources import Source, SourceRepository
 from steward.sources.summaries import StoredSummary, SummaryRepository
 
@@ -69,6 +69,7 @@ class SummarizeState(TypedDict, total=False):
 class WorkerInput(TypedDict):
     batch: Batch
     budget: CallBudget
+    limit: int
 
 
 def build_summarize_graph(tools: SummarizeTools):
@@ -103,12 +104,15 @@ def build_summarize_graph(tools: SummarizeTools):
             return END
         if len(state["batches"]) == 1:
             return "combine"
-        return [Send("notes", {"batch": batch, "budget": state["budget"]}) for batch in state["batches"]]
+        limit = note_limit(len(state["batches"]))
+        return [Send("notes", {"batch": batch, "budget": state["budget"], "limit": limit}) for batch in state["batches"]]
 
     def notes(worker: WorkerInput) -> dict:
         batch = worker["batch"]
         try:
-            text: str | None = write_notes(tools.model, worker["budget"], batch=batch.text, keys=set(batch.keys))  # type: ignore[arg-type]
+            text: str | None = write_notes(  # type: ignore[arg-type]
+                tools.model, worker["budget"], batch=batch.text, keys=set(batch.keys), limit=worker["limit"],
+            )
         except StructuredOutputError:
             trace("summarize.batch_skipped", batch=batch.index)
             text = None

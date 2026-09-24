@@ -79,6 +79,44 @@ credentials, private file content, or absolute paths.
 
 ## Results
 
+### 2026-09-25: citations, vague questions, and complete summaries
+
+**Ask** (`02431d0`): citations re-pointed in code to the section a sentence
+came from; heading-only sections replaced by what follows; uncited answers
+repaired (one had skipped the checker entirely); the extra search looks inside
+the files already found. 8 vague questions were added (28 in total).
+
+| 24 answerable | Run A | Run B |
+|---|---|---|
+| Correct | 20 | 18 |
+| Partly correct | 3 | 4 |
+| Withheld / not found | 1 | 2 |
+| Uncited | 0 | 0 |
+| Wrong | 0 | 0 |
+
+All 4 unanswerable questions were declined. On the vague questions Ask always
+retrieved the right file; its misses were the wrong section or a checker cut,
+so Find inside Ask was not added.
+
+**Summarize, key facts**: each file now lists 6 facts a good summary mentions
+(the deadline in the brief, Burke and Jackson in queueing, etc.), each checked
+to appear in the file.
+
+| Version | Key facts (2 runs) | Mean length | Mean time |
+|---|---|---|---|
+| Before | 35, 34 of 42 (81–83%) | 4,900 chars | 21–24 s |
+| Notes kept, not cut; "keep every date and number" | 41, 39 (93–98%) | 11,600 chars | 41–42 s |
+| Final: plus bullet points, ~700 words | 40, 39 (93–95%) | 6,900–9,400 chars | 33–44 s |
+
+Tracing showed where facts went: the note-takers had them, and a 3,000-character
+cut of each part's notes (added the day before) dropped the end, including
+the brief's deadline. Asking the model to shorten notes, or to stay under a
+character count, had no effect; a word target and bullet format did. The one
+fact still missed repeatedly is Amdahl in the CS3210 notes, which the combiner
+leaves out.
+
+Full suite: 284 passed.
+
 ### 2026-09-25: Ask made more complete
 
 Changes (`0f81159`): show what survives the checker and withhold only when no

@@ -36,7 +36,7 @@ from steward.activity import ActivityService, ActivityType
 from steward.roots import SourceRootRepository
 from steward.evaluation import (
     cites_expected, declines, evaluate_checker, evaluate_files, load_ask_cases, load_checker_cases, load_file_cases,
-    load_summary_cases,
+    load_summary_cases, missing_facts,
 )
 from steward.graphs.summarize import run_summarize
 from steward.roles.checker import check_answer
@@ -177,7 +177,7 @@ def _evaluate_ask(settings: Settings, arguments: argparse.Namespace) -> None:
 
 
 def _evaluate_summaries(settings: Settings, arguments: argparse.Namespace) -> None:
-    files = load_summary_cases(arguments.cases)
+    cases = load_summary_cases(arguments.cases)
     model_gateway = model_gateway_from_settings(settings, command="evaluate-summaries")
     if model_gateway is None:
         return
@@ -185,10 +185,10 @@ def _evaluate_summaries(settings: Settings, arguments: argparse.Namespace) -> No
     flows = build_flows(settings, model_gateway, lambda source: str(source.path))
     active = SourceRepository(database_path).list_active()
     rows, report = [], ["# Summary evaluation\n", "For each: is it accurate, and is anything important missing?\n"]
-    for number, ending in enumerate(files, start=1):
-        source = next((item for item in active if item.path.as_posix().casefold().endswith(ending.casefold())), None)
+    for number, case in enumerate(cases, start=1):
+        source = next((item for item in active if item.path.as_posix().casefold().endswith(case.file.casefold())), None)
         if source is None:
-            print(f"{number:>2}. not indexed: {ending}")
+            print(f"{number:>2}. not indexed: {case.file}")
             continue
         with sqlite3.connect(database_path) as connection:  # measure a fresh summary, not the cache
             connection.execute("DELETE FROM source_summaries WHERE source_id = ?", (source.id,))
@@ -196,20 +196,28 @@ def _evaluate_summaries(settings: Settings, arguments: argparse.Namespace) -> No
         result = run_summarize(flows.summarize, source.id or 0)
         seconds = time.perf_counter() - started
         share = result.covered / result.total if result.total else 0.0
-        rows.append((result, share, seconds))
-        print(f"{number:>2}. {result.status:<10} covered {result.covered}/{result.total} ({share:.0%}) · "
+        missing = missing_facts(result.text, case.facts) if result.text else case.facts
+        rows.append((result, share, seconds, len(case.facts) - len(missing), len(case.facts)))
+        facts_note = f" · key facts {len(case.facts) - len(missing)}/{len(case.facts)}" if case.facts else ""
+        print(f"{number:>2}. {result.status:<10} covered {result.covered}/{result.total} ({share:.0%}){facts_note} · "
               f"{result.calls} calls · {seconds:.0f}s · {source.path.name}"
               + (f" · skipped {len(result.skipped)}" if result.skipped else ""))
+        if missing:
+            print(f"      missing: {', '.join(missing)}")
         report += [
             f"## {number}. {source.path.name}\n",
-            f"Status: {result.status} · covered {result.covered}/{result.total} ({share:.0%}) · "
+            f"Status: {result.status} · covered {result.covered}/{result.total} ({share:.0%}){facts_note} · "
             f"{result.calls} calls · {seconds:.0f}s\n",
+            *([f"Missing key facts: {', '.join(missing)}\n"] if missing else []),
             result.text + "\n",
             "Accurate? [ ] yes  [ ] mostly  [ ] no    Missing anything important? ______\n",
         ]
     if rows:
         completed = [row for row in rows if row[0].status in {"done", "partial", "notes_only"}]
         print(f"\nFiles: {len(rows)} · completed: {len(completed)}/{len(rows)}")
+        found, total = sum(row[3] for row in rows), sum(row[4] for row in rows)
+        if total:
+            print(f"Key facts mentioned: {found}/{total} ({_share(found, total)})")
         if completed:
             print(f"Mean coverage: {sum(row[1] for row in completed) / len(completed):.0%} · "
                   f"mean calls: {sum(row[0].calls for row in completed) / len(completed):.1f} · "

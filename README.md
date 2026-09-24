@@ -100,9 +100,9 @@ Measured on a copy of real coursework (136 files; details in
 |---|---|
 | Find, 50 test queries | right file in the top 3: **90–92%** (plain hybrid search: 70%) |
 | Citation checker, 30 planted false statements | 27–30 removed (95% on average, five runs), 28–29 of 30 true ones kept |
-| Ask, 16 answerable questions | 13–14 correct, 2 partly correct, 0–1 withheld, **0 wrong** (two runs) |
+| Ask, 24 answerable questions (8 of them vague) | 18–20 correct, 3–4 partly correct, 1–2 withheld or not found, **0 wrong** (two runs) |
 | Ask, 4 questions the files can't answer | 4 declined |
-| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed, no factual errors found by hand |
+| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed; 93–95% of 42 key facts mentioned (was 81–83%) |
 
 ## Command line
 

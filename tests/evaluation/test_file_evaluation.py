@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from steward.evaluation import (
-    cites_expected, declines, evaluate_checker, evaluate_files, load_ask_cases, load_checker_cases, load_file_cases,
+    cites_expected, declines, evaluate_checker, load_summary_cases, missing_facts, evaluate_files, load_ask_cases, load_checker_cases, load_file_cases,
 )
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.retrieval import LexicalSearchService
@@ -119,3 +119,15 @@ def test_an_answer_only_counts_as_declining_if_it_says_the_files_dont_cover_it()
     assert not declines("unavailable", "The model couldn't answer right now.")
     assert declines("answered", "The evidence does not contain the wifi password [F1].")
     assert not declines("answered", "MESI has four states: modified, exclusive, shared, invalid.")
+
+
+
+def test_summary_cases_list_key_facts_with_alternative_spellings(tmp_path: Path) -> None:
+    cases = tmp_path / "summaries.yaml"
+    cases.write_text("cases:\n  - {file: brief.pdf, facts: ['18 Sep|18 September', OpenMP, Slurm]}\n  - {file: notes.md}\n",
+                     encoding="utf-8")
+
+    loaded = load_summary_cases(cases)
+
+    assert loaded[1].facts == ()
+    assert missing_facts("Due Friday 18 September; uses OpenMP.", loaded[0].facts) == ("Slurm",)

@@ -195,19 +195,36 @@ def cites_expected(cited: Sequence[Path], expected: tuple[str, ...]) -> bool:
     return any(path.as_posix().casefold().endswith(endings) for path in cited)
 
 
-def load_summary_cases(path: Path) -> tuple[str, ...]:
-    """Read `cases: [{file: ...}]`: the files to summarise, by the end of their path."""
+@dataclass(frozen=True, slots=True)
+class SummaryCase:
+    """A file to summarise and facts a good summary mentions; "a|b" accepts either spelling."""
+
+    file: str
+    facts: tuple[str, ...] = ()
+
+
+def load_summary_cases(path: Path) -> tuple[SummaryCase, ...]:
+    """Read `cases: [{file: ..., facts: [...]}]`: files to summarise, by the end of their path."""
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     cases = document.get("cases") if isinstance(document, dict) else None
     if not isinstance(cases, list) or not cases:
         raise ValueError("The case file needs a non-empty 'cases' list.")
-    files = []
+    parsed = []
     for number, item in enumerate(cases, start=1):
         value = item.get("file") if isinstance(item, dict) else None
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Case {number} needs a file.")
-        files.append(value.strip().replace("\\", "/"))
-    return tuple(files)
+        facts = item.get("facts") or []
+        if not isinstance(facts, list) or not all(isinstance(fact, str) and fact.strip() for fact in facts):
+            raise ValueError(f"Case {number}: facts must be a list of words or phrases.")
+        parsed.append(SummaryCase(value.strip().replace("\\", "/"), tuple(fact.strip() for fact in facts)))
+    return tuple(parsed)
+
+
+def missing_facts(text: str, facts: tuple[str, ...]) -> tuple[str, ...]:
+    """Facts the text doesn't mention, in any of their accepted spellings."""
+    lowered = text.casefold()
+    return tuple(fact for fact in facts if not any(option.strip().casefold() in lowered for option in fact.split("|")))
 
 
 _DECLINE = re.compile(

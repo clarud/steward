@@ -38,7 +38,7 @@ ROLE_MARKERS = {
     "planner": "Plan searches",
     "answerer": "Answer only from the evidence",
     "checker": "For each numbered sentence",
-    "notes": "Write concise notes",
+    "notes": "concise bullet-point notes",
     "combiner": "Write a clear summary",
 }
 
@@ -335,15 +335,16 @@ def test_a_retry_answers_from_the_evidence_instead_of_giving_up(tmp_path: Path) 
 
 
 def test_overlong_notes_with_label_citations_are_trimmed_not_rejected() -> None:
-    from steward.roles.summarize import NOTE_LIMIT, write_notes
+    from steward.roles.summarize import NOTE_CEILING, NOTE_MIN, note_limit, write_notes
 
-    long_notes = "\n".join(f"- Point {index} about loops [Fn: F7]" for index in range(400))
+    long_notes = "\n".join(f"- Point {index} about loops [Fn: F7]" for index in range(600))
     model = RoleModel(notes=lambda _: long_notes)
 
-    notes = write_notes(model, CallBudget(2), batch="[F7] slide 1\nloops", keys={"F7"})
+    notes = write_notes(model, CallBudget(2), batch="[F7] slide 1\nloops", keys={"F7"}, limit=NOTE_MIN)
 
-    assert len(notes) <= NOTE_LIMIT and notes.endswith("[F7]")
+    assert NOTE_MIN < len(notes) <= NOTE_CEILING and notes.endswith("[F7]")  # kept, only runaway output cut
     assert model.calls == ["notes"]
+    assert note_limit(2) == 6_000 and note_limit(12) == 3_000 and note_limit(32) == 2_000
 
 
 def test_ask_follows_a_title_slide_with_the_slides_after_it(tmp_path: Path) -> None:
