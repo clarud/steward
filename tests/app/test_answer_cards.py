@@ -59,7 +59,8 @@ def test_ask_card_shows_answer_removed_count_and_sources(monkeypatch) -> None:
     card = app(monkeypatch, ask=result).ask("100", "static?")
 
     assert "(1 statement removed: not supported by your files.)" in card.text
-    assert "Sources:\n• Y4S1 / CS3210 / openmp.pdf: page 3" in card.text
+    assert card.text.startswith("Static splits evenly. [p.3]")  # the key reads as a page, not [F70]
+    assert "Sources:\n• Y4S1 / CS3210 / openmp.pdf: p.3" in card.text
     assert [action.command for action in card.actions] == ["/source 7"]
 
 
@@ -75,7 +76,7 @@ def test_removed_statements_can_be_shown_from_the_answer_card(monkeypatch) -> No
     card = answers.ask("100", "static?")
 
     assert card.actions[-1].label == "Show removed (1)" and card.actions[-1].command == "/ask_removed"
-    assert "Static is always fastest" in answers.removed("100").text
+    assert "Static is always fastest. [p.3]" in answers.removed("100").text
     assert answers.removed("200") == "Nothing was removed from your latest answer."
 
 
@@ -86,5 +87,20 @@ def test_summary_card_reports_coverage_and_skipped_parts(monkeypatch) -> None:
     card = app(monkeypatch, summarize=result).summarize(lecture)
 
     assert "Covered 30 of 40 sections · couldn't summarise slide 12 – slide 13." in card.text
-    assert card.text.endswith("Sources: [F1] slide 1")
+    assert card.text.startswith("Covers loops [slide 1].") and "[F1]" not in card.text
     assert card.title == "Summary: lecture.pptx"
+
+
+def test_an_answer_citing_two_files_numbers_them_and_renders_maths(monkeypatch) -> None:
+    queueing, notes = source(3, "02-Queueing.pdf"), source(4, "notes.md")
+    evidence = (
+        Evidence("F30", queueing, SourceFragment(30, 3, None, 0, "E(W) = 1/(mu - lambda)", "page 19")),
+        Evidence("F40", notes, SourceFragment(40, 4, None, 0, "Little's law", "lines 12-40")),
+    )
+    text = r"The sojourn time is $E(W) = 1/(\mu - \lambda)$ [F30]. Little's law relates $L$ and $W$ [F40][F30]."
+    card = app(monkeypatch, ask=AskResult("answered", text, evidence)).ask("100", "sojourn?")
+
+    assert card.text.startswith(
+        "The sojourn time is E(W) = 1/(μ - λ) [1 p.19]. Little's law relates L and W [2 lines 12–40, 1 p.19]."
+    )
+    assert "Sources:\n1. Y4S1 / CS3210 / 02-Queueing.pdf: p.19\n2. Y4S1 / CS3210 / notes.md: lines 12–40" in card.text

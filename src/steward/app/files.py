@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 
 from steward.events import IncomingEvent
 from steward.extraction import SourceFragmentRepository
+from steward.readable import math_to_unicode
 from steward.presentation import PresentedReply, ReplyAction
 from steward.reviews import ReviewContextRepository
 from steward.roots import SourceRoot, SourceRootRepository
@@ -310,7 +311,7 @@ class StewardFilesApplication:
             ReplyAction("Back", f"/source {source_id}"),
         ))
         return PresentedReply(
-            f"Section {section} of {len(fragments)} · {fragment.location}\n{fragment.heading or ''}\n\n{fragment.text}",
+            f"Section {section} of {len(fragments)} · {fragment.location}\n{fragment.heading or ''}\n\n{math_to_unicode(fragment.text)}",
             tuple(actions), title=source.path.name, icon="📖", reference=("source", source_id),
         )
 

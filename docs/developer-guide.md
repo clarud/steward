@@ -171,6 +171,13 @@ Find, Ask, and Summarize are described node by node in
 - `cli/bootstrap.py`: `build_flows` builds all three graphs for the CLI and
   Telegram. Without a model gateway, Telegram's flows are disabled and say so.
 
+**Readable text** (`readable.py`): every card that shows model or file text
+passes it through `math_to_unicode` (inline LaTeX such as `$1/(\mu - \lambda)$`
+becomes 1/(μ − λ), with subscripts, superscripts, and fractions; "$5 and $10"
+is left alone) and, for answers and summaries, `label_citations`, which turns
+`[F4058]` into `[p.19]`. An answer citing several files numbers them to match
+its Sources list and Open buttons: `[2 p.19]`.
+
 `observability.trace()` logs structured events (node, decision, calls used)
 without source text, prompts, or model output.
 

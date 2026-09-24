@@ -8,6 +8,7 @@ from steward.graphs.ask import AskResult, run_ask
 from steward.graphs.find import FindResult, FindScope, run_find
 from steward.graphs.summarize import SummaryResult, run_summarize
 from steward.presentation import PresentedReply, ReplyAction
+from steward.readable import label_citations, math_to_unicode, short_location
 from steward.sources import Source
 
 MAX_SOURCES_SHOWN = 5
@@ -46,7 +47,8 @@ class StewardAnswersApplication:
         )
         if source is None:
             self._last_ask[chat_id] = f"Q: {question}\nA: {result.text[:300]}"
-        self._last_removed[chat_id] = result.removed_text
+        labels, _ = _ask_labels(result)
+        self._last_removed[chat_id] = tuple(_readable(line, labels) for line in result.removed_text)
         return self._ask_card(question, result, source)
 
     def removed(self, chat_id: str) -> PresentedReply | str:
@@ -70,7 +72,7 @@ class StewardAnswersApplication:
             lines = ["No exact match. The closest files are:"] if result.kind == "closest" else []
             actions = []
             for index, (candidate, reason) in enumerate(result.picks, start=1):
-                lines.append(f"{index}. 📄 {candidate.source.path.name}\n{self._location(candidate.source)}\n{reason}")
+                lines.append(f"{index}. 📄 {candidate.source.path.name}\n{self._location(candidate.source)}\n{math_to_unicode(reason)}")
                 actions.append(ReplyAction(f"Open {index}", f"/source {candidate.source.id}"))
                 actions.append(ReplyAction(f"Send {index}", f"/send_source {candidate.source.id}"))
             title = "Closest matches" if result.kind == "closest" else "Found"
@@ -91,22 +93,20 @@ class StewardAnswersApplication:
         )
 
     def _ask_card(self, question: str, result: AskResult, source: Source | None) -> PresentedReply:
-        files: dict[int, Source] = {}
-        for item in result.cited:
-            files.setdefault(item.source.id or 0, item.source)
-        shown = list(files.values())[:MAX_SOURCES_SHOWN]
-        lines = [result.text]
+        labels, shown = _ask_labels(result)
+        lines = [_readable(result.text, labels)]
         if result.removed and result.status == "answered":
             lines.append(
                 f"({result.removed} statement{'s' if result.removed != 1 else ''} removed: "
                 "not supported by your files.)"
             )
         if shown and result.status == "answered":
+            numbered = len(shown) > 1
             lines.append("Sources:\n" + "\n".join(
-                "• " + self._location(item) + ": " + ", ".join(
-                    dict.fromkeys(e.fragment.location for e in result.cited if e.source.id == item.id)
+                (f"{index}. " if numbered else "• ") + self._location(item) + ": " + ", ".join(
+                    dict.fromkeys(short_location(e.fragment.location) for e in result.cited if e.source.id == item.id)
                 )
-                for item in shown
+                for index, item in enumerate(shown, start=1)
             ))
         elif shown:
             lines.append("\n".join(f"• {self._location(item)}" for item in shown))
@@ -130,15 +130,31 @@ class StewardAnswersApplication:
         }
         if result.status in messages:
             return PresentedReply(messages[result.status], (read, ask), title=source.path.name, icon="📄", reference=reference)
-        lines = [result.text]
+        lines = [_readable(result.text, {key: short_location(location) for key, location in result.cited})]
         if result.status == "notes_only":
             lines.insert(0, "I couldn't combine these into one summary, so here are the notes for each part:")
         coverage = f"Covered {result.covered} of {result.total} sections"
         if result.skipped:
             coverage += " · couldn't summarise " + "; ".join(result.skipped)
         lines.append(coverage + ".")
-        if result.cited:
-            lines.append("Sources: " + ", ".join(f"[{key}] {location}" for key, location in result.cited))
         return PresentedReply(
             "\n\n".join(lines), (read, ask), title=f"Summary: {source.path.name}", icon="📄", reference=reference,
         )
+
+
+def _ask_labels(result: AskResult) -> tuple[dict[str, str], list[Source]]:
+    """Citation labels for an answer: "p.3", or "2 p.3" when it cites several files (2 = its Sources number)."""
+    files: dict[int, Source] = {}
+    for item in result.cited:
+        files.setdefault(item.source.id or 0, item.source)
+    shown = list(files.values())[:MAX_SOURCES_SHOWN]
+    number = {item.id: index for index, item in enumerate(shown, start=1)}
+    labels = {}
+    for item in result.cited:
+        where = short_location(item.fragment.location)
+        labels[item.key] = f"{number[item.source.id]} {where}" if len(shown) > 1 and item.source.id in number else where
+    return labels, shown
+
+
+def _readable(text: str, labels: dict[str, str]) -> str:
+    return math_to_unicode(label_citations(text, labels))
