@@ -38,9 +38,9 @@ def load_file_cases(path: Path) -> tuple[FileCase, ...]:
     if not isinstance(cases, list) or not cases:
         raise ValueError("The case file needs a non-empty 'cases' list.")
     parsed = []
-    for item in cases:
+    for number, item in enumerate(cases, start=1):
         if not isinstance(item, dict):
-            raise ValueError("Every case needs a query and the expected file.")
+            raise ValueError(f"Case {number} needs a query and the expected file.")
         expected = item.get("files", item.get("file"))
         if expected is None and isinstance(item.get("expected"), dict):
             expected = item["expected"].get("source")
@@ -49,7 +49,7 @@ def load_file_cases(path: Path) -> tuple[FileCase, ...]:
         if not isinstance(query, str) or not query.strip() or not options or not all(
             isinstance(value, str) and value.strip() for value in options
         ):
-            raise ValueError("Every case needs a query and the expected file.")
+            raise ValueError(f"Case {number} ({query!r}) needs a non-empty query and file.")
         parsed.append(FileCase(query.strip(), tuple(value.strip().replace("\\", "/") for value in options)))
     return tuple(parsed)
 
