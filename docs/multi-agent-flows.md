@@ -103,7 +103,7 @@ question → PLAN → GATHER → ANSWER → CHECK → reply
 4. Uncited sentences (connectives, "I couldn't find…") are kept.
 
 On 60 planted statements from real passages, code checks alone remove 3 of 30
-false ones. With the model, the checker removes 29–30 of 30 and keeps 26–28 of 30
+false ones. With the model, the checker removes 28–30 of 30 and keeps 28–29 of 30
 true ones (three runs).
 
 If more than half the cited sentences are removed, the reply says it couldn't

@@ -119,8 +119,9 @@ to do in the next two weeks", and the CS3210 notes for "false sharing".
 | | False removed | True kept |
 |---|---|---|
 | code checks only | 3/30 | 30/30 |
-| code + model, before calibration | 29/30 | 28/30 |
-| code + model, final (two runs) | 30/30 | 26–28/30 |
+| code + model, first run | 29/30 | 28/30 |
+| code + model, after the evidence-window change | 30/30 | 26/30 |
+| code + model, final prompt (three runs) | 28–30/30 | 28–29/30 |
 
 **Ask**, 20 questions, after fixes (graded by hand):
 
