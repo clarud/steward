@@ -85,7 +85,7 @@ question → PLAN → GATHER → ANSWER → CHECK → reply
 |---|---|---|---|
 | Plan | model | 1–3 `{query}` searches, using the chat's previous turn for follow-ups. Folder names are shown to help word queries but never filter. Skipped for a single file | One search with the question |
 | Gather | code | Runs the searches (hybrid, 6 sections each), dedupes, and labels sections `[F<id>]`, up to 12,000 characters. A match shorter than 300 characters (a title slide) brings the 2 sections after it. A single file ≤12,000 characters is used whole | — |
-| Answer | model | `{status: "answer", text}` citing only the given keys, or `{status: "need_more", query}` once. Asking for more when no searches are left means the files don't answer it | "Your files don't seem to answer that", with the closest files |
+| Answer | model | One fact per sentence, each citing every excerpt it uses and adding no details they lack. `{status: "answer", text}` or, once, `{status: "need_more", query}`. Asking for more when no searches are left gets one retry ("answer from this evidence, or say it doesn't answer"). One stray citation key is left for the checker | "Your files don't seem to answer that", with the closest files |
 | Check | code + model | See below | Keep the code-checked text |
 
 **Checker** (`roles/checker.py`), shared with Summarize:
@@ -99,19 +99,27 @@ question → PLAN → GATHER → ANSWER → CHECK → reply
 3. Model, 15 sentences per call: each sentence with the best-matching 800
    characters of each cited section. It returns `{"unsupported": [indices]}`,
    listing only sentences that contradict the evidence or add a fact it doesn't
-   give (a number, date, name, or cause). Paraphrase is fine. Those are removed.
-4. Uncited sentences (connectives, "I couldn't find…") are kept.
+   give (a number, date, name, or cause). Paraphrase is fine.
+4. Second opinion: a flagged sentence that was judged on an excerpt of a longer
+   section is judged again against the full section (up to 3,000 characters)
+   and removed only if that also fails. When the first look already saw the
+   whole section, a second look adds only chance, so the first verdict stands.
+5. Uncited sentences (connectives, "I couldn't find…") are kept.
 
 On 60 planted statements from real passages, code checks alone remove 3 of 30
-false ones. With the model, the checker removes 28–30 of 30 and keeps 28–29 of 30
-true ones (three runs).
+false ones. With the model, over five runs the checker removes 27–30 of 30 (95%
+on average) and keeps 28–29 of 30 true ones (95%).
 
-If more than half the cited sentences are removed, the reply says it couldn't
-answer reliably and lists the relevant files instead. Otherwise the card shows
-the answer, "N statements removed", and the sources with their page, slide,
-or line locations.
+On real answers (two graded Ask runs), 9 of its 14 removals were right: 2
+invented deadlines, and 7 true facts cited to the wrong section (a heading, a
+progress-file header). 5 removed a true statement.
 
-Budget: usually 3 calls; at most 5. The chat's last question and answer are
+The card shows whatever survived, "N statements removed", a **Show removed**
+button listing them, and the sources with their page, slide, or line
+locations. Only when no cited statement survives does it say it couldn't answer
+reliably and list the relevant files instead.
+
+Budget: usually 3–4 calls; at most 6. The chat's last question and answer are
 kept in memory for follow-ups and lost on restart.
 
 ## Summarize: one file, reliably
@@ -132,9 +140,9 @@ file → LOAD (cache?) → SPLIT → [NOTES × N, 4 at a time] → COMBINE (+ co
 If combining fails, the verified notes are shown instead ("notes for each
 part"). The card always shows "Covered X of Y sections".
 
-Budget: 2N+7 calls for N batches: each note may repair once, the combiner may
-repair once, one coverage retry, and up to three checker calls. A single-batch
-file uses at most 7. Typical use is 3–8.
+Budget: 2N+8 calls for N batches: each note may repair once, the combiner may
+repair once, one coverage retry, up to three checker calls, and one second
+opinion. A single-batch file uses at most 8. Typical use is 3–8.
 
 ## What model roles can't do
 
@@ -160,9 +168,10 @@ the default only while it beats hybrid on the owner's cases. Results are in
 
 - Files whose text can't be extracted can't be found or summarised.
 - The checker uses the same model as the writer. The code pre-checks narrow the
-  gap, but an independent model would be stronger. It still occasionally removes
-  a true sentence, and an answer that loses more than half its cited sentences is
-  withheld ("couldn't answer reliably").
+  gap, but an independent model would be stronger. It still removes a true
+  sentence in roughly 1 of 3 real answers; **Show removed** lets you see what
+  was cut. Most of its correct removals are miscitations by the answer writer,
+  so better citing is the next lever.
 - "Covered X of Y sections" counts cited sections, so it measures how traceable
   a summary is more than how complete it is, and it varies from run to run.
 - Find's planner, judge, and checker send snippets to the configured provider.

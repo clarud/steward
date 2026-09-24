@@ -79,6 +79,41 @@ credentials, private file content, or absolute paths.
 
 ## Results
 
+### 2026-09-25: Ask made more complete
+
+Changes (`0f81159`): show what survives the checker and withhold only when no
+cited statement does; a second opinion against the full section for sentences
+judged on an excerpt; one fact per sentence with every excerpt cited; one retry
+before "not found"; one stray citation key tolerated; **Show removed**.
+
+| Ask, 16 answerable | Before | Run A | Run B |
+|---|---|---|---|
+| Correct | 12 | 13 | 14 |
+| Partly correct | 2 | 2 | 2 |
+| Withheld | 2 | 1 | 0 |
+| Wrong | 0 | 0 | 0 |
+
+The 4 unanswerable questions were declined in both runs. Mean 3.6–3.8 model
+calls, 4.6–4.9 s.
+
+**Checker removals on real answers, graded against the cited sections** (14 in
+the two runs): 9 right (2 invented deadlines, a CS4226 "Assignment 1" and a
+CS3210 deadline of 26 Sep; 7 true facts cited to the wrong section), 5 wrong
+(Match-Action pair, the F1 Grand Prix, the f = 0.25 → 4× example, two
+migrant-housing facts). Run A's one withheld answer cited a progress-file
+header for its facts, so the checker was right to remove them.
+
+**A second opinion for every flagged sentence was tried first and rejected**:
+on short passages it is only a second draw from the same judge, and requiring
+both to agree let false statements through (26/30 caught in one run). It now
+applies only when the first look saw an excerpt of a longer section.
+
+**Checker on the planted set**, final prompt, five runs: 27–30/30 false removed
+(mean 95%), 28–29/30 true kept (mean 95%). Short passages never trigger the
+second opinion, so these runs measure the same checker.
+
+Full suite: 278 passed.
+
 ### 2026-09-24: full evaluation of Find, the checker, Ask, and Summarize
 
 Run on a copy of the real database (136 files) with the SoCLaaS model. Claude

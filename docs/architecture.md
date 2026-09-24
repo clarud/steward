@@ -43,8 +43,8 @@ contracts, a call budget, and a deterministic fallback:
 | Flow | Shape | Budget |
 |---|---|---|
 | Find | plan → 4 retrievers in parallel → per-file fusion → judge → (reformulate once) | 4 calls |
-| Ask | plan → gather (+ slides after a title slide) → answer → (one extra search) → check | 5 calls |
-| Summarize | cache → split → parallel notes → combine (coverage retry) → check → save | 2N+7 calls |
+| Ask | plan → gather (+ slides after a title slide) → answer → (one extra search) → check (+ second opinion) | 6 calls |
+| Summarize | cache → split → parallel notes → combine (coverage retry) → check → save | 2N+8 calls |
 
 See [multi-agent-flows.md](multi-agent-flows.md). Everything else (browse, read,
 send original, upload, scan, INBOX.md) makes no model call.

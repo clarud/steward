@@ -85,10 +85,10 @@ model calls, and a plain fallback when a role fails. Details are in
 - **Find** (≤4 calls): a planner rewrites the request. Keyword, meaning,
   filename, and recent-files searches run in parallel and are fused per file.
   A judge picks from the candidates only, or asks "which one?".
-- **Ask** (≤5 calls): a planner chooses up to three searches. A drafter answers
+- **Ask** (≤6 calls): a planner chooses up to three searches. A drafter answers
   from numbered sections and may request one more search. A checker removes
-  sentences their citations don't support.
-- **Summarize** (≤2N+7 calls): parallel note-takers cover the whole file, a
+  sentences their citations don't support, and **Show removed** lists them.
+- **Summarize** (≤2N+8 calls): parallel note-takers cover the whole file, a
   combiner writes one cited summary, and a coverage check retries if a large
   part was missed. The card shows how many sections were covered. The summary is
   cached until the file changes.
@@ -99,8 +99,8 @@ Measured on a copy of real coursework (136 files; details in
 | Evaluation | Result |
 |---|---|
 | Find, 50 test queries | right file in the top 3: **90–92%** (plain hybrid search: 70%) |
-| Citation checker, 30 planted false statements | 28–30 removed, 28–29 of 30 true ones kept (three runs) |
-| Ask, 16 answerable questions | 12 correct, 2 partly correct, 2 withheld, **0 wrong** |
+| Citation checker, 30 planted false statements | 27–30 removed (95% on average, five runs), 28–29 of 30 true ones kept |
+| Ask, 16 answerable questions | 13–14 correct, 2 partly correct, 0–1 withheld, **0 wrong** (two runs) |
 | Ask, 4 questions the files can't answer | 4 declined |
 | Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed, no factual errors found by hand |
 

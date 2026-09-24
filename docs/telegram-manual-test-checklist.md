@@ -64,6 +64,8 @@ Send `queueing notes` with no command. A card offers **Find**, **Ask**, and
    turn.
 4. Reply to a file card with a question. The answer is about that file only.
    Restart the bot and reply to an old card; it still targets the same file.
+5. When an answer says "N statements removed", tap **Show removed**. It lists
+   exactly what was cut.
 
 ## 7. Upload to the Inbox
 
