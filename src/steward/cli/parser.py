@@ -56,6 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("cases", type=Path, help="YAML: cases: [{query: ..., file: CS3210/tut04.pdf}]")
     evaluate.add_argument("--mode", choices=("keyword", "hybrid", "find"), default="keyword",
                           help="find runs the multi-agent Find flow and uses the configured model")
+    checker = commands.add_parser("evaluate-checker", help="Score the citation checker on planted false statements")
+    checker.add_argument("cases", type=Path, help="YAML: cases: [{evidence: ..., supported: [...], unsupported: [...]}]")
+    ask_eval = commands.add_parser("evaluate-ask", help="Run Ask on questions and score the sources it cites")
+    ask_eval.add_argument("cases", type=Path, help="YAML: cases: [{question: ..., files: [...]}] or answerable: false")
+    ask_eval.add_argument("--report", type=Path, help="Write every answer to this Markdown file for review")
+    summary_eval = commands.add_parser("evaluate-summaries", help="Summarise files and report coverage, calls, time")
+    summary_eval.add_argument("cases", type=Path, help="YAML: cases: [{file: ...}]")
+    summary_eval.add_argument("--report", type=Path, help="Write every summary to this Markdown file for review")
     commands.add_parser("activity", help="Show recent activity")
 
     # Running

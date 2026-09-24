@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import sqlite3
 from collections.abc import Sequence
 from datetime import datetime
@@ -33,7 +34,13 @@ from steward.telegram import (
 )
 from steward.activity import ActivityService, ActivityType
 from steward.roots import SourceRootRepository
-from steward.evaluation import evaluate_files, load_file_cases
+from steward.evaluation import (
+    cites_expected, declines, evaluate_checker, evaluate_files, load_ask_cases, load_checker_cases, load_file_cases,
+    load_summary_cases,
+)
+from steward.graphs.summarize import run_summarize
+from steward.roles.checker import check_answer
+from steward.roles.structured import CallBudget
 from steward.graphs.find import run_find
 from steward.retrieval.files import group_by_file
 from steward.extraction import InvalidSearchQueryError
@@ -102,6 +109,118 @@ def _ranker(settings: Settings, mode: str):
         return [candidate.source.path for candidate, _ in result.picks] + [candidate.source.path for candidate in result.options]
 
     return rank
+
+
+def _evaluate_checker(settings: Settings, arguments: argparse.Namespace) -> None:
+    cases = load_checker_cases(arguments.cases)
+    model_gateway = model_gateway_from_settings(settings, command="evaluate-checker")
+    modes = [("code checks only", None)] + ([("code + model", model_gateway)] if model_gateway is not None else [])
+    for label, model in modes:
+        evaluation = evaluate_checker(
+            lambda text, evidence: check_answer(model, CallBudget(2 if model else 0), text, evidence).text, cases,
+        )
+        print(
+            f"\n{label}: {len(cases)} cases\n"
+            f"Planted false statements removed: {evaluation.unsupported_removed}/{evaluation.unsupported} "
+            f"({_share(evaluation.unsupported_removed, evaluation.unsupported)})\n"
+            f"True statements kept: {evaluation.supported_kept}/{evaluation.supported} "
+            f"({_share(evaluation.supported_kept, evaluation.supported)})"
+        )
+        for text in evaluation.missed:
+            print(f"  missed (kept a false statement): {text}")
+        for text in evaluation.wrongly_removed:
+            print(f"  wrongly removed (a true statement): {text}")
+
+
+def _evaluate_ask(settings: Settings, arguments: argparse.Namespace) -> None:
+    cases = load_ask_cases(arguments.cases)
+    model_gateway = model_gateway_from_settings(settings, command="evaluate-ask")
+    if model_gateway is None:
+        return
+    flows = build_flows(settings, model_gateway, lambda source: str(source.path),
+                        embedding_provider=optional_embedding_provider())
+    rows, report = [], ["# Ask evaluation\n", "Mark each answer: correct, partly correct, or wrong.\n"]
+    for number, case in enumerate(cases, start=1):
+        started = time.perf_counter()
+        result = run_ask(flows.ask, case.question)
+        seconds = time.perf_counter() - started
+        cited = list(dict.fromkeys(item.source.path for item in result.cited))
+        good = cites_expected(cited, case.expected) if case.expected else declines(result.status, result.text, cited)
+        rows.append((case, result.status, good, result.removed, result.calls, seconds))
+        verdict = ("cites an expected file" if good else "does not cite an expected file") if case.expected else (
+            "declined, as it should" if good else "answered, but the files don't cover this")
+        print(f"{number:>2}. {'ok  ' if good else 'MISS'} {case.question} ({verdict}; {result.calls} calls, {seconds:.1f}s)")
+        report += [
+            f"## {number}. {case.question}\n",
+            f"Status: {result.status} · removed {result.removed} · {result.calls} calls · {seconds:.1f}s · {verdict}\n",
+            result.text + "\n",
+            "Sources: " + ("; ".join(path.name for path in cited) or "none") + "\n",
+            "Correct? [ ] yes  [ ] partly  [ ] no\n",
+        ]
+    answerable = [row for row in rows if row[0].expected]
+    unanswerable = [row for row in rows if not row[0].expected]
+    print(f"\nCases: {len(rows)}")
+    if answerable:
+        print(f"Answerable, cites an expected file: {sum(row[2] for row in answerable)}/{len(answerable)} "
+              f"({_share(sum(row[2] for row in answerable), len(answerable))})")
+    if unanswerable:
+        print(f"Not answerable, correctly declined: {sum(row[2] for row in unanswerable)}/{len(unanswerable)} "
+              f"({_share(sum(row[2] for row in unanswerable), len(unanswerable))})")
+    print(f"Statements removed by the checker: {sum(row[3] for row in rows)}")
+    print(f"Mean model calls: {sum(row[4] for row in rows) / len(rows):.1f} · "
+          f"mean time: {sum(row[5] for row in rows) / len(rows):.1f}s")
+    _write_report(arguments.report, report)
+
+
+def _evaluate_summaries(settings: Settings, arguments: argparse.Namespace) -> None:
+    files = load_summary_cases(arguments.cases)
+    model_gateway = model_gateway_from_settings(settings, command="evaluate-summaries")
+    if model_gateway is None:
+        return
+    database_path = settings.data_dir / "steward.db"
+    flows = build_flows(settings, model_gateway, lambda source: str(source.path))
+    active = SourceRepository(database_path).list_active()
+    rows, report = [], ["# Summary evaluation\n", "For each: is it accurate, and is anything important missing?\n"]
+    for number, ending in enumerate(files, start=1):
+        source = next((item for item in active if item.path.as_posix().casefold().endswith(ending.casefold())), None)
+        if source is None:
+            print(f"{number:>2}. not indexed: {ending}")
+            continue
+        with sqlite3.connect(database_path) as connection:  # measure a fresh summary, not the cache
+            connection.execute("DELETE FROM source_summaries WHERE source_id = ?", (source.id,))
+        started = time.perf_counter()
+        result = run_summarize(flows.summarize, source.id or 0)
+        seconds = time.perf_counter() - started
+        share = result.covered / result.total if result.total else 0.0
+        rows.append((result, share, seconds))
+        print(f"{number:>2}. {result.status:<10} covered {result.covered}/{result.total} ({share:.0%}) · "
+              f"{result.calls} calls · {seconds:.0f}s · {source.path.name}"
+              + (f" · skipped {len(result.skipped)}" if result.skipped else ""))
+        report += [
+            f"## {number}. {source.path.name}\n",
+            f"Status: {result.status} · covered {result.covered}/{result.total} ({share:.0%}) · "
+            f"{result.calls} calls · {seconds:.0f}s\n",
+            result.text + "\n",
+            "Accurate? [ ] yes  [ ] mostly  [ ] no    Missing anything important? ______\n",
+        ]
+    if rows:
+        completed = [row for row in rows if row[0].status in {"done", "partial", "notes_only"}]
+        print(f"\nFiles: {len(rows)} · completed: {len(completed)}/{len(rows)}")
+        if completed:
+            print(f"Mean coverage: {sum(row[1] for row in completed) / len(completed):.0%} · "
+                  f"mean calls: {sum(row[0].calls for row in completed) / len(completed):.1f} · "
+                  f"mean time: {sum(row[2] for row in completed) / len(completed):.0f}s")
+    _write_report(arguments.report, report)
+
+
+def _share(part: int, whole: int) -> str:
+    return f"{part / whole:.0%}" if whole else "n/a"
+
+
+def _write_report(path, lines: list[str]) -> None:
+    if path is not None:
+        path.write_text("\n".join(lines), encoding="utf-8")
+        print(f"Report written to {path}")
 
 
 def _safe_search(searcher, query: str):
@@ -364,6 +483,17 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             print("Not in the top 3:")
             for query, expected in evaluation.misses:
                 print(f"- {query} -> {expected}")
+        return
+
+    if arguments.command in {"evaluate-checker", "evaluate-ask", "evaluate-summaries"}:
+        if not arguments.cases.is_file():
+            print(f"Case file does not exist: {arguments.cases}")
+            return
+        try:
+            {"evaluate-checker": _evaluate_checker, "evaluate-ask": _evaluate_ask,
+             "evaluate-summaries": _evaluate_summaries}[arguments.command](settings, arguments)
+        except ValueError as error:
+            print(f"Invalid case file: {error}")
         return
 
     if arguments.command == "roots":
