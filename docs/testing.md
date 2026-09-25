@@ -85,10 +85,12 @@ the sets are small, so they show direction rather than precise accuracy.
 | Checker removals in real answers (graded) | 9 of 14 right (2 invented deadlines, 7 miscitations), 5 removed a true statement |
 | Summarize, 7 files | 7 completed; **93–95%** of 42 named key facts (81–83% before notes stopped being cut); about 700 words; 33–44 s |
 
-Known gaps: Find misses requests whose file has little prose (a table of
-results) or shares no words with them ("what do I need to do in the next two
-weeks" → `NEXT_14_DAYS.md`); the checker occasionally removes a true sentence;
-the combiner still leaves out "Amdahl" in the CS3210 notes summary.
+Known gaps: Find misses a request that shares no words with its file ("what do
+I need to do in the next two weeks" → `NEXT_14_DAYS.md`). Another recurring
+miss was a case written too narrowly (the bubble/cocktail sort comparison is
+also in the Tutorial 1 report); that case now accepts those files, and the
+results above predate the change. The checker occasionally removes a true
+sentence, and the combiner still leaves out "Amdahl" in the CS3210 notes summary.
 
 ## Defects the evaluations found
 
