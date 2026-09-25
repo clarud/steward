@@ -77,7 +77,7 @@ def test_removed_statements_can_be_shown_from_the_answer_card(monkeypatch) -> No
 
     assert card.actions[-1].label == "Show removed (1)" and card.actions[-1].command == "/ask_removed"
     assert "Static is always fastest. [p.3]" in answers.removed("100").text
-    assert answers.removed("200") == "Nothing was removed from your latest answer."
+    assert answers.removed("200") == "Nothing was removed from your latest answer or summary."
 
 
 def test_summary_card_reports_coverage_and_skipped_parts(monkeypatch) -> None:
@@ -104,3 +104,18 @@ def test_an_answer_citing_two_files_numbers_them_and_renders_maths(monkeypatch) 
         "The sojourn time is E(W) = 1/(μ - λ) [1 p.19]. Little's law relates L and W [2 lines 12–40, 1 p.19]."
     )
     assert "Sources:\n1. Y4S1 / CS3210 / 02-Queueing.pdf: p.19\n2. Y4S1 / CS3210 / notes.md: lines 12–40" in card.text
+
+
+def test_a_summary_shows_how_many_statements_were_removed_and_can_list_them(monkeypatch) -> None:
+    lecture = source(9, "lecture.pptx")
+    result = SummaryResult(
+        "done", "Covers loops [F1].", (("F1", "slide 1"),), 1, 2,
+        removed_text=("Loops were invented in 1850 [F2].",), removed_cited=(("F2", "slide 2"),),
+    )
+    answers = app(monkeypatch, summarize=result)
+
+    card = answers.summarize(lecture, "100")
+
+    assert "(1 statement removed: not supported by your files.)" in card.text
+    assert card.actions[-1].label == "Show removed (1)"
+    assert "Loops were invented in 1850 [slide 2]." in answers.removed("100").text

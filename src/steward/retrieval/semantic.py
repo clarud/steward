@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
-from collections.abc import Collection, Sequence
+import threading
+import time
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -14,6 +17,9 @@ from steward.extraction import SourceFragment
 from steward.extras import MissingExtraError
 from steward.sources import Source, SourceRepository
 from steward.sources.models import SourceStatus, SourceType
+
+_LOGGER = logging.getLogger(__name__)
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class EmbeddingProvider(Protocol):
@@ -35,7 +41,7 @@ class SentenceTransformerEmbeddingProvider:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        model_name: str = DEFAULT_EMBEDDING_MODEL,
         *,
         allow_download: bool = False,
     ) -> None:
@@ -63,6 +69,54 @@ class SentenceTransformerEmbeddingProvider:
 
     def embed_query(self, query: str) -> tuple[float, ...]:
         return self.embed_documents((query,))[0]
+
+
+class BackgroundEmbeddingProvider:
+    """Loads the local embedding model in a background thread.
+
+    Importing the libraries takes 15–60 seconds on a cold start, so the Telegram
+    bot starts listening at once instead of waiting. Calls wait until the model
+    is ready; if it failed to load they raise RuntimeError, and search falls back
+    to keywords.
+    """
+
+    def __init__(self, load: Callable[[], EmbeddingProvider], model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
+        self._model_name = model_name
+        self._provider: EmbeddingProvider | None = None
+        self._ready = threading.Event()
+        threading.Thread(target=self._load, args=(load,), name="embedding-model", daemon=True).start()
+
+    def _load(self, load: Callable[[], EmbeddingProvider]) -> None:
+        started = time.perf_counter()
+        try:
+            provider = load()
+            provider.embed_query("warm up")  # the first encode is slower than the rest
+            self._provider = provider
+            _LOGGER.info("Meaning search is ready (%.0f s).", time.perf_counter() - started)
+        except Exception as error:  # the bot keeps running with keyword search
+            _LOGGER.warning("Meaning search is off: the embedding model didn't load (%s).", type(error).__name__)
+        finally:
+            self._ready.set()
+
+    @property
+    def ready(self) -> bool:
+        return self._ready.is_set()
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def embed_documents(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
+        return self._loaded().embed_documents(texts)
+
+    def embed_query(self, query: str) -> tuple[float, ...]:
+        return self._loaded().embed_query(query)
+
+    def _loaded(self) -> EmbeddingProvider:
+        self._ready.wait()
+        if self._provider is None:
+            raise RuntimeError("The local embedding model is unavailable.")
+        return self._provider
 
 
 @dataclass(frozen=True, slots=True)

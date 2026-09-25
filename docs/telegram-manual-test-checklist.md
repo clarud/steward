@@ -12,6 +12,10 @@ Run the bot with `steward telegram` and record results in [testing.md](testing.m
 
 ## 1. Start and help
 
+0. Right after `steward telegram` starts, send `/find tlb`. You get "still
+   starting up" once, then the result when the search model is ready; `/sources`
+   in the same window answers at once. Every request shows "typing…".
+
 1. The `/` menu shows only find, ask, sources, inbox, home, and help.
 2. `/home` and `/help` describe Find, Ask, browsing, and uploads. Nothing
    mentions privacy, moves, agents, Drive, or Gmail.

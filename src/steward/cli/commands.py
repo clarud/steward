@@ -11,7 +11,9 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from steward.config import Settings, load_environment_file
+from steward.app.answers import answer_labels, readable_text
 from steward.graphs.ask import run_ask
+from steward.readable import short_location
 from steward.extras import MissingExtraError
 from steward.runtime import RuntimeAlreadyRunningError, telegram_runtime_lock
 from steward.reviews import MessageReferenceRepository, ReviewContextRepository
@@ -46,6 +48,7 @@ from steward.retrieval.files import group_by_file
 from steward.extraction import InvalidSearchQueryError
 from steward.cli.bootstrap import (
     build_flows,
+    background_embedding_provider,
     optional_embedding_provider,
     build_telegram_application,
     filed_notices,
@@ -593,13 +596,19 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
             embedding_provider=optional_embedding_provider(),
         )
         result = run_ask(flows.ask, arguments.question)
-        print(result.text)
+        labels, files = answer_labels(result)
+        print(readable_text(result.text, labels))
         if result.removed:
             print(f"({result.removed} statement(s) removed: not supported by your files.)")
-        if result.cited:
+            for line in result.removed_text:
+                print(f"  - {readable_text(line, labels)}")
+        if files and result.status == "answered":
             print("\nSources:")
-            for item in result.cited:
-                print(f"[{item.key}] {item.source.path}:{item.fragment.location}")
+            for number, item in enumerate(files, start=1):
+                where = ", ".join(dict.fromkeys(
+                    short_location(e.fragment.location) for e in result.cited if e.source.id == item.id
+                ))
+                print(f"{number}. {item.path}: {where}")
         return
 
     if arguments.command == "telegram":
@@ -611,7 +620,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
         if model_gateway is None:
             return
         database_path = settings.data_dir / "steward.db"
-        embedding_provider = optional_embedding_provider()
+        embedding_provider = background_embedding_provider()  # loads while the bot starts listening
         application = build_telegram_application(settings, model_gateway, embedding_provider=embedding_provider)
         try:
             with telegram_runtime_lock(settings.data_dir):
@@ -626,6 +635,7 @@ def _run(arguments: argparse.Namespace, settings: Settings) -> None:
                     periodic=lambda: filed_notices(
                         settings, rescan_all(settings, embedding_provider=embedding_provider)
                     ),
+                    warming_up=(lambda: not embedding_provider.ready) if embedding_provider else None,
                 )
         except RuntimeAlreadyRunningError as error:
             print(str(error))

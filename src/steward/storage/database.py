@@ -76,6 +76,7 @@ MINIMAL_SURFACE_SCHEMA_VERSION = 66
 INBOX_CAPTURE_KEYS_SCHEMA_VERSION = 67
 MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION = 68
 SOURCE_SUMMARIES_SCHEMA_VERSION = 69
+SUMMARY_REMOVED_SCHEMA_VERSION = 70
 
 # Tables owned by the retired workspace, organization, knowledge, record, task,
 # Calendar, and research features (see ADR-007). Children precede parents so
@@ -720,6 +721,11 @@ MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
             created_at TEXT NOT NULL,
             PRIMARY KEY (source_id, content_hash, model)
         )""",
+    ),
+    (
+        SUMMARY_REMOVED_SCHEMA_VERSION,
+        # Statements the checker removed, so a cached summary can still show them.
+        "ALTER TABLE source_summaries ADD COLUMN removed_json TEXT NOT NULL DEFAULT '[]'",
     ),
 )
 

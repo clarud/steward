@@ -209,3 +209,69 @@ def test_semantic_and_hybrid_search_can_filter_to_an_authorized_path_prefix(tmp_
 
     assert {hit.source.path.parent.name for hit in semantic_hits} == {"course"}
     assert {hit.source.path.parent.name for hit in hybrid_hits} == {"course"}
+
+
+def test_background_provider_loads_in_a_thread_and_waits_for_it() -> None:
+    import threading
+
+    from steward.retrieval.semantic import BackgroundEmbeddingProvider
+
+    release = threading.Event()
+
+    class Slow:
+        model_name = "slow"
+
+        def embed_documents(self, texts):
+            return tuple((1.0, 0.0) for _ in texts)
+
+        def embed_query(self, query):
+            return (1.0, 0.0)
+
+    def load():
+        release.wait(5)
+        return Slow()
+
+    provider = BackgroundEmbeddingProvider(load, model_name="slow")
+    assert not provider.ready and provider.model_name == "slow"
+    release.set()
+    assert provider.embed_query("tlb") == (1.0, 0.0) and provider.ready
+
+
+def test_background_provider_that_fails_to_load_raises_so_search_falls_back() -> None:
+    import pytest
+
+    from steward.retrieval.semantic import BackgroundEmbeddingProvider
+
+    def load():
+        raise OSError("model files missing")
+
+    provider = BackgroundEmbeddingProvider(load)
+    with pytest.raises(RuntimeError):
+        provider.embed_query("tlb")
+    assert provider.ready
+
+
+def test_hybrid_search_keeps_keyword_results_when_meaning_search_is_unavailable() -> None:
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from steward.extraction import SourceFragment
+    from steward.retrieval import HybridRetriever
+    from steward.retrieval.lexical import LexicalSearchHit
+    from steward.sources import Source, SourceType
+
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    source = Source(1, Path("C:/notes/tlb.md"), "a" * 64, SourceType.MARKDOWN, 1, now, now, now)
+    hit = LexicalSearchHit(source, SourceFragment(10, 1, None, 0, "A TLB caches translations.", "lines 1-1"), -1.0)
+
+    class Lexical:
+        def search(self, query, **options):
+            return (hit,)
+
+    class Unavailable:
+        def search(self, query, **options):
+            raise RuntimeError("The local embedding model is unavailable.")
+
+    results = HybridRetriever(Lexical(), Unavailable()).search("tlb")  # type: ignore[arg-type]
+
+    assert [item.fragment.id for item in results] == [10]

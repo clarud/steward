@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import sqlite3
@@ -26,6 +27,7 @@ from steward.graphs.ask import AskTools, build_ask_graph
 from steward.graphs.find import FindTools, build_find_graph
 from steward.graphs.summarize import SummarizeTools, build_summarize_graph
 from steward.intake import ProvisionalIntakeRepository, ProvisionalIntakeService
+from steward.retrieval.semantic import BackgroundEmbeddingProvider, EmbeddingProvider
 from steward.retrieval import (
     HybridRetriever,
     LexicalSearchService,
@@ -115,7 +117,7 @@ def build_flows(
     model_gateway: ModelGateway | None,
     location: Callable[[Source], str],
     *,
-    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> Flows:
     """Compile Find, Ask, and Summarize over the local database."""
     database_path = settings.data_dir / "steward.db"
@@ -137,6 +139,18 @@ def build_flows(
             sources, fragments, SummaryRepository(database_path), model_gateway, model_label(settings),
         )),
     )
+
+
+def background_embedding_provider() -> BackgroundEmbeddingProvider | None:
+    """The meaning-search model, loading in the background so the bot can start at once.
+
+    None when the `semantic` extra isn't installed; a model that fails to load
+    later leaves the bot on keyword search.
+    """
+    if importlib.util.find_spec("sentence_transformers") is None:
+        _LOGGER.warning("Meaning search is off: install the `semantic` extra to enable it.")
+        return None
+    return BackgroundEmbeddingProvider(SentenceTransformerEmbeddingProvider)
 
 
 def optional_embedding_provider() -> SentenceTransformerEmbeddingProvider | None:
@@ -194,7 +208,7 @@ def health_report(settings: Settings) -> tuple[str, bool]:
 
 
 def scan_root(
-    settings: Settings, root: SourceRoot, *, embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+    settings: Settings, root: SourceRoot, *, embedding_provider: EmbeddingProvider | None = None,
 ) -> tuple[ScanResult, tuple[ReconciledMove, ...]]:
     """Scan one folder, recognise moved files, and refresh INBOX.md."""
     database_path = settings.data_dir / "steward.db"
@@ -213,7 +227,7 @@ def scan_root(
 
 
 def rescan_all(
-    settings: Settings, *, embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+    settings: Settings, *, embedding_provider: EmbeddingProvider | None = None,
 ) -> tuple[ReconciledMove, ...]:
     """The bot's periodic pass: every available folder, then vectors for anything new."""
     database_path = settings.data_dir / "steward.db"
@@ -282,7 +296,7 @@ def build_telegram_application(
     settings: Settings,
     model_gateway: ModelGateway | None,
     *,
-    embedding_provider: SentenceTransformerEmbeddingProvider | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> StewardEventApplication:
     """Compose every Telegram use case over one local database."""
 

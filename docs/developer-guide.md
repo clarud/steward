@@ -117,7 +117,7 @@ on an existing database, `_snapshot_before_destructive_migrations()` writes
 snapshot fails, nothing is migrated. Destructive migrations so far: 65 (legacy
 domains, ADR-007), 66 (privacy, action proposals, delivery recovery, and root
 profiles), and 68 (move proposals), per ADR-009. Migration 69 adds
-`source_summaries`.
+`source_summaries`, and 70 adds its `removed_json` column.
 
 `snapshot_database()` uses SQLite's backup API from a read-only connection and
 reserves its destination with exclusive creation, so it never overwrites.
@@ -221,7 +221,15 @@ without source text, prompts, or model output.
   `telegram-runtime.db` prevents two pollers on one data directory. It cannot
   stop the same token running elsewhere.
 - **Periodic work**: `run_telegram_polling(periodic=...)` runs `rescan_all` and
-  sends filed notices every 15 minutes, off the event loop.
+  sends filed notices every 15 minutes, off the event loop. The first run waits
+  60 seconds so it doesn't compete with the first request after a start.
+- **Start-up**: the bot uses `BackgroundEmbeddingProvider`, which loads the
+  embedding model in a thread (importing the libraries takes 15–60 seconds) so
+  polling starts at once. Searches wait for it; a `/find` or `/ask` meanwhile
+  gets one "still starting up" notice per chat. If the model fails to load,
+  `HybridRetriever` falls back to keyword results.
+- **Typing indicator**: every request shows "typing…" (refreshed every 4
+  seconds) until its reply is sent.
 
 ## Inbox uploads
 

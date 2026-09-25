@@ -66,8 +66,11 @@ reading, sending originals, and uploads work without one.
 A file card offers **Read**, **Summarize**, **Ask**, **Send original**, and
 **Folder**. Answers and summaries cite locations such as `[p.19]` (or
 `[2 p.19]` when an answer draws on several files, matching its numbered
-sources), show maths as readable text (E(W) = 1/(μ − λ)), and an answer offers
-**Show removed** when the checker cut anything. Locations are always relative
+sources), show maths as readable text (E(W) = 1/(μ − λ)), and offer **Show
+removed** when the checker cut anything. The chat shows "typing…" while a
+request runs. Right after the bot starts, the search model loads in the
+background (15–60 seconds); a `/find` or `/ask` in that time gets a short
+"still starting up" notice and is answered as soon as it's ready. Locations are always relative
 to an authorized folder or the Inbox, never absolute paths.
 
 ## How Find, Ask, and Summarize work

@@ -142,7 +142,7 @@ file → LOAD (cache?) → SPLIT → [NOTES × N, 4 at a time] → COMBINE (+ co
 | Split | code | ~24,000-character batches on section boundaries; >32 batches → "too long, Ask about a part" |
 | Notes × N | model | LangGraph `Send` workers write bullet notes citing only their batch's keys (shown a real key as the example), keeping dates, deadlines, requirements, numbers, and named concepts. The parts share a 36,000-character target (2,000–6,000 each). Long notes are kept, not cut: cutting dropped their last points, once a deadline. Only runaway output over 12,000 characters is cut. A failed batch is skipped and named on the card |
 | Combine | model | One summary of short bullet points under topic headings, about 700 words, keeping every date, deadline, requirement, number, and named concept, citing only keys from the notes. One repair if it cites nothing, cites many unknown keys, or leaves over 25% of paragraphs uncited (a second thin reply is accepted). If a run of consecutive uncited sections is large (at least 3 sections and at least 20% of the file), retry once asking to cover it, and keep the better one |
-| Check | code + model | Same checker as Ask (removed statements are not shown for summaries) |
+| Check | code + model | Same checker as Ask; the card shows "N statements removed" and **Show removed**, and the cache keeps them |
 | Save | code | Cache only complete summaries |
 
 If combining fails, the verified notes are shown instead ("notes for each

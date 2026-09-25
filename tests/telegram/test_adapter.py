@@ -618,3 +618,59 @@ def test_photo_over_cloud_limit_is_not_downloaded() -> None:
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_photo(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]
+
+
+class TypingMessage(FakeMessage):
+    def __init__(self, *, text: str) -> None:
+        super().__init__(text=text)
+        self.actions: list[str] = []
+
+    async def reply_chat_action(self, action, **kwargs) -> None:
+        del kwargs
+        self.actions.append(str(action))
+
+
+def test_the_chat_shows_typing_while_a_request_runs() -> None:
+    message = TypingMessage(text="/sources")
+
+    asyncio.run(TelegramAdapter(FakeEventHandler()).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert message.actions and "typing" in message.actions[0]
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_a_search_during_start_up_gets_one_notice_first() -> None:
+    adapter = TelegramAdapter(FakeEventHandler(), warming_up=lambda: True)
+    first, second, browse = TypingMessage(text="/find tlb"), TypingMessage(text="/ask what is a tlb"), TypingMessage(text="/sources")
+
+    for message in (first, second, browse):
+        asyncio.run(adapter.handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert first.replies[0] == telegram_adapter.STARTING_NOTICE and len(first.replies) == 2
+    assert second.replies == ["A TLB caches address translations. [F1]"]  # told once per chat
+    assert browse.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_no_notice_once_search_is_ready() -> None:
+    message = TypingMessage(text="/find tlb")
+
+    asyncio.run(TelegramAdapter(FakeEventHandler(), warming_up=lambda: False).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_the_first_background_rescan_waits_for_its_delay(monkeypatch) -> None:
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(telegram_adapter.asyncio, "sleep", fake_sleep)
+    runs: list[int] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(telegram_adapter.run_periodically(FakeBot(), lambda: runs.append(1) or [], 900, frozenset(), 60))
+
+    assert sleeps == [60, 900] and runs == [1]

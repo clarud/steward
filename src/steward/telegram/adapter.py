@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ChatAction
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from steward.events import IncomingEvent
@@ -36,6 +37,13 @@ class IncomingFileEventHandler(IncomingEventHandler, Protocol):
 
 MAX_CLOUD_DOWNLOAD_BYTES = 20 * 1024 * 1024
 _LOGGER = logging.getLogger(__name__)
+T = TypeVar("T")
+TYPING_REFRESH_SECONDS = 4
+STARTING_NOTICE = (
+    "Steward just started and is still loading its search model (usually under a minute). "
+    "I'll answer as soon as it's ready."
+)
+
 _PRIMARY_COMMANDS = (
     ("find", "find a file"),
     ("ask", "answer from your files"),
@@ -98,8 +106,11 @@ class TelegramAdapter:
         callback_repository: TelegramCallbackRepository | None = None,
         review_contexts: ReviewContextRepository | None = None,
         message_references: MessageReferenceRepository | None = None,
+        warming_up: Callable[[], bool] | None = None,
     ) -> None:
         self._event_handler = event_handler
+        self._warming_up = warming_up
+        self._told_warming: set[str] = set()
         self._allowed_chat_ids = allowed_chat_ids
         self._deliveries = delivery_repository
         self._callbacks = callback_repository
@@ -124,7 +135,8 @@ class TelegramAdapter:
             return
         try:
             self._restore_reply_reference(event)
-            response = await asyncio.to_thread(self._event_handler.handle, event)
+            await self._notice_if_starting(message, event)
+            response = await self._while_typing(message, asyncio.to_thread(self._event_handler.handle, event))
             await self._reply(message, event, response)
         except BaseException:
             self._release(event)
@@ -191,9 +203,9 @@ class TelegramAdapter:
                 download_path = Path(temporary_dir) / f"download{suffix}"
                 telegram_file = await attachment.get_file()  # type: ignore[attr-defined]
                 await telegram_file.download_to_drive(download_path)
-                response = await asyncio.to_thread(
+                response = await self._while_typing(message, asyncio.to_thread(
                     self._event_handler.handle_file, event, download_path
-                )
+                ))
             await self._reply(message, event, response)
         except BaseException:
             self._release(event)
@@ -229,12 +241,40 @@ class TelegramAdapter:
         if not self._claim(callback_event):
             return
         try:
-            response = await asyncio.to_thread(self._event_handler.handle, callback_event)
+            await self._notice_if_starting(message, callback_event)
+            response = await self._while_typing(message, asyncio.to_thread(self._event_handler.handle, callback_event))
             await self._reply(message, callback_event, response)
         except BaseException:
             self._release(callback_event)
             raise
         self._mark_delivered(callback_event)
+
+    async def _while_typing(self, message: object, work: Awaitable[T]) -> T:
+        """Show "typing…" in the chat until ``work`` finishes (Telegram clears it after 5 s)."""
+
+        async def keep_typing() -> None:
+            while True:
+                with suppress(Exception):  # a cosmetic hint must never break a reply
+                    await message.reply_chat_action(ChatAction.TYPING)  # type: ignore[attr-defined]
+                await asyncio.sleep(TYPING_REFRESH_SECONDS)
+
+        typing = asyncio.create_task(keep_typing())
+        try:
+            return await work
+        finally:
+            typing.cancel()
+            with suppress(asyncio.CancelledError):
+                await typing
+
+    async def _notice_if_starting(self, message: object, event: IncomingEvent) -> None:
+        """Tell the owner, once, that a search will wait for the model that is still loading."""
+        text = (event.text or "").strip().casefold()
+        if (self._warming_up is None or not self._warming_up() or event.chat_id in self._told_warming
+                or not text.startswith(("/find", "/ask"))):
+            return
+        self._told_warming.add(event.chat_id)
+        with suppress(Exception):
+            await message.reply_text(STARTING_NOTICE)  # type: ignore[attr-defined]
 
     async def _reply(self, message: object, event: IncomingEvent, response: object) -> None:
         """Render escaped HTML and locally-resolved compact follow-up buttons."""
@@ -366,12 +406,16 @@ def run_telegram_polling(
     message_references: MessageReferenceRepository | None = None,
     periodic: Callable[[], Sequence[tuple[str, str]]] | None = None,
     period_seconds: float = 15 * 60,
+    first_run_delay_seconds: float = 60,
+    warming_up: Callable[[], bool] | None = None,
 ) -> None:
     """Start the local Telegram process until the user stops it.
 
-    ``periodic`` runs in a worker thread at start-up and then every
+    ``periodic`` runs in a worker thread ``first_run_delay_seconds`` after
+    start-up (so it doesn't compete with the first request) and then every
     ``period_seconds`` (the background rescan); it returns ``(chat_id, text)``
-    notices to send.
+    notices to send. ``warming_up`` reports whether meaning search is still
+    loading, for the starting-up notice.
     """
 
     if not token.strip():
@@ -390,7 +434,9 @@ def run_telegram_polling(
             _LOGGER.warning("Could not update Steward's Telegram command menu.")
         if periodic is not None:
             background.append(asyncio.create_task(
-                run_periodically(application.bot, periodic, period_seconds, allowed_chat_ids)  # type: ignore[attr-defined]
+                run_periodically(  # type: ignore[attr-defined]
+                    application.bot, periodic, period_seconds, allowed_chat_ids, first_run_delay_seconds,
+                )
             ))
 
     async def stop_services(application: object) -> None:
@@ -409,6 +455,7 @@ def run_telegram_polling(
         callback_repository=callback_repository,
         review_contexts=review_contexts,
         message_references=message_references,
+        warming_up=warming_up,
     )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, adapter.handle_update)
@@ -429,8 +476,10 @@ async def run_periodically(
     job: Callable[[], Sequence[tuple[str, str]]],
     period_seconds: float,
     allowed_chat_ids: frozenset[str] = frozenset(),
+    first_run_delay_seconds: float = 0,
 ) -> None:
-    """Run ``job`` now and then every period; send its notices. Failures retry next period."""
+    """Run ``job`` after an initial delay and then every period; send its notices. Failures retry next period."""
+    await asyncio.sleep(first_run_delay_seconds)
     while True:
         try:
             notices = await asyncio.to_thread(job)

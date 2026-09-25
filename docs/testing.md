@@ -8,7 +8,7 @@ work together. Steward uses all three.
 ## Automated
 
 ```powershell
-.venv\Scripts\python -m pytest              # full suite (289 tests, about 35 s)
+.venv\Scripts\python -m pytest              # full suite (297 tests, about 35 s)
 .venv\Scripts\python -m pyflakes src tests  # unused imports, undefined names
 ```
 
@@ -109,7 +109,8 @@ Each was traced to its cause and fixed, and most have a regression test.
 | Ask | True facts removed as miscited | Citations pointed at headings or neighbouring sections | Citations re-pointed in code; bare headings replaced by their content |
 | Ask | An answer with no citations skipped the checker | Only cited sentences were checked | Uncited answers are repaired or reported as not found |
 | Summarize | The brief's deadline and whole topics missing | A 3,000-character cut of each part's notes dropped their end | Notes kept; the combiner compresses to about 700 words |
-| Display | Raw `$\lambda$` and `[F4058]` on Telegram | Telegram doesn't render LaTeX or know keys | Unicode maths and `[p.19]` labels (`readable.py`) |
+| Display | Raw `$\lambda$` and `[F4058]` on Telegram | Telegram doesn't render LaTeX or know keys | Unicode maths and `[p.19]` labels (`readable.py`), also in `steward ask` |
+| Start-up | The first message after starting took 15–60 s | The bot loaded the embedding model before listening, and a full rescan started at the same time | Model loads in the background with a "still starting up" notice; first rescan after 60 s; typing indicator |
 
 Tried and rejected: a second opinion on every flagged sentence. On short
 passages it is a second draw from the same judge, and requiring both to agree

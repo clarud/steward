@@ -39,7 +39,7 @@ class FakeAnswers:
         self.calls.append(("ask", chat_id, question, source.id if source else None))
         return PresentedReply("answered", title="Answer")
 
-    def summarize(self, source):
+    def summarize(self, source, chat_id=None):
         self.calls.append(("summarize", source.id))
         return PresentedReply("summary", title=f"Summary: {source.path.name}")
 

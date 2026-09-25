@@ -57,9 +57,13 @@ class HybridRetriever:
             # Natural-language punctuation may be invalid FTS5 syntax. Semantic
             # search can still retrieve useful evidence for the same question.
             lexical_hits = ()
-        semantic_hits = self._semantic_search.search(
-            query, limit=candidate_limit, source_types=source_types, path_prefix=path_prefix
-        )
+        try:
+            semantic_hits = self._semantic_search.search(
+                query, limit=candidate_limit, source_types=source_types, path_prefix=path_prefix
+            )
+        except RuntimeError:
+            # The embedding model is unavailable; keyword results still answer.
+            semantic_hits = ()
 
         combined: dict[int, HybridSearchHit] = {}
         for rank, hit in enumerate(lexical_hits, start=1):

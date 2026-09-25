@@ -47,23 +47,27 @@ class StewardAnswersApplication:
         )
         if source is None:
             self._last_ask[chat_id] = f"Q: {question}\nA: {result.text[:300]}"
-        labels, _ = _ask_labels(result)
-        self._last_removed[chat_id] = tuple(_readable(line, labels) for line in result.removed_text)
+        labels, _ = answer_labels(result)
+        self._last_removed[chat_id] = tuple(readable_text(line, labels) for line in result.removed_text)
         return self._ask_card(question, result, source)
 
     def removed(self, chat_id: str) -> PresentedReply | str:
-        """What the checker removed from this chat's latest answer, so the owner can judge it."""
+        """What the checker removed from this chat's latest answer or summary, so the owner can judge it."""
         removed = self._last_removed.get(chat_id)
         if not removed:
-            return "Nothing was removed from your latest answer."
+            return "Nothing was removed from your latest answer or summary."
         return PresentedReply(
             "Removed because the cited sections didn't support them. If one looks right, open the source to check:\n\n"
             + "\n".join(f"• {line}" for line in removed),
             title="Removed statements", icon="🔍",
         )
 
-    def summarize(self, source: Source) -> PresentedReply:
-        return self._summary_card(source, run_summarize(self._summarize_graph, source.id or 0))
+    def summarize(self, source: Source, chat_id: str | None = None) -> PresentedReply:
+        result = run_summarize(self._summarize_graph, source.id or 0)
+        if chat_id is not None:
+            labels = {key: short_location(location) for key, location in result.cited + result.removed_cited}
+            self._last_removed[chat_id] = tuple(readable_text(line, labels) for line in result.removed_text)
+        return self._summary_card(source, result)
 
     # -- cards -----------------------------------------------------------------
 
@@ -93,8 +97,8 @@ class StewardAnswersApplication:
         )
 
     def _ask_card(self, question: str, result: AskResult, source: Source | None) -> PresentedReply:
-        labels, shown = _ask_labels(result)
-        lines = [_readable(result.text, labels)]
+        labels, shown = answer_labels(result)
+        lines = [readable_text(result.text, labels)]
         if result.removed and result.status == "answered":
             lines.append(
                 f"({result.removed} statement{'s' if result.removed != 1 else ''} removed: "
@@ -130,19 +134,25 @@ class StewardAnswersApplication:
         }
         if result.status in messages:
             return PresentedReply(messages[result.status], (read, ask), title=source.path.name, icon="📄", reference=reference)
-        lines = [_readable(result.text, {key: short_location(location) for key, location in result.cited})]
+        lines = [readable_text(result.text, {key: short_location(location) for key, location in result.cited})]
         if result.status == "notes_only":
             lines.insert(0, "I couldn't combine these into one summary, so here are the notes for each part:")
+        if result.removed_text and result.status != "notes_only":
+            count = len(result.removed_text)
+            lines.append(f"({count} statement{'s' if count != 1 else ''} removed: not supported by your files.)")
         coverage = f"Covered {result.covered} of {result.total} sections"
         if result.skipped:
             coverage += " · couldn't summarise " + "; ".join(result.skipped)
         lines.append(coverage + ".")
+        actions = (read, ask)
+        if result.removed_text and result.status != "notes_only":
+            actions += (ReplyAction(f"Show removed ({len(result.removed_text)})", "/ask_removed"),)
         return PresentedReply(
-            "\n\n".join(lines), (read, ask), title=f"Summary: {source.path.name}", icon="📄", reference=reference,
+            "\n\n".join(lines), actions, title=f"Summary: {source.path.name}", icon="📄", reference=reference,
         )
 
 
-def _ask_labels(result: AskResult) -> tuple[dict[str, str], list[Source]]:
+def answer_labels(result: AskResult) -> tuple[dict[str, str], list[Source]]:
     """Citation labels for an answer: "p.3", or "2 p.3" when it cites several files (2 = its Sources number)."""
     files: dict[int, Source] = {}
     for item in result.cited:
@@ -156,5 +166,5 @@ def _ask_labels(result: AskResult) -> tuple[dict[str, str], list[Source]]:
     return labels, shown
 
 
-def _readable(text: str, labels: dict[str, str]) -> str:
+def readable_text(text: str, labels: dict[str, str]) -> str:
     return math_to_unicode(label_citations(text, labels))

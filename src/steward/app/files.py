@@ -112,7 +112,7 @@ class StewardFilesApplication:
         if command == "/summarize_source":
             if not argument.isdigit():
                 return "Open a file card and choose Summarize."
-            return self.summarize(int(argument))
+            return self.summarize(int(argument), event.chat_id)
         if command == "/ask_source":
             identifier, _, question = argument.partition(" ")
             if not identifier.isdigit() or self._sources.get_by_id(int(identifier)) is None:
@@ -326,13 +326,13 @@ class StewardFilesApplication:
             return "The original could not be read. Check that it is available on your computer."
         return PresentedReply("Here's the original.", title=document.filename, document=document)
 
-    def summarize(self, source_id: int) -> PresentedReply | str:
+    def summarize(self, source_id: int, chat_id: str | None = None) -> PresentedReply | str:
         source = self._available(source_id)
         if isinstance(source, str):
             return source
         if self._answers is None:
             return "No model is configured. You can still Read the file."
-        return self._answers.summarize(source)
+        return self._answers.summarize(source, chat_id)
 
     def ask_about(self, event: IncomingEvent, source_id: int, question: str) -> PresentedReply | str:
         source = self._available(source_id)

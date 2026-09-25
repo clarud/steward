@@ -43,6 +43,8 @@ class SummaryResult:
     skipped: tuple[str, ...] = ()
     calls: int = 0
     cached: bool = False
+    removed_text: tuple[str, ...] = ()  # statements the checker removed
+    removed_cited: tuple[tuple[str, str], ...] = ()  # (key, location) for keys only in removed statements
 
 
 @dataclass
@@ -84,7 +86,8 @@ def build_summarize_graph(tools: SummarizeTools):
             return {"result": SummaryResult(
                 "done" if not cached.skipped else "partial", cached.text,
                 tuple((key, by_key.get(key, "")) for key in cached.cited_keys),
-                cached.covered, cached.total, cached.skipped, cached=True,
+                cached.covered, cached.total, cached.skipped, cached=True, removed_text=cached.removed,
+                removed_cited=_located(cached.removed, by_key),
             )}
         if tools.model is None:
             return {"result": SummaryResult("unavailable")}
@@ -149,14 +152,16 @@ def build_summarize_graph(tools: SummarizeTools):
 
     def check(state: SummarizeState) -> dict:
         fragments, budget = state["fragments"], state["budget"]
+        removed: tuple[str, ...] = ()
         if state["notes_only"]:
             status: str | None = "notes_only"
             text = state["summary"]
         else:
             status = None
-            text = check_answer(
+            checked = check_answer(
                 tools.model, budget, state["summary"], {f"F{fragment.id}": fragment.text for fragment in fragments},
-            ).text
+            )
+            text, removed = checked.text, checked.removed_sentences
         skipped = tuple(
             " – ".join((batch.locations[0], batch.locations[-1])) if len(batch.locations) > 1 else batch.locations[0]
             for batch in state["batches"] if not state["notes"].get(batch.index)
@@ -166,11 +171,12 @@ def build_summarize_graph(tools: SummarizeTools):
         status = status or ("partial" if skipped else "done")
         result = SummaryResult(
             status, text, cited, _covered(fragments, text), len(fragments), skipped, budget.used,
+            removed_text=removed, removed_cited=_located(removed, locations),
         )
         if status == "done":
             source = state["source"]
             tools.summaries.put(source.id or 0, source.content_hash, tools.model_name, StoredSummary(
-                text, tuple(key for key, _ in cited), result.covered, result.total, skipped,
+                text, tuple(key for key, _ in cited), result.covered, result.total, skipped, removed,
             ))
         trace("summarize.done", status=status, covered=result.covered, total=result.total, calls=budget.used)
         return {"result": result}
@@ -238,3 +244,7 @@ def _largest_gap(fragments: list[SourceFragment], text: str) -> list[str]:
     threshold = max(3, len(fragments) // 5)
     return best if len(best) >= threshold else []
 
+
+
+def _located(sentences: tuple[str, ...], locations: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    return tuple((key, locations[key]) for key in dict.fromkeys(_keys(" ".join(sentences))) if key in locations)
