@@ -8,7 +8,7 @@ work together. Steward uses all three.
 ## Automated
 
 ```powershell
-.venv\Scripts\python -m pytest              # full suite (297 tests, about 35 s)
+.venv\Scripts\python -m pytest              # full suite (300 tests, about 35 s)
 .venv\Scripts\python -m pyflakes src tests  # unused imports, undefined names
 ```
 

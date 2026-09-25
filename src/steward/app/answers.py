@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 
 from steward.graphs.ask import AskResult, run_ask
+from steward.app.search import find_command
 from steward.graphs.find import FindResult, FindScope, run_find
 from steward.graphs.summarize import SummaryResult, run_summarize
 from steward.presentation import PresentedReply, ReplyAction
@@ -33,12 +35,16 @@ class StewardAnswersApplication:
         self._last_ask: dict[str, str] = {}
         self._last_removed: dict[str, tuple[str, ...]] = {}
 
-    def find(self, chat_id: str, request: str, scope: FindScope) -> PresentedReply:
+    def find(self, chat_id: str, request: str, scope: FindScope, *, roots: Sequence[str] = ()) -> PresentedReply:
+        """Search every root unless the owner named one; ``roots`` offers one-tap narrowing afterwards."""
         result = run_find(self._find_graph, request, previous=self._last_find.get(chat_id), scope=scope)
         self._last_find[chat_id] = f"{request} → " + (
             ", ".join(candidate.source.path.name for candidate, _ in result.picks) or result.kind
         )
-        return self._find_card(request, result)
+        card = self._find_card(request, result)
+        if result.kind in {"picks", "closest"} and result.picks and len(roots) > 1:
+            card = replace(card, actions=card.actions + _root_actions(request, scope, roots))
+        return card
 
     def ask(self, chat_id: str, question: str, *, source: Source | None = None) -> PresentedReply:
         result = run_ask(
@@ -168,3 +174,16 @@ def answer_labels(result: AskResult) -> tuple[dict[str, str], list[Source]]:
 
 def readable_text(text: str, labels: dict[str, str]) -> str:
     return math_to_unicode(label_citations(text, labels))
+
+
+MAX_ROOT_BUTTONS = 4
+
+
+def _root_actions(request: str, scope: FindScope, roots: Sequence[str]) -> tuple[ReplyAction, ...]:
+    """Buttons that repeat the search in one root, or across all of them again."""
+    if scope.root:
+        return (ReplyAction("Search all folders", find_command(request, replace(scope, root=None))),)
+    return tuple(
+        ReplyAction(f"Only {name}"[:48], find_command(request, replace(scope, root=name)))
+        for name in roots[:MAX_ROOT_BUTTONS]
+    )

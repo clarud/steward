@@ -139,7 +139,11 @@ anything. `steward backup` snapshots `steward.db`.
 
 All three modes accept a type scope (`--type`, repeatable) and a folder scope
 (`--path-prefix` on the CLI, `--root "NAME"` on Telegram `/find`, which resolves
-only against authorized roots). `retrieval/files.py` turns fragment hits into
+only against authorized roots). Without a scope every root and the Inbox are
+searched; nothing guesses a root. `app/search.parse_find` also accepts the
+dashes and curly quotes phone keyboards produce and `root:NAME` / `type:pdf`.
+Find cards on picks or closest matches offer **Only <root>** buttons (up to
+four enabled roots) or, when a root was given, **Search all folders**. `retrieval/files.py` turns fragment hits into
 **file** candidates: `group_by_file` keeps each file's best fragment, and
 `fuse` applies reciprocal-rank fusion per file across several ranked lists, with
 an optional boost.

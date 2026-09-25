@@ -55,7 +55,7 @@ reading, sending originals, and uploads work without one.
 
 | You do | Steward |
 |---|---|
-| `/find WORDS` (optionally `--type pdf`, `--root "Y4S1"`) | Finds the file and says why it matches |
+| `/find WORDS` (optionally `--type pdf`, `--root "Y4S1"`, or `type:pdf root:Y4S1`) | Searches all your folders, finds the file, and says why it matches; **Only <folder>** buttons narrow it |
 | `/ask QUESTION` | Answers from your files, citing each source |
 | `/sources` | Browse your folders |
 | `/inbox` | Uploads waiting to be filed |

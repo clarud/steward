@@ -28,7 +28,12 @@ Run the bot with `steward telegram` and record results in [testing.md](testing.m
 2. `/find` something vague, in different words from the file ("the cache CPUs
    use for address translation"). The right file still appears.
 3. `/find translation --type pdf --root "Telegram Test"`. Only PDFs from that
-   root. An unknown root gets a clear message.
+   root. An unknown root gets a clear message. Type the same on your phone
+   (the keyboard turns `--` into `—` and quotes into curly ones) and as
+   `type:pdf root:"Telegram Test"`: both give the same result.
+3a. With two or more roots, `/find translation` searches all of them and the
+   card offers **Only <root>** buttons; tapping one repeats the search in that
+   root, and that card offers **Search all folders**.
 4. Two similar files: Find either picks the right one or asks **Which one?**
    with buttons.
 5. Nonsense words: **Closest matches** or **No match**, with **Ask instead** and

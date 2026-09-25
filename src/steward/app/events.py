@@ -66,7 +66,8 @@ class StewardEventApplication:
             parsed = parse_find(argument, self._roots)
             if isinstance(parsed, str):
                 return parsed
-            return self._answers.find(event.chat_id, *parsed)  # type: ignore[union-attr]
+            roots = [root.name for root in self._roots.list_all() if root.enabled]
+            return self._answers.find(event.chat_id, *parsed, roots=roots)  # type: ignore[union-attr]
         if command == "/ask":
             if not argument:
                 return "Use /ask followed by your question."

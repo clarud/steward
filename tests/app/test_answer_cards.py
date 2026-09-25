@@ -39,6 +39,23 @@ def test_find_card_lists_picks_with_reasons_open_and_send(monkeypatch) -> None:
     assert "C:/" not in card.text
 
 
+def test_find_card_offers_one_root_or_all_roots_again(monkeypatch) -> None:
+    tut = source(4, "tut04.pdf")
+    result = FindResult("picks", ((FileCandidate(tut, None, 1.0, frozenset({"keyword"})), "AVX2"),))
+    finder = app(monkeypatch, find=result)
+
+    everywhere = finder.find("100", "avx", FindScope((SourceType.PDF,)), roots=["Y4S1", "Notes"])
+    only = finder.find("100", "avx", FindScope((SourceType.PDF,), "Y4S1"), roots=["Y4S1", "Notes"])
+    single = finder.find("100", "avx", FindScope(), roots=["Y4S1"])
+
+    assert [(a.label, a.command) for a in everywhere.actions[2:]] == [
+        ("Only Y4S1", '/find avx --type pdf --root "Y4S1"'),
+        ("Only Notes", '/find avx --type pdf --root "Notes"'),
+    ]
+    assert [(a.label, a.command) for a in only.actions[2:]] == [("Search all folders", "/find avx --type pdf")]
+    assert len(single.actions) == 2
+
+
 def test_find_card_asks_which_one_or_offers_ask_instead(monkeypatch) -> None:
     first, second = source(1, "a.pdf"), source(2, "b.pdf")
     clarify = FindResult("clarify", question="CS3210 or CS4226?", options=(

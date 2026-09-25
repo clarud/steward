@@ -31,7 +31,7 @@ class FakeAnswers:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def find(self, chat_id, request, scope):
+    def find(self, chat_id, request, scope, roots=()):
         self.calls.append(("find", chat_id, request, scope))
         return PresentedReply("found", title="Found")
 
@@ -310,6 +310,28 @@ def test_find_parses_filters_and_hands_them_to_the_find_flow(tmp_path: Path) -> 
     assert "No folder is named" in world.app.handle(event('/find law --root "Nope"'))
     assert "Unknown type" in world.app.handle(event("/find law --type spreadsheet"))
     assert "unmatched quote" in world.app.handle(event('/find "law'))
+
+
+def test_find_accepts_flags_as_phone_keyboards_type_them(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    wanted = ("find", "100", "tut 4 AVX", FindScope((SourceType.PDF,), "Y4S1"))
+
+    for typed in (
+        "/find tut 4 AVX \u2014type pdf \u2014root \u201cY4S1\u201d",
+        "/find tut 4 AVX \u2013type pdf \u2013root Y4S1",
+        "/find tut 4 AVX type:pdf root:y4s1",
+    ):
+        world.answers.calls.clear()
+        world.app.handle(event(typed))
+        assert world.answers.calls == [wanted], typed
+
+
+def test_find_searches_every_root_unless_one_is_named(tmp_path: Path) -> None:
+    world = World(tmp_path)
+
+    world.app.handle(event("/find root causes of latency"))
+
+    assert world.answers.calls == [("find", "100", "root causes of latency", FindScope())]
 
 
 @pytest.mark.parametrize("command", ["/find", "/note"])
