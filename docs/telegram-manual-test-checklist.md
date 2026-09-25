@@ -66,6 +66,9 @@ Send `queueing notes` with no command. A card offers **Find**, **Ask**, and
    Restart the bot and reply to an old card; it still targets the same file.
 5. When an answer says "N statements removed", tap **Show removed**. It lists
    exactly what was cut.
+6. Citations read as locations (`[p.19]`, or `[2 p.19]` when several files are
+   cited, matching the numbered sources), never as `[F1234]`, and maths such as
+   E(W) = 1/(μ − λ) shows as symbols, not `$...$`.
 
 ## 7. Upload to the Inbox
 
@@ -76,7 +79,7 @@ Send `queueing notes` with no command. A card offers **Find**, **Ask**, and
 4. `/note buy more coffee` saves a note directly. Send another note, then
    **Discard** it. No file is created.
 
-## 8. Codex picks it up
+## 8. Filing an upload
 
 1. Open `INBOX.md` in the Inbox. The upload is listed with its intended root,
    note, and guidance files, and none of its contents.

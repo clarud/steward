@@ -1,40 +1,29 @@
 # Steward
 
-Steward is a local-first companion to Codex for your personal files.
-
-Codex is great at *working on* files: organising folders, renaming, moving,
-and editing. Steward handles the other side: **getting files in, and getting
-them back out**, from wherever you are.
+Steward is a personal file assistant. It lets you **find, understand, and
+retrieve your files from anywhere** through Telegram, from the folders you
+already have.
 
 - **Find files without remembering their names.** `/find that AVX question from
   tut 4` returns the right file with a one-line reason, even if you've
   forgotten its name, folder, or format.
-- **Retrieve through Telegram.** Open, read, or receive the original file on
-  your phone.
-- **Summarise and ask.** Summarise a whole file, or ask a question across your
-  files. Every statement cites the section it came from, and statements the
-  sources don't support are removed.
+- **Understand them without opening them.** Ask a question across your files, or
+  summarise a whole file. Every factual statement cites the page, slide, or
+  lines it came from, and statements the sources don't support are removed.
+- **Get the original.** Open, read, or receive the actual file on your phone.
 - **Upload from anywhere.** Send a file or note on Telegram. It lands in a local
-  Inbox and is listed in `INBOX.md`, ready for Codex to file.
-- **Stays in sync with Codex.** Steward rescans every 15 minutes. When Codex
-  moves or renames a file, Steward keeps its identity and tells you where it was
+  Inbox and is listed in `INBOX.md`, ready to be filed however you like.
+- **Keeps up with however you organise.** Steward rescans every 15 minutes. When
+  files are moved or renamed (by hand, by a sync tool, or by a coding agent such
+  as Codex), it keeps each file's identity and tells you where an upload was
   filed.
-- **Easy setup.** Point Steward at a folder you already have. Nothing is copied
-  or moved.
-
-## How Steward and Codex fit together
-
-| | Codex | Steward |
-|---|---|---|
-| Role | Works *on* files | Finds and delivers files |
-| Where | At your computer | Anywhere, through Telegram |
-| Does | Organise, rename, move, edit | Upload, find, read, summarise, answer |
-| Changes files? | Yes, with your approval | No; originals stay where they are |
+- **Easy setup.** Point Steward at a folder you already have. Nothing is copied,
+  moved, or changed.
 
 ```text
-upload on Telegram → Inbox + INBOX.md → Codex files it into the right folder
+upload on Telegram → Inbox + INBOX.md → you (or a tool like Codex) file it
 → Steward's next scan recognises the move and tells you where it went
-→ later: /find it, read it, summarise it, or get the original back
+→ later: /find it, read it, ask about it, summarise it, or get the original back
 ```
 
 ## Quick start
@@ -59,6 +48,8 @@ steward telegram                  # run your own bot from this computer
 ```
 
 Set `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` so only your chat can use the bot.
+Find, Ask, and Summarize need a model provider (see `.env.example`); browsing,
+reading, sending originals, and uploads work without one.
 
 ## Using Steward from Telegram
 
@@ -73,25 +64,28 @@ Set `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` so only your chat can use the bot.
 | Reply to a file card with text | Asks about that file |
 
 A file card offers **Read**, **Summarize**, **Ask**, **Send original**, and
-**Folder**. Locations are shown relative to an authorized folder or the Inbox,
-never as absolute paths.
+**Folder**. Answers and summaries cite locations such as `[p.19]` (or
+`[2 p.19]` when an answer draws on several files, matching its numbered
+sources), show maths as readable text (E(W) = 1/(μ − λ)), and an answer offers
+**Show removed** when the checker cut anything. Locations are always relative
+to an authorized folder or the Inbox, never absolute paths.
 
 ## How Find, Ask, and Summarize work
 
-Each is a small LangGraph workflow with narrow model roles, a hard budget on
+Each is a small LangGraph workflow with narrow model roles, a hard limit on
 model calls, and a plain fallback when a role fails. Details are in
 [docs/multi-agent-flows.md](docs/multi-agent-flows.md).
 
 - **Find** (≤4 calls): a planner rewrites the request. Keyword, meaning,
   filename, and recent-files searches run in parallel and are fused per file.
   A judge picks from the candidates only, or asks "which one?".
-- **Ask** (≤6 calls): a planner chooses up to three searches. A drafter answers
-  from numbered sections and may request one more search. A checker removes
-  sentences their citations don't support, and **Show removed** lists them.
-- **Summarize** (≤2N+8 calls): parallel note-takers cover the whole file, a
-  combiner writes one cited summary, and a coverage check retries if a large
-  part was missed. The card shows how many sections were covered. The summary is
-  cached until the file changes.
+- **Ask** (≤6 calls): a planner chooses up to three searches. A writer answers
+  from the retrieved sections, one cited fact per sentence, and may ask for one
+  more search. A checker removes sentences their citations don't support.
+- **Summarize** (≤2N+8 calls for N parts): parallel note-takers read the whole
+  file, a combiner writes one cited summary of about 700 words, and a coverage
+  check retries if a large part was missed. Files up to about 770,000 characters;
+  the summary is cached until the file changes.
 
 Measured on a copy of real coursework (136 files; details in
 [docs/testing.md](docs/testing.md)):
@@ -102,7 +96,7 @@ Measured on a copy of real coursework (136 files; details in
 | Citation checker, 30 planted false statements | 27–30 removed (95% on average, five runs), 28–29 of 30 true ones kept |
 | Ask, 24 answerable questions (8 of them vague) | 18–20 correct, 3–4 partly correct, 1–2 withheld or not found, **0 wrong** (two runs) |
 | Ask, 4 questions the files can't answer | 4 declined |
-| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed; 93–95% of 42 key facts mentioned (was 81–83%) |
+| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed; 93–95% of 42 key facts mentioned |
 
 ## Command line
 
@@ -110,15 +104,17 @@ Measured on a copy of real coursework (136 files; details in
 steward roots                      # authorized folders and last scan
 steward scan-root "Y4S1"           # rescan now (the bot also does this every 15 minutes)
 steward search "TLB" --type pdf    # --mode hybrid (default) | keyword | meaning
-steward ask "..."                  # same Ask flow as Telegram
+steward ask "..."                  # the same Ask flow as Telegram
 steward inbox                      # refresh INBOX.md and list what's waiting
-steward evaluate-retrieval cases.yaml --mode find   # hit@1, hit@3, MRR
+steward reextract --all            # re-extract every file after an update
 steward health --strict            # local readiness check
 steward backup                     # snapshot the database
 ```
 
-`steward --help` lists everything, including `relocate-root`, `remove-root`,
-`reextract`, `rebuild-semantic-index`, `activity`, and `restore`.
+Evaluation: `evaluate-retrieval`, `evaluate-checker`, `evaluate-ask`, and
+`evaluate-summaries` (see [docs/testing.md](docs/testing.md)). `steward --help`
+lists everything, including `relocate-root`, `remove-root`,
+`rebuild-semantic-index`, `activity`, and `restore`.
 
 ## Optional extras
 
@@ -130,15 +126,17 @@ steward backup                     # snapshot the database
 
 OpenAI, SoCLaaS (OpenAI-compatible), and local Ollama need no extra.
 
-## Data and safety
+## Data and privacy
 
-- Original files are the source of truth. SQLite holds paths, hashes, extracted
-  text, search indexes, summaries, and activity, all rebuildable from the
-  originals.
+- Steward runs on your computer. Your files, the database (paths, hashes,
+  extracted text, search indexes, summaries, activity), and the Inbox stay
+  there, and everything derived can be rebuilt from the originals.
 - Steward reads only folders you authorize, plus its Inbox. It never moves,
-  renames, or deletes your files.
-- Models see only retrieved excerpts. They have no filesystem or tool access,
-  and can only pick from, or cite, what they were given.
+  renames, changes, or deletes your files.
+- Model calls send only the text a flow needs: retrieved sections for Find and
+  Ask, and the file's text for Summarize. With a cloud provider that text leaves
+  your machine; with a local Ollama model it doesn't. Models have no filesystem
+  or tool access and can only pick from, or cite, what they were given.
 - Bot tokens are redacted from logs.
 
 ## Documentation

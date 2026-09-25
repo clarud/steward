@@ -1,14 +1,13 @@
 # Windows local operation and start at login
 
 This is an operator procedure, not an automatic installer. Creating a scheduled
-task is an explicit deployment action. The commands below have not been used to
-register or start a task during development. Keep real Telegram acceptance
-separate from automated tests.
+task is an explicit deployment action; section 5 records what has been done on
+this machine. Keep real Telegram acceptance separate from automated tests.
 
 ## 1. Foreground preflight
 
-Use the same ordinary Windows account that owns the vault and authorized OAuth
-tokens. Do not use SYSTEM or highest privileges. In PowerShell:
+Use the same ordinary Windows account that owns the authorized folders and the
+`.env` file. Do not use SYSTEM or highest privileges. In PowerShell:
 
 ```powershell
 $stewardProject = 'C:\Users\clare\OneDrive\Desktop\steward'
@@ -79,15 +78,16 @@ Get-ScheduledTaskInfo -TaskName $stewardTaskName | Select-Object LastRunTime, La
 & $stewardExecutable health
 ```
 
-In Telegram, verify `/status`, a source read, `/pending`, and one non-sensitive
-provider request. Confirm an existing pending review survives a stop/start before
-relying on unattended operation. A task marked Running proves only that its
+In Telegram, verify `/home`, opening and reading a file, `/inbox`, and one
+harmless `/find` (a model request). Confirm that replying to an old file card
+still targets the same file after a stop/start before relying on unattended
+operation. A task marked Running proves only that its
 process has not exited; it does not prove healthy polling or model responses.
 There is no separate watchdog detecting a hung model or polling loop yet.
 
 Use local `steward telegram-deliveries` and `steward telegram-delivery-history`
 for delivery diagnostics. Logs may contain personal metadata: inspect locally and
-redact before sharing. Never paste `.env` or OAuth token JSON into a bug report.
+redact before sharing. Never paste `.env` into a bug report.
 
 ## 4. Stop, maintain, recover
 
@@ -131,32 +131,18 @@ one poller, check available roots, confirm the 15-minute rescan sends a filed
 notice, and exercise outage recovery using the Telegram manual checklist. This runbook does not certify those
 checks as completed.
 
-## 5. Rehearsal record
+## 5. Status on this machine
 
-On 2026-09-13, the repository's disposable local rehearsal passed the following
-real code paths without touching the user's operational database or vault:
+- 13 Sep 2026: a disposable rehearsal passed root relocation (bytes verified
+  before keeping source IDs), backup and confirmed restore with a safety copy,
+  reopening restored state in a fresh process, runtime-lock takeover after the
+  owner process was killed, and a bounded error from an unreachable Ollama.
+- 20 Sep 2026: the `Steward Telegram` logon task was registered with the owner's
+  approval (the project's `steward.exe`, argument `telegram`, duplicates
+  ignored, bounded restarts), started, and stayed **Running**; `health --strict`
+  passed.
 
-- a temporary source directory was moved, the old root became unavailable, and
-  relocation verified the replacement bytes before preserving the source ID;
-- CLI backup and confirmed restore produced write-once snapshots plus the required
-  pre-restore safety copy;
-- restored state was reopened from a fresh Python process;
-- a runtime-lock owner process was terminated and a later process safely acquired
-  the same lock;
-- an actual refused loopback connection reached the Ollama adapter and returned
-  its bounded `ModelGatewayError` without raw socket diagnostics.
-
-The installation's `steward health --strict` preflight passed: the database was
-available, one authorized root was available, and a Telegram token was configured.
-On 2026-09-20, the user explicitly authorized registration of the local
-`Steward Telegram` task. It uses this project's
-virtual-environment `steward.exe`, has `telegram` as its only argument, uses the
-project as its working directory, ignores duplicate instances, and has the
-documented bounded restart policy. A foreground-poller inspection found no
-running Steward Telegram process, after which the task was started and remained
-**Running** across a short observation period. Strict local health also passed
-while it was running. This proves registration and immediate startup, but not a
-future Windows logon trigger, an end-to-end Telegram reply from the scheduled
-process, or live Telegram/provider outage recovery. Do not interpret the
-disposable recovery rehearsal or task registration alone as full start-at-login
-acceptance.
+Not yet proven: the task starting at an actual Windows logon, an end-to-end
+Telegram reply from the scheduled process, and recovery from a Telegram or
+model-provider outage. Re-run section 1 after updating Steward, and
+`steward reextract --all` once after an extractor improvement.

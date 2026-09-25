@@ -2,11 +2,12 @@
 
 ## Product in brief
 
-Steward is a local-first companion to Codex for personal files. Codex works
-*on* files (organise, rename, move, edit). Steward gets files **in** (Telegram
-uploads to a local Inbox listed in `INBOX.md`) and back **out** (Find, Read,
-Summarize, Ask, Send original) from folders the owner has authorized. Read
-[docs/product.md](docs/product.md) before changing behaviour.
+Steward is a personal file assistant: it lets the owner find, understand, and
+retrieve their files from anywhere through Telegram (Find, Ask, Summarize, Read,
+Send original), from folders they have authorized, and accepts uploads into a
+local Inbox listed in `INBOX.md`. It never changes files; organising is the
+owner's, by hand or with tools such as Codex, and Steward keeps up through
+rescans. Read [docs/product.md](docs/product.md) before changing behaviour.
 
 The owner builds Steward partly to learn agentic AI. Explain design choices and
 keep slices small. The product is deliberately minimal: every feature must be
@@ -25,7 +26,8 @@ well implemented and meaningful, or it goes.
 4. **Budgets and fallbacks.** Every flow has a `CallBudget`. Every role has one
    repair attempt and then a plain fallback. A flow never loops without a bound.
 5. **Provenance on every answer.** Answers and summaries cite fragment keys, and
-   the checker removes cited statements that aren't supported.
+   the checker removes cited statements that aren't supported. An uncited
+   answer is never shown as grounded.
 6. **Scans reconcile.** A scan (every 15 minutes in the bot, or `scan-root`) is
    the truth. A move is merged only when exactly one missing and one new file
    share a hash.
@@ -51,15 +53,16 @@ src/steward/
 │   ├── search.py     parse_find: /find flags → FindScope
 │   └── intake.py     staged uploads: Save, Intended root, Add note, Discard
 ├── graphs/       LangGraph flows: find.py, ask.py, summarize.py
-├── roles/        model roles and contracts: find, ask, checker, summarize, structured
+├── roles/        model roles and contracts: find, ask, checker, summarize, structured, citations
 ├── retrieval/    lexical (FTS5), semantic (embeddings), hybrid (RRF), files (per-file fusion)
 ├── sources/      model, discovery, scanning, moves, inbox_queue (INBOX.md), summaries, export
 ├── extraction/   per-format extractors and the fragment/FTS5 repository
 ├── answer/       model gateways (Gemini, OpenAI, SoCLaaS, Ollama)
 ├── telegram/     adapter (polling, 15-minute rescan), callbacks, delivery ledger, presentation
 ├── storage/      migrations, snapshot, restore
-└── intake.py, capture.py, roots.py, reviews.py, activity.py, evaluation.py,
-    config.py, extras.py, logging.py (token redaction), observability.py, runtime.py
+└── intake.py, capture.py, roots.py, reviews.py, activity.py, evaluation.py (evaluate-* scoring),
+    readable.py (Unicode maths, [p.19] citations), config.py, extras.py,
+    logging.py (token redaction), observability.py, runtime.py
 ```
 
 `steward.cli.bootstrap.build_telegram_application` is the single place where
@@ -90,8 +93,10 @@ for both the CLI and Telegram.
 2. **Implement the smallest slice** with tests. No speculative abstractions, and
    LangGraph stays out of domain services.
 3. **Measure model changes.** A change to a role prompt or flow shape is
-   checked with `steward evaluate-retrieval CASES --mode find` on a copy of real
-   data, against `--mode hybrid`.
+   checked on a copy of real data with the matching command:
+   `evaluate-retrieval` (Find against `--mode hybrid`), `evaluate-checker`,
+   `evaluate-ask`, or `evaluate-summaries`, run at least twice because model
+   output varies. Grade the `--report` output by hand.
 4. **Explain the diff:** why each changed file exists, and what state, side
    effects, and failure behaviour changed.
 
@@ -102,4 +107,4 @@ for both the CLI and Telegram.
 - [docs/multi-agent-flows.md](docs/multi-agent-flows.md): Find, Ask, Summarize.
 - [docs/developer-guide.md](docs/developer-guide.md): subsystem details.
 - [docs/testing.md](docs/testing.md) and [docs/telegram-manual-test-checklist.md](docs/telegram-manual-test-checklist.md).
-- [docs/adr/](docs/adr/): decisions. Add one for any product-shaping change.
+- [docs/adr/](docs/adr/): decisions. Add one for any product-shaping change (latest: ADR-010, positioning).

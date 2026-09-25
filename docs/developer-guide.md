@@ -144,9 +144,17 @@ only against authorized roots). `retrieval/files.py` turns fragment hits into
 `fuse` applies reciprocal-rank fusion per file across several ranked lists, with
 an optional boost.
 
-`steward evaluate-retrieval CASES.yaml --mode keyword|hybrid|find` scores a
-ranking function with hit@1, hit@3, and MRR (`evaluation.py`). A case is
-`{query, file}`, and `file` matches the end of the result's path.
+**Evaluation** (`evaluation.py`, wired in `cli/commands.py`):
+
+| Command | Cases | Scores |
+|---|---|---|
+| `evaluate-retrieval CASES --mode keyword\|hybrid\|find` | `{query, file}` or `files: [...]` | hit@1, hit@3, MRR |
+| `evaluate-checker CASES` | `{evidence, supported, unsupported}` | planted statements removed, true ones kept |
+| `evaluate-ask CASES --report R.md` | `{question, files}` or `answerable: false` | expected file cited, unanswerable declined |
+| `evaluate-summaries CASES --report R.md` | `{file, facts}` ("a\|b" spellings) | key facts mentioned, coverage, calls, time |
+
+`file` matches the end of a path, and several files can be listed when identical
+copies exist.
 
 ## Model flows
 
@@ -158,8 +166,10 @@ Find, Ask, and Summarize are described node by node in
 - `roles/citations.py`: one canonical `[F12]` form; `normalize()` rewrites
   `[F1, F2]` and `[Fn: F12]` before any validation.
 - `roles/find.py`, `roles/ask.py`, `roles/summarize.py`, `roles/checker.py`: one
-  prompt, contract, and validator per role. Validators reject IDs or keys that
-  were not supplied.
+  prompt, contract, and validator per role. The judge's validator rejects any
+  ID not supplied; answer and summary validators reject many unknown keys and
+  leave a single stray one for the checker. `checker.realign_citations`
+  re-points a citation to the section a sentence plainly came from.
 - `graphs/find.py`, `graphs/ask.py`, `graphs/summarize.py`: the graphs.
   `FindTools`, `AskTools`, and `SummarizeTools` hold the services each graph
   may use. `run_find`, `run_ask`, and `run_summarize` return plain result
@@ -233,7 +243,7 @@ origin, type, intended root and path, the owner's note, and guidance files
 after every capture, intake acceptance refreshes it again once routing context
 is saved, and `scan-root` and `steward inbox` refresh it too. The file is only
 rewritten when its content changes, via a temporary file and atomic replace.
-A file Codex moves out of the Inbox drops off at the next refresh; Telegram's
+A file moved out of the Inbox (by hand or by a tool) drops off at the next refresh; Telegram's
 `/inbox` applies the same "still in the Inbox" rule.
 
 ## Activity
