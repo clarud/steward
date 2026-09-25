@@ -258,13 +258,12 @@ def test_failed_snapshot_cleans_up_only_its_reserved_destination(tmp_path: Path)
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_restore_refuses_swapped_operational_and_checkpoint_databases(tmp_path: Path, reverse: bool) -> None:
-    from langgraph.checkpoint.sqlite import SqliteSaver
     from contextlib import closing
     operational = tmp_path / "first.db"
     checkpoints = tmp_path / "second.db"
     initialize_database(operational)
-    with closing(sqlite3.connect(checkpoints)) as connection:
-        SqliteSaver(connection).setup()
+    with closing(sqlite3.connect(checkpoints)) as connection:  # the tables a LangGraph checkpoint store has
+        connection.executescript("CREATE TABLE checkpoints (thread_id TEXT); CREATE TABLE writes (thread_id TEXT);")
     snapshot, destination = (operational, checkpoints) if reverse else (checkpoints, operational)
     original = destination.read_bytes()
     with pytest.raises(ValueError, match="database role"):
