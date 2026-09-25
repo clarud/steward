@@ -148,3 +148,20 @@ def test_general_scan_registers_image_files(tmp_path: Path) -> None:
 
     assert result.new == 1
     assert repository.get_by_path(image.resolve()).source_type is SourceType.IMAGE
+
+
+def test_source_scan_skips_operational_and_configured_exclusions_without_marking_them_missing(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"; vault.mkdir()
+    note = vault / "note.md"; note.write_text("# Note", encoding="utf-8")
+    operational = vault / ".steward"; operational.mkdir()
+    (operational / "internal.md").write_text("not knowledge", encoding="utf-8")
+    generated = vault / "generated"; generated.mkdir()
+    generated_note = generated / "output.md"; generated_note.write_text("not knowledge", encoding="utf-8")
+    repository = make_repository(tmp_path)
+
+    result = scan_source_root(vault, repository, exclusions=(Path("generated"),))
+
+    assert result.new == 1
+    assert repository.get_by_path(note.resolve()) is not None
+    assert repository.get_by_path(generated_note.resolve()) is None
+    assert repository.get_by_path((operational / "internal.md").resolve()) is None

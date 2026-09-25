@@ -4,28 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steward"
-version = "0.1.0"
-description = "A local-first personal memory, knowledge, and action assistant."
+version = "0.2.0"
+description = "Local-first source memory and retrieval: the companion to Codex for finding your files from anywhere."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "google-genai>=1.0",
-    "google-api-python-client>=2.0",
-    "google-auth-oauthlib>=1.0",
+    "langchain-core>=1.0",
     "langgraph>=1.0",
-    "langgraph-checkpoint-sqlite>=3.0",
     "openai>=2.0",
     "python-dotenv>=1.0",
     "python-telegram-bot>=22.0",
     "pypdf>=5.0",
     "python-docx>=1.0",
-    "sentence-transformers>=5.0",
-    "watchdog>=6.0",
     "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# Semantic and hybrid search (pulls in PyTorch).
+semantic = ["sentence-transformers>=5.0"]
+# The Gemini model provider.
+gemini = ["google-genai>=1.0"]
+all = ["steward[semantic,gemini]"]
+dev = ["pytest>=8.0", "pyflakes>=3.0"]
 
 [project.scripts]
 steward = "steward.cli:main"

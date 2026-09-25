@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
-from collections.abc import Collection, Sequence
+import threading
+import time
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from steward.extraction import SourceFragment
+from steward.extras import MissingExtraError
 from steward.sources import Source, SourceRepository
 from steward.sources.models import SourceStatus, SourceType
+
+_LOGGER = logging.getLogger(__name__)
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class EmbeddingProvider(Protocol):
@@ -34,14 +41,17 @@ class SentenceTransformerEmbeddingProvider:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        model_name: str = DEFAULT_EMBEDDING_MODEL,
         *,
         allow_download: bool = False,
     ) -> None:
         self._model_name = model_name
         # Import here so non-semantic commands do not load PyTorch at startup.
         # A normal search is offline after the user explicitly downloads a model.
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as error:
+            raise MissingExtraError("semantic", "Semantic and hybrid search") from error
 
         self._model = SentenceTransformer(
             model_name, local_files_only=not allow_download
@@ -59,6 +69,54 @@ class SentenceTransformerEmbeddingProvider:
 
     def embed_query(self, query: str) -> tuple[float, ...]:
         return self.embed_documents((query,))[0]
+
+
+class BackgroundEmbeddingProvider:
+    """Loads the local embedding model in a background thread.
+
+    Importing the libraries takes 15–60 seconds on a cold start, so the Telegram
+    bot starts listening at once instead of waiting. Calls wait until the model
+    is ready; if it failed to load they raise RuntimeError, and search falls back
+    to keywords.
+    """
+
+    def __init__(self, load: Callable[[], EmbeddingProvider], model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
+        self._model_name = model_name
+        self._provider: EmbeddingProvider | None = None
+        self._ready = threading.Event()
+        threading.Thread(target=self._load, args=(load,), name="embedding-model", daemon=True).start()
+
+    def _load(self, load: Callable[[], EmbeddingProvider]) -> None:
+        started = time.perf_counter()
+        try:
+            provider = load()
+            provider.embed_query("warm up")  # the first encode is slower than the rest
+            self._provider = provider
+            _LOGGER.info("Meaning search is ready (%.0f s).", time.perf_counter() - started)
+        except Exception as error:  # the bot keeps running with keyword search
+            _LOGGER.warning("Meaning search is off: the embedding model didn't load (%s).", type(error).__name__)
+        finally:
+            self._ready.set()
+
+    @property
+    def ready(self) -> bool:
+        return self._ready.is_set()
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def embed_documents(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
+        return self._loaded().embed_documents(texts)
+
+    def embed_query(self, query: str) -> tuple[float, ...]:
+        return self._loaded().embed_query(query)
+
+    def _loaded(self) -> EmbeddingProvider:
+        self._ready.wait()
+        if self._provider is None:
+            raise RuntimeError("The local embedding model is unavailable.")
+        return self._provider
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +141,7 @@ class SemanticIndex(Protocol):
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticFragmentHit, ...]:
         """Return the fragments most semantically similar to a query."""
 
@@ -163,6 +222,7 @@ class SQLiteSemanticIndex:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticFragmentHit, ...]:
         """Score every vector for this model with cosine similarity."""
         if not query.strip():
@@ -179,6 +239,8 @@ class SQLiteSemanticIndex:
             if selected_source_types
             else ""
         )
+        normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
+        path_filter = " AND s.path LIKE ?" if normalized_prefix is not None else ""
         with sqlite3.connect(self._database_path) as connection:
             rows = connection.execute(
                 f"""
@@ -190,12 +252,14 @@ class SQLiteSemanticIndex:
                 WHERE sfe.model_name = ? AND sfe.dimension = ?
                   AND s.status = ?
                   {source_type_filter}
+                  {path_filter}
                 """,
                 (
                     self._embedding_provider.model_name,
                     len(query_vector),
                     SourceStatus.ACTIVE.value,
                     *selected_source_types,
+                    *((normalized_prefix + "%",) if normalized_prefix is not None else ()),
                 ),
             ).fetchall()
 
@@ -214,6 +278,20 @@ class SQLiteSemanticIndex:
             for row in rows
         ]
         return tuple(sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit])
+
+    def sources_missing_vectors(self) -> tuple[int, ...]:
+        """Sources that have extracted text but no vectors from this model yet."""
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT fragments.source_id FROM source_fragments AS fragments
+                LEFT JOIN source_fragment_embeddings AS vectors
+                  ON vectors.fragment_id = fragments.id AND vectors.model_name = ?
+                WHERE vectors.fragment_id IS NULL ORDER BY fragments.source_id
+                """,
+                (self._embedding_provider.model_name,),
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
     def clear(self) -> int:
         """Remove this provider's derived vectors without touching source fragments."""
@@ -248,10 +326,11 @@ class SemanticSearchService:
         *,
         limit: int = 5,
         source_types: Collection[SourceType] | None = None,
+        path_prefix: Path | None = None,
     ) -> tuple[SemanticSearchHit, ...]:
         hits: list[SemanticSearchHit] = []
         for result in self._semantic_index.search(
-            query, limit=limit, source_types=source_types
+            query, limit=limit, source_types=source_types, path_prefix=path_prefix
         ):
             source = self._source_repository.get_by_id(result.fragment.source_id)
             if source is None:

@@ -1,489 +1,154 @@
 # Steward
 
-Steward is a local-first personal memory, knowledge, and action assistant. It preserves original sources, builds evidence-backed knowledge, and only takes consequential actions through controlled services.
+Steward is a personal file assistant. It lets you **find, understand, and
+retrieve your files from anywhere** through Telegram, from the folders you
+already have.
 
-## Current status
+- **Find files without remembering their names.** `/find that AVX question from
+  tut 4` returns the right file with a one-line reason, even if you've
+  forgotten its name, folder, or format.
+- **Understand them without opening them.** Ask a question across your files, or
+  summarise a whole file. Every factual statement cites the page, slide, or
+  lines it came from, and statements the sources don't support are removed.
+- **Get the original.** Open, read, or receive the actual file on your phone.
+- **Upload from anywhere.** Send a file or note on Telegram. It lands in a local
+  Inbox and is listed in `INBOX.md`, ready to be filed however you like.
+- **Keeps up with however you organise.** Steward rescans every 15 minutes. When
+  files are moved or renamed (by hand, by a sync tool, or by a coding agent such
+  as Codex), it keeps each file's identity and tells you where an upload was
+  filed.
+- **Easy setup.** Point Steward at a folder you already have. Nothing is copied,
+  moved, or changed.
 
-Phases 0–34 are implemented as a local foundation. Steward can capture text,
-Markdown, plain text, DOCX, HTML, images with optional local OCR, and PDFs with native-text-first local OCR fallback into an Inbox; extract and retrieve
-fragments; create workspaces and organization proposals; retain activity,
-concept, claim, and travel-record provenance; and answer Telegram questions
-with persistent per-chat LangGraph state. The human approval and external
-action layers are still intentionally narrow. It can now also run an explicit
-Gemini-powered, read-only LangGraph tool loop over sources, knowledge, records,
-workspaces, and activity.
-Every model-callable tool now declares its risk and approval requirements;
-only read-only tools are currently exposed to the agent.
-Google Calendar can now be connected through local OAuth for current read-only
-event search and lookup.
-Travel records can be created as idempotent, audited Calendar events after
-explicitly invoking the write command.
-External research is available as an explicitly invoked, non-retaining flow.
-It can also review Inbox filenames and propose possible new workspace themes
-without creating or moving anything automatically.
-It can propose evidence-backed connections between concepts without turning
-co-occurrence into permanent knowledge automatically.
-Manual Markdown edits can be watched and incrementally refreshed locally.
-Model privacy now routes restricted evidence to a configured local Ollama model
-or refuses it safely when none is available. Calendar creation reconciles a
-prior remote event by its Steward idempotency key after an interrupted local
-write, avoiding a duplicate event on retry.
-Structured local logs make retrieval graph routes, result IDs/counts, model
-calls, and tool requests inspectable without recording source text or prompts.
-The repository also includes versioned retrieval and product evaluation cases
-for regression checks across retrieval, organization, records, knowledge, and
-agent safety.
+```text
+upload on Telegram → Inbox + INBOX.md → you (or a tool like Codex) file it
+→ Steward's next scan recognises the move and tells you where it went
+→ later: /find it, read it, ask about it, summarise it, or get the original back
+```
 
-Receipt records are deterministic, evidence-backed projections over sources:
-merchant, total, currency, purchase time, and receipt number are proposed from
-labeled extracted text, then only persisted when evidence exists for a field.
-Warranty records apply the same pattern to product, provider, warranty number,
-and coverage-end information.
+## Quick start
 
-Selected native Google Docs, Sheets, and Slides can also be imported through
-the existing `drive-import` command. Steward explicitly exports them as local
-`.txt`, `.csv`, or `.pdf` derivatives; the Drive file remains authoritative.
-
-## Local setup
-
-Requires Python 3.12 or newer.
+Requires Python 3.12+. In PowerShell, from the repository root:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-pytest
-steward scan path\to\your\vault
+.venv\Scripts\activate
+pip install -e ".[all]"          # or choose extras: semantic, gemini
+Copy-Item .env.example .env      # then set a model provider and the Telegram token
+steward download-embedding-model # once, for meaning-based search
 ```
 
-Copy `.env.example` to `.env` only when you need local configuration. Never commit `.env`.
-
-## Search a vault
-
-Lexical search needs only the scan:
+Authorize a folder you already have, then try it:
 
 ```powershell
-steward scan path\to\your\vault
-steward search "address translations"
+steward onboard-root "Y4S1" "C:\Users\you\Documents\Y4S1"
+steward search "the cache CPUs use for address translation"
+steward ask "What do my notes say about queueing?"
+steward telegram                  # run your own bot from this computer
 ```
 
-Markdown, text, CSV, PDF, DOCX, HTML, and supported image files can be scanned.
-CSV is preserved and searched through the plain-text extraction path.
-For scanned images and image-only PDFs, install local `tesseract`; scanned PDFs
-also need Poppler's `pdftoppm`. If either is absent, Steward preserves and
-registers the original but leaves its derived text empty until you install the
-tool and run `steward reextract SOURCE_ID`.
+Set `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` so only your chat can use the bot.
+Find, Ask, and Summarize need a model provider (see `.env.example`); browsing,
+reading, sending originals, and uploads work without one.
 
-For a larger vault, narrow lexical results to one project or course subtree:
+## Using Steward from Telegram
+
+| You do | Steward |
+|---|---|
+| `/find WORDS` (optionally `--type pdf`, `--root "Y4S1"`, or `type:pdf root:Y4S1`) | Searches all your folders, finds the file, and says why it matches; **Only <folder>** buttons narrow it |
+| `/ask QUESTION` | Answers from your files, citing each source |
+| `/sources` | Browse your folders |
+| `/inbox` | Uploads waiting to be filed |
+| Send a file or note | Staged; **Save**, **Intended root**, **Add note**, or **Discard** |
+| Plain text with no command | Offers **Find**, **Ask**, or **Save as note** |
+| Reply to a file card with text | Asks about that file |
+
+A file card offers **Read**, **Summarize**, **Ask**, **Send original**, and
+**Folder**. Answers and summaries cite locations such as `[p.19]` (or
+`[2 p.19]` when an answer draws on several files, matching its numbered
+sources), show maths as readable text (E(W) = 1/(μ − λ)), and offer **Show
+removed** when the checker cut anything. The chat shows "typing…" while a
+request runs. Right after the bot starts, the search model loads in the
+background (15–60 seconds); a `/find` or `/ask` in that time gets a short
+"still starting up" notice and is answered as soon as it's ready. Locations are always relative
+to an authorized folder or the Inbox, never absolute paths.
+
+## How Find, Ask, and Summarize work
+
+Each is a small LangGraph workflow with narrow model roles, a hard limit on
+model calls, and a plain fallback when a role fails. Details are in
+[docs/multi-agent-flows.md](docs/multi-agent-flows.md).
+
+- **Find** (≤4 calls): a planner rewrites the request. Keyword, meaning,
+  filename, and recent-files searches run in parallel and are fused per file.
+  A judge picks from the candidates only, or asks "which one?".
+- **Ask** (≤6 calls): a planner chooses up to three searches. A writer answers
+  from the retrieved sections, one cited fact per sentence, and may ask for one
+  more search. A checker removes sentences their citations don't support.
+- **Summarize** (≤2N+8 calls for N parts): parallel note-takers read the whole
+  file, a combiner writes one cited summary of about 700 words, and a coverage
+  check retries if a large part was missed. Files up to about 770,000 characters;
+  the summary is cached until the file changes.
+
+Measured on a copy of real coursework (136 files; details in
+[docs/testing.md](docs/testing.md)):
+
+| Evaluation | Result |
+|---|---|
+| Find, 50 test queries | right file in the top 3: **90–92%** (plain hybrid search: 70%) |
+| Citation checker, 30 planted false statements | 27–30 removed (95% on average, five runs), 28–29 of 30 true ones kept |
+| Ask, 24 answerable questions (8 of them vague) | 18–20 correct, 3–4 partly correct, 1–2 withheld or not found, **0 wrong** (two runs) |
+| Ask, 4 questions the files can't answer | 4 declined |
+| Summarize, 7 files (PDF, PPTX, notes, a 91k-character log) | 7 completed; 93–95% of 42 key facts mentioned |
+
+## Command line
 
 ```powershell
-steward search "address translations" --path-prefix C:\vault\courses\cs3210
+steward roots                      # authorized folders and last scan
+steward scan-root "Y4S1"           # rescan now (the bot also does this every 15 minutes)
+steward search "TLB" --type pdf    # --mode hybrid (default) | keyword | meaning
+steward ask "..."                  # the same Ask flow as Telegram
+steward inbox                      # refresh INBOX.md and list what's waiting
+steward reextract --all            # re-extract every file after an update
+steward health --strict            # local readiness check
+steward backup                     # snapshot the database
 ```
 
-Semantic and hybrid search use a local embedding model. Download it explicitly
-once, then build the rebuildable local vector index. Subsequent indexing and
-search run from the local model cache.
-
-```powershell
-steward download-embedding-model
-steward index path\to\your\vault
-steward semantic-search "the little cache CPUs use for address translation"
-steward hybrid-search "the little cache CPUs use for address translation"
-```
-
-## Use the local search UI
-
-Run a localhost-only browser interface over the same lexical index used by
-`steward search`. It displays source paths and fragment locations; click a
-result to read its locally stored extracted fragments with provenance and safe
-pagination. It does not send source text to a model or external service.
-
-```powershell
-steward ui
-```
-
-Use local semantic plus lexical fusion when the embedding model is already
-available locally:
-
-```powershell
-steward ui --mode hybrid
-```
-
-Then open `http://127.0.0.1:8765`. Stop it with `Ctrl+C`.
-The search page also links to a local records view for travel, receipt, and
-warranty projections; each record links back to its authoritative source.
-
-## Ask from local evidence
-
-Gemini is the default provider. Set its API key and a Gemini model available to
-your account in your PowerShell session, then ask a question. The answer request
-uses only retrieved fragments and asks the API not to store the interaction.
-
-```powershell
-$env:GEMINI_API_KEY = "your-api-key"
-$env:STEWARD_GEMINI_MODEL = "your-selected-model"
-steward ask "What do I know about address translation?"
-```
-
-## Ask with read-only tools
-
-`steward agent` is Steward's first tool-calling loop. Gemini, a configured
-local Ollama model, or NUS SoCLaaS can decide whether to search or read local Steward data.
-LangGraph executes supplied read-only tools plus narrowly defined proposal-only
-tools, then returns their results to the same model before it answers.
-
-For an explicit workspace-creation request, the agent may use a proposal-only
-write tool. With `--include-calendar`, it can also propose an event for a saved
-travel record. Neither proposal performs the final action itself. Inspect or
-decide it explicitly:
-
-```powershell
-steward action-proposals
-steward review-action-proposal 1 accepted
-```
-
-When you explicitly ask Steward to compare an existing knowledge claim with a
-retrieved fragment, the agent may create a pending enrichment proposal. It does
-not edit the claim; review it separately:
-
-```powershell
-steward knowledge-enrichment-proposals
-steward review-knowledge-enrichment 1 accepted
-```
-
-```powershell
-steward agent "What did I save about address translation?"
-```
-
-For Ollama, install and run Ollama, pull a model that supports tool calling,
-then set the following private `.env` values before starting a new terminal:
-
-```text
-STEWARD_MODEL_PROVIDER=local
-STEWARD_LOCAL_MODEL=qwen3
-# Optional when Ollama uses its default local endpoint:
-STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
-```
-
-Tool support is a model capability, not a guarantee of reliable planning. A
-small local model may answer directly, repeat a lookup, or emit invalid
-tool-like text; Steward executes only valid calls to its allowlisted tools and
-enforces its tool-call budget regardless of provider.
-
-SoCLaaS is an external, school-hosted OpenAI-compatible provider. Obtain its
-base URL, key, and a permitted model ID from its portal, then keep them only in
-your private `.env` file:
-
-```text
-STEWARD_MODEL_PROVIDER=soclaas
-SOCLAAS_API_KEY=...
-SOCLAAS_BASE_URL=https://soclaas-api.comp.nus.edu.sg/v1
-SOCLAAS_MODEL=...
-```
-
-It can power both `steward ask` and `steward agent`. The latter sends function
-schemas to SoCLaaS, but calls only Steward's local allowlisted tools through
-LangGraph. Because SoCLaaS is remote, sources restricted to a local model are
-not sent to it.
-
-The same privacy rule applies when Telegram captures use a configured model to
-suggest an existing workspace. Steward supplies extracted fragments and the
-current workspace list only, validates the returned workspace ID, and pauses
-for `accept` or `reject` before it moves an original file.
-
-Use `--thread-id` to continue a tool-agent conversation through the local
-LangGraph checkpoint store:
-
-```powershell
-steward agent --thread-id research:tlb "What sources discuss TLBs?"
-```
-
-## Connect Google Calendar for reads
-
-Create a Google OAuth **desktop application** client, download its client JSON
-outside the repository, then authorize it locally. The resulting refreshable
-token is stored under `.steward/config/`, not in Git.
-
-```powershell
-steward calendar-authorize C:\private\google-oauth-client.json
-$env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
-steward calendar-search "Tokyo"
-steward calendar-get GOOGLE_EVENT_ID
-```
-
-## Search or explicitly import Google Drive files
-
-Authorize the separate, read-only Drive scope once. Search returns current file
-metadata and links. `drive-import` downloads only the file ID you explicitly
-select, preserves that original in Inbox, and then performs normal local
-extraction and indexing. It is not a background Drive sync.
-
-```powershell
-steward drive-authorize C:\private\google-oauth-client.json
-$env:STEWARD_GOOGLE_CLIENT_SECRETS = "C:\private\google-oauth-client.json"
-steward drive-search "itinerary"
-steward drive-import DRIVE_FILE_ID
-```
-
-For a Telegram upload larger than the connection's download limit, place the
-original in Drive and send the allowlisted bot `/drive_import DRIVE_FILE_ID`.
-The bot uses the same explicit import workflow. If the Drive token needs a new
-scope, the command opens the local OAuth browser flow at that time.
-
-## Search Gmail metadata
-
-Gmail uses a separate read-only authorization. Search results contain message
-metadata and snippets. `gmail-import` explicitly preserves the selected
-message's original raw `.eml` data in Inbox; Steward neither sends mail nor
-imports messages automatically.
-
-```powershell
-steward gmail-authorize C:\private\google-oauth-client.json
-steward gmail-search "from:airline newer_than:1y"
-steward gmail-import GMAIL_MESSAGE_ID
-```
-
-An allowlisted Telegram chat can perform the same explicit action with
-`/gmail_import GMAIL_MESSAGE_ID`. It downloads only that raw message into
-Inbox; Steward extracts readable non-attachment email text locally while
-retaining the raw message as the canonical original. It does not search, send,
-or automatically sync mail.
-
-Use Calendar reads in the tool agent only when requested explicitly:
-
-```powershell
-steward agent --include-calendar "What is on my calendar when I arrive in Tokyo?"
-```
-
-## Create a Calendar event from a travel record
-
-This requests the broader Google Calendar event scope. Re-run authorization if
-your existing token was read-only. Repeating the command for the same record
-returns the existing linked event rather than creating a duplicate.
-
-```powershell
-steward calendar-create-travel-event 1
-```
-
-For a reviewable two-step action instead, first create a durable proposal, then
-explicitly accept it. Rejecting it never contacts Google Calendar.
-
-```powershell
-steward calendar-propose-travel-event 1
-steward calendar-review-travel-event 1 accepted
-```
-
-With `steward agent --include-calendar`, the model can create this same pending
-proposal only when you explicitly ask to add a saved travel record. It receives
-neither a direct Calendar write tool nor OAuth credentials as a tool argument.
-Allowlisted Telegram chats can also review it with `/approve_action ID` or
-`/reject_action ID`; OAuth is still invoked only after acceptance.
-
-## Add and inspect source-backed travel references
-
-Keep additional booking identifiers or links traceable to an extracted source
-fragment. The reference is not accepted unless that fragment exists locally.
-
-```powershell
-steward add-travel-record-reference 1 booking_portal "https://example.com/booking/ABC" 12
-steward travel-record-references 1
-```
-
-## Research external sources without retaining them
-
-Use Gemini's search grounding only when local evidence is insufficient. Results
-remain ephemeral and are not copied into your vault automatically.
-
-```powershell
-steward research "How does Linux perform TLB shootdowns?"
-```
-
-To deliberately retain the resulting answer and its external URLs in your
-Inbox as a labeled Markdown research note, use:
-
-```powershell
-steward research-retain "How does Linux perform TLB shootdowns?"
-```
-
-This preserves a research note, not copies of the cited webpages. By default,
-Steward uses Gemini Google Search when its credentials are configured; otherwise
-it returns clearly labeled DuckDuckGo result snippets. Choose explicitly with
-`--provider gemini` or `--provider duckduckgo`; this choice is independent of
-the model used for local answers.
-
-## Review potential new workspaces
-
-This intentionally reviews rather than changes your structure. It clusters
-repeated meaningful filename terms among Inbox sources and prints pending
-candidates for you to evaluate.
-
-```powershell
-steward review-inbox-workspaces
-```
-
-## Ask for an organization proposal using source content
-
-This remains a proposal: the configured model can choose only an existing
-workspace, while Steward validates the JSON response and derives any target
-path itself. You still review the proposal before a file moves.
-
-```powershell
-steward propose-organization SOURCE_ID --model-assisted
-```
-
-## Review knowledge connections
-
-Connections are candidates supported by shared source fragments. Steward shows
-the evidence IDs and explicitly notes that shared evidence is not causation.
-
-```powershell
-steward connect-knowledge
-```
-
-## Watch a vault for Markdown edits
-
-Filesystem events are debounced, then Steward re-hashes the file before doing
-any extraction work. Press `Ctrl+C` to stop the foreground watcher.
-
-```powershell
-steward watch path\to\your\vault
-```
-
-When an extractor improves, normal scans deliberately keep unchanged derived
-text. Rebuild a specific source explicitly instead:
-
-```powershell
-steward reextract SOURCE_ID
-```
-
-To change or repair only the rebuildable local vector index, without reparsing
-or modifying originals, run:
-
-```powershell
-steward rebuild-semantic-index
-```
-
-## Evaluate retrieval against your own vault
-
-Keep a small YAML file outside Git for personal expected results, then measure
-lexical Recall@5 and MRR after indexing. Expected source paths are relative to
-the vault root, so the same case file stays portable across machines.
-
-```yaml
-cases:
-  - query: "why do packets wait in a network"
-    expected:
-      source: "cs4226 learning notes.md"
-      heading: "02 - Network Queueing Models"
-```
-
-```powershell
-steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml
-```
-
-Compare the same cases against local hybrid retrieval after running `steward
-index`:
-
-```powershell
-steward evaluate-retrieval "C:\path\to\vault" C:\private\course-retrieval.yaml --mode hybrid
-```
-
-## Propose knowledge enrichment
-
-Compare one existing claim with one source fragment without changing the claim.
-The result becomes a durable, evidence-backed proposal that you explicitly
-accept or reject. Add `--model-assisted` to use your configured model; only
-that one fragment is supplied, and invalid model JSON falls back to deterministic
-logic.
-
-```powershell
-steward propose-knowledge-enrichment CLAIM_ID FRAGMENT_ID --model-assisted
-steward knowledge-enrichment-proposals
-steward review-knowledge-enrichment 1 accepted
-```
-
-## Set source privacy before model use
-
-```powershell
-steward set-source-privacy 12 local_model_only
-steward source-privacy 12
-```
-
-The cloud-answer and cloud tool-agent paths enforce this boundary before they
-place source text or source-derived travel record fields in a model prompt.
-`external_redacted` is deliberately withheld until Steward has an actual,
-auditable redaction feature; a label alone cannot protect data.
-
-If you run a local Ollama model, Steward can route `local_model_only` and
-`external_redacted` source evidence to it instead of a cloud provider:
-
-```dotenv
-STEWARD_LOCAL_MODEL=llama3.2
-STEWARD_LOCAL_MODEL_URL=http://127.0.0.1:11434
-```
-
-Set `STEWARD_MODEL_PROVIDER=local` to make Ollama the default answer model;
-otherwise it is selected only when retrieved evidence requires local handling.
-
-## Ask through Telegram
-
-Create a bot with BotFather, put its token in your private `.env`, and start
-the local polling process. Send `/save` as a message to capture its text, or
-use `/save` as the caption on a Markdown, text, DOCX, HTML, image, or PDF attachment. Captured
-material is preserved in the configured Inbox before extraction and indexing.
-If an uploaded filename strongly matches an existing workspace, Steward sends an
-organization proposal and waits for an explicit `accept` or `reject` reply
-before moving the original file. Uncertain captures remain in Inbox without
-blocking the chat.
-
-```dotenv
-TELEGRAM_BOT_TOKEN=your-bot-token
-```
-
-```powershell
-steward telegram
-```
-
-Stop the local process with `Ctrl+C`. Long polling means this initial version
-does not need a public webhook endpoint. Steward records successfully replied
-Telegram update IDs in its local SQLite database, so a redelivered update is
-not handled twice; a failed delivery is left eligible for retry.
-
-Inspect metadata-only local delivery state when troubleshooting polling:
-
-```powershell
-steward telegram-deliveries
-steward telegram-delivery-history
-```
-
-An allowlisted Telegram chat can review pending workspace proposals created by
-`steward agent`:
-
-```text
-/action_proposals
-/approve_action 1
-/reject_action 1
-```
-
-These commands are intentionally exact and explicit. An approved proposal is
-executed by normal deterministic services, not by the model. Treat every chat
-in `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` as an administrator while this first
-single-user approval model is in place.
-
-OpenAI remains available by explicitly selecting its provider:
-
-```powershell
-$env:STEWARD_MODEL_PROVIDER = "openai"
-$env:OPENAI_API_KEY = "your-api-key"
-$env:STEWARD_OPENAI_MODEL = "your-selected-model"
-steward ask "What do I know about address translation?"
-```
+Evaluation: `evaluate-retrieval`, `evaluate-checker`, `evaluate-ask`, and
+`evaluate-summaries` (see [docs/testing.md](docs/testing.md)). `steward --help`
+lists everything, including `relocate-root`, `remove-root`,
+`rebuild-semantic-index`, `activity`, and `restore`.
+
+## Optional extras
+
+| Extra | Enables |
+|---|---|
+| `semantic` | Meaning-based and hybrid search (installs PyTorch) |
+| `gemini` | The Gemini provider (the default `STEWARD_MODEL_PROVIDER`) |
+| `all` | Both |
+
+OpenAI, SoCLaaS (OpenAI-compatible), and local Ollama need no extra.
+
+## Data and privacy
+
+- Steward runs on your computer. Your files, the database (paths, hashes,
+  extracted text, search indexes, summaries, activity), and the Inbox stay
+  there, and everything derived can be rebuilt from the originals.
+- Steward reads only folders you authorize, plus its Inbox. It never moves,
+  renames, changes, or deletes your files.
+- Model calls send only the text a flow needs: retrieved sections for Find and
+  Ask, and the file's text for Summarize. With a cloud provider that text leaves
+  your machine; with a local Ollama model it doesn't. Models have no filesystem
+  or tool access and can only pick from, or cite, what they were given.
+- Bot tokens are redacted from logs.
 
 ## Documentation
 
-- `docs/developer-guide.md` — implementation, data flow, limitations, and next steps
-
-- `docs/product.md` — product intent
-- `docs/architecture.md` — architectural boundaries
-- `docs/invariants.md` — rules every feature must preserve
-- `docs/adr/` — records of foundational decisions
+- [Product](docs/product.md): what Steward is and isn't.
+- [Architecture](docs/architecture.md): how the pieces fit.
+- [Multi-agent flows](docs/multi-agent-flows.md): Find, Ask, and Summarize in detail.
+- [Invariants](docs/invariants.md): rules the code must never break.
+- [Developer guide](docs/developer-guide.md): implementation details.
+- [Testing](docs/testing.md) and the [Telegram checklist](docs/telegram-manual-test-checklist.md).
+- [Windows operations](docs/windows-operations.md): running Steward at login.
+- [Decision records](docs/adr/).

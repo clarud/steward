@@ -21,6 +21,7 @@ from steward.sources.models import Source, SourceStatus
 from steward.sources.hashing import hash_file
 from steward.sources.repository import SourceRepository
 from steward.sources.scanning import ScanResult, scan_markdown_root, scan_source_root
+from steward.sources.discovery import DEFAULT_EXCLUDED_DIRECTORY_NAMES, source_type_for_path
 
 if TYPE_CHECKING:
     from steward.retrieval.semantic import SemanticIndex
@@ -64,14 +65,15 @@ class SourceService:
 
         return result
 
-    def scan_source_root(self, root: Path) -> ScanResult:
+    def scan_source_root(self, root: Path, *, exclusions: tuple[Path, ...] = ()) -> ScanResult:
         """Synchronize and extract only new, changed, or restored vault sources."""
 
         before = self._active_content_hashes()
-        result = scan_source_root(root, self._source_repository)
+        result = scan_source_root(root, self._source_repository, exclusions=exclusions)
         resolved_root = root.resolve()
+        excluded_paths = tuple((item if item.is_absolute() else resolved_root / item).resolve() for item in exclusions)
         for source in self._source_repository.list_active():
-            if not source.path.is_relative_to(resolved_root):
+            if not source.path.is_relative_to(resolved_root) or any(source.path.is_relative_to(item) for item in excluded_paths) or any(parent.name in DEFAULT_EXCLUDED_DIRECTORY_NAMES for parent in source.path.parents):
                 continue
             if not self._needs_extraction(source, before):
                 continue
@@ -84,16 +86,22 @@ class SourceService:
                     SourceType.PLAIN_TEXT,
                     SourceType.PDF,
                     SourceType.DOCX,
+                    SourceType.PPTX,
+                    SourceType.XLSX,
+                    SourceType.NOTEBOOK,
                     SourceType.HTML,
                     SourceType.IMAGE,
+                    SourceType.CODE,
                 }:
                     self._document_extraction.extract_and_store(source)
                     fragments = self._fragment_repository.list_for_source(source.id or 0)
                 else:
                     continue
-            except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
+            except (OSError, ValueError, DocumentExtractionError) as error:
                 # The original remains registered.  Derived text is removed so a
                 # changed-but-unreadable file cannot remain searchable as its old content.
+                # ValueError covers text codec errors; one bad file must not stop
+                # the rest of the root from being extracted.
                 logger.warning("Could not extract %s: %s", source.path, error)
                 if source.id is None:
                     raise RuntimeError("Active sources must have an ID.") from error
@@ -125,7 +133,21 @@ class SourceService:
         return previous_hashes.get(source.path) != source.content_hash
 
     def refresh_markdown_path(self, path: Path) -> str:
-        """Hash one watched path and re-extract only when its actual content changed."""
+        """Compatibility wrapper for callers that explicitly watch Markdown."""
+
+        if path.suffix.casefold() != ".md":
+            return "ignored"
+        return self.refresh_source_path(path)
+
+    def refresh_source_path(self, path: Path) -> str:
+        """Hash and refresh one supported watched source.
+
+        A watcher notification is intentionally only a hint: it can be repeated,
+        arrive after a delete, or represent a metadata-only touch. The stored
+        content hash decides whether derived fragments must change. Full scans
+        remain responsible for reconciling missed events and moves.
+        """
+
         path = path.resolve()
         existing = self._source_repository.get_by_path(path)
         if not path.is_file():
@@ -133,25 +155,44 @@ class SourceService:
                 self._source_repository.update(replace(existing, status=SourceStatus.MISSING, last_seen_at=datetime.now(UTC)))
                 return "missing"
             return "ignored"
-        if path.suffix.casefold() != ".md":
+        source_type = source_type_for_path(path)
+        if source_type is None:
             return "ignored"
         stat = path.stat()
         content_hash = hash_file(path)
         now = datetime.now(UTC)
         modified_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
         if existing is None:
-            source = self._source_repository.add(Source(None, path, content_hash, SourceType.MARKDOWN, stat.st_size, modified_at, now, now))
+            source = self._source_repository.add(Source(None, path, content_hash, source_type, stat.st_size, modified_at, now, now))
             outcome = "new"
         else:
             if existing.content_hash == content_hash and existing.status is SourceStatus.ACTIVE:
                 return "unchanged"
-            source = replace(existing, content_hash=content_hash, size_bytes=stat.st_size, modified_at=modified_at, last_seen_at=now, status=SourceStatus.ACTIVE)
+            source = replace(existing, content_hash=content_hash, source_type=source_type, size_bytes=stat.st_size, modified_at=modified_at, last_seen_at=now, status=SourceStatus.ACTIVE)
             self._source_repository.update(source)
             outcome = "updated"
-        fragments = self._fragment_repository.replace_for_source(self._markdown_extractor.extract(source))
+        fragments = self._extract_source(source)
         if self._semantic_index is not None:
             self._semantic_index.replace_for_source(fragments)
         return outcome
+
+    def _extract_source(self, source: Source) -> tuple[SourceFragment, ...]:
+        """Refresh derived fragments for one registered supported source."""
+
+        try:
+            if source.source_type is SourceType.MARKDOWN:
+                return self._fragment_repository.replace_for_source(
+                    self._markdown_extractor.extract(source)
+                )
+            self._document_extraction.extract_and_store(source)
+            return self._fragment_repository.list_for_source(source.id or 0)
+        except (OSError, UnicodeDecodeError, DocumentExtractionError) as error:
+            logger.warning("Could not extract %s: %s", source.path, error)
+            if source.id is None:
+                raise RuntimeError("Active sources must have an ID.") from error
+            return self._fragment_repository.replace_for_source(
+                ExtractionResult(source_id=source.id, fragments=())
+            )
 
     def reextract_source(self, source_id: int) -> tuple[SourceFragment, ...]:
         """Deliberately rebuild one source's derived text and optional vectors.
@@ -178,6 +219,19 @@ class SourceService:
         if self._semantic_index is not None:
             self._semantic_index.replace_for_source(fragments)
         return fragments
+
+    def index_missing_vectors(self) -> int:
+        """Embed only sources that have text but no vectors yet; returns sections embedded."""
+
+        if self._semantic_index is None or not hasattr(self._semantic_index, "sources_missing_vectors"):
+            return 0
+        indexed = 0
+        for source_id in self._semantic_index.sources_missing_vectors():
+            fragments = self._fragment_repository.list_for_source(source_id)
+            if fragments:
+                self._semantic_index.replace_for_source(fragments)
+                indexed += len(fragments)
+        return indexed
 
     def rebuild_semantic_index(self) -> int:
         """Regenerate vectors from current fragments without reparsing originals."""

@@ -1,26 +1,5 @@
-"""Grounded answers built from Steward's retrieved local evidence."""
+"""Model gateways: one generate() call per provider (Gemini, OpenAI-compatible, Ollama)."""
 
-from steward.answer.context import ContextBuilder
-from steward.answer.citations import CitationVerification, verify_citations
 from steward.answer.gateway import GeminiModelGateway, ModelGateway, ModelGatewayError, OllamaModelGateway, OpenAIModelGateway
-from steward.answer.routing import ModelLocation, ModelRouter, ModelRoutingError
-from steward.answer.models import AnswerCitation, AnswerContext, AnswerResult
-from steward.answer.service import AnswerService
 
-__all__ = [
-    "AnswerCitation",
-    "AnswerContext",
-    "AnswerResult",
-    "AnswerService",
-    "ContextBuilder",
-    "CitationVerification",
-    "GeminiModelGateway",
-    "ModelGateway",
-    "ModelGatewayError",
-    "ModelLocation",
-    "ModelRouter",
-    "ModelRoutingError",
-    "OllamaModelGateway",
-    "OpenAIModelGateway",
-    "verify_citations",
-]
+__all__ = ["GeminiModelGateway", "ModelGateway", "ModelGatewayError", "OllamaModelGateway", "OpenAIModelGateway"]

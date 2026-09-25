@@ -11,6 +11,22 @@ from steward.extraction.models import ExtractionResult, SourceFragment
 from steward.sources.models import SourceStatus, SourceType
 
 
+def storable_text(value: str | None) -> str | None:
+    """Return text SQLite can store as UTF-8.
+
+    Some PDF text layers yield math symbols (for example U+1D465) as UTF-16
+    surrogate pairs. Rejoin valid pairs into the real character and replace
+    any unpaired half with U+FFFD, rather than failing the whole write.
+    """
+    if value is None:
+        return None
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return value.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return value
+
+
 class UnknownSourceError(ValueError):
     """Raised when fragment persistence targets a Source absent from SQLite."""
 
@@ -52,6 +68,12 @@ class SourceFragmentRepository:
             )
             stored_fragments: list[SourceFragment] = []
             for fragment in result.fragments:
+                fragment = replace(
+                    fragment,
+                    heading=storable_text(fragment.heading),
+                    text=storable_text(fragment.text) or "",
+                    location=storable_text(fragment.location) or "",
+                )
                 cursor = connection.execute(
                     """
                     INSERT INTO source_fragments (
@@ -147,13 +169,13 @@ class SourceFragmentRepository:
         )
         normalized_prefix = str(path_prefix.resolve()) if path_prefix is not None else None
         path_filter = " AND s.path LIKE ?" if normalized_prefix is not None else ""
-        parameters = (
-            query, SourceStatus.ACTIVE.value, *selected_source_types,
-            *( (normalized_prefix + "%",) if normalized_prefix is not None else () ), limit,
-        )
-        try:
+        def fetch(match_query: str) -> list[tuple[object, ...]]:
+            parameters = (
+                match_query, SourceStatus.ACTIVE.value, *selected_source_types,
+                *((normalized_prefix + "%",) if normalized_prefix is not None else ()), limit,
+            )
             with sqlite3.connect(self._database_path) as connection:
-                rows = connection.execute(
+                return connection.execute(
                     f"""
                     SELECT sf.id, sf.source_id, sf.heading, sf.ordinal, sf.text,
                            sf.location, bm25(source_fragments_fts) AS score,
@@ -171,8 +193,18 @@ class SourceFragmentRepository:
                     """,
                     parameters,
                 ).fetchall()
-        except sqlite3.OperationalError as error:
-            raise InvalidSearchQueryError(f"Invalid FTS5 search query: {query!r}") from error
+
+        try:
+            rows = fetch(query)
+        except sqlite3.OperationalError:
+            # Preserve valid FTS operators, but let ordinary filename-like or
+            # punctuation-heavy requests fall back to one literal FTS phrase.
+            # Escaping quotes keeps user input data, never FTS syntax.
+            literal_query = '"' + query.replace('"', '""') + '"'
+            try:
+                rows = fetch(literal_query)
+            except sqlite3.OperationalError as error:
+                raise InvalidSearchQueryError(f"Invalid FTS5 search query: {query!r}") from error
 
         return tuple(
             FragmentSearchResult(

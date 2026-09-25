@@ -120,4 +120,46 @@ def test_capture_file_retains_a_safe_version_of_the_original_name(tmp_path: Path
 
     result = InboxCaptureService(tmp_path / "inbox", SourceRepository(database_path)).capture_file(event, original)
 
-    assert result.source.path.name == "telegram-100-9-Steward-notes.md"
+    assert result.source.path.name == "Steward notes!.md"
+    assert result.source.path.parent.name == "inbox"
+
+
+def _event(message_id: str, text: str | None = None, attachment: str | None = None) -> IncomingEvent:
+    return IncomingEvent(
+        f"telegram:{message_id}", "telegram", "100", message_id, None, datetime(2026, 9, 8, 10, tzinfo=UTC),
+        text, attachments=(attachment,) if attachment else (),
+    )
+
+
+def test_readable_names_avoid_clashes_and_unsafe_characters(tmp_path: Path) -> None:
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    service = InboxCaptureService(tmp_path / "inbox", SourceRepository(database_path))
+    original = tmp_path / "download.pdf"; original.write_bytes(b"pdf")
+
+    first = service.capture_file(_event("1", attachment="tut05.pdf"), original)
+    second = service.capture_file(_event("2", attachment="tut05.pdf"), original)
+    unsafe = service.capture_file(_event("3", attachment='week 5: "AVX"?.PDF'), original)
+    note = service.capture_text(_event("4", "Compare OpenMP static/dynamic scheduling before the Friday tutorial please"))
+
+    assert first.source.path.name == "tut05.pdf"
+    assert second.source.path.name == "tut05 (2).pdf"
+    assert unsafe.source.path.name == "week 5 AVX.pdf"
+    assert note.source.path.name.endswith(" Compare OpenMP static dynamic scheduling before the Friday.md")
+    assert note.source.path.name[:10].count("-") == 2  # starts with the capture date
+
+
+def test_captures_made_before_readable_names_are_still_recognised(tmp_path: Path) -> None:
+    from steward.sources import Source, SourceType
+    from steward.sources.hashing import hash_file
+
+    database_path = tmp_path / "steward.db"; initialize_database(database_path)
+    sources = SourceRepository(database_path)
+    service = InboxCaptureService(tmp_path / "inbox", sources)
+    legacy = tmp_path / "inbox" / "telegram-100-5.md"
+    legacy.parent.mkdir(); legacy.write_text("old note", encoding="utf-8")
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    old = sources.add(Source(None, legacy.resolve(), hash_file(legacy), SourceType.MARKDOWN, 8, now, now, now))
+
+    again = service.capture_text(_event("5", "old note"))
+
+    assert again.duplicate is True and again.source.id == old.id

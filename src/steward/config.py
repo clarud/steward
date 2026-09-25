@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,10 @@ class Settings:
             raise ValueError(
                 "STEWARD_MODEL_PROVIDER must be one of "
                 f"{allowed_providers}; got {model_provider!r}."
+            )
+        if os.environ.get("STEWARD_PRODUCT_MODE"):
+            logging.getLogger(__name__).warning(
+                "STEWARD_PRODUCT_MODE is no longer used; remove it from your environment."
             )
 
         return cls(

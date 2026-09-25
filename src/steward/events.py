@@ -18,6 +18,7 @@ class IncomingEvent:
     timestamp: datetime
     text: str | None
     attachments: tuple[str, ...] = ()
+    reply_text: str | None = None
 
     def __post_init__(self) -> None:
         if not all((self.id, self.platform, self.chat_id, self.message_id)):

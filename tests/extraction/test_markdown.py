@@ -70,3 +70,17 @@ def test_extractor_rejects_unregistered_source(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="persisted Source"):
         MarkdownExtractor().extract(make_source(source_path, id=None))
+
+
+def test_long_sections_are_split_at_line_breaks_with_exact_line_ranges() -> None:
+    from steward.extraction.markdown import MAX_SECTION_CHARACTERS
+
+    line = "x" * 99
+    markdown = "# Log\n" + "\n".join([line] * 70) + "\n" + "y" * (MAX_SECTION_CHARACTERS + 10)
+
+    fragments = MarkdownExtractor().extract_text(source_id=1, markdown=markdown).fragments
+
+    assert all(len(fragment.text) <= MAX_SECTION_CHARACTERS for fragment in fragments)
+    assert fragments[0].location == "lines 1-30" and fragments[0].heading == "Log"
+    assert fragments[-1].location == "lines 72-72"  # an over-long single line keeps its line number
+    assert "".join(fragment.text for fragment in fragments).count("x") == 99 * 70

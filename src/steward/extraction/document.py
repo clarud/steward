@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import json
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -10,6 +11,8 @@ from subprocess import CalledProcessError, TimeoutExpired, run
 from tempfile import TemporaryDirectory
 from typing import Protocol
 from zipfile import BadZipFile
+from zipfile import ZipFile
+from xml.etree import ElementTree
 
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
@@ -102,6 +105,27 @@ class PlainTextExtractor:
         text = source.path.read_text(encoding="utf-8").strip()
         fragments = () if not text else (SourceFragment(None, source.id, None, 0, text, "entire file"),)
         return ExtractionResult(source.id, fragments)
+
+
+class CodeExtractor:
+    """Chunk source code by bounded line ranges while preserving exact locations."""
+
+    MAX_LINES = 120
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.CODE:
+            raise ValueError("CodeExtractor requires a code Source.")
+        lines = source.path.read_text(encoding="utf-8").splitlines()
+        fragments = []
+        for start in range(0, len(lines), self.MAX_LINES):
+            chunk = "\n".join(lines[start:start + self.MAX_LINES]).strip()
+            if not chunk:
+                continue
+            end = min(start + self.MAX_LINES, len(lines))
+            fragments.append(SourceFragment(None, source.id, None, len(fragments), chunk, f"lines {start + 1}-{end}"))
+        return ExtractionResult(source.id, tuple(fragments))
 
 
 class EmailExtractor:
@@ -254,6 +278,106 @@ class DocxExtractor:
         return ExtractionResult(source.id, tuple(fragments))
 
 
+class PptxExtractor:
+    """Extract visible slide text from an OOXML presentation without a model."""
+
+    _TEXT = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.PPTX:
+            raise ValueError("PptxExtractor requires a PPTX Source.")
+        try:
+            with ZipFile(source.path) as archive:
+                slides = sorted(
+                    (name for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml")),
+                    key=lambda name: int(name.rsplit("slide", 1)[1].removesuffix(".xml")),
+                )
+                fragments = []
+                for index, name in enumerate(slides, start=1):
+                    root = ElementTree.fromstring(archive.read(name))
+                    text = " ".join(part.text or "" for part in root.iter(self._TEXT)).strip()
+                    if text:
+                        fragments.append(SourceFragment(None, source.id, None, len(fragments), text, f"slide {index}"))
+        except (BadZipFile, OSError, ElementTree.ParseError, KeyError, ValueError) as error:
+            raise DocumentExtractionError(f"Could not read PPTX {source.path}.") from error
+        return ExtractionResult(source.id, tuple(fragments))
+
+
+class XlsxExtractor:
+    """Extract non-empty worksheet rows with sheet/cell-range provenance."""
+
+    _MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.XLSX:
+            raise ValueError("XlsxExtractor requires an XLSX Source.")
+        try:
+            with ZipFile(source.path) as archive:
+                shared = self._shared_strings(archive)
+                workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+                relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+                targets = {item.attrib.get("Id"): item.attrib.get("Target") for item in relationships}
+                fragments = []
+                for sheet in workbook.findall(f".//{{{self._MAIN}}}sheet"):
+                    relationship_id = sheet.attrib.get(f"{{{self._REL}}}id")
+                    target = targets.get(relationship_id)
+                    if not target:
+                        continue
+                    worksheet = ElementTree.fromstring(archive.read("xl/" + target.lstrip("/")))
+                    sheet_name = sheet.attrib.get("name", "Sheet")
+                    for row in worksheet.findall(f".//{{{self._MAIN}}}row"):
+                        values = []
+                        cells = row.findall(f"{{{self._MAIN}}}c")
+                        for cell in cells:
+                            value = cell.find(f"{{{self._MAIN}}}v")
+                            if value is None or value.text is None:
+                                continue
+                            raw = value.text
+                            values.append(shared[int(raw)] if cell.attrib.get("t") == "s" else raw)
+                        if values:
+                            row_number = row.attrib.get("r", "?")
+                            fragments.append(SourceFragment(None, source.id, sheet_name, len(fragments), " | ".join(values), f"{sheet_name}!row {row_number}"))
+        except (BadZipFile, OSError, ElementTree.ParseError, KeyError, ValueError, IndexError) as error:
+            raise DocumentExtractionError(f"Could not read XLSX {source.path}.") from error
+        return ExtractionResult(source.id, tuple(fragments))
+
+    def _shared_strings(self, archive: ZipFile) -> list[str]:
+        try:
+            root = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+        except KeyError:
+            return []
+        return ["".join(part.text or "" for part in item.iter(f"{{{self._MAIN}}}t")) for item in root.findall(f"{{{self._MAIN}}}si")]
+
+
+class NotebookExtractor:
+    """Extract readable Jupyter markdown and code cells with cell provenance."""
+
+    def extract(self, source: Source) -> ExtractionResult:
+        if source.id is None:
+            raise ValueError("Only a persisted Source can be extracted.")
+        if source.source_type is not SourceType.NOTEBOOK:
+            raise ValueError("NotebookExtractor requires an .ipynb Source.")
+        try:
+            notebook = json.loads(source.path.read_text(encoding="utf-8"))
+            cells = notebook["cells"]
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise DocumentExtractionError(f"Could not read notebook {source.path}.") from error
+        fragments = []
+        for cell_number, cell in enumerate(cells, start=1):
+            if not isinstance(cell, dict) or cell.get("cell_type") not in {"markdown", "code"}:
+                continue
+            raw = cell.get("source", [])
+            text = "".join(raw) if isinstance(raw, list) else raw if isinstance(raw, str) else ""
+            if text.strip():
+                fragments.append(SourceFragment(None, source.id, cell.get("cell_type"), len(fragments), text.strip(), f"cell {cell_number}"))
+        return ExtractionResult(source.id, tuple(fragments))
+
+
 class HtmlExtractor:
     """Extract visible HTML text into heading-delimited fragments."""
 
@@ -316,8 +440,12 @@ class ExtractionService:
             SourceType.PLAIN_TEXT: PlainTextExtractor(),
             SourceType.PDF: PdfExtractor(),
             SourceType.DOCX: DocxExtractor(),
+            SourceType.PPTX: PptxExtractor(),
+            SourceType.XLSX: XlsxExtractor(),
+            SourceType.NOTEBOOK: NotebookExtractor(),
             SourceType.HTML: HtmlExtractor(),
             SourceType.IMAGE: ImageOcrExtractor(),
+            SourceType.CODE: CodeExtractor(),
         }
 
     def extract_and_store(self, source: Source) -> ExtractionResult | None:

@@ -1,11 +1,17 @@
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
+import sqlite3
 
 import pytest
+import steward.telegram.adapter as telegram_adapter
 
 from steward.events import IncomingEvent
+from steward.presentation import PresentedReply, ReplyAction
+from steward.reviews import MessageReferenceRepository, ReviewContextRepository
 from steward.storage import initialize_database
 from steward.telegram import (
+    TelegramCallbackRepository,
     TelegramAdapter,
     TelegramUpdateDeliveryRepository,
     normalize_telegram_update,
@@ -25,7 +31,8 @@ class FakeMessage:
         self.photo = ()
         self.replies: list[str] = []
 
-    async def reply_text(self, text: str) -> None:
+    async def reply_text(self, text: str, **kwargs) -> None:
+        del kwargs
         self.replies.append(text)
 
 
@@ -33,6 +40,46 @@ class FakeUpdate:
     def __init__(self, message: FakeMessage) -> None:
         self.update_id = 42
         self.effective_message = message
+
+
+def test_explicit_original_reply_sends_bytes_without_a_local_path():
+    from steward.sources.export import OriginalDocument
+
+    class Handler:
+        def handle(self, event):
+            assert event.text == "/send_source 1"
+            return PresentedReply("Original requested.", document=OriginalDocument("notes.pdf", b"pdf data"))
+
+    class Message(FakeMessage):
+        async def reply_document(self, **kwargs):
+            self.sent = kwargs
+
+    message = Message(text="/send_source 1")
+    asyncio.run(TelegramAdapter(Handler()).handle_update(FakeUpdate(message), None))
+    assert message.sent == {"document": b"pdf data", "filename": "notes.pdf"}
+
+
+class FakeCallbackMessage(FakeMessage):
+    async def reply_text(self, text: str, **kwargs) -> None:
+        del kwargs
+        self.replies.append(text)
+
+
+class FakeCallbackQuery:
+    def __init__(self, message: FakeCallbackMessage, data: str) -> None:
+        self.id = "callback-42"
+        self.message = message
+        self.data = data
+        self.answered = False
+
+    async def answer(self) -> None:
+        self.answered = True
+
+
+class FakeCallbackUpdate(FakeUpdate):
+    def __init__(self, message: FakeCallbackMessage, data: str) -> None:
+        super().__init__(message)
+        self.callback_query = FakeCallbackQuery(message, data)
 
 
 class FakeEventHandler:
@@ -56,6 +103,17 @@ class FailingThenWorkingHandler(FakeEventHandler):
         return super().handle(event)
 
 
+class FakeBot:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.sent: list[tuple[str, str]] = []
+        self._fail = fail
+
+    async def send_message(self, *, chat_id: str, text: str) -> None:
+        if self._fail:
+            raise RuntimeError("Telegram unavailable")
+        self.sent.append((chat_id, text))
+
+
 def test_normalize_telegram_update_preserves_reply_relationship() -> None:
     original = FakeMessage()
     update = FakeUpdate(FakeMessage(reply_to_message=original))
@@ -70,6 +128,7 @@ def test_normalize_telegram_update_preserves_reply_relationship() -> None:
         reply_to_id="7",
         timestamp=datetime(2026, 9, 7, tzinfo=UTC),
         text="What is a TLB?",
+        reply_text="What is a TLB?",
     )
 
 
@@ -82,6 +141,334 @@ def test_adapter_delegates_normalized_event_and_replies() -> None:
 
     assert handler.events[0].id == "telegram:42"
     assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_reply_to_older_source_card_restores_exact_durable_reference(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"source one", "source two"}:
+                source_id = 1 if event.text.endswith("one") else 2
+                contexts.set("telegram", "100", "source", source_id)
+                return PresentedReply(f"Source {source_id}", reference=("source", source_id))
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 100
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="source one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="source two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+    assert contexts.get("telegram", "100").identifier == 2
+
+    replied_card = type("Replied", (), {"message_id": 101, "text": "Source 1", "caption": None})()
+    reply = Message(text="give me the content", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=1"]
+    assert contexts.get("telegram", "100").identifier == 1
+    assert references.get("telegram", "other-chat", "101") is None
+
+
+def test_reply_to_older_organization_result_restores_exact_workspace_reference(tmp_path) -> None:
+    """An older completed-move card selects its workspace, not the newest card."""
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"move one", "move two"}:
+                workspace_id = 1 if event.text.endswith("one") else 2
+                return PresentedReply(
+                    f"Moved source to workspace {workspace_id}",
+                    reference=("workspace", workspace_id),
+                )
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 400
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="move one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="move two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+
+    replied_card = type("Replied", (), {"message_id": 401, "text": "Moved source to workspace 1", "caption": None})()
+    reply = Message(text="open that workspace", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    asyncio.run(TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    ).handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=workspace:1"]
+    assert contexts.get("telegram", "100").kind == "workspace"
+    assert contexts.get("telegram", "100").identifier == 1
+
+
+def test_reply_to_older_research_card_restores_exact_token_after_restart(tmp_path) -> None:
+    """A reply selects the displayed ephemeral research result, not the newest one."""
+
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"research one", "research two"}:
+                token = "research-one" if event.text.endswith("one") else "research-two"
+                return PresentedReply(f"Research {token}", reference=("research", token))
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 300
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="research one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="research two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+
+    replied_card = type("Replied", (), {"message_id": 301, "text": "Research research-one", "caption": None})()
+    reply = Message(text="keep that research", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=research:research-one"]
+    selected = contexts.get("telegram", "100")
+    assert selected is not None and (selected.kind, selected.identifier) == ("research", "research-one")
+
+
+def test_reference_write_failure_after_send_does_not_repeat_visible_reply(tmp_path) -> None:
+    class BrokenReferences:
+        def set(self, *args):
+            raise sqlite3.OperationalError("C:/private/steward.db locked")
+
+    class Message(FakeMessage):
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            return type("Sent", (), {"message_id": 101})()
+
+    class Handler:
+        def handle(self, event):
+            return PresentedReply("Source card", reference=("source", 1))
+
+    message = Message()
+    asyncio.run(TelegramAdapter(Handler(), message_references=BrokenReferences()).handle_update(FakeUpdate(message), None))
+
+    assert len(message.replies) == 1
+
+
+def test_adapter_sends_a_long_response_in_telegram_sized_chunks() -> None:
+    class LongHandler(FakeEventHandler):
+        def handle(self, event: IncomingEvent) -> str:
+            self.events.append(event)
+            return "evidence " * 700
+
+    message = FakeMessage()
+    asyncio.run(TelegramAdapter(LongHandler()).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert len(message.replies) == 2
+    assert all(len(reply) <= 3_800 for reply in message.replies)
+    assert "".join(message.replies) == "evidence " * 700
+
+
+@pytest.mark.parametrize(
+    ("command", "kind"),
+    [
+        ("/intake_accept 9", "intake"),
+    ],
+)
+def test_adapter_remembers_a_direct_review_card_for_a_safe_follow_up(
+    tmp_path, command, kind
+) -> None:
+    class ProposalHandler(FakeEventHandler):
+        def handle(self, event: IncomingEvent) -> PresentedReply:
+            self.events.append(event)
+            return PresentedReply(
+                "No task has been saved yet.",
+                (ReplyAction("Accept", command),),
+                title="Save task: Compare OpenMP schedules",
+            )
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    message = FakeMessage()
+
+    asyncio.run(TelegramAdapter(ProposalHandler(), review_contexts=contexts).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    remembered = contexts.get("telegram", "100")
+    assert remembered is not None
+    assert (remembered.kind, remembered.identifier) == (kind, 9)
+
+
+def test_reply_to_older_review_card_restores_that_exact_proposal_after_restart(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+
+    class Handler:
+        def handle(self, event):
+            if event.text in {"review one", "review two"}:
+                proposal_id = 1 if event.text.endswith("one") else 2
+                return PresentedReply(
+                    f"Review {proposal_id}",
+                    (ReplyAction("Save", f"/intake_accept {proposal_id}"),
+                     ReplyAction("Discard", f"/intake_discard {proposal_id}")),
+                    reference=("source", 99),
+                )
+            selected = contexts.get("telegram", "100")
+            return f"selected={selected.kind}:{selected.identifier}"
+
+    class Message(FakeMessage):
+        next_outbound_id = 200
+
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            type(self).next_outbound_id += 1
+            return type("Sent", (), {"message_id": type(self).next_outbound_id})()
+
+    first = Message(text="review one")
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(first), None))
+    second = Message(text="review two")
+    second_update = FakeUpdate(second); second_update.update_id = 43
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(second_update, None))
+    assert contexts.get("telegram", "100").identifier == 2
+
+    replied_card = type("Replied", (), {"message_id": 201, "text": "Review 1", "caption": None})()
+    reply = Message(text="yes", reply_to_message=replied_card)
+    reply_update = FakeUpdate(reply); reply_update.update_id = 44
+    restarted = TelegramAdapter(
+        Handler(),
+        review_contexts=ReviewContextRepository(database),
+        message_references=MessageReferenceRepository(database),
+    )
+    asyncio.run(restarted.handle_update(reply_update, None))
+
+    assert reply.replies == ["selected=intake:1"]
+
+
+def test_review_list_does_not_select_its_first_item_or_create_a_message_reference(tmp_path) -> None:
+    database = tmp_path / "steward.db"; initialize_database(database)
+    contexts = ReviewContextRepository(database)
+    references = MessageReferenceRepository(database)
+    contexts.set("telegram", "100", "source", 7)
+
+    class Handler:
+        def handle(self, event):
+            return PresentedReply(
+                "Choose a review.",
+                (ReplyAction("Review 1", "/review action 9"),),
+                title="Pending",
+            )
+
+    class Message(FakeMessage):
+        async def reply_text(self, text, **kwargs):
+            del kwargs
+            self.replies.append(text)
+            return type("Sent", (), {"message_id": 301})()
+
+    asyncio.run(TelegramAdapter(Handler(), review_contexts=contexts, message_references=references).handle_update(FakeUpdate(Message()), None))
+
+    assert (contexts.get("telegram", "100").kind, contexts.get("telegram", "100").identifier) == ("source", 7)
+    assert references.get("telegram", "100", "301") is None
+
+
+def test_adapter_resolves_a_chat_scoped_callback_to_a_local_command(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    callbacks = TelegramCallbackRepository(database_path)
+    token = callbacks.create("100", "/inbox 2").token
+    message = FakeCallbackMessage()
+    update = FakeCallbackUpdate(message, token)
+    handler = FakeEventHandler()
+
+    asyncio.run(
+        TelegramAdapter(handler, callback_repository=callbacks).handle_callback(update, None)  # type: ignore[arg-type]
+    )
+
+    assert update.callback_query.answered is True
+    assert handler.events[0].text == "/inbox 2"
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_adapter_rejects_an_unknown_or_expired_callback(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    message = FakeCallbackMessage()
+    update = FakeCallbackUpdate(message, "not-a-local-token")
+
+    asyncio.run(
+        TelegramAdapter(
+            FakeEventHandler(), callback_repository=TelegramCallbackRepository(database_path)
+        ).handle_callback(update, None)  # type: ignore[arg-type]
+    )
+
+    assert message.replies == ["This Steward action is invalid or has expired. Send /help."]
+
+
+def test_adapter_ignores_a_delivered_duplicate_callback(tmp_path) -> None:
+    database_path = tmp_path / "steward.db"
+    initialize_database(database_path)
+    callbacks = TelegramCallbackRepository(database_path)
+    token = callbacks.create("100", "/approve_action 1").token
+    deliveries = TelegramUpdateDeliveryRepository(database_path)
+    handler = FakeEventHandler()
+    adapter = TelegramAdapter(
+        handler, callback_repository=callbacks, delivery_repository=deliveries
+    )
+
+    first_message = FakeCallbackMessage()
+    asyncio.run(adapter.handle_callback(FakeCallbackUpdate(first_message, token), None))  # type: ignore[arg-type]
+    duplicate_message = FakeCallbackMessage()
+    asyncio.run(adapter.handle_callback(FakeCallbackUpdate(duplicate_message, token), None))  # type: ignore[arg-type]
+
+    assert [event.text for event in handler.events] == ["/approve_action 1"]
+    assert first_message.replies == ["A TLB caches address translations. [F1]"]
+    assert duplicate_message.replies == []
 
 
 def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
@@ -100,21 +487,6 @@ def test_adapter_ignores_a_delivered_duplicate_update(tmp_path) -> None:
     assert duplicate_message.replies == []
 
 
-def test_adapter_defers_an_immediate_retry_after_a_failure(tmp_path) -> None:
-    database_path = tmp_path / "steward.db"
-    initialize_database(database_path)
-    handler = FailingThenWorkingHandler()
-    adapter = TelegramAdapter(
-        handler, delivery_repository=TelegramUpdateDeliveryRepository(database_path)
-    )
-
-    with pytest.raises(RuntimeError, match="temporary application failure"):
-        asyncio.run(adapter.handle_update(FakeUpdate(FakeMessage()), None))  # type: ignore[arg-type]
-    retried_message = FakeMessage()
-    asyncio.run(adapter.handle_update(FakeUpdate(retried_message), None))  # type: ignore[arg-type]
-
-    assert handler.events == []
-    assert retried_message.replies == []
 
 
 def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
@@ -133,7 +505,48 @@ def test_adapter_rejects_an_unauthorized_chat_without_calling_steward() -> None:
 
 def test_polling_rejects_empty_token() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
-        run_telegram_polling("   ", FakeEventHandler(), FakeEventHandler())
+        run_telegram_polling("   ", FakeEventHandler())
+
+
+def test_polling_registers_a_fallback_for_unknown_commands(monkeypatch) -> None:
+    class FakeApplication:
+        def __init__(self) -> None: self.handlers: list[object] = []
+        def add_handler(self, handler: object) -> None: self.handlers.append(handler)
+        def run_polling(self) -> None: pass
+
+    application = FakeApplication()
+
+    class FakeBuilder:
+        def post_init(self, callback):
+            application.post_init = callback
+            return self
+        def post_stop(self, callback):
+            application.post_stop = callback
+            return self
+        def token(self, _token: str): return self
+        def build(self) -> FakeApplication: return application
+
+    monkeypatch.setattr(telegram_adapter, "ApplicationBuilder", lambda: FakeBuilder())
+    monkeypatch.setattr(telegram_adapter, "CommandHandler", lambda command, _callback: ("command", command))
+    monkeypatch.setattr(telegram_adapter, "MessageHandler", lambda selected_filter, _callback: ("message", str(selected_filter)))
+    monkeypatch.setattr(telegram_adapter, "CallbackQueryHandler", lambda _callback: ("callback",))
+
+    run_telegram_polling("token", FakeEventHandler())
+
+    intake_positions = [
+        index for index, handler in enumerate(application.handlers)
+        if handler == ("command", "intake_accept")
+    ]
+    fallback_positions = [
+        index for index, handler in enumerate(application.handlers)
+        if handler == ("message", str(telegram_adapter.filters.COMMAND))
+    ]
+    assert intake_positions and fallback_positions
+    assert intake_positions[0] < fallback_positions[0]
+    for command in ("home", "find", "ask", "note", "browse", "sources", "send_source", "inbox"):
+        assert ("command", command) in application.handlers
+    for removed in ("save", "search", "hybrid_search", "moves", "privacy", "agent", "codex_handoff", "drive_search"):
+        assert ("command", removed) not in application.handlers
 
 
 def test_document_over_cloud_limit_is_not_downloaded() -> None:
@@ -144,7 +557,45 @@ def test_document_over_cloud_limit_is_not_downloaded() -> None:
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_document(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]
-    assert "/drive_import DRIVE_FILE_ID" in message.replies[0]
+    assert "Inbox folder on your computer" in message.replies[0]
+
+
+def test_adapter_ignores_a_delivered_duplicate_document_update(tmp_path) -> None:
+    class Download:
+        async def download_to_drive(self, path: Path) -> None:
+            path.write_text("# OpenMP", encoding="utf-8")
+
+    class Document:
+        file_size = 32
+        file_name = "notes.md"
+
+        async def get_file(self) -> Download:
+            return Download()
+
+    class FileHandler(FakeEventHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.files: list[tuple[IncomingEvent, str]] = []
+
+        def handle_file(self, event: IncomingEvent, path: Path) -> str:
+            self.files.append((event, path.read_text(encoding="utf-8")))
+            return "Staged document"
+
+    database = tmp_path / "steward.db"
+    initialize_database(database)
+    handler = FileHandler()
+    adapter = TelegramAdapter(handler, delivery_repository=TelegramUpdateDeliveryRepository(database))
+    first_message = FakeMessage(); first_message.document = Document()
+    duplicate_message = FakeMessage(); duplicate_message.document = Document()
+
+    asyncio.run(adapter.handle_document(FakeUpdate(first_message), None))  # type: ignore[arg-type]
+    asyncio.run(adapter.handle_document(FakeUpdate(duplicate_message), None))  # type: ignore[arg-type]
+
+    assert len(handler.files) == 1
+    assert handler.files[0][0].id == "telegram:42"
+    assert handler.files[0][1] == "# OpenMP"
+    assert first_message.replies == ["Staged document"]
+    assert duplicate_message.replies == []
 
 
 def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> None:
@@ -157,6 +608,8 @@ def test_normalize_telegram_update_assigns_a_safe_photo_attachment_name() -> Non
     assert event.attachments == ("telegram-photo-7.jpg",)
 
 
+
+
 def test_photo_over_cloud_limit_is_not_downloaded() -> None:
     message = FakeMessage()
     message.caption = "/save"
@@ -165,3 +618,59 @@ def test_photo_over_cloud_limit_is_not_downloaded() -> None:
     asyncio.run(TelegramAdapter(FakeEventHandler()).handle_photo(FakeUpdate(message), None))  # type: ignore[arg-type]
 
     assert "over 20 MB" in message.replies[0]
+
+
+class TypingMessage(FakeMessage):
+    def __init__(self, *, text: str) -> None:
+        super().__init__(text=text)
+        self.actions: list[str] = []
+
+    async def reply_chat_action(self, action, **kwargs) -> None:
+        del kwargs
+        self.actions.append(str(action))
+
+
+def test_the_chat_shows_typing_while_a_request_runs() -> None:
+    message = TypingMessage(text="/sources")
+
+    asyncio.run(TelegramAdapter(FakeEventHandler()).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert message.actions and "typing" in message.actions[0]
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_a_search_during_start_up_gets_one_notice_first() -> None:
+    adapter = TelegramAdapter(FakeEventHandler(), warming_up=lambda: True)
+    first, second, browse = TypingMessage(text="/find tlb"), TypingMessage(text="/ask what is a tlb"), TypingMessage(text="/sources")
+
+    for message in (first, second, browse):
+        asyncio.run(adapter.handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert first.replies[0] == telegram_adapter.STARTING_NOTICE and len(first.replies) == 2
+    assert second.replies == ["A TLB caches address translations. [F1]"]  # told once per chat
+    assert browse.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_no_notice_once_search_is_ready() -> None:
+    message = TypingMessage(text="/find tlb")
+
+    asyncio.run(TelegramAdapter(FakeEventHandler(), warming_up=lambda: False).handle_update(FakeUpdate(message), None))  # type: ignore[arg-type]
+
+    assert message.replies == ["A TLB caches address translations. [F1]"]
+
+
+def test_the_first_background_rescan_waits_for_its_delay(monkeypatch) -> None:
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(telegram_adapter.asyncio, "sleep", fake_sleep)
+    runs: list[int] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(telegram_adapter.run_periodically(FakeBot(), lambda: runs.append(1) or [], 900, frozenset(), 60))
+
+    assert sleeps == [60, 900] and runs == [1]

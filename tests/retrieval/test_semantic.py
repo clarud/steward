@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from steward.extraction import MarkdownExtractor, SourceFragmentRepository
 from steward.retrieval import (
     HybridRetriever,
@@ -43,10 +45,12 @@ def _build_indexed_vault(tmp_path: Path) -> tuple[
     initialize_database(database_path)
     vault = tmp_path / "vault"
     vault.mkdir()
-    (vault / "virtual-memory.md").write_text(
+    course = vault / "course"; course.mkdir()
+    other = vault / "other"; other.mkdir()
+    (course / "virtual-memory.md").write_text(
         "# TLB\nA TLB caches recently used address translations.", encoding="utf-8"
     )
-    (vault / "scheduler.md").write_text(
+    (other / "scheduler.md").write_text(
         "# Scheduling\nA scheduler runs queued jobs.", encoding="utf-8"
     )
     source_repository = SourceRepository(database_path)
@@ -147,6 +151,24 @@ def test_semantic_index_clear_removes_only_rebuildable_vectors(tmp_path: Path) -
     assert fragment_repository.list_for_source(1)
 
 
+def test_semantic_index_rebuild_recovers_from_corrupt_derived_vectors(tmp_path: Path) -> None:
+    database_path, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE source_fragment_embeddings SET vector_json = 'not-json'")
+
+    with pytest.raises(ValueError):
+        SemanticSearchService(source_repository, semantic_index).search("translation cache")
+
+    rebuilt = SourceService(
+        source_repository, fragment_repository, MarkdownExtractor(), semantic_index=semantic_index
+    ).rebuild_semantic_index()
+
+    assert rebuilt == 2
+    assert SemanticSearchService(source_repository, semantic_index).search("translation cache")[0].source.path.name == "virtual-memory.md"
+    assert len(source_repository.list_active()) == 2
+    assert sum(len(fragment_repository.list_for_source(source.id or 0)) for source in source_repository.list_active()) == 2
+
+
 def test_semantic_search_excludes_fragments_of_missing_originals(tmp_path: Path) -> None:
     _, source_repository, _, semantic_index = _build_indexed_vault(tmp_path)
     virtual_memory = next(
@@ -174,3 +196,82 @@ def test_semantic_search_can_filter_by_source_type(tmp_path: Path) -> None:
     )
 
     assert all(hit.source.id != virtual_memory.id for hit in hits)
+
+
+def test_semantic_and_hybrid_search_can_filter_to_an_authorized_path_prefix(tmp_path: Path) -> None:
+    _, source_repository, fragment_repository, semantic_index = _build_indexed_vault(tmp_path)
+    semantic = SemanticSearchService(source_repository, semantic_index)
+    hybrid = HybridRetriever(LexicalSearchService(source_repository, fragment_repository), semantic)
+
+    course = tmp_path / "vault" / "course"
+    semantic_hits = semantic.search("translation cache", path_prefix=course)
+    hybrid_hits = hybrid.search("translation cache", path_prefix=course)
+
+    assert {hit.source.path.parent.name for hit in semantic_hits} == {"course"}
+    assert {hit.source.path.parent.name for hit in hybrid_hits} == {"course"}
+
+
+def test_background_provider_loads_in_a_thread_and_waits_for_it() -> None:
+    import threading
+
+    from steward.retrieval.semantic import BackgroundEmbeddingProvider
+
+    release = threading.Event()
+
+    class Slow:
+        model_name = "slow"
+
+        def embed_documents(self, texts):
+            return tuple((1.0, 0.0) for _ in texts)
+
+        def embed_query(self, query):
+            return (1.0, 0.0)
+
+    def load():
+        release.wait(5)
+        return Slow()
+
+    provider = BackgroundEmbeddingProvider(load, model_name="slow")
+    assert not provider.ready and provider.model_name == "slow"
+    release.set()
+    assert provider.embed_query("tlb") == (1.0, 0.0) and provider.ready
+
+
+def test_background_provider_that_fails_to_load_raises_so_search_falls_back() -> None:
+    import pytest
+
+    from steward.retrieval.semantic import BackgroundEmbeddingProvider
+
+    def load():
+        raise OSError("model files missing")
+
+    provider = BackgroundEmbeddingProvider(load)
+    with pytest.raises(RuntimeError):
+        provider.embed_query("tlb")
+    assert provider.ready
+
+
+def test_hybrid_search_keeps_keyword_results_when_meaning_search_is_unavailable() -> None:
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from steward.extraction import SourceFragment
+    from steward.retrieval import HybridRetriever
+    from steward.retrieval.lexical import LexicalSearchHit
+    from steward.sources import Source, SourceType
+
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    source = Source(1, Path("C:/notes/tlb.md"), "a" * 64, SourceType.MARKDOWN, 1, now, now, now)
+    hit = LexicalSearchHit(source, SourceFragment(10, 1, None, 0, "A TLB caches translations.", "lines 1-1"), -1.0)
+
+    class Lexical:
+        def search(self, query, **options):
+            return (hit,)
+
+    class Unavailable:
+        def search(self, query, **options):
+            raise RuntimeError("The local embedding model is unavailable.")
+
+    results = HybridRetriever(Lexical(), Unavailable()).search("tlb")  # type: ignore[arg-type]
+
+    assert [item.fragment.id for item in results] == [10]

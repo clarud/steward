@@ -1,1256 +1,275 @@
 # Steward Developer Guide
 
-This guide describes the implementation currently in the repository: Phases 0
-through 20. Steward can register local Markdown, plain-text, DOCX, HTML, images with optional local OCR, and native-text PDF files, extract structured
-fragments, retrieve them using lexical, semantic, or hybrid search, and
-generate grounded answers from retrieved fragments. A minimal LangGraph
-workflow orchestrates those existing services. A Telegram adapter can deliver
-isolated text questions to that application flow.
+How the current implementation works, subsystem by subsystem. For the big
+picture read [architecture.md](architecture.md); for the rules every change
+must keep, read [invariants.md](invariants.md) and [AGENTS.md](../AGENTS.md).
 
 ## Design principles
 
-Steward's current implementation follows five important rules.
-
-1. Original files are authoritative. Markdown files stay in the user's vault;
-   SQLite contains operational metadata and rebuildable derived data.
-2. Derived results retain provenance. A retrieval result identifies its
-   `SourceFragment`, which identifies its original `Source` and path.
-3. Deterministic code performs filesystem and database work. No model decides
-   whether a row is written, how a file is read, or what is deleted.
-4. Infrastructure is hidden behind small interfaces. For example, services
-   depend on `SemanticIndex`, not on a particular vector database.
-5. Each layer can be tested without a model, network, Telegram, or LangGraph.
-
-## Repository map
-
-```text
-src/steward/
-├── config.py                 application settings from environment variables
-├── logging.py                logging configuration
-├── cli.py                    command-line adapter and composition root
-├── storage/
-│   └── database.py           SQLite initialization and ordered migrations
-├── sources/
-│   ├── models.py             Source, SourceType, SourceStatus
-│   ├── discovery.py          recursive Markdown path discovery
-│   ├── hashing.py            SHA-256 file hashing
-│   ├── repository.py         SQLite persistence for Sources
-│   ├── scanning.py           source synchronization logic
-│   └── service.py            source scan plus derived-index coordination
-├── extraction/
-│   ├── models.py             SourceFragment and ExtractionResult
-│   ├── markdown.py           heading-aware Markdown extraction
-│   └── repository.py         fragment and FTS5 persistence
-├── retrieval/
-    ├── lexical.py            FTS5/BM25 retrieval service
-    ├── semantic.py           embeddings and local semantic index
-    └── hybrid.py             lexical/semantic rank fusion
-└── answer/
-    ├── models.py             answer, citation, and context value objects
-    ├── context.py            bounded evidence prompt construction
-    ├── gateway.py            model-provider boundary and OpenAI gateway
-    └── service.py            retrieve → context → grounded answer workflow
-```
-
-`tests/` mirrors these areas. Unit tests use temporary databases and vaults,
-so they never alter a user's actual vault.
-
-## Application configuration and startup
-
-`Settings` in `config.py` is an immutable dataclass. `Settings.from_environment()`
-reads optional environment variables such as `STEWARD_DATA_DIR` and creates a
-single settings object for a command invocation.
-
-The default operational data directory is `.steward/`, which can contain:
-
-```text
-.steward/
-└── steward.db
-```
-
-The CLI is an adapter, not a domain service. It parses command-line arguments,
-constructs repositories and services, calls a use case, and prints results.
-It does not contain scanning, extraction, or search rules itself. This makes
-the same services reusable from a future Telegram adapter or LangGraph node.
-
-## Source registry
-
-### Source model
-
-A `Source` represents an original file known to Steward. Its important fields
-are:
-
-```text
-id             SQLite identity; assigned only after persistence
-path           resolved absolute location of the original file
-content_hash   SHA-256 fingerprint of its current bytes
-source_type    currently Markdown
-size_bytes     current file size
-modified_at    file timestamp reported by the filesystem
-first_seen_at  when Steward first registered it
-last_seen_at   when Steward most recently observed it
-status         active or missing
-```
-
-The filename is useful location metadata but is not source identity by itself.
-Two files can have different paths and identical hashes, which means they have
-duplicate content but may still be intentionally kept in two locations.
-
-### Discovery and hashing
-
-`discover_markdown_files(root)` validates the supplied root, recursively uses
-`Path.rglob("*")`, keeps files with the `.md` suffix, resolves them to absolute
-paths, and returns them in deterministic sorted order.
-
-`sha256_file(path)` streams a file in 64 KiB chunks into `hashlib.sha256()`.
-Chunking avoids loading an entire large file into memory. The hexadecimal
-digest is a 64-character representation of the file's SHA-256 hash.
-
-### Scan lifecycle
-
-`scan_markdown_root(root, source_repository)` compares the observed filesystem
-against active rows in `sources`.
-
-```text
-vault file
-  ↓ discover path
-filesystem metadata + SHA-256
-  ↓
-existing Source at path?
-  ├── no  → add new active Source
-  ├── yes and metadata/hash changed → replace its current metadata
-  └── yes and unchanged → refresh last_seen_at
-  ↓
-active database Source absent from discovery → mark missing
-```
-
-The operation is idempotent: scanning unchanged files again does not create
-additional `Source` rows. This matters because scans will eventually happen
-after captures, scheduled maintenance, and restarts.
-
-`SourceRepository` is the boundary that owns SQL for this table. Code outside
-the repository works with `Source` objects rather than SQL row tuples.
-
-## Markdown extraction
-
-### Fragments and provenance
-
-`MarkdownExtractor` turns one persisted Markdown `Source` into an
-`ExtractionResult` containing ordered `SourceFragment` objects.
-
-A fragment stores:
-
-```text
-id         assigned when stored
-source_id  the original Source it came from
-heading    Markdown heading, if any
-ordinal    zero-based order inside the source
-text       extracted Markdown text
-location   human-readable line range, for example "lines 9-12"
-```
-
-The extractor treats headings as structural boundaries. For example:
-
-```markdown
-# Virtual Memory
-Introduction text.
-
-## TLB
-A TLB caches translations.
-```
-
-becomes fragments approximately like:
-
-```text
-ordinal 0 | heading "Virtual Memory" | lines 1-3
-ordinal 1 | heading "TLB"            | lines 4-5
-```
-
-This is deliberately different from fixed-length chunks. A heading and line
-range give a future answer a useful, inspectable citation.
-
-### Replacement rather than append
-
-`SourceFragmentRepository.replace_for_source(result)` deletes every old
-derived fragment for one source, then inserts its current extraction result.
-It also rebuilds that source's FTS5 entries in the same database transaction.
-
-Fragments are derived data. Replacing them is safer than attempting a fragile
-line-by-line update algorithm, because the original Markdown remains available
-to rebuild from. It also prevents stale fragments from being returned after a
-file has been edited.
-
-## SQLite and migrations
-
-`initialize_database(database_path)` creates the database directory and keeps
-a `schema_migrations` ledger. Each migration has an integer version. On every
-startup, Steward checks the ledger and runs only migrations that have not
-already been recorded.
-
-Current schema progression:
-
-```text
-1  schema_migrations
-2  sources
-3  source_fragments
-4  source_fragments_fts (SQLite FTS5 virtual table)
-5  source_fragment_embeddings
-```
-
-This means an existing Phase 3 database is upgraded by applying only migration
-5. It is not recreated, and original source metadata is not discarded.
-
-SQLite is appropriate at this stage because it is local, transactional,
-inspectable with standard tools, and needs no separately operated server.
-
-## Lexical retrieval
-
-### FTS5
-
-SQLite FTS5 is a full-text search extension. It builds an inverted index:
-
-```text
-term "translation"
-  → fragment 7, fragment 19, fragment 31
-```
-
-That is much faster than reading every Markdown file during each query.
-
-`SourceFragmentRepository.search(query)` executes a parameterized `MATCH ?`
-query against the FTS5 table. It joins matching rows back to
-`source_fragments` and returns a BM25 score.
-
-`LexicalSearchService` adds the original `Source`, yielding:
-
-```text
-LexicalSearchHit
-├── source
-├── fragment
-└── score
-```
-
-FTS5 BM25 scores rank exact token matches. With SQLite's FTS5 implementation,
-lower (often more-negative) BM25 scores are generally better, so results are
-ordered ascending in SQL.
-
-Lexical retrieval is strong for exact names, acronyms, filenames, and rare
-technical words. It is weaker for paraphrases because it does not understand
-that "translation cache" might mean "TLB".
-
-## Semantic retrieval
-
-### Embeddings
-
-An embedding model maps text to a vector of numbers. The selected local model,
-`sentence-transformers/all-MiniLM-L6-v2`, produces 384-dimensional vectors.
-Texts with similar learned meaning generally point in similar vector
-directions.
-
-The application uses two small interfaces:
-
-```python
-class EmbeddingProvider(Protocol):
-    def embed_documents(self, texts): ...
-    def embed_query(self, query): ...
-
-class SemanticIndex(Protocol):
-    def replace_for_source(self, fragments): ...
-    def search(self, query, *, limit=5): ...
-```
-
-The current provider is `SentenceTransformerEmbeddingProvider`. It loads the
-model from the local cache during normal operation. The explicit
-`download-embedding-model` command is the only supported path that allows an
-initial download, avoiding an unexpected network request during indexing.
-
-### Index storage
-
-`SQLiteSemanticIndex` stores one derived vector per current fragment:
-
-```text
-source_fragment_embeddings
-├── fragment_id   foreign key to source_fragments.id
-├── model_name    prevents mixing model outputs
-├── dimension     prevents comparing incompatible vector lengths
-└── vector_json   JSON array of floating-point values
-```
-
-The vectors are stored as JSON rather than a binary format because the initial
-implementation prioritizes transparency and inspectability. They are derived
-data: deleting this table does not lose user knowledge because running
-`steward index <vault>` rebuilds it.
-
-When fragments are replaced after a source edit, the foreign key's
-`ON DELETE CASCADE` removes their old embeddings. The semantic index then
-embeds and stores the newly persisted fragments.
-
-### Similarity search
-
-For a query, the index embeds the query using the same provider, reads vectors
-created by the same model and dimension, and calculates cosine similarity:
-
-```text
-cosine similarity
-= dot product of vectors
-  ÷ (length of first vector × length of second vector)
-```
-
-Scores close to `1` mean similar vector directions; scores closer to `0` are
-less related. The results are sorted descending.
-
-`SemanticSearchService` then resolves each result's `source_id` through
-`SourceRepository`. This preserves the full evidence chain:
-
-```text
-SemanticSearchHit
-  → SourceFragment
-  → Source
-  → original Markdown path and line location
-```
-
-## Hybrid retrieval
-
-`HybridRetriever` calls both `LexicalSearchService` and
-`SemanticSearchService`, then combines their ranks using reciprocal-rank fusion
-(RRF).
-
-```text
-contribution for rank r = 1 / (60 + r)
-```
-
-The constant 60 softens the effect of any single ranking. A fragment found by
-both methods receives two contributions and normally rises above a result
-found by only one.
-
-RRF is used instead of adding raw scores because BM25 and cosine similarity
-are not comparable measurements:
-
-```text
-BM25: lower score is better in this SQLite query
-cosine: higher score is better
-```
-
-A `HybridSearchHit` retains the final fused score plus the individual lexical
-and semantic scores. The fused score is a ranking value, not a probability or
-confidence statement.
-
-## Grounded answers
-
-Phase 5 turns retrieval into the first half of a RAG flow:
-
-```text
-question
-  ↓
-HybridRetriever finds source fragments
-  ↓
-ContextBuilder formats only those fragments
-  ↓
-ModelGateway generates an answer from that bounded context
-  ↓
-AnswerResult contains answer text and source citations
-```
-
-### AnswerService
-
-`AnswerService` coordinates the flow but does not read files, construct SQL,
-or call a provider-specific SDK directly. It depends on three capabilities:
-
-```text
-Retriever       → ranked HybridSearchHit values
-ContextBuilder  → an exact prompt plus citations
-ModelGateway    → generated text from supplied instructions and input
-```
-
-If retrieval returns no evidence, `AnswerService` returns the deterministic
-message `I don't have enough local information to answer that.` It does not
-call the model. This avoids spending money or producing a plausible answer
-without local support.
-
-### ContextBuilder
-
-Each selected fragment is labelled with a stable request-local key such as
-`[F1]`, followed by the source path, heading, line location, and excerpt.
-`AnswerContext.prompt` is the exact text sent to the model, while
-`AnswerContext.citations` holds the matching structured metadata.
-
-After generation, `CitationVerification` extracts inline request-local keys
-such as `[F1]` and compares them with that exact context. For a generated
-answer, `AnswerResult.citations` therefore exposes only valid citations the
-model actually used. An answer with
-no inline citation, or one containing an unknown key such as `[F99]`, carries a
-visible verification warning rather than being silently presented as grounded.
-
-Context is capped at 12,000 characters by default. If an excerpt would exceed
-the remaining deterministic budget, it is cut and marked `[truncated]`; if a
-new excerpt cannot fit meaningfully, it is excluded. This prevents an unusually
-large Markdown section from silently consuming the whole model context window.
-
-### ModelGateway, Gemini, and OpenAI gateways
-
-`ModelGateway` is a protocol with one operation:
-
-```python
-generate(*, instructions: str, input_text: str) -> str
-```
-
-`GeminiModelGateway` is the default CLI provider. It lazily imports the
-official `google-genai` SDK and calls Gemini's Interactions API with
-`system_instruction`, `input`, and `store=False`. `OpenAIModelGateway` remains
-available as an alternative and calls the OpenAI Responses API with `store=False`.
-Provider-specific request and response details remain in these gateway classes,
-so a future local model or another provider can implement the same protocol.
-
-The grounding instruction tells the model to use only supplied excerpts, treat
-those excerpts as untrusted reference material rather than instructions, state
-when evidence is insufficient, and cite fragment keys such as `[F1]`. This
-reduces hallucination and prompt-injection risk but does not prove an answer is
-correct; the original source remains the authority.
-
-To use the default Gemini command, set these environment variables rather than
-placing a secret in tracked code:
-
-```powershell
-$env:GEMINI_API_KEY = "your-api-key"
-$env:STEWARD_GEMINI_MODEL = "your-selected-model"
-steward ask "What do I know about address translation?"
-```
-
-`GEMINI_API_KEY`, `OPENAI_API_KEY`, and `SOCLAAS_API_KEY` are intentionally not part of the logged
-`Settings` dataclass. `STEWARD_MODEL_PROVIDER` defaults to `gemini`; use
-`STEWARD_MODEL_PROVIDER=openai` with `STEWARD_OPENAI_MODEL` to use the OpenAI
-gateway instead. `STEWARD_MODEL_PROVIDER=soclaas` configures NUS SoCLaaS with
-`SOCLAAS_MODEL` and `SOCLAAS_BASE_URL`; its API key stays in
-`SOCLAAS_API_KEY`. The `STEWARD_SOCLAAS_*` aliases are also accepted. SoCLaaS uses OpenAI-compatible responses for normal
-answers and client-executed function calls for the agent loop. The selected provider's model setting is optional until
-`steward ask` is used.
-
-## LangGraph orchestration
-
-Phase 6 introduces LangGraph without moving Steward's domain logic into the
-graph. `build_retrieval_answer_graph()` compiles this small workflow:
-
-```text
-START
-  ↓
-retrieve
-  ↓
-evidence found?
-  ├── yes → answer → END
-  └── no  → no_evidence → END
-```
-
-The graph's shared `RetrievalAnswerState` contains:
-
-```text
-question                the user request
-retrieved_fragment_ids  compact IDs of evidence found by retrieval
-answer                  generated or deterministic no-evidence answer
-citations               provenance for evidence sent to the model
-```
-
-It also carries `retrieved_hits` as transient in-memory working state. The
-answer node needs the small retrieved fragment objects to construct context
-without repeating the retrieval query. `retrieved_fragment_ids` remains the
-important compact representation for inspection and future persistence.
-
-The nodes are ordinary Python functions created inside the graph builder:
-
-```text
-retrieve
-  calls HybridRetriever.search(question, limit=...)
-  writes retrieved hits and fragment IDs into state
-
-has_evidence
-  conditional edge function
-  routes to answer or no_evidence based on the IDs
-
-answer
-  calls AnswerService.answer_from_hits(...)
-  writes answer text and citations into state
-
-no_evidence
-  calls the same service with no hits
-  writes the deterministic no-evidence answer
-```
-
-`AnswerService.answer_from_hits()` was extracted from `ask()` so the graph can
-perform retrieval exactly once. `ask()` still works as a non-graph convenience
-method: it retrieves, then delegates to `answer_from_hits()`.
-
-The CLI now composes and invokes this graph for `steward ask`. LangGraph owns
-only state transitions and routing; `HybridRetriever`, `ContextBuilder`, and
-the model gateways still own their existing responsibilities.
-
-## Telegram adapter
-
-Phase 7 adds a transport boundary; it does not add conversation memory or
-Telegram capture. A Telegram message moves through the system as follows:
-
-```text
-Telegram Update
-  ↓
-normalize_telegram_update
-  ↓
-IncomingEvent
-  ↓
-StewardQuestionApplication.handle
-  ↓
-compiled retrieval-answer graph
-  ↓
-answer text
-  ↓
-TelegramAdapter.reply_text
-```
-
-`IncomingEvent` in `events.py` is deliberately platform-neutral. Its stable
-event ID, platform, chat ID, message ID, optional reply-to ID, timezone-aware
-timestamp, text, and attachment placeholders describe what arrived without
-leaking Telegram objects into application code. Future adapters can construct
-the same event shape.
-
-`normalize_telegram_update()` is the adapter's deterministic translation step.
-For example, Telegram update `42` from chat `100` becomes the event ID
-`telegram:42` and chat ID `"100"`. A reply retains the message ID it replied
-to, which contributes a deterministic reference signal for richer future
-resolution.
-
-`StewardQuestionApplication` is the small application use case. It knows only
-that it receives normalized text and that the graph accepts `{"question":
-text}` and returns an `answer`; it has no Telegram dependency. Empty text gets
-a deterministic instruction rather than invoking retrieval. When the graph
-returns citations, it appends the same `[F1] path:location [heading]` source
-details as the CLI so citation keys in a Telegram answer remain inspectable.
-
-The library's handler is asynchronous, while the current retrieval graph and
-model gateway are synchronous. `TelegramAdapter.handle_update()` uses
-`asyncio.to_thread(...)` to run the application call in a worker thread, then
-awaits `reply_text`. This keeps Telegram's event loop free to receive updates
-while an answer is being generated. It is a pragmatic Phase 7 bridge, not a
-claim that the retrieval services are fully async.
-
-`run_telegram_polling()` is the only place that constructs
-`ApplicationBuilder`, registers `MessageHandler(filters.TEXT &
-~filters.COMMAND, ...)`, and calls `run_polling()`. Long polling is appropriate
-for this local-first version because the bot opens an outgoing connection to
-Telegram rather than requiring a public webhook server. The process remains
-running until `Ctrl+C` stops it.
-
-### Durable update delivery
-
-Before the adapter calls an application handler, it uses
-`TelegramUpdateDeliveryRepository` to insert the normalized event ID (for
-example, `telegram:42`) into SQLite as `processing`. SQLite's primary-key
-constraint makes that claim atomic: a concurrent or later delivery of the same
-update cannot enter the application again. After `reply_text()` succeeds, the
-row becomes `delivered`; delivered duplicates are ignored without producing a
-second answer.
-
-If downloading, application work, or the Telegram reply raises an error, the
-adapter deletes only its `processing` claim and re-raises the error. Telegram
-or a later polling cycle can then retry the update. This gives Steward a
-deliberate **at-least-once** boundary: it does not lose a message merely
-because the reply failed, but a process crash after domain work and before the
-delivery record can repeat that work. Capture, reviewed organization moves, and
-future action services must therefore remain idempotent. A true external
-exactly-once guarantee would require an outbound-message idempotency facility
-that the Telegram Bot API does not provide.
-
-`steward telegram-deliveries` exposes only local coordination metadata: update
-ID, processing/delivered status, claim time, and delivered time. It never stores
-or prints Telegram message text, but makes a stuck lease or repeated delivery
-observable during local troubleshooting.
-`telegram-delivery-history` additionally shows past claimed, reclaimed,
-released, and delivered transitions after a processing row has been released.
-
-### Reviewable agent writes from Telegram
-
-The tool agent can create a pending `ActionProposal` for workspace creation and,
-when Calendar tools are explicitly enabled, for a saved travel record's
-Calendar event. Neither tool executes the final action. `ActionProposalRepository`
-makes a proposal durable, so reviewing it is resumable without restoring model
-state. The Telegram application handles these exact commands:
-
-```text
-/action_proposals
-/approve_action ID
-/reject_action ID
-```
-
-`StewardActionProposalApplication` validates the numeric ID and routes only
-recognized proposal types to their deterministic reviewer. Workspace acceptance
-performs idempotent workspace creation; Calendar acceptance invokes its
-idempotent writer only after approval. The model has no route to either final
-action. This is a deliberately narrow first
-human-in-the-loop interface: all configured allowlisted chats are trusted
-administrators, and proposals are not yet owned by an individual Telegram user.
-
-### Retained external research
-
-`ResearchService` is provider-independent through its `ResearchProvider`
-protocol. The initial Gemini Google Search adapter produces an **ephemeral**
-`ResearchBundle`: a query, model answer, and returned URLs. The normal
-`steward research QUESTION` command prints it but creates no local source.
-
-`steward research-retain QUESTION` is the explicit lifecycle transition. It
-runs the same provider, then `ResearchRetentionService` renders a Markdown note
-with an unambiguous warning that the answer is model-generated and the URLs are
-provenance, not archived page contents. It uses `InboxCaptureService`, so the
-note becomes a normal local `Source`, is fragmented and indexed, and records a
-capture activity event. A SHA-256 fingerprint of the rendered note supplies a
-stable synthetic event ID; retaining an identical bundle again returns the
-existing source instead of creating another note. Original webpage download and
-archiving remain separate future work.
-
-### Google Drive search and explicit Inbox import
-
-`GoogleDriveService` is a separate read-only external boundary. Its OAuth flow
-uses `drive.readonly`, stored in a dedicated `google-drive-token.json`, rather
-than reusing broader Calendar credentials. A token created for the older,
-metadata-only scope must be reauthorized once.
-`steward drive-search QUERY` queries Google Drive for non-trashed filenames and
-returns current metadata: Drive ID, name, MIME type, modification time, web
-link, and available size. Drive is authoritative for that state.
-
-`DriveInboxImportService` is the explicit retention path behind `steward
-drive-import FILE_ID` and Telegram's `/drive_import FILE_ID` command. It looks
-up exactly that ID, streams its original bytes to a temporary local file, then
-calls `InboxCaptureService.capture_file()` with a synthetic `drive:FILE_ID`
-event. The normal capture service preserves the original, hashes it, extracts
-derived fragments once, and records activity. The stable event identity makes a
-repeat import idempotent. There is no background sync and no model-selected
-Drive download. Telegram's oversized-upload reply merely guides the user to
-this explicit route; its adapter never handles OAuth or Drive bytes.
-
-For selected Google-native files, an original binary is not available. A Google
-Doc is therefore explicitly exported as `.txt`, a Sheet as `.csv`, and a Slide
-deck as `.pdf` before the same capture path runs. The export name makes this
-derivative visible; the Drive item stays authoritative and no background sync is
-introduced. Unsupported native types are rejected rather than downloaded with
-an ambiguous format.
-
-### Gmail search and explicit Inbox import
-
-`GmailService` uses its own `gmail.readonly` OAuth token. `steward
-gmail-search QUERY` passes the user's Gmail query syntax directly to Gmail,
-lists matching IDs, and requests each result with `format="metadata"` and only
-the `Subject`, `From`, and `Date` headers. It returns those headers and Gmail's
-snippet; it never requests bodies, attachments, mail sending, labels, or
-deletions. Gmail remains authoritative. `steward gmail-import MESSAGE_ID`
-explicitly requests that message's raw RFC 822 data, stores it as a canonical
-`.eml` original through `InboxCaptureService`, and never sends or automatically
-imports mail.
-
-`GmailInboxImportService` is shared by the CLI and Telegram's explicit
-`/gmail_import MESSAGE_ID` command. The command is available only to the
-allowlisted Telegram adapter and uses a lazy OAuth boundary: bot startup and
-ordinary messages do not inspect Gmail or trigger browser authorization.
-
-Raw `.eml` sources use `EmailExtractor` rather than the generic plain-text
-extractor. Python's standard-library MIME parser selects readable `text/plain`
-or `text/html` parts, skips declared attachments, records the email subject and
-part ordinal as provenance, and keeps the original RFC 822 file untouched.
-
-Normal scans use hashes to avoid redoing extraction. `steward reextract
-SOURCE_ID` is the explicit maintenance operation for an unchanged original
-after installing OCR, improving an extractor, or repairing derived fragments.
-It replaces only rebuildable fragments and their local semantic vectors; it
-never changes the original file or source identity.
-
-### Local search UI
-
-`steward ui` runs a small standard-library HTTP server on `127.0.0.1:8765` by
-default. The implementation rejects non-loopback hosts, uses the existing
-`LexicalSearchService` by default (or `HybridRetriever` with `--mode hybrid`), escapes all query/source content before HTML rendering,
-and exposes a search form plus source-path and fragment-location results.
-Search-hit links lead to `/sources/{id}`, which reads only a registered SQLite
-source identity and its already-derived fragments: it never accepts an arbitrary
-filesystem path. Source pages escape extracted text, show source type/status and
-fragment provenance, and page long sources in groups of 50 fragments. The UI
-intentionally contains no write controls, model calls, OAuth credentials, or
-external integrations. This gives Steward a locally inspectable UI surface
-without silently expanding its trust boundary.
-
-`/records` is a second read-only local page. It renders travel, receipt, and
-warranty metadata from `RecordService`, marks each row by record type, and links
-back to `/sources/{source_id}`. It never renders source text itself, accepts no
-write requests, and keeps the source rather than its derived record authoritative.
-
-### Retrieval path filtering
-
-Lexical search accepts `--path-prefix PATH`. The value is resolved locally and
-becomes a parameterized SQLite `sources.path LIKE PATH%` filter alongside the
-active-source and optional source-type filters, before FTS5-ranked results are
-returned. This is useful for a large vault with project/course subtrees and
-does not change the global index or canonical source locations.
-
-Configure the private bot token and run the adapter:
-
-```dotenv
-TELEGRAM_BOT_TOKEN=your-bot-token
-```
-
-```powershell
-steward telegram
-```
-
-## Conversation state and checkpoints
-
-Phase 8 gives each Telegram chat a LangGraph thread ID such as
-`telegram:100`. The application invokes the graph with that ID, and the local
-SQLite checkpointer stores a snapshot after each graph step in
-`.steward/checkpoints.db`. Restarting the process and invoking the same thread
-loads its prior state.
-
-The state keeps a bounded ten-message exchange, recent **source** IDs and
-filenames, and placeholders for workspace, concepts, and records. It does not
-store full documents. For a small deterministic first reference resolver, a
-follow-up containing terms such as `that`, `this`, or `it` is expanded with the
-preceding user question and recently retrieved filenames before retrieval. This
-is useful but deliberately conservative: it is not yet general natural-language
-reference resolution.
-
-## Commands and data flow
-
-```powershell
-# Register sources, extract fragments, and build lexical FTS5 entries.
-steward scan path\to\vault
-
-# Explicitly download the local semantic model once.
-steward download-embedding-model
-
-# Scan, extract, and build the semantic index.
-steward index path\to\vault
-
-# Search in one mode.
-steward search "address translations"
-steward semantic-search "little cache CPUs use for address translation"
-
-# Combine both modes.
-steward hybrid-search "little cache CPUs use for address translation"
-steward ask "What do I know about address translation?"
-```
-
-The full `index` flow is:
-
-```text
-CLI
-  ↓ constructs repositories, extractor, provider, and index
-SourceService.scan_markdown_root
-  ↓
-filesystem discovery + SHA-256 + SourceRepository
-  ↓
-MarkdownExtractor
-  ↓
-SourceFragmentRepository
-  ├── source_fragments
-  └── source_fragments_fts
-  ↓
-SQLiteSemanticIndex
-  └── source_fragment_embeddings
-```
-
-The full hybrid search flow is:
-
-```text
-query
-  ├── FTS5 MATCH → BM25-ranked lexical fragments
-  └── embedding model → cosine-ranked semantic fragments
-        ↓
-reciprocal-rank fusion
-        ↓
-fragments with source path, heading, and line provenance
-```
-
-## Testing strategy
-
-Tests live under `tests/` and use `tmp_path`, which creates isolated temporary
-directories and SQLite databases for each test.
-
-Semantic tests use `FakeEmbeddingProvider`, a small deterministic provider,
-instead of loading the real model. This makes the tests fast, reproducible,
-offline, and focused on Steward's own behavior rather than a third-party model.
-
-The test suite currently covers source discovery, hashing, idempotent scans,
-missing files, fragment extraction, repository behavior, FTS5 search, schema
-migrations, semantic persistence, semantic retrieval, stale-embedding
-replacement, hybrid rank fusion, and lexical retrieval evaluation cases.
-
-Run it with:
-
-```powershell
-pytest
-```
-
-## Capture, organization, knowledge, and records
-
-Phases 9–20 add the first durable personal-information loop while preserving a
-strict difference between originals and derived data.
-
-`InboxCaptureService` copies a saved Telegram message or attachment into the
-Inbox, hashes and registers it as a `Source`, chooses a type-specific extractor,
-persists `SourceFragment` rows, and appends a `SOURCE_CAPTURED` activity event.
-The original file is canonical; fragments and embeddings can be rebuilt.
-
-`IntentResolver` routes deterministic signals first: a `/save` command or an
-attachment means capture, while `/delete`, `/organize`, and `/inspect` map to
-their corresponding intents. `WorkspaceService` creates explicit workspaces
-and `WorkspaceRepository` stores the many-to-many `workspace_sources` links.
-`OrganizationService` only creates a proposal. Every proposal explicitly has a
-type (`move_to_workspace` or `keep_in_inbox` in this first implementation), a
-confidence, rationale, optional workspace, and optional suggested path.
-`OrganizationApprovalService`
-is the sole approval boundary: accepting through the CLI or a resumed graph
-uses `FileMutationService` to move the registered file, update its stored path,
-and write an activity event; rejection leaves the source unchanged. Repeating
-an already accepted/rejected decision is a no-op, which makes retry recovery
-safe.
-
-`ModelAssistedOrganizationService` is an optional second proposer for the
-explicit `steward propose-organization SOURCE_ID --model-assisted` command. It
-sends only the source filename/type, bounded extracted excerpts, and the IDs
-and names of existing workspaces to the configured model. The model must return
-JSON naming one of those IDs or `null`; deterministic validation rejects an
-unknown ID, a malformed response, an invalid confidence, or provider failure.
-It can neither create a workspace nor select a file path: code derives the
-destination from the validated workspace, and the normal approval flow remains
-required before a move. If the model is unavailable or uncertain, the source
-stays in Inbox through the existing conservative fallback.
-
-The first LangGraph approval graph demonstrates a durable pause with
-`interrupt()` and later resume. On acceptance it calls that same approval
-service, so a resumed workflow executes the move rather than merely changing a
-proposal status. Wiring the paused approval conversation into Telegram is a
-later transport step.
-
-The knowledge model starts deliberately small: concepts have aliases, claims
-point to supporting source fragments, and enrichment proposals classify new
-evidence as confirm, extend, refine, qualify, or contradict. These are
-evidence-backed proposals, not automatic truth changes.
-
-`RecordService` adds `TravelRecord` as the first concrete record. It proposes
-flight fields from source fragments and tracks the fragment that supports each
-extracted field. `steward propose-travel-record SOURCE_ID` is read-only;
-`steward create-travel-record SOURCE_ID` is the explicit persistence step, and
-both the record and all of its evidence rows are inserted in one transaction.
-`TravelRecordReference` extends that small record without widening its core
-schema for every possible identifier. A reference has a normalized type, value,
-and required supporting `SourceFragment` ID. The database enforces that both
-the travel record and fragment exist; `add_reference()` is idempotent for the
-same record/type/value and returns the existing reference on a retry. The CLI
-exposes `add-travel-record-reference RECORD_ID TYPE VALUE FRAGMENT_ID` and
-`travel-record-references RECORD_ID` for explicit inspection.
-`FileMutationService.undo_move()` supplies rollback data and writes its own
-`SOURCE_MOVE_UNDONE` activity event, preserving the history of reversible
-filesystem changes.
-
-## Read-only tool agent
-
-Phase 21 adds the first actual tool-choosing loop without using a generic
-prebuilt agent. `ReadOnlyToolService` adapts ordinary services into six
-JSON-returning tools: `search_sources`, `read_source`, `search_knowledge`,
-`search_records`, `search_workspaces`, and `search_activity`. They have no
-mutation capability.
-
-`build_tool_agent_graph()` defines the LangGraph sequence explicitly:
-
-```text
-START → model → tool calls requested?
-                    ├─ no  → END
-                    └─ yes → ToolNode → model
-```
-
-The `messages` state uses LangGraph's `add_messages` reducer, so each model
-message and `ToolMessage` is appended rather than replacing prior context.
-`GeminiToolCallingModel` translates Gemini function-call responses into
-LangChain `AIMessage.tool_calls`; `ToolNode` executes only a supplied tool and
-then returns its result to the next model turn. `steward agent QUESTION` uses
-this graph with a persistent thread ID and an eight-step recursion cap.
-
-`OllamaToolCallingModel` provides the same narrow graph-facing interface for a
-local model. It sends the conversation and the allowlisted JSON tool schemas to
-Ollama's `/api/chat` endpoint. Ollama returns requested function names and
-arguments; the adapter creates internal call IDs because the Ollama response
-does not supply them, and `ToolNode` uses those IDs only to pair local results
-with the request. On the next turn the adapter replays the assistant tool call
-and each result in Ollama's `role=tool`, `tool_name`, `content` format. It never
-executes a tool itself. Its local HTTP timeout is 180 seconds because CPU
-inference can be much slower after tool results expand the transcript. Set `STEWARD_MODEL_PROVIDER=local` and
-`STEWARD_LOCAL_MODEL` to select it for `steward agent`.
-
-The graph counts individual tool calls, not only model turns. If a provider
-returns a batch larger than the remaining `max_tool_calls` budget, Steward ends
-the request before `ToolNode` executes any call in that batch. This matters for
-local models, which can occasionally emit many duplicate requests at once.
-
-### Proposal-only agent writes
-
-The first agent write capability is deliberately indirect:
-`propose_create_workspace(name)`. It is a `SAFE_WRITE` because it persists a
-reviewable `ActionProposal`, but it never creates the workspace. The tool result
-includes the exact `steward review-action-proposal ID accepted` command needed
-to authorize execution. `ActionProposalService.review()` then creates the
-workspace through `WorkspaceService`, records audit events, and marks the
-proposal accepted. Repeating an unreviewed proposal for the same normalized
-name reuses it; repeating an accepted review returns the existing workspace.
-This is the generic safety seam future agent actions will use instead of giving
-the model direct access to a side-effecting service.
-
-## Tool risk policy
-
-Phase 22 makes the safety properties of each tool explicit in `ToolDefinition`:
-`side_effects`, `risk`, `idempotency`, `external_system`, and
-`requires_approval`. `ToolRisk` distinguishes `READ_ONLY`, `SAFE_WRITE`,
-`SENSITIVE_WRITE`, and `DESTRUCTIVE` operations.
-
-`ToolPolicy` is not prompt text. `build_tool_agent_graph()` supplies it to
-`ToolNode` through `wrap_tool_call`, where every requested tool is checked
-immediately before execution. A denied call becomes a `ToolMessage` explaining
-why it was not run; the Python callable is never invoked. Read-only tools are
-always permitted, while proposal-only local writes have narrow `SAFE_WRITE`
-definitions. No model-callable tool directly creates a Calendar event or moves
-a source; final actions remain behind deterministic approval boundaries.
-
-## Google Calendar read boundary
-
-Phase 23 adds `CalendarService`, which calls Google Calendar directly for
-`search()` and `get_event()` rather than maintaining a stale local copy.
-`CalendarEvent` keeps Google's external ID, summary, current start/end values,
-and optional HTML link. All-day dates remain dates rather than invented
-midnight timestamps.
-
-`authorize_google_calendar()` uses an OAuth installed-app flow with the
-read-only Calendar scope. It loads and refreshes an existing local token when
-possible; otherwise it opens a local browser consent flow and writes the token
-under `.steward/config/`. The OAuth client JSON and token are private local
-credentials and must never be committed.
-
-CLI commands are `steward calendar-authorize`, `calendar-search`, and
-`calendar-get`. `--include-calendar` deliberately opts Calendar read tools into
-the tool agent, avoiding surprise browser authorization during ordinary local
-questions. Calendar tools are declared as `READ_ONLY` external tools in the
-same policy registry as local tools.
-
-## Calendar writes and idempotency
-
-`calendar-propose-travel-event RECORD_ID` adds a pending generic
-`ActionProposal`, after deterministic validation that the record exists and has
-timezone-aware departure and arrival times. `calendar-review-travel-event ID
-accepted` is the second, explicit step. Only that accepted path authorizes
-Calendar OAuth and invokes `CalendarWriteService`; rejection stays entirely
-local. This lets a future agent request the same proposal without being trusted
-to create a Calendar event itself.
-
-When calendar tools are explicitly enabled for the tool agent, its only write-
-adjacent capability is `propose_create_travel_calendar_event(record_id)`. It
-uses that exact same proposal service, accepts only a persisted travel-record
-ID, and returns a review command. `ToolPolicy` labels it `SAFE_WRITE` because
-the proposal is a durable local mutation, but it is not a remote Calendar
-write. The model never receives a callable `create_calendar_event` tool.
-
-`StewardActionProposalApplication` recognizes this action type before its
-workspace-specific reviewer. Its Telegram `/approve_action ID` path obtains a
-Calendar writer from a lazy factory only after the human accepts. Thus starting
-the Telegram process, listing proposals, rejecting one, or a model requesting
-one never starts OAuth or contacts Google.
-
-Phase 24 adds the narrower `CalendarWriteService` rather than allowing callers
-to insert arbitrary Google API payloads. It accepts a persisted `TravelRecord`
-with departure and arrival times, constructs a titled event, and requests the
-Google Calendar event scope. A local `calendar_event_links` row maps
-`travel-record:ID` to Google's external event ID. A repeat request looks up
-that link and reads the existing event instead of inserting a duplicate.
-
-After an insert, `CALENDAR_EVENT_CREATED` is appended to the activity log. The
-filesystem/database transaction cannot span Google's API, so this is
-"exactly-once-ish": a completed local link is reliably idempotent. Phase 32
-also closes the crash window after Google accepts an event but before the link
-is saved by reconciling the remote event with its deterministic private
-idempotency key on retry.
-
-## Ephemeral external research
-
-Phase 25 adds `ResearchService` and a provider boundary. `GeminiGoogleSearchProvider`
-uses Gemini's Google Search grounding for a generated, cited answer. The key-free
-`DuckDuckGoSearchProvider` is a source-first adapter: it returns result titles,
-URLs and snippets and explicitly says it has not read the linked pages. `steward
-research --provider auto` prefers configured Gemini research and otherwise selects
-DuckDuckGo, independently of the model provider used for answers; either can be
-selected explicitly with `--provider`. Both return a `ResearchBundle` with a
-provider identity. Its retention status is always `ephemeral`; it does not write a
-`Source`, fragment, concept, claim, or embedding. A future explicit “keep those
-sources” workflow must route selected material through normal capture and
-provenance processing rather than bypassing the Source layer. This is now
-provided by `research-retain`: it captures a labeled local Markdown note whose
-provider identity and URLs preserve provenance, never copies the cited pages.
-
-## Emerging workspace detection
-
-Phase 26 provides the explicit `steward review-inbox-workspaces` workflow.
-`WorkspaceDetectionService` considers only active sources physically in Inbox,
-splits meaningful filename terms, removes generic words, groups repeated terms,
-and ignores an already existing workspace name. Two or more sources sharing a
-term produce a pending `WorkspaceProposal` with source IDs, rationale, and a
-conservative confidence score. It does not create a workspace, link sources,
-or move files; those remain deliberate user actions.
-
-## Knowledge connections
-
-Phase 27 adds `KnowledgeConnector` and `steward connect-knowledge`. It joins
-claim evidence to find pairs of different concepts whose claims cite the same
-fragment. Each proposal contains both concept names, supporting fragment IDs,
-a confidence score, an explanation of the shared evidence, and an explicit
-statement of where the apparent analogy may fail. Nothing is persisted as a
-relationship yet; user feedback such as useful, obvious, stretch, or wrong is
-the later learning loop.
-
-## File watching
-
-Phase 28 adds `FileWatchService` plus `steward watch ROOT`. `watchdog` supplies
-filesystem notifications, but notifications are only hints: each changed path
-is debounced and then `SourceService.refresh_markdown_path()` hashes it before
-declaring a change. New files are registered and extracted, unchanged hashes do
-nothing, changed files replace their derived fragments (and semantic vectors
-when configured), and deleted registered files become `MISSING`. This avoids
-relying on noisy filesystem events as the truth source.
-
-## External integration boundary
-
-Phase 29 adds `IntegrationRegistry`. An external integration declares its
-adapter name, domain service, tool names, and whether it records activity.
-Registration verifies that every named tool has matching external-system risk
-metadata. Google Calendar is the first real integration; web research remains
-an explicitly ephemeral provider. This keeps future Gmail, GitHub, or task
-system additions narrow rather than offering the model a generic HTTP tool.
-
-## Per-source privacy policy
-
-Phase 30 stores a `PrivacyRule` for individual sources: `external_allowed`,
-`external_redacted`, `local_model_only`, or `no_model`. `PrivacyService` uses
-SQLite foreign keys to prevent orphan policies and exposes the rule through
-`set-source-privacy` and `source-privacy`. The default preserves the existing
-local-first workflow as `external_allowed`. The cloud `AnswerService` filters
-retrieval hits before it builds model context, and the cloud tool-agent adapter
-filters source searches, source reads, and source-derived travel records before
-they become tool results. `external_redacted` intentionally fails closed until
-there is a genuine, reviewable redaction pipeline; it is unsafe to assume that
-the rule's name transforms sensitive text.
-
-The same boundary is enforced before model-assisted organization and
-model-assisted knowledge enrichment: cloud providers receive only
-`external_allowed` source excerpts, local providers may receive any source
-except `no_model`, and denied material produces a deterministic local response.
-
-## Model routing
-
-Phase 31 adds `ModelRouter` and `OllamaModelGateway`. It selects a cloud
-gateway when every evidence source is `external_allowed`; otherwise, a source
-marked `local_model_only` or `external_redacted` requires the configured local
-Ollama gateway. A `no_model` source is removed before context construction.
-If local-only evidence is retrieved but Ollama is not configured, Steward
-returns an explicit privacy limitation instead of falling back to the cloud.
-Ollama is a deliberately narrow local HTTP adapter: `/api/generate` is used for
-ordinary grounded answers and `/api/chat` is used for the explicit tool loop.
-The local tool agent receives only the same allowlisted schemas as Gemini and
-still relies on `ToolNode` and the policy registry to execute a request.
-
-## Reliability engineering
-
-Phase 32 turns failure cases into explicit recovery rules rather than silent
-assumptions. Capture is idempotent by the Telegram event/source hash path;
-repeated scans and watcher notifications hash before replacing derived data;
-missing or manually moved files become `MISSING` and are repaired by the next
-scan. Bad document extraction or a model/provider failure stops that operation
-without replacing the original Source, so the original can be retried after
-fixing the parser or credentials. SQLite's short-lived locks surface as an
-operation failure; retry the command rather than retrying unboundedly inside a
-transaction. A corrupt semantic index is rebuildable: run `steward index`.
-
-Calendar is the special cross-system case. A local database transaction cannot
-atomically include Google's API. `CalendarWriteService` first checks its local
-link, then queries Google for the deterministic private extended property
-`steward_idempotency_key=travel-record:ID`; only if neither exists does it
-insert an event. It saves the local link and audit activity after either a
-recovered or newly created event. Therefore, a crash after remote acceptance
-and before the SQLite link is repaired by retrying the same command, without a
-second Calendar event. Network/OAuth failures still leave no local success
-record and should be retried only after the external condition is resolved.
-
-## Observability
-
-Phase 33 adds the `steward.trace` structured local logger. Retrieval graphs
-emit preparation, retrieval fragment IDs/counts, conditional routes, answer
-citation counts, and no-evidence paths. The custom tool graph additionally
-records model-call counts, routing decisions, and requested tool names. Trace
-events deliberately exclude raw source text, prompts, model output, API keys,
-and token values. With `STEWARD_LOG_LEVEL=INFO`, the JSON payloads remain
-visible in normal local process logs and can be searched without relying on an
-external agent-observability platform.
-
-## Evaluation framework
-
-`steward evaluate-retrieval VAULT CASES.yaml` promotes the lexical evaluation
-fixture into a local acceptance tool. `--mode hybrid` evaluates the same cases
-against the local hybrid retriever. A case is a user-written query plus an
-expected source path (relative to that vault) and heading. It reports Recall@5,
-mean reciprocal rank, and every miss rather than hiding failures behind a
-single aggregate. It reads the existing SQLite index and never sends vault text
-to a model or changes canonical sources. Personal course cases should stay
-outside the repository unless the author explicitly wants to publish them.
-
-### Model-assisted knowledge enrichment
-
-`propose-knowledge-enrichment CLAIM_ID FRAGMENT_ID --model-assisted` gives the
-model exactly one existing claim and one selected source fragment. It can only
-classify their relationship as `confirm`, `extend`, `refine`, `qualify`, or
-`contradict`, with a short rationale. `ModelAssistedKnowledgeService` validates
-the JSON enum and rationale length; malformed or unavailable model output falls
-back to `KnowledgeService.compare_evidence()`. The result is persisted as a
-pending row with foreign keys to the canonical claim and original fragment, not
-a claim mutation. `knowledge-enrichment-proposals` lists those rows and
-`review-knowledge-enrichment ID accepted|rejected` records the explicit
-decision in the activity log. A contradiction is never silently added as claim
-support. The CLI checks the source privacy rule before sending evidence to a
-cloud or local model.
-
-The tool agent can also call `propose_knowledge_enrichment(claim_id,
-fragment_id)` when the user explicitly requests an evidence comparison. The
-tool uses ordinary Python to load both IDs, computes the initial relationship
-deterministically, and persists a pending proposal. It does not receive model
-text as a command, and it cannot edit claims, concepts, or evidence.
-
-Phase 34 keeps evaluation data in versioned YAML under `tests/evaluation/`.
-`retrieval_cases.yaml` measures lexical Recall@5 and MRR against a small vault
-fixture. `product_cases.yaml` adds reviewable cases for organization (including
-acceptable Inbox alternatives), travel-record fields, expected knowledge
-integration operations, tool selection/forbidden tools, and approval safety.
-`product_evaluator.py` validates that every subsystem has cases with the fields
-needed for a future deterministic or model-backed evaluator. This avoids
-claiming model quality from one-off manual examples while keeping the expected
-behavior easy to edit and inspect in code review.
+1. Original files are authoritative. SQLite holds metadata and rebuildable
+   derived data only.
+2. Every derived result keeps provenance: a hit names its `SourceFragment`,
+   which names its `Source` and location.
+3. Deterministic code does filesystem and database work. No model decides what
+   is written, read, or deleted.
+4. Infrastructure hides behind small protocols (`SemanticIndex`,
+   `EmbeddingProvider`, `ModelGateway`), so each layer is testable without a
+   model, network, Telegram, or LangGraph.
+
+## Configuration
+
+`Settings.from_environment()` (`config.py`) reads the environment once per
+command and never creates paths. `.env` is loaded without overriding variables
+already set in the shell.
+
+| Variable | Purpose |
+|---|---|
+| `STEWARD_DATA_DIR` | Data directory, default `.steward` |
+| `STEWARD_INBOX_DIR` | Inbox for Telegram uploads, default `vault/inbox` |
+| `STEWARD_LOG_LEVEL` | `DEBUG` … `CRITICAL`, default `INFO` |
+| `STEWARD_MODEL_PROVIDER` | `gemini` (default), `openai`, `soclaas`, or `local` |
+| `GEMINI_API_KEY`, `STEWARD_GEMINI_MODEL` | Gemini |
+| `OPENAI_API_KEY`, `STEWARD_OPENAI_MODEL` | OpenAI |
+| `SOCLAAS_API_KEY`, `SOCLAAS_MODEL`, `SOCLAAS_BASE_URL` | SoCLaaS (`STEWARD_SOCLAAS_*` aliases accepted) |
+| `STEWARD_LOCAL_MODEL`, `STEWARD_LOCAL_MODEL_URL` | Local Ollama |
+| `TELEGRAM_BOT_TOKEN`, `STEWARD_TELEGRAM_ALLOWED_CHAT_IDS` | Telegram bot and chat allowlist |
+
+API keys are never part of `Settings`, so they cannot be logged with it.
+
+The data directory contains `steward.db`, `telegram-runtime.db` (single-poller
+lock), `backups/`, `cache/intake/` (staged uploads), and `logs/`. Log output
+passes through `RedactingFormatter`, which replaces Telegram bot tokens with
+`bot<redacted>`; `httpx` request lines are logged only at WARNING.
+
+## Sources and roots
+
+A `Source` (`sources/models.py`) is one original file: `path`, SHA-256
+`content_hash`, `source_type`, `size_bytes`, `modified_at`, `first_seen_at`,
+`last_seen_at`, and `status` (`active` or `missing`). A filename is location
+metadata, not identity. Two paths with identical hashes are duplicates that
+may both be intentional.
+
+**Roots.** `SourceRootRepository` (`roots.py`) records each authorized
+directory by name, with optional root-relative exclusions and an enabled flag.
+`onboard-root` authorizes and scans in one step. Each full scan appends a
+`source_root_scans` row with `new`/`updated`/`unchanged`/`missing` counts, which
+`steward roots` and Telegram root cards show. `relocate-root NAME PATH --confirm`
+rebinds a root that moved outside Steward: in one write transaction it checks
+that every registered file exists under the new directory with the same
+SHA-256, then rewrites the paths and keeps every ID. Stop the bot first.
+`remove-root` stops tracking a root and forgets its files; nothing on disk is
+touched.
+
+**Scanning** (`sources/scanning.py`, `sources/service.py`). Discovery walks the
+root for supported suffixes in sorted order. For each file: new path → add;
+changed hash or metadata → update and re-extract; unchanged → refresh
+`last_seen_at`. Active rows no longer found become `missing`. Scans are
+idempotent, and a file whose extraction fails is logged and skipped without
+stopping the scan. The Telegram bot runs `rescan_all` every 15 minutes: every
+available root, move reconciliation, `INBOX.md`, and vectors for any new
+fragments (`index_missing_vectors`).
+
+**Moves** (`sources/moves.py`). `MoveReconciler` runs after every scan. It
+first marks Inbox files that have left the Inbox as missing (the Inbox itself is
+not scanned). Then, for each content hash with exactly one missing source and
+exactly one present source first seen after the missing one was last seen, it
+merges them: the old ID keeps the new path, and `source_location_history`
+records the old one. Copies and ambiguous cases are left alone. `filed_notices`
+tells the uploading Telegram chat where an Inbox file was filed.
+
+## Extraction
+
+`extraction/document.py` picks an extractor from `SourceType` and stores ordered
+`SourceFragment`s (`heading`, `ordinal`, `text`, `location`):
+
+| Format | Location |
+|---|---|
+| Markdown | heading plus line range |
+| Plain text, code | bounded line ranges |
+| PDF | page; scanned PDFs use `pdftoppm` + Tesseract OCR |
+| DOCX | paragraph ranges |
+| PPTX | slide number |
+| XLSX | sheet and row |
+| Notebook | markdown/code cell |
+| HTML, email | readable sections; email reads non-attachment bodies |
+| Image | Tesseract OCR |
+
+Markdown sections longer than 3,000 characters are split at line breaks (a
+single longer line is sliced), so a log or heading-less note becomes many
+precisely located sections rather than one huge one that search ranks poorly.
+After an extractor change, `steward reextract --all` re-extracts every active
+file; a file that fails keeps its previous text.
+
+`SourceFragmentRepository.replace_for_source()` deletes and rewrites a source's
+fragments and FTS5 rows in one transaction. It never appends. A parser failure
+leaves the source registered with no fragments until a later successful
+`reextract`, and Telegram shows format-specific recovery guidance.
+
+## Storage
+
+`storage/database.py` keeps an append-only `MIGRATIONS` tuple and a
+`schema_migrations` ledger. `initialize_database()` applies only unrecorded
+versions. Never edit an existing migration.
+
+Migrations listed in `DESTRUCTIVE_MIGRATIONS` delete user data. Before one runs
+on an existing database, `_snapshot_before_destructive_migrations()` writes
+`DATA_DIR/backups/pre-migration-<version>-<timestamp>/steward.db`. If that
+snapshot fails, nothing is migrated. Destructive migrations so far: 65 (legacy
+domains, ADR-007), 66 (privacy, action proposals, delivery recovery, and root
+profiles), and 68 (move proposals), per ADR-009. Migration 69 adds
+`source_summaries`, and 70 adds its `removed_json` column.
+
+`snapshot_database()` uses SQLite's backup API from a read-only connection and
+reserves its destination with exclusive creation, so it never overwrites.
+`restore_database()` validates the candidate (`quick_check`, an application
+table, and a matching role), then writes a safety copy before replacing
+anything. `steward backup` snapshots `steward.db`.
+
+## Retrieval
+
+- **Lexical** (`retrieval/lexical.py`): FTS5 `MATCH` with BM25, where lower is
+  better. Strong for names, acronyms, and rare terms.
+- **Semantic** (`retrieval/semantic.py`): `all-MiniLM-L6-v2` embeddings (384
+  dimensions) stored as JSON in `source_fragment_embeddings`, keyed by model
+  name and dimension, compared by cosine similarity. The model loads from the
+  local cache; only `download-embedding-model` may download it. Needs the
+  `semantic` extra.
+- **Hybrid** (`retrieval/hybrid.py`): reciprocal-rank fusion, `1 / (60 + rank)`
+  per list. The fused score ranks results; it is not a probability.
+
+All three modes accept a type scope (`--type`, repeatable) and a folder scope
+(`--path-prefix` on the CLI, `--root "NAME"` on Telegram `/find`, which resolves
+only against authorized roots). Without a scope every root and the Inbox are
+searched; nothing guesses a root. `app/search.parse_find` also accepts the
+dashes and curly quotes phone keyboards produce and `root:NAME` / `type:pdf`.
+Find cards on picks or closest matches offer **Only <root>** buttons (up to
+four enabled roots) or, when a root was given, **Search all folders**. `retrieval/files.py` turns fragment hits into
+**file** candidates: `group_by_file` keeps each file's best fragment, and
+`fuse` applies reciprocal-rank fusion per file across several ranked lists, with
+an optional boost.
+
+**Evaluation** (`evaluation.py`, wired in `cli/commands.py`):
+
+| Command | Cases | Scores |
+|---|---|---|
+| `evaluate-retrieval CASES --mode keyword\|hybrid\|find` | `{query, file}` or `files: [...]` | hit@1, hit@3, MRR |
+| `evaluate-checker CASES` | `{evidence, supported, unsupported}` | planted statements removed, true ones kept |
+| `evaluate-ask CASES --report R.md` | `{question, files}` or `answerable: false` | expected file cited, unanswerable declined |
+| `evaluate-summaries CASES --report R.md` | `{file, facts}` ("a\|b" spellings) | key facts mentioned, coverage, calls, time |
+
+`file` matches the end of a path, and several files can be listed when identical
+copies exist.
+
+## Model flows
+
+Find, Ask, and Summarize are described node by node in
+[multi-agent-flows.md](multi-agent-flows.md). In code:
+
+- `roles/structured.py`: `CallBudget`, `generate_json` (validate, one repair,
+  then raise), and `generate_text`.
+- `roles/citations.py`: one canonical `[F12]` form; `normalize()` rewrites
+  `[F1, F2]` and `[Fn: F12]` before any validation.
+- `roles/find.py`, `roles/ask.py`, `roles/summarize.py`, `roles/checker.py`: one
+  prompt, contract, and validator per role. The judge's validator rejects any
+  ID not supplied; answer and summary validators reject many unknown keys and
+  leave a single stray one for the checker. `checker.realign_citations`
+  re-points a citation to the section a sentence plainly came from.
+- `graphs/find.py`, `graphs/ask.py`, `graphs/summarize.py`: the graphs.
+  `FindTools`, `AskTools`, and `SummarizeTools` hold the services each graph
+  may use. `run_find`, `run_ask`, and `run_summarize` return plain result
+  dataclasses.
+- `sources/summaries.py`: `SummaryRepository` caches complete summaries by
+  source, content hash, and model.
+- `app/answers.py`: runs a flow and renders its card. It keeps each chat's
+  last Find and Ask turn in memory for follow-ups.
+- `cli/bootstrap.py`: `build_flows` builds all three graphs for the CLI and
+  Telegram. Without a model gateway, Telegram's flows are disabled and say so.
+
+**Readable text** (`readable.py`): every card that shows model or file text
+passes it through `math_to_unicode` (inline LaTeX such as `$1/(\mu - \lambda)$`
+becomes 1/(μ − λ), with subscripts, superscripts, and fractions; "$5 and $10"
+is left alone) and, for answers and summaries, `label_citations`, which turns
+`[F4058]` into `[p.19]`. An answer citing several files numbers them to match
+its Sources list and Open buttons: `[2 p.19]`.
+
+`observability.trace()` logs structured events (node, decision, calls used)
+without source text, prompts, or model output.
+
+## Telegram
+
+`telegram/adapter.py` normalises each update into a platform-neutral
+`IncomingEvent` and runs the synchronous application in a worker thread.
+
+- **Router** (`app/events.py`): uploads and intake buttons go to `app/intake.py`;
+  `/find`, `/ask`, and `/note` are handled directly; a reply to a card with
+  text asks about that card's file (or adds a note to a staged upload); file,
+  browse, and Inbox commands go to `app/files.py`. Any other plain text gets a
+  card with **Find**, **Ask**, and **Save as note**, with no model call.
+- **Delivery ledger** (`telegram/delivery.py`): each update ID is claimed as
+  `processing` before handling and marked `delivered` after the reply. Failures
+  release the claim so Telegram can retry. This is at-least-once, so handlers
+  must be idempotent. A claim left by a crashed process expires after a
+  15-minute lease.
+- **Buttons** (`telegram/callbacks.py`): callback data is an opaque,
+  chat-scoped, expiring token mapped to a locally stored command, so no command
+  text travels in the button.
+- **References** (`reviews.py`): each object card stores a `(kind, id)` pointer
+  against its sent message ID, keeping the newest 500 per chat. Replying to a
+  card restores that pointer, so "give me the content" or "send that pdf"
+  targets the right source after a restart. `ReviewContextRepository` holds the
+  chat's current selection.
+- **Presentation**: `PresentedReply` carries text, buttons, title, icon, an
+  optional reference, and an optional document for **Send original**
+  (`sources/export.py` refuses files outside authorized roots or the Inbox).
+- **Runtime lock** (`runtime.py`): an exclusive SQLite transaction in
+  `telegram-runtime.db` prevents two pollers on one data directory. It cannot
+  stop the same token running elsewhere.
+- **Periodic work**: `run_telegram_polling(periodic=...)` runs `rescan_all` and
+  sends filed notices every 15 minutes, off the event loop. The first run waits
+  60 seconds so it doesn't compete with the first request after a start.
+- **Start-up**: the bot uses `BackgroundEmbeddingProvider`, which loads the
+  embedding model in a thread (importing the libraries takes 15–60 seconds) so
+  polling starts at once. Searches wait for it; a `/find` or `/ask` meanwhile
+  gets one "still starting up" notice per chat. If the model fails to load,
+  `HybridRetriever` falls back to keyword results.
+- **Typing indicator**: every request shows "typing…" (refreshed every 4
+  seconds) until its reply is sent.
+
+## Inbox uploads
+
+Telegram uploads are staged in `cache/intake/` as a `ProvisionalIntake`
+(`intake.py`). The card offers **Save**, **Intended root**, **Add note**, and
+**Discard**, and replying to it with text adds a note. Saving goes through
+`InboxCaptureService` (`capture.py`), which writes a readable filename into the
+Inbox (the note's title or the upload's name, de-duplicated), registers and
+extracts the source, and records its capture key in `inbox_captures` and its
+intended root and note in `source_inbox_contexts`. `/note TEXT` saves a note
+directly. Captures are idempotent by capture key.
+
+## Inbox queue
+
+`InboxQueue` (`sources/inbox_queue.py`) writes `INBOX.md` in the Inbox: one
+entry per active Inbox source whose file is still there, with received time and
+origin, type, intended root and path, the owner's note, and guidance files
+(any `AGENTS.md` or `COURSE_WORKFLOWS.md` at the intended root). It contains no file contents. `InboxCaptureService` refreshes it
+after every capture, intake acceptance refreshes it again once routing context
+is saved, and `scan-root` and `steward inbox` refresh it too. The file is only
+rewritten when its content changes, via a temporary file and atomic replace.
+A file moved out of the Inbox (by hand or by a tool) drops off at the next refresh; Telegram's
+`/inbox` applies the same "still in the Inbox" rule.
+
+## Activity
+
+`ActivityService` appends audit events (scans, captures, intake decisions). Details that look like paths are reduced to
+filenames before they reach Telegram or a model. Event types from retired
+features still load (`ActivityType._missing_`).
 
 ## Known limitations
 
-- Capture supports Markdown, plain text, DOCX, HTML, images, and PDFs. PDFs use native text first;
-  an image-only PDF falls back to local OCR at 200 DPI using separately installed Poppler (`pdftoppm`)
-  and `tesseract`. Unavailable OCR never prevents preservation of the original: scanning logs the
-  extraction failure and keeps its derived text empty. The content hash prevents unchanged images or
-  scanned PDFs from being OCRed again during a normal reindex.
-- Heading-based fragments are useful but not universally optimal. Very long
-  sections can create overly large fragments; very short headings can create
-  too little context.
-- SQLite semantic search currently reads all stored vectors for the selected
-  model and calculates cosine similarity in Python. It is suitable for a small
-  personal vault, but will become slow as fragment counts grow.
-- Vectors are stored as human-readable JSON. This is not as compact or fast as
-  binary vectors or a dedicated vector index.
-- Changing the embedding model requires re-indexing because vectors from
-  different models live in incompatible semantic spaces.
-- Semantic similarity is not proof. It can return a plausible but irrelevant
-  fragment, especially for short or ambiguous queries.
-- FTS5 is token-based. It does not automatically stem every grammatical form,
-  so `cache` may not match `caches` with the current tokenizer configuration.
-- Hybrid search falls back to semantic retrieval if a natural-language query
-  contains punctuation that FTS5 rejects. This prevents a parser error, though
-  it means no lexical candidates contribute to that particular ranking.
-- Citation verification proves only that each inline key refers to a fragment
-  supplied in the current request. It cannot prove that every factual sentence
-  is supported by the cited fragment; semantic entailment remains future work.
-- Context is bounded by characters rather than token counts. Different models
-  tokenize text differently, so the cap is protective rather than exact.
-- Model availability, free-tier quotas, rate limits, and retention terms are
-  provider-controlled. Steward requires an explicit model name rather than
-  assuming a particular Gemini model is available to every account.
-- Telegram conversation state uses a local SQLite LangGraph checkpointer, so a
-  restarted process can continue a chat thread. The adapter also has a local
-  allowlist, durable successful-update deduplication, and a metadata-only
-  dead-letter table. It limits repeated failures to three attempts, which can
-  be inspected with `steward telegram-dead-letters`. Failed updates wait 15,
-  then 30 seconds, then up to a five-minute capped exponential delay before a
-  redelivered update can be claimed again.
-- Telegram captures use `/save` and the normal Bot API download ceiling. An
-  oversized upload can be relayed through an explicit `/drive_import FILE_ID`
-  command, but there is no self-hosted Bot API server or automatic Drive sync.
-- Organization matching has a deterministic filename fallback plus a
-  model-assisted existing-workspace proposal on Telegram capture when the
-  source permits the configured model. The model sees source fragments and
-  known workspace IDs, never constructs a path, and deterministic validation
-  rejects invalid output. Telegram resumes strong move proposals after an explicit
-  `accept` or `reject` reply, but it has no richer natural-language approval
-  understanding yet.
-- Travel extraction recognizes a small, label-oriented itinerary shape. It is
-  not a general airline-document parser; Calendar events require a travel
-  record plus explicit proposal approval or an explicit CLI write command.
-- Receipt records are the next record family. `propose-receipt-record` and
-  `create-receipt-record` recognize a conservative labeled shape (merchant,
-  total, currency, purchase date, and receipt number). They are not a general
-  receipt understanding system and do not infer unlabeled totals.
-- Warranty records use `propose-warranty-record`, `create-warranty-record`,
-  and `warranty-records`. They retain source-fragment evidence for a labeled
-  product, provider, warranty number, or coverage-end timestamp. They do not
-  infer warranty duration or eligibility from marketing language.
-- The read-only agent tool `search_records` now returns travel, receipt, and
-  warranty result shapes, marked with `record_type`. It performs no mutation
-  and applies the source privacy policy before a result can reach a cloud model.
-- The current CLI constructs services directly. As the application grows, a
-  dedicated composition module or dependency-injection approach may improve
-  startup composition.
-
-## Good future improvements
-
-### Retrieval quality
-
-1. Build a real retrieval evaluation set from your own questions and measure
-   Recall@K and MRR for lexical, semantic, and hybrid search.
-2. Experiment manually with heading, paragraph, fixed-size, and overlapping
-   chunk strategies before changing the default extractor.
-3. Improve FTS5 query construction so ordinary punctuation and natural
-   language cannot accidentally become invalid FTS syntax.
-4. Add snippets with query-term highlighting and include explicit scores in a
-   diagnostic search mode.
-5. Add metadata filters such as source type, path prefix, workspace, or date
-   once those domains exist.
-
-### Scale and storage
-
-1. Add a `rebuild-semantic-index` command that removes and regenerates all
-   vectors for a selected model.
-2. Store compact binary vectors if JSON size becomes material.
-3. Implement another `SemanticIndex`, backed by a local vector engine, when
-   full scanning is measurably too slow. The existing protocol is the intended
-   replacement seam.
-4. Record the model revision and embedding configuration alongside vectors,
-   not just the model name.
-
-### Product progression
-
-1. Add structured answer evaluation cases that inspect retrieved evidence,
-   generated citations, and unsupported-answer behavior.
-2. Add richer extractors for plain text and PDF before introducing broad
-   capture channels.
-3. Add structured retrieval evaluations before relying on semantic results for
-   important personal records or actions.
-
-## Practical debugging
-
-Use these commands while developing:
-
-```powershell
-pytest
-steward --help
-steward sources
-steward search "exact term"
-steward semantic-search "meaning-based phrase"
-```
-
-For database inspection, use any SQLite client to examine:
-
-```text
-schema_migrations
-sources
-source_fragments
-source_fragments_fts
-source_fragment_embeddings
-```
-
-Never manually edit derived index rows as a normal workflow. Fix the source or
-the deterministic extraction/indexing code, then rebuild the derived data.
+- The checker uses the same model as the writer.
+- Snippets sent to a cloud provider leave the machine; use `local` (Ollama) to
+  keep everything local.
+- A crash after domain work but before the delivery ledger updates can repeat
+  that work (at-least-once delivery).
+- Health checks are local. They do not probe Telegram or model servers.
+- Steward is single-user and single-process per data directory.

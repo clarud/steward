@@ -15,8 +15,12 @@ class SourceType(StrEnum):
     PLAIN_TEXT = "plain_text"
     PDF = "pdf"
     DOCX = "docx"
+    PPTX = "pptx"
+    XLSX = "xlsx"
+    NOTEBOOK = "notebook"
     HTML = "html"
     IMAGE = "image"
+    CODE = "code"
     BINARY = "binary"
 
 

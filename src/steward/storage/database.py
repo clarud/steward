@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -36,8 +37,95 @@ RECEIPT_RECORD_EVIDENCE_SCHEMA_VERSION = 27
 WARRANTY_RECORDS_SCHEMA_VERSION = 28
 WARRANTY_RECORD_EVIDENCE_SCHEMA_VERSION = 29
 KNOWLEDGE_ENRICHMENT_PROPOSALS_SCHEMA_VERSION = 30
+TELEGRAM_CALLBACKS_SCHEMA_VERSION = 31
+PROVISIONAL_INTAKES_SCHEMA_VERSION = 32
+PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION = 33
+PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION = 34
+SOURCE_ROOTS_SCHEMA_VERSION = 35
+SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION = 36
+TASKS_SCHEMA_VERSION = 37
+TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION = 38
+TASK_DUE_AT_SCHEMA_VERSION = 39
+CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION = 40
+ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION = 41
+PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION = 42
+TASK_REMINDERS_SCHEMA_VERSION = 43
+TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION = 44
+TASK_REMINDER_CLAIM_SCHEMA_VERSION = 45
+KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION = 46
+TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION = 47
+KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION = 48
+CLAIM_REVISIONS_SCHEMA_VERSION = 49
+PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION = 50
+ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION = 51
+EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION = 52
+TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION = 53
+TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION = 54
+KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION = 55
+HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION = 56
+HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION = 57
+SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION = 58
+SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION = 59
+SOURCE_LOCATION_HISTORY_SCHEMA_VERSION = 60
+PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION = 61
+SOURCE_INBOX_CONTEXT_SCHEMA_VERSION = 62
+SOURCE_ROOT_PROFILE_SCHEMA_VERSION = 63
+SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION = 64
+LEGACY_TABLES_DROPPED_SCHEMA_VERSION = 65
+MINIMAL_SURFACE_SCHEMA_VERSION = 66
+INBOX_CAPTURE_KEYS_SCHEMA_VERSION = 67
+MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION = 68
+SOURCE_SUMMARIES_SCHEMA_VERSION = 69
+SUMMARY_REMOVED_SCHEMA_VERSION = 70
 
-MIGRATIONS: tuple[tuple[int, str], ...] = (
+# Tables owned by the retired workspace, organization, knowledge, record, task,
+# Calendar, and research features (see ADR-007). Children precede parents so
+# the drop succeeds with foreign keys enforced.
+LEGACY_TABLES = (
+    "claim_revisions",
+    "claim_evidence",
+    "knowledge_enrichment_versions",
+    "knowledge_enrichment_proposals",
+    "concept_aliases",
+    "claims",
+    "concepts",
+    "calendar_event_links",
+    "calendar_task_event_links",
+    "task_calendar_associations",
+    "task_reminders",
+    "tasks",
+    "travel_record_evidence",
+    "travel_record_references",
+    "travel_records",
+    "receipt_record_evidence",
+    "receipt_records",
+    "warranty_record_evidence",
+    "warranty_records",
+    "hotel_reservation_record_evidence",
+    "hotel_reservation_records",
+    "organization_approval_threads",
+    "organization_proposals",
+    "workspace_sources",
+    "workspaces",
+    "ephemeral_research_cards",
+)
+# Tables for per-file privacy, reviewed action proposals, Telegram delivery
+# history and recovery, and root profiles, removed with the minimal surface.
+MINIMAL_SURFACE_DROPPED_TABLES = (
+    "source_privacy_policies",
+    "action_proposals",
+    "telegram_delivery_history",
+    "telegram_delivery_dead_letters",
+    "telegram_delivery_recoveries",
+    "source_root_profiles",
+)
+# Migrations that delete user data. An existing database is snapshotted before
+# any of them runs, and the migration is not applied if the snapshot fails.
+DESTRUCTIVE_MIGRATIONS = frozenset({
+    LEGACY_TABLES_DROPPED_SCHEMA_VERSION, MINIMAL_SURFACE_SCHEMA_VERSION, MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION,
+})
+
+MIGRATIONS: tuple[tuple[int, str | tuple[str, ...]], ...] = (
     (
         SOURCES_SCHEMA_VERSION,
         """
@@ -290,6 +378,355 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         )
         """,
     ),
+    (
+        TELEGRAM_CALLBACKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_callbacks (
+            token TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL,
+            command TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKES_SCHEMA_VERSION,
+        """
+        CREATE TABLE provisional_intakes (
+            id INTEGER PRIMARY KEY,
+            event_id TEXT NOT NULL UNIQUE,
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('file', 'text')),
+            staged_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'discarded')),
+            created_at TEXT NOT NULL,
+            decided_at TEXT
+        )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKE_REVISIONS_SCHEMA_VERSION,
+        """
+        CREATE TABLE provisional_intake_revisions (
+            id INTEGER PRIMARY KEY,
+            intake_id INTEGER NOT NULL REFERENCES provisional_intakes(id) ON DELETE CASCADE,
+            guidance TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        PROVISIONAL_INTAKE_CATEGORY_SCHEMA_VERSION,
+        """
+        ALTER TABLE provisional_intakes
+        ADD COLUMN category TEXT NOT NULL DEFAULT 'uncertain'
+        """,
+    ),
+    (
+        SOURCE_ROOTS_SCHEMA_VERSION,
+        """
+        CREATE TABLE source_roots (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            path TEXT NOT NULL UNIQUE,
+            enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        SOURCE_ROOT_EXCLUSIONS_SCHEMA_VERSION,
+        """
+        ALTER TABLE source_roots
+        ADD COLUMN exclusions TEXT NOT NULL DEFAULT '[]'
+        """,
+    ),
+    (
+        TASKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            due_hint TEXT,
+            status TEXT NOT NULL CHECK (status IN ('open', 'completed')),
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        )
+        """,
+    ),
+    (
+        TELEGRAM_DELIVERY_RECOVERIES_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_delivery_recoveries (
+            id INTEGER PRIMARY KEY,
+            update_id TEXT NOT NULL,
+            recovered_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        TASK_DUE_AT_SCHEMA_VERSION,
+        "ALTER TABLE tasks ADD COLUMN due_at TEXT",
+    ),
+    (
+        CALENDAR_TASK_EVENT_LINKS_SCHEMA_VERSION,
+        """
+        CREATE TABLE calendar_task_event_links (
+            idempotency_key TEXT PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            external_event_id TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        ORGANIZATION_PROPOSAL_WORKSPACE_NAME_SCHEMA_VERSION,
+        "ALTER TABLE organization_proposals ADD COLUMN workspace_name TEXT",
+    ),
+    (
+        PROVISIONAL_INTAKE_ANALYSIS_MODE_SCHEMA_VERSION,
+        """
+        ALTER TABLE provisional_intakes
+        ADD COLUMN analysis_mode TEXT NOT NULL DEFAULT 'none'
+        CHECK (analysis_mode IN ('external', 'local', 'none'))
+        """,
+    ),
+    (
+        TASK_REMINDERS_SCHEMA_VERSION,
+        """
+        CREATE TABLE task_reminders (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            chat_id TEXT NOT NULL,
+            remind_at TEXT NOT NULL,
+            claimed_at TEXT,
+            reminded_at TEXT
+        )
+        """,
+    ),
+    (
+        TELEGRAM_REVIEW_CONTEXT_SCHEMA_VERSION,
+        """
+        CREATE TABLE telegram_review_context (
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            review_kind TEXT NOT NULL,
+            review_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (platform, chat_id)
+        )
+        """,
+    ),
+    (
+        TASK_REMINDER_CLAIM_SCHEMA_VERSION,
+        "ALTER TABLE task_reminders ADD COLUMN claim_token TEXT",
+    ),
+    (KNOWLEDGE_REVIEW_SNAPSHOT_SCHEMA_VERSION, (
+        """CREATE TABLE knowledge_enrichment_versions (
+            id INTEGER PRIMARY KEY,
+            claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+            fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            operation TEXT NOT NULL CHECK (operation IN ('confirm', 'extend', 'refine', 'qualify', 'contradict')),
+            rationale TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL, reviewed_at TEXT, evidence_snapshot TEXT,
+            UNIQUE (claim_id, fragment_id, operation, rationale, evidence_snapshot)
+        )""",
+        "INSERT INTO knowledge_enrichment_versions SELECT *, NULL FROM knowledge_enrichment_proposals",
+        "DROP TABLE knowledge_enrichment_proposals",
+        "ALTER TABLE knowledge_enrichment_versions RENAME TO knowledge_enrichment_proposals",
+    )),
+    (
+        TELEGRAM_MESSAGE_REFERENCES_SCHEMA_VERSION,
+        """CREATE TABLE telegram_message_references (
+            platform TEXT NOT NULL,
+            chat_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            reference_kind TEXT NOT NULL,
+            reference_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (platform, chat_id, message_id)
+        )""",
+    ),
+    (
+        KNOWLEDGE_CONFLICT_RESOLUTION_SCHEMA_VERSION,
+        (
+            "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN conflict_resolution TEXT "
+            "CHECK (conflict_resolution IN ('keep_existing', 'disputed', 'needs_revision'))",
+            "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN conflict_resolved_at TEXT",
+        ),
+    ),
+    (
+        CLAIM_REVISIONS_SCHEMA_VERSION,
+        """CREATE TABLE claim_revisions (
+            action_proposal_id INTEGER PRIMARY KEY REFERENCES action_proposals(id),
+            conflict_proposal_id INTEGER NOT NULL UNIQUE REFERENCES knowledge_enrichment_proposals(id),
+            original_claim_id INTEGER NOT NULL REFERENCES claims(id),
+            replacement_claim_id INTEGER NOT NULL UNIQUE REFERENCES claims(id),
+            created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        PROVISIONAL_INTAKE_DIAGNOSTICS_SCHEMA_VERSION,
+        "ALTER TABLE provisional_intakes ADD COLUMN diagnostic TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        ORGANIZATION_PROPOSAL_GUIDANCE_SCHEMA_VERSION,
+        "ALTER TABLE organization_proposals ADD COLUMN user_guidance TEXT",
+    ),
+    (
+        EPHEMERAL_RESEARCH_CARDS_SCHEMA_VERSION,
+        """CREATE TABLE ephemeral_research_cards (
+            token TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL,
+            query TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            sources_json TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        TASK_CALENDAR_ASSOCIATIONS_SCHEMA_VERSION,
+        """
+        CREATE TABLE task_calendar_associations (
+            task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+            external_event_id TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ),
+    (
+        TRAVEL_RECORD_PASSENGER_SCHEMA_VERSION,
+        "ALTER TABLE travel_records ADD COLUMN passenger TEXT",
+    ),
+    (
+        KNOWLEDGE_ENRICHMENT_CHAT_SCHEMA_VERSION,
+        "ALTER TABLE knowledge_enrichment_proposals ADD COLUMN chat_id TEXT",
+    ),
+    (
+        HOTEL_RESERVATION_RECORDS_SCHEMA_VERSION,
+        """CREATE TABLE hotel_reservation_records (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            property_name TEXT, booking_reference TEXT, check_in_at TEXT, check_out_at TEXT, guest_name TEXT)""",
+    ),
+    (
+        HOTEL_RESERVATION_EVIDENCE_SCHEMA_VERSION,
+        """CREATE TABLE hotel_reservation_record_evidence (hotel_reservation_record_id INTEGER NOT NULL REFERENCES hotel_reservation_records(id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL, fragment_id INTEGER NOT NULL REFERENCES source_fragments(id) ON DELETE CASCADE,
+            PRIMARY KEY (hotel_reservation_record_id, field_name))""",
+    ),
+    (
+        SOURCE_ROOT_SCAN_HISTORY_SCHEMA_VERSION,
+        """CREATE TABLE source_root_scans (
+            id INTEGER PRIMARY KEY,
+            root_id INTEGER NOT NULL REFERENCES source_roots(id) ON DELETE CASCADE,
+            scanned_at TEXT NOT NULL,
+            new_count INTEGER NOT NULL,
+            updated_count INTEGER NOT NULL,
+            unchanged_count INTEGER NOT NULL,
+            missing_count INTEGER NOT NULL
+        )""",
+    ),
+    (
+        SOURCE_MOVE_PROPOSALS_SCHEMA_VERSION,
+        """CREATE TABLE source_move_proposals (
+            id INTEGER PRIMARY KEY,
+            -- IDs are historical reconciliation evidence. The temporary
+            -- discovered row is intentionally removed when a move is accepted.
+            missing_source_id INTEGER NOT NULL UNIQUE,
+            discovered_source_id INTEGER NOT NULL UNIQUE,
+            content_hash TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected')),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT
+        )""",
+    ),
+    (
+        SOURCE_LOCATION_HISTORY_SCHEMA_VERSION,
+        """CREATE TABLE source_location_history (
+            id INTEGER PRIMARY KEY,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            path TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason TEXT NOT NULL
+        )""",
+    ),
+    (
+        PROVISIONAL_INTAKE_INTENDED_ROOT_SCHEMA_VERSION,
+        "ALTER TABLE provisional_intakes ADD COLUMN intended_root_id INTEGER REFERENCES source_roots(id)",
+    ),
+    (
+        SOURCE_INBOX_CONTEXT_SCHEMA_VERSION,
+        """CREATE TABLE source_inbox_contexts (
+            source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE,
+            intended_root_id INTEGER REFERENCES source_roots(id) ON DELETE SET NULL,
+            intended_root_name TEXT,
+            user_context TEXT,
+            capture_origin TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        SOURCE_ROOT_PROFILE_SCHEMA_VERSION,
+        """CREATE TABLE source_root_profiles (
+            root_id INTEGER PRIMARY KEY REFERENCES source_roots(id) ON DELETE CASCADE,
+            purpose TEXT NOT NULL,
+            guidance_paths TEXT NOT NULL,
+            authority_tiers TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        SOURCE_MOVE_PROPOSAL_ROOT_SCHEMA_VERSION,
+        "ALTER TABLE source_move_proposals ADD COLUMN root_path TEXT",
+    ),
+    (
+        LEGACY_TABLES_DROPPED_SCHEMA_VERSION,
+        tuple(f"DROP TABLE IF EXISTS {table}" for table in LEGACY_TABLES)
+        + ("DELETE FROM action_proposals WHERE action_type != 'set_source_privacy'",),
+    ),
+    (
+        MINIMAL_SURFACE_SCHEMA_VERSION,
+        tuple(f"DROP TABLE IF EXISTS {table}" for table in MINIMAL_SURFACE_DROPPED_TABLES),
+    ),
+    (
+        INBOX_CAPTURE_KEYS_SCHEMA_VERSION,
+        """CREATE TABLE inbox_captures (
+            capture_key TEXT PRIMARY KEY,
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        MOVE_PROPOSALS_DROPPED_SCHEMA_VERSION,
+        "DROP TABLE IF EXISTS source_move_proposals",
+    ),
+    (
+        SOURCE_SUMMARIES_SCHEMA_VERSION,
+        """CREATE TABLE source_summaries (
+            source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            content_hash TEXT NOT NULL,
+            model TEXT NOT NULL,
+            text TEXT NOT NULL,
+            cited_json TEXT NOT NULL,
+            covered INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            skipped_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (source_id, content_hash, model)
+        )""",
+    ),
+    (
+        SUMMARY_REMOVED_SCHEMA_VERSION,
+        # Statements the checker removed, so a cached summary can still show them.
+        "ALTER TABLE source_summaries ADD COLUMN removed_json TEXT NOT NULL DEFAULT '[]'",
+    ),
 )
 
 
@@ -300,6 +737,7 @@ def initialize_database(database_path: Path) -> None:
     file, migration ledger, and every unapplied schema migration.
     """
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    _snapshot_before_destructive_migrations(database_path)
 
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
@@ -326,8 +764,131 @@ def initialize_database(database_path: Path) -> None:
             if migration_applied is not None:
                 continue
 
-            connection.execute(statement)
+            for sql in ((statement,) if isinstance(statement, str) else statement):
+                connection.execute(sql)
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (version, datetime.now(UTC).isoformat()),
             )
+
+
+def _snapshot_before_destructive_migrations(database_path: Path) -> Path | None:
+    """Back up an existing database before a pending migration deletes data.
+
+    A new database has nothing to lose, and a database that already applied
+    every destructive migration needs no further copy. Otherwise the snapshot
+    must succeed first; its error propagates and no migration runs.
+    """
+    if not database_path.is_file():
+        return None
+    with closing(sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+        has_ledger = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        if has_ledger is None:
+            return None
+        applied = {row[0] for row in connection.execute("SELECT version FROM schema_migrations")}
+    pending = sorted(DESTRUCTIVE_MIGRATIONS - applied)
+    if not pending:
+        return None
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    destination = (
+        database_path.parent / "backups" / f"pre-migration-{pending[0]}-{timestamp}" / database_path.name
+    )
+    return snapshot_database(database_path, destination)
+
+
+def snapshot_database(source_path: Path, destination_path: Path) -> Path:
+    """Create a consistent SQLite copy without overwriting an existing backup.
+
+    SQLite's backup API works while the application has the source database
+    open, unlike a filesystem copy which can miss WAL-backed changes. The
+    destination is deliberately write-once: restore is a separate, explicit
+    local operation rather than an implicit replacement of active state.
+    """
+    source = source_path.resolve()
+    destination = destination_path.resolve()
+    if not source.is_file():
+        raise ValueError(f"Database to snapshot was not found: {source}")
+    if source == destination:
+        raise ValueError("Database snapshot destination must differ from its source.")
+    if destination.exists():
+        raise ValueError(f"Database snapshot already exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with destination.open("xb"):
+            pass
+    except FileExistsError as error:
+        raise ValueError(f"Database snapshot already exists: {destination}") from error
+    try:
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as source_connection:
+            with closing(sqlite3.connect(destination)) as destination_connection:
+                source_connection.backup(destination_connection)
+    except sqlite3.Error:
+        if destination.exists():
+            destination.unlink()
+        raise
+    return destination
+
+
+def _database_role(connection: sqlite3.Connection) -> str | None:
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    operational = {"schema_migrations", "sources"} <= tables
+    checkpoints = {"checkpoints", "writes"} <= tables
+    if operational and not checkpoints:
+        return "operational"
+    if checkpoints and not operational:
+        return "checkpoints"
+    return None
+
+
+def restore_database(snapshot_path: Path, destination_path: Path, safety_backup_path: Path) -> Path:
+    """Restore a SQLite snapshot after first creating a write-once safety copy.
+
+    Callers must obtain explicit user confirmation and stop Steward processes
+    before calling this function. The active database is never replaced unless
+    its current state has been backed up to a new, caller-selected path.
+    """
+
+    snapshot = snapshot_path.resolve()
+    destination = destination_path.resolve()
+    safety_backup = safety_backup_path.resolve()
+    if not snapshot.is_file():
+        raise ValueError(f"Database snapshot was not found: {snapshot}")
+    if not destination.is_file():
+        raise ValueError(f"Database to restore was not found: {destination}")
+    if snapshot == destination:
+        raise ValueError("Database snapshot must differ from its restore destination.")
+    if safety_backup in {snapshot, destination}:
+        raise ValueError("Safety backup must differ from both snapshot and restore destination.")
+    # Read-only mode prevents SQLite from creating or initializing the input.
+    # quick_check alone accepts a zero-byte file as an empty database, so also
+    # require an application table before any destination/safety-copy writes.
+    try:
+        with closing(sqlite3.connect(snapshot.as_uri() + "?mode=ro", uri=True)) as candidate:
+            integrity = candidate.execute("PRAGMA quick_check").fetchall()
+            table = candidate.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1"
+            ).fetchone()
+            if integrity != [("ok",)] or table is None:
+                raise ValueError("Restore snapshot is empty or failed its SQLite integrity check. No restore was performed.")
+            candidate_role = _database_role(candidate)
+    except sqlite3.Error as error:
+        raise ValueError("Restore snapshot could not be validated as a readable SQLite database. No restore was performed.") from error
+    try:
+        with closing(sqlite3.connect(destination.as_uri() + "?mode=ro", uri=True)) as current:
+            destination_role = _database_role(current)
+    except sqlite3.Error:
+        # A damaged destination may need recovery; it cannot establish a role.
+        destination_role = None
+    if destination_role is not None and candidate_role != destination_role:
+        raise ValueError("Restore snapshot has a different or unrecognized database role. No restore was performed.")
+    snapshot_database(destination, safety_backup)
+    try:
+        with sqlite3.connect(snapshot) as source_connection, sqlite3.connect(destination) as destination_connection:
+            source_connection.backup(destination_connection)
+    except sqlite3.Error:
+        with sqlite3.connect(safety_backup) as safety_connection, sqlite3.connect(destination) as destination_connection:
+            safety_connection.backup(destination_connection)
+        raise
+    return safety_backup
